@@ -1,0 +1,13 @@
+/dist/
+/target/
+/src-tauri/target/
+/src-tauri/gen/schemas
+
+# What the engine and its workers write at runtime.
+/data/
+/.iii/
+/skills/
+/config/
+
+.env
+.DS_Store

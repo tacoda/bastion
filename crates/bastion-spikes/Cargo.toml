@@ -1,0 +1,15 @@
+[package]
+name = "bastion-spikes"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "The checks that prove each level of the Rust port (PLAN.md A0)."
+
+[dependencies]
+anyhow = "1"
+base64 = "0.22"
+iii-sdk = "=0.25.0"
+serde_json = "1"
+sha2 = "0.10"
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1", features = ["v4"] }

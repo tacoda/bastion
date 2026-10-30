@@ -1,0 +1,10 @@
+[build]
+target = "./index.html"
+
+[watch]
+ignore = ["./src-tauri", "./crates"]
+
+[serve]
+port = 1420
+open = false
+ws_protocol = "ws"

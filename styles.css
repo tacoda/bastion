@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+/* One dark theme, purple as the main color (PLAN.md D4). */
+@theme {
+  --color-bg: #0f0d17;
+  --color-panel: #19162a;
+  --color-ink: #ece9f5;
+  --color-muted: #a39cb8;
+  --color-line: #2c2742;
+  --color-primary: #7c3aed;
+  --color-primary-hover: #6d28d9;
+  --color-link: #c4b5fd;
+  --color-ok: #4ade80;
+  --color-bad: #f87171;
+}
+
+html { color-scheme: dark; }
+body { background: var(--color-bg); color: var(--color-ink); font-family: system-ui, sans-serif; margin: 0; }

@@ -1,0 +1,14 @@
+Update this project to be named bastion
+Remote is tacoda_github:tacoda/bastion.git
+
+---
+
+commit and push to the new remote
+
+---
+
+Enable entire for this project
+
+---
+
+commit and push them

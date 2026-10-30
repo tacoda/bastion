@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01GwkE8AjgLVjSg5C2YaauMK",
+  "agent_id": "acd1e06b126a4c5ce",
+  "subagent_type": "Explore",
+  "task_description": "Map wipp factory design",
+  "token_usage": {
+    "input_tokens": 32,
+    "cache_creation_tokens": 93279,
+    "cache_read_tokens": 1042016,
+    "output_tokens": 152,
+    "api_call_count": 16
+  },
+  "started_at": "2026-10-30T18:50:53.300282-05:00",
+  "completed_at": "2026-10-30T18:52:26.605348-05:00"
+}

@@ -106,7 +106,9 @@ pub fn JobPage(id: String) -> impl IntoView {
                 </div>
                 {d.job.error.clone().map(|e| view! {
                     <section class="mb-4 rounded-xl border border-bad bg-panel p-4">
-                        <h2 class="m-0 mb-2 text-sm font-semibold text-bad">"This job failed"</h2>
+                        <h2 class="m-0 mb-2 text-sm font-semibold text-bad">
+                            {if d.job.state == "failed" { "This job failed" } else { "The land failed; the VM and its commits are kept" }}
+                        </h2>
                         <pre class="m-0 whitespace-pre-wrap text-sm">{e}</pre>
                     </section>
                 })}
@@ -126,10 +128,11 @@ pub fn JobPage(id: String) -> impl IntoView {
                     <p class="m-0"><strong>"The agent asks: "</strong>{q}</p>
                 })}
                 <Show when=move || allows("approve")>
-                    <p class="m-0 text-sm text-muted">{move || detail.get().map(|d| format!(
-                        "Approve the {} artifact to move on, or send it back with a note.",
-                        if d.job.stage == "review" { "build" } else { "plan" }
-                    ))}</p>
+                    <p class="m-0 text-sm text-muted">{move || detail.get().map(|d| match d.job.stage.as_str() {
+                        "land" => "Approve retries the land, or stop the job.".to_string(),
+                        "review" => "Approve the build artifact to move on, or send it back with a note.".to_string(),
+                        _ => "Approve the plan artifact to move on, or send it back with a note.".to_string(),
+                    })}</p>
                 </Show>
                 {move || detail.get().filter(|_| allows("approve")).map(|d| {
                     // What the checkpoint judges: the plan at approve; the build's report and its diff at review.
@@ -147,19 +150,23 @@ pub fn JobPage(id: String) -> impl IntoView {
                         })}
                     }
                 })}
+                <Show when=move || allows("comment") || allows("answer")>
                 <label class="grid gap-1 text-sm text-muted">
                     {move || if allows("answer") { "Your answer" } else { "A note for the agent (sends the work back)" }}
                     <textarea class="min-h-20 rounded border border-line bg-bg p-2 text-ink"
                         prop:value=text on:input=move |e| set_text.set(event_target_value(&e))></textarea>
                 </label>
+                </Show>
                 <div class="flex flex-wrap gap-2">
                     <Show when=move || allows("approve")>
                         <button class="rounded-lg bg-primary px-3 py-2 font-semibold text-white hover:bg-primary-hover" on:click=move |_| act(command::JOB_APPROVE)>"Approve"</button>
                     </Show>
+                    <Show when=move || allows("comment") || allows("answer")>
                     <button class="rounded-lg border border-line px-3 py-2 hover:bg-line disabled:opacity-50"
                         disabled=move || text.get().trim().is_empty() on:click=move |_| act(command::JOB_COMMENT)>
                         {move || if allows("answer") { "Answer" } else { "Send back" }}
                     </button>
+                    </Show>
                 </div>
             </section>
         </Show>

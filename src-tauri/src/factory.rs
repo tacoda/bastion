@@ -616,7 +616,7 @@ impl Factory {
                 "bundle",
                 "create",
                 "/work/out.bundle",
-                &format!("origin/{branch}..HEAD"),
+                &format!("origin/{branch}..{branch}"),
             ],
         )
         .await

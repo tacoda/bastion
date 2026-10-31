@@ -236,7 +236,9 @@ pub fn step(job: &Job, event: &Event, at: u64, dials: &Dials) -> (Job, Vec<Effec
         (State::Running, Event::TurnFinished { outcome }) => {
             turn_finished(&mut next, outcome, dials)
         }
-        (State::NeedsYou, Event::Approved) if next.question.is_none() => {
+        (State::NeedsYou, Event::Approved)
+            if next.question.is_none() && next.stage != Stage::Land =>
+        {
             next.feedback = None;
             advance(&mut next, dials)
         }
@@ -253,8 +255,16 @@ pub fn step(job: &Job, event: &Event, at: u64, dials: &Dials) -> (Job, Vec<Effec
             next.state = State::Landed;
             vec![Effect::Teardown]
         }
+        // A failed land keeps the VM and its commits, and waits on the owner:
+        // approve retries the land, stop ends the job.
         (State::Running, Event::LandFailed { error }) if next.stage == Stage::Land => {
-            fail(&mut next, error)
+            next.state = State::NeedsYou;
+            next.error = Some(error.clone());
+            Vec::new()
+        }
+        (State::NeedsYou, Event::Approved) if next.stage == Stage::Land => {
+            next.error = None;
+            enter(&mut next, dials)
         }
         _ => return (job.clone(), Vec::new()),
     };
@@ -419,7 +429,9 @@ pub enum Action {
 
 pub fn actions(job: &Job) -> Vec<Action> {
     let mut allowed = Vec::new();
-    if job.state == State::NeedsYou {
+    if job.state == State::NeedsYou && job.stage == Stage::Land {
+        allowed.push(Action::Approve);
+    } else if job.state == State::NeedsYou {
         if job.question.is_some() {
             allowed.push(Action::Answer);
         } else {

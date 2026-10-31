@@ -441,3 +441,29 @@ fn a_held_checkpoint_says_when_it_approves_itself() {
     assert_eq!(hold_until(&j, &dials), Some(j.updated_at + HOLD_SECS));
     assert_eq!(hold_until(&j, &Dials::default()), None);
 }
+
+#[test]
+fn a_failed_land_waits_on_the_owner_with_its_vm_and_approve_retries_it() {
+    let mut events = planned();
+    events.extend([
+        Event::Approved,
+        done("built"),
+        Event::Approved,
+        Event::LandFailed {
+            error: "no ref".into(),
+        },
+    ]);
+    let (j, effects) = run(&events);
+    assert_eq!(
+        (j.stage, j.state, j.error.as_deref()),
+        (Stage::Land, State::NeedsYou, Some("no ref"))
+    );
+    assert!(effects.is_empty(), "the VM stays: no teardown");
+    assert_eq!(actions(&j), vec![Action::Approve, Action::Stop]);
+    events.push(Event::Approved);
+    let (j, effects) = run(&events);
+    assert_eq!(
+        (j.state, j.error, effects),
+        (State::Running, None, vec![Effect::Land])
+    );
+}

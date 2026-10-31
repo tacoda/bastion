@@ -553,6 +553,22 @@ starts until the owner asks.
 | Phase | State | Evidence |
 |---|---|---|
 | A0 | done | N1 and N3 to N6 pass (2026-10-30). N2 is dropped (D18). Details in `docs/levels.md`. |
-| A1 | in progress | Step 1, the seams: `bastion-protocol`, the Engine trait with its fake, and `scripts/check-seams.sh` (424c69b). |
+| A1 | built; live exit open | All six steps are in: the seams (424c69b), profiles (c62f8e2), Doctor (ea62b16, 763a79a), the stack routine (ac36f24), the shell (8f6e6b5), and CI and the README (0351c35). 19 tests pass, and clippy and the seam check are clean. Live so far: Doctor names the missing `ANTHROPIC_API_KEY` with its fix, attach finds a running stack and starts nothing, and the window renders the shell. Open: start from a stopped machine, quit with the stack kept running, and attach on the next start, all from the window. The first CI run had not finished when this was written. |
 | A2 to A11 | — | — |
 | Later (§10) | on hold | — |
+
+**What A1 found:**
+
+- `iii-sdk` 0.25.0 reconnects by itself at a fixed delay, so the app adds no
+  backoff. It reads `get_connection_state()` every 500 ms and pushes changes,
+  because the SDK has no listener for it.
+- `router::provider::list` says which providers have a credential, without the
+  secret. So the provider check runs once the engine is up, and the machine
+  checks run before it.
+- `iii compose --up` is the compose daemon itself, in the foreground. The app
+  starts it detached in its own process group, with its output in
+  `compose.log` in the app's log directory. Run from a terminal, it stops when
+  that terminal job stops, and so does the stack.
+- The stack inherits the app's environment. A provider key set only in an
+  interactive shell does not reach an app started some other way.
+- `iii trigger` prints its answer and then does not exit.

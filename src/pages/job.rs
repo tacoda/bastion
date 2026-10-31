@@ -127,6 +127,23 @@ fn charter(c: Option<CharterView>) -> impl IntoView + use<> {
     })
 }
 
+/// The request and its badges: state, workspace, id and age.
+fn header(d: &JobDetail) -> impl IntoView + use<> {
+    let (symbol, color) = mark(&d.job.state);
+    let badge = "rounded-full border border-line px-2 py-0.5 text-muted";
+    view! {
+        <div class="mb-4 grid gap-2">
+            <h1 class="m-0 text-2xl font-bold">{d.job.request.clone()}</h1>
+            <div class="flex flex-wrap gap-2 text-xs">
+                <span class={format!("rounded-full border border-line px-2 py-0.5 {color}")}>{format!("{symbol} {}", d.job.state.replace('_', " "))}</span>
+                <span class=badge>{d.job.workspace.clone()}</span>
+                <span class=badge>{d.job.id.clone()}</span>
+                <span class=badge>{ago(d.job.created_at)}</span>
+            </div>
+        </div>
+    }
+}
+
 /// Why the job failed, or why its land did.
 fn failure(d: &JobDetail) -> impl IntoView + use<> {
     let title = if d.job.state == "failed" {
@@ -208,27 +225,15 @@ pub fn JobPage(id: String) -> impl IntoView {
     let waits = move || allows("approve") || allows("answer");
 
     view! {
-        <button class="mb-2 text-sm text-muted hover:text-ink" on:click=move |_| go.set(Route::Jobs)>"← All jobs"</button>
-        {move || detail.get().map(|d| {
-            let (symbol, color) = mark(&d.job.state);
-            view! {
-                <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
-                    <div class="grid gap-2">
-                        <h1 class="m-0 text-2xl font-bold">{d.job.request.clone()}</h1>
-                        <div class="flex flex-wrap gap-2 text-xs">
-                            <span class={format!("rounded-full border border-line px-2 py-0.5 {color}")}>{format!("{symbol} {}", d.job.state.replace('_', " "))}</span>
-                            <span class="rounded-full border border-line px-2 py-0.5 text-muted">{d.job.workspace.clone()}</span>
-                            <span class="rounded-full border border-line px-2 py-0.5 text-muted">{d.job.id.clone()}</span>
-                            <span class="rounded-full border border-line px-2 py-0.5 text-muted">{ago(d.job.created_at)}</span>
-                        </div>
-                    </div>
-                    <Show when=move || allows("stop")>
-                        <button class="rounded-lg border border-line px-3 py-2 text-bad hover:bg-line" on:click=move |_| act(command::JOB_STOP)>"Stop"</button>
-                    </Show>
-                </div>
-                {failure(&d)}
-            }
-        })}
+        // Stop sits outside the part that re-renders on each push, so a busy
+        // turn's pushes cannot replace it between press and release.
+        <div class="mb-2 flex items-center justify-between gap-3">
+            <button class="text-sm text-muted hover:text-ink" on:click=move |_| go.set(Route::Jobs)>"← All jobs"</button>
+            <Show when=move || allows("stop")>
+                <button class="rounded-lg border border-line px-3 py-2 text-bad hover:bg-line" on:click=move |_| act(command::JOB_STOP)>"Stop"</button>
+            </Show>
+        </div>
+        {move || detail.get().map(|d| view! { {header(&d)} {failure(&d)} })}
 
         <Show when=waits>
             <section class="mb-4 grid gap-3 rounded-xl border border-warn bg-panel p-4">

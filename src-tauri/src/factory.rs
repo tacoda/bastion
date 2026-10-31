@@ -744,22 +744,31 @@ impl Factory {
     }
 
     /// Judge a build's diff by the constraints that bind it. An enforced
-    /// rule it breaks sends the work back with the rule and what broke it.
+    /// rule it breaks sends the work back once with the rule and what broke
+    /// it; if the next build breaks it the same way, the owner decides.
     fn review(self: &Arc<Self>, id: &str, diff: &str) {
         let findings = review::review(diff, &self.gate.constraints(id));
-        self.gate.reviewed(id, &findings);
-        if let Some(f) = findings.iter().find(|f| f.rung == Enforcement::Enforced) {
-            let text = format!(
-                "Bastion sent this back: {} {}. Put them back as they were.",
-                f.rule, f.detail
+        let repeated = self.gate.reviewed(id, &findings);
+        let Some(f) = findings.iter().find(|f| f.rung == Enforcement::Enforced) else {
+            return;
+        };
+        if repeated {
+            eprintln!(
+                "job {id}: the build did not fix {}; it waits for the owner",
+                f.constraint
             );
-            let (factory, id) = (self.clone(), id.to_string());
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) = factory.apply(&id, Event::Commented { text }).await {
-                    eprintln!("job {id}: the review could not send the work back: {e}");
-                }
-            });
+            return;
         }
+        let text = format!(
+            "Bastion sent this back: {} {}. Put them back as they were, with the same names.",
+            f.rule, f.detail
+        );
+        let (factory, id) = (self.clone(), id.to_string());
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) = factory.apply(&id, Event::Commented { text }).await {
+                eprintln!("job {id}: the review could not send the work back: {e}");
+            }
+        });
     }
 
     /// Judge the job's calls by its charter, read again from its worktree.

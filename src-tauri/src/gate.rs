@@ -181,8 +181,9 @@ impl Gate {
         }
     }
 
-    /// Keep and record what a job's review diff broke.
-    pub fn reviewed(&self, job: &str, findings: &[bastion_core::review::Finding]) {
+    /// Keep and record what a job's review diff broke. True when the findings
+    /// repeat the last review's, so the build did not fix them.
+    pub fn reviewed(&self, job: &str, findings: &[bastion_core::review::Finding]) -> bool {
         let lines: Vec<String> = findings
             .iter()
             .map(|f| format!("{} ({:?}): {}", f.constraint, f.rung, f.detail))
@@ -190,7 +191,12 @@ impl Gate {
         for line in &lines {
             self.note("review", job, line.clone());
         }
-        self.findings.lock().unwrap().insert(job.into(), lines);
+        let last = self
+            .findings
+            .lock()
+            .unwrap()
+            .insert(job.into(), lines.clone());
+        !lines.is_empty() && last.as_ref() == Some(&lines)
     }
 
     pub fn findings(&self, job: &str) -> Vec<String> {
@@ -809,6 +815,22 @@ mod tests {
             .find(|c| c.1 == "harness::function::resolve")
             .unwrap();
         assert_eq!(resolved.2["is_error"], false);
+    }
+
+    #[test]
+    fn a_repeated_review_finding_is_reported_as_repeated() {
+        let r = rig();
+        let finding = |detail: &str| bastion_core::review::Finding {
+            constraint: "tests-kept".into(),
+            rung: bastion_core::govern::Enforcement::Enforced,
+            rule: "Keep tests.".into(),
+            detail: detail.into(),
+        };
+        assert!(!r.gate.reviewed("j1", &[finding("Deleted tests: test_add")]));
+        assert!(r.gate.reviewed("j1", &[finding("Deleted tests: test_add")]));
+        assert!(!r.gate.reviewed("j1", &[finding("Deleted tests: test_sub")]));
+        assert!(!r.gate.reviewed("j1", &[]));
+        assert!(!r.gate.reviewed("j1", &[]));
     }
 
     #[test]

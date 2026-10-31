@@ -2,7 +2,9 @@
 //! the owner's actions when it waits, then its pipeline as steps that open to
 //! their artifacts and turn. Read again on each push.
 
-use bastion_protocol::{ArtifactView, JobDetail, StepView, TranscriptLine, command, event};
+use bastion_protocol::{
+    ArtifactView, HeldCallRef, HeldCallView, JobDetail, StepView, TranscriptLine, command, event,
+};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::Serialize;
@@ -20,6 +22,100 @@ struct Id {
 struct Comment {
     id: String,
     text: String,
+}
+
+#[derive(Serialize)]
+struct Allow {
+    held: HeldCallRef,
+}
+
+#[derive(Serialize)]
+struct Refuse {
+    held: HeldCallRef,
+    feedback: String,
+}
+
+/// One call the gate holds (PLAN.md A5): allow exactly it once, or refuse it
+/// with a note the agent reads as the call's result.
+#[component]
+fn HeldCall(job: String, call: HeldCallView, error: WriteSignal<String>) -> impl IntoView {
+    let (feedback, set_feedback) = signal(String::new());
+    let held = StoredValue::new(HeldCallRef {
+        job,
+        call: call.id.clone(),
+    });
+    let report = move |result: Result<(), ipc::Failure<String>>| match result {
+        Ok(()) => error.set(String::new()),
+        Err(e) => error.set(e.text()),
+    };
+    let allow = move |_| {
+        spawn_local(async move {
+            report(
+                ipc::call::<(), String>(
+                    command::HELD_ALLOW,
+                    Allow {
+                        held: held.get_value(),
+                    },
+                )
+                .await,
+            );
+        });
+    };
+    let refuse = move |_| {
+        spawn_local(async move {
+            let args = Refuse {
+                held: held.get_value(),
+                feedback: feedback.get_untracked(),
+            };
+            report(ipc::call::<(), String>(command::HELD_REFUSE, args).await);
+        });
+    };
+    view! {
+        <li class="grid gap-2 border-t border-line pt-3 first:border-t-0 first:pt-0">
+            <p class="m-0"><strong>{call.function}</strong>" "<code class="break-all">{call.text}</code>
+                <span class="text-xs text-muted">{format!(" · held {}", ago(call.at))}</span></p>
+            <textarea class="min-h-16 rounded border border-line bg-bg p-2 text-ink" aria-label="What the agent should do instead"
+                placeholder="What the agent should do instead"
+                prop:value=feedback on:input=move |e| set_feedback.set(event_target_value(&e))></textarea>
+            <div class="flex flex-wrap gap-2">
+                <button class="rounded-lg bg-primary px-3 py-2 font-semibold text-white hover:bg-primary-hover" on:click=allow>"Allow once"</button>
+                <button class="rounded-lg border border-line px-3 py-2 hover:bg-line disabled:opacity-50"
+                    disabled=move || feedback.get().trim().is_empty() on:click=refuse>"Refuse with this note"</button>
+            </div>
+        </li>
+    }
+}
+
+/// Every call the gate holds for this job, if any.
+#[component]
+fn HeldCalls(detail: ReadSignal<Option<JobDetail>>, error: WriteSignal<String>) -> impl IntoView {
+    move || {
+        detail.get().filter(|d| !d.held.is_empty()).map(|d| view! {
+            <section class="mb-4 grid gap-3 rounded-xl border border-warn bg-panel p-4">
+                <h2 class="m-0 text-sm font-semibold text-warn">"The gate holds a call for you"</h2>
+                <ul class="m-0 grid list-none gap-3 p-0">
+                    {d.held.into_iter().map(|call| view! { <HeldCall job=d.job.id.clone() call=call error=error /> }).collect_view()}
+                </ul>
+            </section>
+        })
+    }
+}
+
+/// Why the job failed, or why its land did.
+fn failure(d: &JobDetail) -> impl IntoView + use<> {
+    let title = if d.job.state == "failed" {
+        "This job failed"
+    } else {
+        "The land failed; the VM and its commits are kept"
+    };
+    d.job.error.clone().map(|e| {
+        view! {
+            <section class="mb-4 rounded-xl border border-bad bg-panel p-4">
+                <h2 class="m-0 mb-2 text-sm font-semibold text-bad">{title}</h2>
+                <pre class="m-0 whitespace-pre-wrap text-sm">{e}</pre>
+            </section>
+        }
+    })
 }
 
 #[component]
@@ -104,14 +200,7 @@ pub fn JobPage(id: String) -> impl IntoView {
                         <button class="rounded-lg border border-line px-3 py-2 text-bad hover:bg-line" on:click=move |_| act(command::JOB_STOP)>"Stop"</button>
                     </Show>
                 </div>
-                {d.job.error.clone().map(|e| view! {
-                    <section class="mb-4 rounded-xl border border-bad bg-panel p-4">
-                        <h2 class="m-0 mb-2 text-sm font-semibold text-bad">
-                            {if d.job.state == "failed" { "This job failed" } else { "The land failed; the VM and its commits are kept" }}
-                        </h2>
-                        <pre class="m-0 whitespace-pre-wrap text-sm">{e}</pre>
-                    </section>
-                })}
+                {failure(&d)}
             }
         })}
 
@@ -174,6 +263,7 @@ pub fn JobPage(id: String) -> impl IntoView {
                 </div>
             </section>
         </Show>
+        <HeldCalls detail=detail error=set_error />
         <p class="text-bad" role="alert">{error}</p>
 
         <section class="rounded-xl border border-line bg-panel">

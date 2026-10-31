@@ -7,6 +7,7 @@ pub enum Route {
     Jobs,
     NewRequest,
     Job(String),
+    Governance,
     Engine,
     Settings,
 }

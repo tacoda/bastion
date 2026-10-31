@@ -9,6 +9,7 @@ use serde::Serialize;
 use crate::ipc::{self, None};
 use crate::pages::{
     engine::EnginePage,
+    govern::GovernPage,
     job::JobPage,
     jobs::{JobsPage, NewRequestPage},
     settings::SettingsPage,
@@ -16,8 +17,9 @@ use crate::pages::{
 use crate::route::{Nav, Route};
 
 /// The sidebar's pages. A job and New request belong to Jobs.
-const PAGES: [(Route, &str); 3] = [
+const PAGES: [(Route, &str); 4] = [
     (Route::Jobs, "Jobs"),
+    (Route::Governance, "Governance"),
     (Route::Engine, "Engine"),
     (Route::Settings, "Settings"),
 ];
@@ -77,6 +79,7 @@ pub fn App() -> impl IntoView {
                     Route::Jobs => view! { <JobsPage /> }.into_any(),
                     Route::NewRequest => view! { <NewRequestPage /> }.into_any(),
                     Route::Job(id) => view! { <JobPage id=id /> }.into_any(),
+                    Route::Governance => view! { <GovernPage /> }.into_any(),
                     Route::Engine => view! { <EnginePage /> }.into_any(),
                     Route::Settings => view! { <SettingsPage /> }.into_any(),
                 }}

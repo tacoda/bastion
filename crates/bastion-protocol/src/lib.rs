@@ -35,6 +35,17 @@ pub mod command {
     pub const DIALS: &str = "dials";
     /// Takes `{ dials: DialsView }`.
     pub const DIALS_SET: &str = "dials_set";
+    /// Takes `{ held: HeldCallRef }`: run that call once.
+    pub const HELD_ALLOW: &str = "held_allow";
+    /// Takes `{ held: HeldCallRef, feedback: String }`.
+    pub const HELD_REFUSE: &str = "held_refuse";
+    pub const CONSTRAINTS: &str = "constraints";
+    /// Takes `{ id: String, up: bool }`: one rung up or down.
+    pub const CONSTRAINT_MOVE: &str = "constraint_move";
+    pub const CAPABILITIES: &str = "capabilities";
+    /// Takes `{ stage: String, function: String, up: bool }`.
+    pub const CAPABILITY_MOVE: &str = "capability_move";
+    pub const AUDIT: &str = "audit";
 }
 
 /// Event names the app emits to the page (D10).

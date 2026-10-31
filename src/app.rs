@@ -9,24 +9,25 @@ use serde::Serialize;
 use crate::ipc::{self, None};
 use crate::pages::{
     engine::EnginePage,
-    floor::{FloorPage, InboxPage},
+    job::JobPage,
+    jobs::{JobsPage, NewRequestPage},
     settings::SettingsPage,
 };
+use crate::route::{Nav, Route};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Page {
-    Floor,
-    Inbox,
-    Engine,
-    Settings,
-}
-
-const PAGES: [(Page, &str); 4] = [
-    (Page::Floor, "Floor"),
-    (Page::Inbox, "Inbox"),
-    (Page::Engine, "Engine"),
-    (Page::Settings, "Settings"),
+/// The sidebar's pages. A job and New request belong to Jobs.
+const PAGES: [(Route, &str); 3] = [
+    (Route::Jobs, "Jobs"),
+    (Route::Engine, "Engine"),
+    (Route::Settings, "Settings"),
 ];
+
+fn section(route: &Route) -> Route {
+    match route {
+        Route::NewRequest | Route::Job(_) => Route::Jobs,
+        other => other.clone(),
+    }
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -36,7 +37,8 @@ struct Quit {
 
 #[component]
 pub fn App() -> impl IntoView {
-    let (page, set_page) = signal(Page::Floor);
+    let (route, set_route) = signal(Route::Jobs);
+    provide_context::<Nav>(set_route);
     let (profile, set_profile) = signal(String::new());
     let (asking, set_asking) = signal(false);
     spawn_local(async move {
@@ -58,21 +60,25 @@ pub fn App() -> impl IntoView {
         <div class="grid min-h-screen grid-cols-[200px_1fr]">
             <nav aria-label="Main" class="sticky top-0 flex h-screen flex-col gap-1 border-r border-line bg-panel p-3">
                 <p class="m-0 mb-3 px-2 text-lg font-extrabold">"Bastion"</p>
-                {PAGES.map(|(p, label)| view! {
-                    <button
-                        class="rounded-lg px-2 py-1.5 text-left hover:bg-line aria-[current=page]:bg-primary aria-[current=page]:text-white"
-                        aria-current=move || (page.get() == p).then_some("page")
-                        on:click=move |_| set_page.set(p)
-                    >{label}</button>
+                {PAGES.map(|(target, label)| {
+                    let here = target.clone();
+                    view! {
+                        <button
+                            class="rounded-lg px-2 py-1.5 text-left hover:bg-line aria-[current=page]:bg-primary aria-[current=page]:text-white"
+                            aria-current=move || (section(&route.get()) == here).then_some("page")
+                            on:click=move |_| set_route.set(target.clone())
+                        >{label}</button>
+                    }
                 })}
                 <p class="mt-auto px-2 text-xs text-muted">{profile}</p>
             </nav>
             <main id="main" tabindex="-1" class="p-8">
-                {move || match page.get() {
-                    Page::Floor => view! { <FloorPage /> }.into_any(),
-                    Page::Inbox => view! { <InboxPage /> }.into_any(),
-                    Page::Engine => view! { <EnginePage /> }.into_any(),
-                    Page::Settings => view! { <SettingsPage /> }.into_any(),
+                {move || match route.get() {
+                    Route::Jobs => view! { <JobsPage /> }.into_any(),
+                    Route::NewRequest => view! { <NewRequestPage /> }.into_any(),
+                    Route::Job(id) => view! { <JobPage id=id /> }.into_any(),
+                    Route::Engine => view! { <EnginePage /> }.into_any(),
+                    Route::Settings => view! { <SettingsPage /> }.into_any(),
                 }}
             </main>
         </div>

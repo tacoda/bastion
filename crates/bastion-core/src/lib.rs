@@ -293,6 +293,49 @@ fn commented(job: &mut Job, text: &str) -> Vec<Effect> {
     enter(job)
 }
 
+/// Where one step of a job's pipeline stands, as a run of steps shows it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StepState {
+    Done,
+    /// Waiting for a free VM.
+    Queued,
+    Running,
+    /// Waiting on the owner.
+    Waiting,
+    Failed,
+    Stopped,
+    /// Not reached yet.
+    Pending,
+}
+
+/// Every stage of the job's pipeline, in order, with its state.
+pub fn steps(job: &Job) -> Vec<(Stage, StepState)> {
+    let current = SHORT_PIPELINE
+        .iter()
+        .position(|s| *s == job.stage)
+        .unwrap_or(0);
+    SHORT_PIPELINE
+        .iter()
+        .enumerate()
+        .map(|(i, stage)| {
+            let state = match i.cmp(&current) {
+                std::cmp::Ordering::Less => StepState::Done,
+                std::cmp::Ordering::Greater => StepState::Pending,
+                std::cmp::Ordering::Equal => match job.state {
+                    State::Queued => StepState::Queued,
+                    State::Provisioning | State::Running => StepState::Running,
+                    State::NeedsYou => StepState::Waiting,
+                    State::Landed => StepState::Done,
+                    State::Failed => StepState::Failed,
+                    State::Stopped => StepState::Stopped,
+                },
+            };
+            (*stage, state)
+        })
+        .collect()
+}
+
 /// What the owner may do with a job now. The view shows only these.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

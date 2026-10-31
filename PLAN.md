@@ -6,10 +6,12 @@ window with a Leptos frontend and a Rust core. Agents run on iii workers,
 against a local engine that the app starts. A remote engine on the owner's own
 box comes later (§10). Written 2026-10-30, revised the same day.
 
-The owner works at the level of the factory. The first view is the **floor**:
-every job, the stage it is in, and the decisions waiting on the owner. Agents
-and their transcripts sit one level down, for when a job needs a closer look.
-Antigravity starts at the agent; Bastion starts at the job.
+The **job** is the main idea: one request, like a ticket. The app reads like
+GitHub Actions and like wipp's Jobs page. The first view lists every job, with
+the ones waiting on the owner first. A job's page shows its pipeline as steps,
+each with its state, its artifacts and its agent turns, and a panel at the top
+when the job needs the owner. Antigravity starts at the agent; Bastion starts
+at the job.
 
 Bastion reaches feature parity with wipp (`~/Code/wipp`, as of commit
 `f7c7e02`): every feature wipp has, except the ones tied to hosting and to
@@ -24,8 +26,9 @@ code inside Bastion is the diff a job proposes.
 
 1. One native app on macOS and Linux runs Bastion against a local `iii` engine.
    No terminal is needed after install.
-2. The floor shows every job, its stage and its state, and the inbox shows
-   every decision waiting on the owner. Both update by push.
+2. The Jobs page lists every job with its state and stage, the ones waiting
+   on the owner first. The job page shows each step of its pipeline, as a run
+   of GitHub Actions does. Both update by push.
 3. A job moves through a **pipeline** of stages. Agents do the work in each
    stage, several jobs at once, each in its own worktree and sandbox VM.
 4. Every stage leaves an **artifact** a person can judge: a plan, a test
@@ -144,8 +147,10 @@ A2's console covers what the owner uses in it, and then it leaves.
 
 From the top down:
 
-- **Floor:** every job in flight, grouped by stage, with its state.
-- **Inbox:** every checkpoint waiting on the owner, oldest first.
+- **Jobs page:** every job, in three groups: waiting for you, in progress,
+  and finished. Filter by workspace and search by text.
+- **Job page:** one job as a run. The request, its state, the pipeline as
+  steps with their artifacts and turns, and the owner's actions when it waits.
 - **Workspace:** a repository the owner registers with Bastion.
 - **Job:** one request against one workspace. It owns one worktree, one
   sandbox VM and one pipeline run. States: `queued`, `running`, `needs_you`,
@@ -223,9 +228,9 @@ this table names the difference.
 
 | wipp feature | Bastion | Phase |
 |---|---|---|
-| Jobs page | The floor | A3 |
+| Jobs page: waiting, in progress, finished, filters | The Jobs page | A3 |
 | New request | New request | A3 |
-| Job page: needs, panels, turn | The job view and the inbox | A3 |
+| Job page: needs, panels, turn, timeline | The job page | A3 |
 | Job page: proof | The evidence of each check, per stage | A5 |
 | Diff | The diff artifact | A4 |
 | Every stage in `stages.py` (shape, acceptance tests, build, ship, side paths) | The full pipeline | A5 |
@@ -279,7 +284,7 @@ the plan assumes.
 
 **Goal:** the app starts, checks, watches and stops the stack.
 
-- The shell: a sidebar with Floor, Inbox, Engine and Settings, a skip link,
+- The shell: a sidebar with Jobs, Engine and Settings, a skip link,
   and the dark theme.
 - The seams first (§6.2): `crates/bastion-protocol`, the Engine trait with its
   in-memory fake, and the D19 dependency check in CI. `iii-sdk` moves behind
@@ -315,10 +320,10 @@ quit with the stack kept running, the next start attaches. CI passes.
 push, start it again, and read its logs. Remove `ade` from the stack if the
 owner no longer needs it.
 
-#### A3 — The floor (L)
+#### A3 — Jobs (L)
 
 **Goal:** a request becomes a job that runs the short pipeline (D17), and the
-owner watches every job from the floor.
+owner follows every job from the Jobs page and the job page.
 
 - `bastion-core`, tests first: the job, the short pipeline, its stages and
   checkpoints, as `step(state, event) -> (state, effects)` (D18).
@@ -332,16 +337,21 @@ owner watches every job from the floor.
 - Agent stages run turns on `harness`, with the model from `llm-router`. The
   workspace's charter (`CLAUDE.md`, `AGENTS.md`) goes into every turn. Every
   turn has a time cap.
-- The floor: every job by stage, with its state and age. Up to
+- The Jobs page: waiting for you, in progress and finished, with a workspace
+  filter and search, and a New request page. Up to
   `max_concurrent_sandboxes` (8) jobs run at once, and the rest queue.
-- The inbox: each checkpoint with its artifact and its actions.
+- The job page: the request and its badges, a needs-you panel with the
+  actions the core allows, and the pipeline as steps. Each step shows its state
+  and opens to its artifacts and its turn's transcript. Workspaces live in
+  Settings.
 - The job view: the stage timeline, each stage's artifacts, and Stop. A turn's
   transcript from `session-manager` opens from its stage.
 - An agent can stop with a question. The job goes to `needs_you`, and the
   answer starts the next turn.
 
 **Exit, live:** submit three requests in two workspaces. Each job reaches the
-approve checkpoint with a plan artifact, and the inbox shows three items. A
+approve checkpoint with a plan artifact, and the Jobs page shows three
+waiting for you. A
 comment on one plan changes the next plan. Stop one job, and its VM is gone.
 Quit and reopen the app, and the two other jobs carry on from where they were.
 Every core transition has a unit test, and the adapter's tests run on the fake
@@ -380,7 +390,7 @@ fixed by the agent, and the owner merges it.
     briefing), UAT (person), merge (person), deploy (watch CD), learn,
     teardown.
   - Side paths: onboard, revive.
-- Split a job into parts that depend on each other. The floor shows parts
+- Split a job into parts that depend on each other. The Jobs page shows parts
   under their job.
 - Read-only stages get a read-only grant. A changed tree in one is reverted.
 - The owner picks a pipeline per request, and sets the dial per checkpoint.
@@ -397,7 +407,7 @@ wipp.
 - The gate: every tool call in a turn goes through a `pre-trigger` hook the
   app binds (N3). The rule lives in `bastion-core`. A call the gate cannot
   judge is refused.
-- A refused call stops the turn and reaches the inbox. The owner retries with
+- A refused call stops the turn and waits on the owner on its job page. The owner retries with
   feedback, allows that exact call once, or stops the job.
 - Constraints in three tiers: delivery, workflow, and the workspace's charter.
   Each turn is told the ones that apply. The Constraints pages show the board,
@@ -410,7 +420,7 @@ wipp.
   timeout test, and a stalled audit shows in the console.
 
 **Exit, live:** a turn's write outside its grant is refused and reaches the
-inbox. "Allow once" lets exactly that call through, and the next one is
+job page. "Allow once" lets exactly that call through, and the next one is
 refused again. A constraint added on the page is told to the next turn. Audit
 verification passes over a whole job.
 
@@ -471,8 +481,9 @@ fixes what the comment names.
 **Goal:** the owner learns that a job needs them without watching the window.
 
 - Notify on `needs_you`, `blocked`, `failed` and `landed`. A click opens the
-  inbox item or the job.
-- The tray shows the inbox count and the stack state, with start and stop.
+  job.
+- The tray shows how many jobs wait on the owner and the stack state, with
+  start and stop.
 - After a reconnect, the core reads every active job again.
 - A setting turns each kind of notification off.
 
@@ -555,7 +566,7 @@ starts until the owner asks.
 | A0 | done | N1 and N3 to N6 pass (2026-10-30). N2 is dropped (D18). Details in `docs/levels.md`. |
 | A1 | done | All six steps are in: the seams (424c69b), profiles (c62f8e2), Doctor (ea62b16, 763a79a), the stack routine (ac36f24), the shell (8f6e6b5), and CI and the README (0351c35). 19 tests pass, and CI passes on macOS and Linux. Live exit (2026-10-30), driven in the window: from a stopped machine, Start ran Doctor and brought up all 24 containers, and the page showed the link up with 378 functions by push. Doctor named the missing `ANTHROPIC_API_KEY` with its fix. Closing the window asked the quit question, and "Keep it running" quit the app with the stack up. The next start attached to the same compose daemon (pid 89588) and started nothing. |
 | A2 | done | The console on the Engine page: containers with versions, state, stop, start and live logs; functions and trigger types with a filter; queues with depth, delivered, failed and dead letters. One `console` read through the Engine seam, 23 tests. Live exit (2026-10-30): `judge` stopped and started from the window, a stop made from the CLI reached the page by push with no reload, and its logs streamed. `ade` was removed with `compose::remove` (23 containers), so nothing in the stack serves HTTP. |
-| A3 | done | `bastion-core` (9caf363), the Store (93b5cb8), spike N7 (c640769), the factory loop (88f45fb), and the floor, inbox and job panel (778016d), with fixes from the exit. 28 app tests and 15 core tests pass. Live exit (2026-10-30), driven in the window: two workspaces added through the form; three requests in them reached the approve checkpoint with plan artifacts, three plan turns on gpt-5-mini; a comment on the `subtract` plan (add a docstring, rename the test) came back in the next plan; `multiply` was stopped and its VM went away; the app was quit with the stack kept running and reopened, and both other jobs were still at approve; `divide` was then approved, ran its build turn, and reached review with its artifact. |
+| A3 | done | `bastion-core` (9caf363), the Store (93b5cb8), spike N7 (c640769), the factory loop (88f45fb), and the first views (778016d), with fixes from the exit. 28 app tests and 15 core tests pass. Live exit (2026-10-30), driven in the window: two workspaces added through the form; three requests in them reached the approve checkpoint with plan artifacts, three plan turns on gpt-5-mini; a comment on the `subtract` plan (add a docstring, rename the test) came back in the next plan; `multiply` was stopped and its VM went away; the app was quit with the stack kept running and reopened, and both other jobs were still at approve; `divide` was then approved, ran its build turn, and reached review with its artifact. The owner then moved the views from a floor and an inbox to a Jobs page and a job page, after GitHub Actions and wipp (2026-10-30): the Jobs page groups waiting for you, in progress and finished, with a workspace filter and search; the job page shows the badges, a waiting panel with the artifact it judges, and the pipeline as steps whose states come from `bastion_core::steps`; workspaces moved to Settings. Checked in the window on the live jobs. |
 | A4 | next | — |
 | A5 to A11 | — | — |
 | Later (§10) | on hold | — |

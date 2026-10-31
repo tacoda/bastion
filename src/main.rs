@@ -1,6 +1,7 @@
 mod app;
 mod ipc;
 mod pages;
+mod route;
 
 fn main() {
     console_error_panic_hook::set_once();

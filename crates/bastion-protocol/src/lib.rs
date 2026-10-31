@@ -240,6 +240,7 @@ pub struct JobSummary {
     pub state: String,
     pub question: Option<String>,
     pub error: Option<String>,
+    pub created_at: u64,
     pub updated_at: u64,
     /// What the owner may do now: `approve`, `comment`, `answer`, `stop`.
     pub actions: Vec<String>,
@@ -258,9 +259,18 @@ pub struct TranscriptLine {
     pub text: String,
 }
 
+/// One step of a job's pipeline, as a run of steps shows it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StepView {
+    pub stage: String,
+    /// `done`, `queued`, `running`, `waiting`, `failed`, `stopped` or `pending`.
+    pub state: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JobDetail {
     pub job: JobSummary,
+    pub steps: Vec<StepView>,
     pub artifacts: Vec<ArtifactView>,
     /// The latest turn's messages.
     pub transcript: Vec<TranscriptLine>,

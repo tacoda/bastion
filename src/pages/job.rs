@@ -1,12 +1,14 @@
-//! One job: its artifacts, its question, the actions the core allows, and the
-//! latest turn's transcript (PLAN.md A3). Read again on each push.
+//! The job page (PLAN.md A3): one job as a run. The request and its badges,
+//! the owner's actions when it waits, then its pipeline as steps that open to
+//! their artifacts and turn. Read again on each push.
 
-use bastion_protocol::{JobDetail, command, event};
+use bastion_protocol::{ArtifactView, JobDetail, StepView, TranscriptLine, command, event};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::Serialize;
 
 use crate::ipc;
+use crate::route::{Route, ago, mark, nav};
 
 #[derive(Serialize)]
 struct Id {
@@ -20,7 +22,8 @@ struct Comment {
 }
 
 #[component]
-pub fn JobPanel(id: String) -> impl IntoView {
+pub fn JobPage(id: String) -> impl IntoView {
+    let go = nav();
     let (detail, set_detail) = signal(None::<JobDetail>);
     let (text, set_text) = signal(String::new());
     let (error, set_error) = signal(String::new());
@@ -44,7 +47,7 @@ pub fn JobPanel(id: String) -> impl IntoView {
         });
     };
     ipc::listen(event::JOB_CHANGED, move |changed: String| {
-        if changed == job_id.get_value() {
+        if changed.is_empty() || changed == job_id.get_value() {
             reload();
         }
     });
@@ -79,57 +82,129 @@ pub fn JobPanel(id: String) -> impl IntoView {
             .get()
             .is_some_and(|d| d.job.actions.iter().any(|a| a == action))
     };
+    let waits = move || allows("approve") || allows("answer");
 
     view! {
-        <section class="grid gap-3 rounded-xl border border-line bg-panel p-4">
-            {move || detail.get().map(|d| view! {
-                <div class="flex flex-wrap items-baseline justify-between gap-2">
-                    <h2 class="m-0 text-lg font-bold">{d.job.request.clone()}</h2>
-                    <span class="text-sm text-muted">
-                        {format!("{} · {} · {} · {}", d.job.id, d.job.workspace, d.job.stage, d.job.state.replace('_', " "))}
-                    </span>
+        <button class="mb-2 text-sm text-muted hover:text-ink" on:click=move |_| go.set(Route::Jobs)>"← All jobs"</button>
+        {move || detail.get().map(|d| {
+            let (symbol, color) = mark(&d.job.state);
+            view! {
+                <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+                    <div class="grid gap-2">
+                        <h1 class="m-0 text-2xl font-bold">{d.job.request.clone()}</h1>
+                        <div class="flex flex-wrap gap-2 text-xs">
+                            <span class={format!("rounded-full border border-line px-2 py-0.5 {color}")}>{format!("{symbol} {}", d.job.state.replace('_', " "))}</span>
+                            <span class="rounded-full border border-line px-2 py-0.5 text-muted">{d.job.workspace.clone()}</span>
+                            <span class="rounded-full border border-line px-2 py-0.5 text-muted">{d.job.id.clone()}</span>
+                            <span class="rounded-full border border-line px-2 py-0.5 text-muted">{ago(d.job.created_at)}</span>
+                        </div>
+                    </div>
+                    <Show when=move || allows("stop")>
+                        <button class="rounded-lg border border-line px-3 py-2 text-bad hover:bg-line" on:click=move |_| act(command::JOB_STOP)>"Stop"</button>
+                    </Show>
                 </div>
-                {d.job.error.clone().map(|e| view! { <p class="m-0 text-bad">{e}</p> })}
-                {d.job.question.clone().map(|q| view! {
-                    <p class="m-0 rounded border border-warn p-2"><strong>"The agent asks: "</strong>{q}</p>
+                {d.job.error.clone().map(|e| view! {
+                    <section class="mb-4 rounded-xl border border-bad bg-panel p-4">
+                        <h2 class="m-0 mb-2 text-sm font-semibold text-bad">"This job failed"</h2>
+                        <pre class="m-0 whitespace-pre-wrap text-sm">{e}</pre>
+                    </section>
                 })}
-                {d.artifacts.iter().rev().map(|a| view! {
-                    <article class="grid gap-1">
-                        <h3 class="m-0 text-sm font-semibold text-muted">{format!("{} artifact", a.stage)}</h3>
-                        <pre class="m-0 max-h-96 overflow-auto whitespace-pre-wrap rounded bg-bg p-3 text-sm">{a.body.clone()}</pre>
-                    </article>
-                }).collect_view()}
-                <details>
-                    <summary class="cursor-pointer text-sm text-muted">{format!("Latest turn transcript ({} messages)", d.transcript.len())}</summary>
-                    <ol class="m-0 grid gap-2 p-0 pl-5 text-xs">
-                        {d.transcript.iter().map(|line| view! {
-                            <li><strong>{line.role.clone()}</strong><pre class="m-0 whitespace-pre-wrap">{line.text.clone()}</pre></li>
-                        }).collect_view()}
-                    </ol>
-                </details>
-            })}
-            <Show when=move || allows("comment") || allows("answer")>
+            }
+        })}
+
+        <Show when=waits>
+            <section class="mb-4 grid gap-3 rounded-xl border border-warn bg-panel p-4">
+                <h2 class="m-0 text-sm font-semibold text-warn">"Waiting for you"</h2>
+                {move || detail.get().and_then(|d| d.job.question).map(|q| view! {
+                    <p class="m-0"><strong>"The agent asks: "</strong>{q}</p>
+                })}
+                <Show when=move || allows("approve")>
+                    <p class="m-0 text-sm text-muted">{move || detail.get().map(|d| format!(
+                        "Approve the {} artifact to move on, or send it back with a note.",
+                        if d.job.stage == "review" { "build" } else { "plan" }
+                    ))}</p>
+                </Show>
+                {move || detail.get().and_then(|d| {
+                    // The artifact the checkpoint judges: the plan at approve, the build at review.
+                    let judged = if d.job.stage == "review" { "build" } else { "plan" };
+                    d.artifacts.iter().rev().find(|a| a.stage == judged).cloned()
+                }).filter(|_| allows("approve")).map(|a| view! {
+                    <pre class="m-0 max-h-96 overflow-auto whitespace-pre-wrap rounded bg-bg p-3 text-sm">{a.body}</pre>
+                })}
                 <label class="grid gap-1 text-sm text-muted">
-                    {move || if allows("answer") { "Your answer" } else { "Comment: sends the work back with your note" }}
+                    {move || if allows("answer") { "Your answer" } else { "A note for the agent (sends the work back)" }}
                     <textarea class="min-h-20 rounded border border-line bg-bg p-2 text-ink"
                         prop:value=text on:input=move |e| set_text.set(event_target_value(&e))></textarea>
                 </label>
-            </Show>
-            <div class="flex flex-wrap gap-2">
-                <Show when=move || allows("approve")>
-                    <button class="rounded-lg bg-primary px-3 py-2 font-semibold text-white hover:bg-primary-hover" on:click=move |_| act(command::JOB_APPROVE)>"Approve"</button>
-                </Show>
-                <Show when=move || allows("comment") || allows("answer")>
+                <div class="flex flex-wrap gap-2">
+                    <Show when=move || allows("approve")>
+                        <button class="rounded-lg bg-primary px-3 py-2 font-semibold text-white hover:bg-primary-hover" on:click=move |_| act(command::JOB_APPROVE)>"Approve"</button>
+                    </Show>
                     <button class="rounded-lg border border-line px-3 py-2 hover:bg-line disabled:opacity-50"
                         disabled=move || text.get().trim().is_empty() on:click=move |_| act(command::JOB_COMMENT)>
                         {move || if allows("answer") { "Answer" } else { "Send back" }}
                     </button>
-                </Show>
-                <Show when=move || allows("stop")>
-                    <button class="rounded-lg border border-line px-3 py-2 text-bad hover:bg-line" on:click=move |_| act(command::JOB_STOP)>"Stop"</button>
-                </Show>
-            </div>
-            <p class="m-0 text-bad" role="alert">{error}</p>
+                </div>
+            </section>
+        </Show>
+        <p class="text-bad" role="alert">{error}</p>
+
+        <section class="rounded-xl border border-line bg-panel">
+            <h2 class="m-0 border-b border-line px-3 py-2 text-sm font-semibold text-muted">"Steps"</h2>
+            <ol class="m-0 list-none p-0">
+                {move || detail.get().map(|d| {
+                    // The latest turn belongs to the last agent step that ran.
+                    let turn_step = d.steps.iter().rev()
+                        .find(|s| matches!(s.stage.as_str(), "plan" | "build") && s.state != "pending")
+                        .map(|s| s.stage.clone());
+                    d.steps.clone().into_iter().map(|step| {
+                        let artifacts: Vec<ArtifactView> = d.artifacts.iter().filter(|a| a.stage == step.stage).cloned().collect();
+                        let transcript = (turn_step.as_deref() == Some(step.stage.as_str())).then(|| d.transcript.clone());
+                        step_row(step, artifacts, transcript)
+                    }).collect_view()
+                })}
+            </ol>
         </section>
+    }
+}
+
+fn step_row(
+    step: StepView,
+    artifacts: Vec<ArtifactView>,
+    transcript: Option<Vec<TranscriptLine>>,
+) -> impl IntoView {
+    let (symbol, color) = mark(&step.state);
+    let has_detail = !artifacts.is_empty() || transcript.as_ref().is_some_and(|t| !t.is_empty());
+    let open = matches!(step.state.as_str(), "running" | "waiting" | "failed");
+    view! {
+        <li class="border-t border-line first:border-t-0">
+            <details open=open>
+                <summary class="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-line">
+                    <span class={format!("w-4 text-center {color}")} aria-hidden="true">{symbol}</span>
+                    <span class="font-semibold capitalize">{step.stage.clone()}</span>
+                    <span class="text-xs text-muted">{step.state.clone()}</span>
+                </summary>
+                {has_detail.then(|| view! {
+                    <div class="grid gap-3 px-3 pb-3 pl-10">
+                        {artifacts.into_iter().rev().map(|a| view! {
+                            <article class="grid gap-1">
+                                <h3 class="m-0 text-xs font-semibold text-muted">{format!("{} artifact · {}", a.stage, ago(a.created_at))}</h3>
+                                <pre class="m-0 max-h-96 overflow-auto whitespace-pre-wrap rounded bg-bg p-3 text-sm">{a.body}</pre>
+                            </article>
+                        }).collect_view()}
+                        {transcript.filter(|t| !t.is_empty()).map(|t| view! {
+                            <details>
+                                <summary class="cursor-pointer text-xs text-muted">{format!("Latest turn ({} messages)", t.len())}</summary>
+                                <ol class="m-0 grid gap-2 p-0 pl-5 text-xs">
+                                    {t.into_iter().map(|line| view! {
+                                        <li><strong>{line.role}</strong><pre class="m-0 whitespace-pre-wrap">{line.text}</pre></li>
+                                    }).collect_view()}
+                                </ol>
+                            </details>
+                        })}
+                    </div>
+                })}
+            </details>
+        </li>
     }
 }

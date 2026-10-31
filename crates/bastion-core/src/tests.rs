@@ -272,3 +272,41 @@ fn a_checkpoint_allows_approve_comment_and_stop_and_a_question_allows_an_answer(
     let (j, _) = run(&[Event::Stopped]);
     assert!(actions(&j).is_empty());
 }
+
+#[test]
+fn steps_show_done_before_the_current_stage_and_pending_after_it() {
+    let mut events = planned();
+    events.extend([Event::Approved]);
+    let (j, _) = run(&events);
+    let states: Vec<StepState> = steps(&j).into_iter().map(|(_, s)| s).collect();
+    assert_eq!(
+        states,
+        [
+            StepState::Done,
+            StepState::Done,
+            StepState::Running,
+            StepState::Pending,
+            StepState::Pending
+        ]
+    );
+    let (j, _) = run(&planned());
+    assert_eq!(steps(&j)[1], (Stage::Approve, StepState::Waiting));
+    let (j, _) = run(&[
+        Event::Admitted,
+        Event::ProvisionFailed { error: "x".into() },
+    ]);
+    assert_eq!(steps(&j)[0], (Stage::Plan, StepState::Failed));
+}
+
+#[test]
+fn a_landed_job_shows_every_step_done() {
+    let mut events = planned();
+    events.extend([
+        Event::Approved,
+        done("built"),
+        Event::Approved,
+        Event::Landed,
+    ]);
+    let (j, _) = run(&events);
+    assert!(steps(&j).iter().all(|(_, s)| *s == StepState::Done));
+}

@@ -3,8 +3,8 @@
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
-use bastion_core::{Event, actions};
-use bastion_protocol::{ArtifactView, JobDetail, JobSummary, TranscriptLine, Workspace};
+use bastion_core::{Event, actions, steps};
+use bastion_protocol::{ArtifactView, JobDetail, JobSummary, StepView, TranscriptLine, Workspace};
 use serde::Serialize;
 use serde_json::json;
 use tauri::State;
@@ -40,6 +40,7 @@ fn summary(r: &Record) -> JobSummary {
         state: name(j.state),
         question: j.question.clone(),
         error: j.error.clone(),
+        created_at: r.created_at,
         updated_at: j.updated_at,
         actions: actions(j).into_iter().map(name).collect(),
     }
@@ -142,8 +143,16 @@ pub async fn job(cell: State<'_, FactoryCell>, id: String) -> Result<JobDetail, 
             });
         }
     }
+    let steps = steps(&record.job)
+        .into_iter()
+        .map(|(stage, state)| StepView {
+            stage: name(stage),
+            state: name(state),
+        })
+        .collect();
     Ok(JobDetail {
         job: summary(&record),
+        steps,
         artifacts,
         transcript,
     })

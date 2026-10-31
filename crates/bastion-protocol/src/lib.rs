@@ -40,6 +40,8 @@ pub mod command {
     /// Takes `{ held: HeldCallRef, feedback: String }`.
     pub const HELD_REFUSE: &str = "held_refuse";
     pub const CONSTRAINTS: &str = "constraints";
+    /// Takes `{ constraint: ConstraintView }`. The source is always the owner.
+    pub const CONSTRAINT_ADD: &str = "constraint_add";
     /// Takes `{ id: String, up: bool }`: one rung up or down.
     pub const CONSTRAINT_MOVE: &str = "constraint_move";
     pub const CAPABILITIES: &str = "capabilities";

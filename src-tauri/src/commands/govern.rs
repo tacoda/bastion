@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use bastion_core::govern::{Constraint, Source};
 use bastion_protocol::{AuditEntryView, AuditView, CapabilityView, ConstraintView, HeldCallRef};
 use serde_json::json;
 use tauri::{AppHandle, Manager, State};
@@ -47,6 +48,25 @@ pub async fn constraints(cell: State<'_, FactoryCell>) -> Result<Vec<ConstraintV
             source: name(c.source),
         })
         .collect())
+}
+
+/// Add an owner's constraint from the form.
+#[tauri::command]
+pub async fn constraint_add(
+    cell: State<'_, FactoryCell>,
+    constraint: ConstraintView,
+) -> Result<(), String> {
+    let rung = serde_json::from_value(json!(constraint.rung))
+        .map_err(|_| format!("{:?} is not told, checked or enforced", constraint.rung))?;
+    let c = Constraint {
+        id: constraint.id.trim().into(),
+        rule: constraint.rule.trim().into(),
+        function: constraint.function.trim().into(),
+        contains: constraint.contains.trim().into(),
+        rung,
+        source: Source::Owner,
+    };
+    factory(&cell)?.gate().add_constraint(c).await
 }
 
 #[tauri::command]

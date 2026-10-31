@@ -88,7 +88,8 @@ pub fn GovernPage() -> impl IntoView {
         <h1 class="m-0 mb-4 text-2xl font-bold">"Governance"</h1>
         <p class="text-bad" role="alert">{error}</p>
 
-        <ConstraintsList constraints=constraints step=move_constraint />
+        <ConstraintsList constraints=constraints audit=audit step=move_constraint />
+        <AddConstraint added=done />
         <GrantsList grants=grants step=move_grant />
         <AuditList audit=audit />
     }
@@ -97,9 +98,28 @@ pub fn GovernPage() -> impl IntoView {
 #[component]
 fn ConstraintsList(
     constraints: ReadSignal<Vec<ConstraintView>>,
+    audit: ReadSignal<Option<AuditView>>,
     step: impl Fn(String, bool) + Copy + Send + Sync + 'static,
 ) -> impl IntoView {
     let move_constraint = step;
+    let (open, set_open) = signal(String::new());
+    // One constraint's history: every audit entry about it, newest first.
+    let history = move |id: String| {
+        let entries: Vec<_> = audit
+            .get()
+            .into_iter()
+            .flat_map(|a| a.entries)
+            .filter(|e| e.subject == id)
+            .collect();
+        view! {
+            <ol class="m-0 w-full list-none p-0 pl-2 text-xs text-muted">
+                {if entries.is_empty() { Some(view! { <li>"No changes recorded yet."</li> }) } else { None }}
+                {entries.into_iter().rev().map(|e| view! {
+                    <li>{format!("#{} · {} · {} {}", e.seq, ago(e.at), e.kind, e.detail)}</li>
+                }).collect_view()}
+            </ol>
+        }
+    };
     view! {
     <section class="mb-4 rounded-xl border border-line bg-panel">
         <h2 class="m-0 border-b border-line px-3 py-2 text-sm font-semibold text-muted">
@@ -107,7 +127,9 @@ fn ConstraintsList(
         </h2>
         <ul class="m-0 list-none p-0">
             {move || constraints.get().into_iter().map(|c| {
-                let (up, down) = (c.id.clone(), c.id.clone());
+                let (up, down, here) = (c.id.clone(), c.id.clone(), c.id.clone());
+                let shown = { let id = c.id.clone(); move || open.get() == id };
+                let (shown_for_list, toggle_id) = (shown.clone(), c.id.clone());
                 let (top, bottom) = (c.rung == "enforced", c.rung == "told");
                 let binds = if c.function.is_empty() {
                     "binds no call".to_string()
@@ -121,13 +143,81 @@ fn ConstraintsList(
                             <span>{c.rule.clone()}</span>
                             <span class="text-xs text-muted">{format!("{} · {} · {binds}", c.id, c.source)}</span>
                         </span>
+                        <button class=STEP on:click=move |_| set_open.update(|o| *o = if *o == toggle_id { String::new() } else { toggle_id.clone() })>"History"</button>
                         <button class=STEP disabled=bottom on:click=move |_| move_constraint(down.clone(), false)>"Demote"</button>
                         <button class=STEP disabled=top on:click=move |_| move_constraint(up.clone(), true)>"Promote"</button>
+                        <Show when=shown_for_list.clone()>{let id = here.clone(); move || history(id.clone())}</Show>
                     </li>
                 }
             }).collect_view()}
         </ul>
     </section>
+    }
+}
+
+#[derive(Serialize)]
+struct AddArgs {
+    constraint: ConstraintView,
+}
+
+/// The form to add an owner's constraint.
+#[component]
+fn AddConstraint(
+    added: impl Fn(Result<(), String>) + Copy + Send + Sync + 'static,
+) -> impl IntoView {
+    let field = |label: &'static str, hint: &'static str, value: RwSignal<String>| {
+        view! {
+            <label class="grid gap-1 text-xs text-muted">{label}
+                <input class="rounded border border-line bg-bg px-2 py-1 text-sm text-ink" placeholder=hint spellcheck="false"
+                    prop:value=value on:input=move |e| value.set(event_target_value(&e)) />
+            </label>
+        }
+    };
+    let (id, rule, function, contains) = (
+        RwSignal::new(String::new()),
+        RwSignal::new(String::new()),
+        RwSignal::new(String::new()),
+        RwSignal::new(String::new()),
+    );
+    let rung = RwSignal::new("told".to_string());
+    let submit = move |_| {
+        let constraint = ConstraintView {
+            id: id.get_untracked(),
+            rule: rule.get_untracked(),
+            function: function.get_untracked(),
+            contains: contains.get_untracked(),
+            rung: rung.get_untracked(),
+            source: "owner".into(),
+        };
+        send(
+            command::CONSTRAINT_ADD,
+            AddArgs { constraint },
+            move |result| {
+                if result.is_ok() {
+                    for s in [id, rule, function, contains] {
+                        s.set(String::new());
+                    }
+                }
+                added(result)
+            },
+        );
+    };
+    view! {
+        <details class="mb-4 rounded-xl border border-line bg-panel">
+            <summary class="cursor-pointer px-3 py-2 text-sm font-semibold text-muted">"Add a constraint"</summary>
+            <div class="grid gap-2 p-3 sm:grid-cols-2">
+                {field("Id", "no-curl", id)}
+                {field("Rule the agent is told", "Do not fetch from the network.", rule)}
+                {field("Calls it binds (empty binds none)", "sandbox::exec", function)}
+                {field("Words the call holds, in order", "curl", contains)}
+                <label class="grid gap-1 text-xs text-muted">"Rung"
+                    <select class="rounded border border-line bg-bg px-2 py-1 text-sm text-ink" on:change=move |e| rung.set(event_target_value(&e))>
+                        {["told", "checked", "enforced"].map(|r| view! { <option value=r selected=move || rung.get() == r>{r}</option> })}
+                    </select>
+                </label>
+                <div class="flex items-end"><button class=STEP on:click=submit>"Add"</button></div>
+            </div>
+        </details>
     }
 }
 

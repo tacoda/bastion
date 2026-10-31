@@ -451,6 +451,24 @@ impl Gate {
         }
     }
 
+    /// Add an owner's constraint. Its id must be new.
+    pub async fn add_constraint(&self, c: Constraint) -> Result<(), String> {
+        if c.id.trim().is_empty() || c.rule.trim().is_empty() {
+            return Err("a constraint needs an id and a rule".into());
+        }
+        if self.store.constraints().await?.iter().any(|x| x.id == c.id) {
+            return Err(format!("a constraint {} already exists", c.id));
+        }
+        self.store.set_constraint(&c).await?;
+        self.reload().await?;
+        let detail = format!(
+            "{:?} {}: binds {:?} with {:?}",
+            c.rung, c.rule, c.function, c.contains
+        );
+        self.note("add", &c.id, detail);
+        Ok(())
+    }
+
     /// Move a constraint one rung up or down its ladder, and record it.
     pub async fn move_constraint(&self, id: &str, up: bool) -> Result<(), String> {
         let constraints = self.store.constraints().await?;
@@ -831,6 +849,29 @@ mod tests {
         assert!(!r.gate.reviewed("j1", &[finding("Deleted tests: test_sub")]));
         assert!(!r.gate.reviewed("j1", &[]));
         assert!(!r.gate.reviewed("j1", &[]));
+    }
+
+    #[test]
+    fn an_added_constraint_binds_the_next_call_and_its_id_is_unique() {
+        let r = rig();
+        let rule = Constraint {
+            id: "no-curl".into(),
+            rule: "Do not fetch from the network.".into(),
+            function: "sandbox::exec".into(),
+            contains: "curl".into(),
+            rung: govern::Enforcement::Enforced,
+            source: govern::Source::Owner,
+        };
+        tauri::async_runtime::block_on(async {
+            r.gate.add_constraint(rule.clone()).await.unwrap();
+            assert!(r.gate.add_constraint(rule).await.is_err());
+        });
+        let answer = r.gate.judge(&envelope(
+            "build",
+            "sandbox::exec",
+            json!({ "argv": ["curl", "-s", "x"] }),
+        ));
+        assert_eq!(answer["decision"], "deny");
     }
 
     #[test]

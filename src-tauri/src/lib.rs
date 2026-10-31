@@ -151,6 +151,7 @@ pub fn run() {
             commands::govern::held_allow,
             commands::govern::held_refuse,
             commands::govern::constraints,
+            commands::govern::constraint_add,
             commands::govern::constraint_move,
             commands::govern::capabilities,
             commands::govern::capability_move,

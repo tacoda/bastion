@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bx1n8e27j</task-id>
+<tool-use-id>toolu_01YK5fscKiARA23v3BeNG7So</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/135a2369-1f42-433b-aacc-5c1b0ce18b48/tasks/bx1n8e27j.output</output-file>
+<status>completed</status>
+<summary>Background command "Push in the background" completed (exit code 0)</summary>
+</task-notification>

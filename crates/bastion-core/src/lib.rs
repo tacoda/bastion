@@ -150,6 +150,8 @@ pub enum Effect {
     },
     /// Keep the turn's report as the stage's artifact.
     RecordArtifact { stage: Stage, body: String },
+    /// Keep the build's diff against its base as the review's artifact.
+    CaptureDiff,
     /// Bring the VM's commits back to the worktree, then land them.
     Land,
     /// Stop the VM and release the worktree.
@@ -257,6 +259,9 @@ fn turn_finished(job: &mut Job, outcome: &Outcome) -> Vec<Effect> {
                 stage: job.stage,
                 body: report.clone(),
             }];
+            if job.stage == Stage::Build {
+                effects.push(Effect::CaptureDiff);
+            }
             job.feedback = None;
             effects.extend(advance(job));
             effects

@@ -141,9 +141,10 @@ impl Factory {
                         record.rev = rev;
                         // Artifacts are written before the page hears of the
                         // change, so a page that reads at once sees them.
-                        let (artifacts, rest): (Vec<Effect>, Vec<Effect>) = effects
-                            .into_iter()
-                            .partition(|e| matches!(e, Effect::RecordArtifact { .. }));
+                        let (artifacts, rest): (Vec<Effect>, Vec<Effect>) =
+                            effects.into_iter().partition(|e| {
+                                matches!(e, Effect::RecordArtifact { .. } | Effect::CaptureDiff)
+                            });
                         for effect in artifacts {
                             self.clone().run(record.clone(), effect).await;
                         }
@@ -224,6 +225,18 @@ impl Factory {
             Effect::RecordArtifact { stage, body } => {
                 let artifact = Artifact {
                     stage,
+                    body,
+                    created_at: now(),
+                };
+                self.store.add_artifact(&id, &artifact).await.err()
+            }
+            Effect::CaptureDiff => {
+                let body = self
+                    .diff(&record)
+                    .await
+                    .unwrap_or_else(|e| format!("The diff could not be read: {e}"));
+                let artifact = Artifact {
+                    stage: Stage::Review,
                     body,
                     created_at: now(),
                 };
@@ -505,6 +518,25 @@ impl Factory {
         let _ = self
             .apply(id, Event::TurnFinished { outcome: result })
             .await;
+    }
+
+    /// The build's commits against the branch it started from, from the VM.
+    async fn diff(&self, record: &Record) -> Result<String, String> {
+        let sandbox = record.runtime.sandbox.clone().ok_or("no VM")?;
+        let worktree = record.runtime.worktree.clone().ok_or("no worktree")?;
+        let (_, branch) = self.worktree_path(&worktree).await?;
+        let out = self
+            .vm_exec(
+                &sandbox,
+                &["git", "-C", REPO, "diff", &format!("origin/{branch}..HEAD")],
+            )
+            .await?;
+        let text = out["stdout"].as_str().unwrap_or_default();
+        Ok(if text.trim().is_empty() {
+            "No commits: the build left nothing to land.".into()
+        } else {
+            text.into()
+        })
     }
 
     /// The turn's last assistant message, whole. `harness::status` truncates

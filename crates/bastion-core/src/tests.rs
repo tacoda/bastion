@@ -310,3 +310,21 @@ fn a_landed_job_shows_every_step_done() {
     let (j, _) = run(&events);
     assert!(steps(&j).iter().all(|(_, s)| *s == StepState::Done));
 }
+
+#[test]
+fn a_finished_build_records_its_report_and_captures_the_diff_for_review() {
+    let mut events = planned();
+    events.extend([Event::Approved, done("Added /health")]);
+    let (j, effects) = run(&events);
+    assert_eq!((j.stage, j.state), (Stage::Review, State::NeedsYou));
+    assert_eq!(
+        effects,
+        vec![
+            Effect::RecordArtifact {
+                stage: Stage::Build,
+                body: "Added /health".into()
+            },
+            Effect::CaptureDiff,
+        ]
+    );
+}

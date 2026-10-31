@@ -39,3 +39,6 @@ jobs:
 
       - name: Test
         run: cargo test --workspace --exclude bastion-ui
+
+      - name: Test, view
+        run: cargo test -p bastion-ui

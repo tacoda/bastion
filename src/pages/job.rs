@@ -8,6 +8,7 @@ use leptos::task::spawn_local;
 use serde::Serialize;
 
 use crate::ipc;
+use crate::pages::diff::DiffView;
 use crate::route::{Route, ago, mark, nav};
 
 #[derive(Serialize)]
@@ -124,12 +125,21 @@ pub fn JobPage(id: String) -> impl IntoView {
                         if d.job.stage == "review" { "build" } else { "plan" }
                     ))}</p>
                 </Show>
-                {move || detail.get().and_then(|d| {
-                    // The artifact the checkpoint judges: the plan at approve, the build at review.
-                    let judged = if d.job.stage == "review" { "build" } else { "plan" };
-                    d.artifacts.iter().rev().find(|a| a.stage == judged).cloned()
-                }).filter(|_| allows("approve")).map(|a| view! {
-                    <pre class="m-0 max-h-96 overflow-auto whitespace-pre-wrap rounded bg-bg p-3 text-sm">{a.body}</pre>
+                {move || detail.get().filter(|_| allows("approve")).map(|d| {
+                    // What the checkpoint judges: the plan at approve; the build's report and its diff at review.
+                    let latest = |stage: &str| d.artifacts.iter().rev().find(|a| a.stage == stage).map(|a| a.body.clone());
+                    let reviewing = d.job.stage == "review";
+                    let report = latest(if reviewing { "build" } else { "plan" });
+                    let diff = if reviewing { latest("review") } else { None };
+                    view! {
+                        {report.map(|body| view! {
+                            <pre class="m-0 max-h-96 overflow-auto whitespace-pre-wrap rounded bg-bg p-3 text-sm">{body}</pre>
+                        })}
+                        {diff.map(|diff| view! {
+                            <h3 class="m-0 text-sm font-semibold text-muted">"The change (click a line to comment on it)"</h3>
+                            <DiffView diff=diff comment=set_text />
+                        })}
+                    }
                 })}
                 <label class="grid gap-1 text-sm text-muted">
                     {move || if allows("answer") { "Your answer" } else { "A note for the agent (sends the work back)" }}

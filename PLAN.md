@@ -9,8 +9,13 @@ box comes later (§10). Written 2026-10-30, revised the same day.
 The owner works at the level of the factory. The first view is the **floor**:
 every job, the stage it is in, and the decisions waiting on the owner. Agents
 and their transcripts sit one level down, for when a job needs a closer look.
-Antigravity starts at the agent; Bastion starts at the job. wipp is the model
-for the pipeline and its checkpoints.
+Antigravity starts at the agent; Bastion starts at the job.
+
+Bastion reaches feature parity with wipp (`~/Code/wipp`, as of commit
+`f7c7e02`): every feature wipp has, except the ones tied to hosting and to
+more than one user (§7.1). Parity is at the level of features, not code: wipp
+runs Claude Code in sprites.dev VMs, and Bastion runs `harness` turns in
+`iii-sandbox` VMs.
 
 Bastion is not an editor. The owner keeps their own editor. The one view of
 code inside Bastion is the diff a job proposes.
@@ -31,6 +36,7 @@ code inside Bastion is the diff a job proposes.
 6. Nothing merges itself. A person decides every merge.
 7. A job that needs the owner raises a native notification within 2 s.
 8. No Bastion process serves HTTP. The engine listens on loopback only.
+9. Feature parity with wipp, with the exceptions §7.1 names.
 
 ## 2. Non-goals
 
@@ -39,11 +45,12 @@ code inside Bastion is the diff a job proposes.
 - Not an agent chat. The owner talks to a job through its artifacts and
   checkpoints, not through a prompt box per agent.
 - Not a browser app, and no HTTP API.
-- Not multi-user. One owner, on their own machine. No sign-in.
+- Not multi-user. One owner, on their own machine. No sign-in. This drops
+  wipp's accounts, GitHub sign-in, org check and roles (§7.1).
 - Not a new agent runtime. Turns run on the stock `harness`, `llm-router` and
   `iii-sandbox` workers.
-- Not hosted. wipp runs on Fly for a GitHub org. Bastion runs on the owner's
-  machine.
+- Not hosted. wipp runs on Fly for a GitHub org, behind Caddy. Bastion runs
+  on the owner's machine, so the Fly deploy is not ported (§7.1).
 - Not a remote client yet. The owner's box is §10.
 - Not Windows. Sandbox VMs need Apple Silicon or Linux with `/dev/kvm`.
 
@@ -121,12 +128,12 @@ talks to the OS.
 | Diffs | app: the adapter reads them from the job's worktree | `worktree` or `ide` (stock) | A4 |
 | Approvals | worker | `approval-gate` (stock) | A4 |
 | Push, PRs, CI watch, merge | worker | `github` (stock) | A4 |
-| Browser | worker | `bastion-browser` | A6 |
-| Notifications and tray | app | — | A7 |
+| Browser | worker | `bastion-browser` | A9 |
+| Notifications and tray | app | — | A10 |
 
 The factory logic is the one exception to the worker rule above. The owner
 chose to keep it in the app (D18), and the cost is that jobs advance only while
-the app runs. A7 lets the app keep running in the tray with its window closed.
+the app runs. A10 lets the app keep running in the tray with its window closed.
 Because the core does no I/O, moving it into a worker later means writing a
 second adapter, not changing the core.
 
@@ -207,7 +214,49 @@ its last change. A phase that rests on an unproven engine feature starts with
 a spike, and a failed spike stops the phase with its fallback named. Sizes: S,
 M, L.
 
-### A0 — Spikes (M)
+### 7.1 Parity with wipp
+
+Each wipp feature, and the phase that brings it to Bastion. A phase that lists
+a wipp feature is not done until the feature works as it does in wipp, unless
+this table names the difference.
+
+| wipp feature | Bastion | Phase |
+|---|---|---|
+| Jobs page | The floor | A3 |
+| New request | New request | A3 |
+| Job page: needs, panels, turn | The job view and the inbox | A3 |
+| Job page: proof | The evidence of each check, per stage | A5 |
+| Diff | The diff artifact | A4 |
+| Every stage in `stages.py` (shape, acceptance tests, build, ship, side paths) | The full pipeline | A5 |
+| Split jobs into dependent parts | Split | A5 |
+| Oversight dial: `ask`, `hold`, `auto` | The dial (D15) | A4 |
+| Oversight presets: high, medium, low, off | Presets in Settings | A7 |
+| The gate, refusals, retry with feedback, allow once | The gate in `bastion-core`, bound as a `pre-trigger` hook | A6 |
+| Constraints: board, detail, forms, three tiers | Constraints pages | A6 |
+| Capabilities: grants per stage | Capabilities page | A6 |
+| Repository hooks per stage | Repository hooks | A6 |
+| Audit: hash chain, verification, export | Audit page | A6 |
+| Repos, and onboarding a repository with no settings | Workspaces | A7 |
+| Sessions | Sessions page | A7 |
+| Sprites, and the warm pool | Sandboxes page, on `iii-sandbox` | A7 |
+| Costs | Costs page | A7 |
+| Settings, with history, versions and restore | Settings page | A7 |
+| Model and provider per stage, and override per job | Models in Settings, override in the job view | A7 |
+| Stop, escape, override, split, pause intake, destroy | Job and factory controls | A7 |
+| The vault | The `secrets` worker | A7 |
+| Learn, and proposals from what surprised a turn | Learn stage and Proposals page | A8 |
+| Evals: grade and backtest | Evals page | A8 |
+| Verification: escape rate against a threshold | Verification page | A8 |
+| Accounts, GitHub sign-in, org check, roles | Not ported: one owner (D11) | — |
+| Fly deploy, Caddy, the loopback boundary script | Not ported: a local app. §10 covers the owner's box. | — |
+| Claude Code in a sprite, with a broker of MCP tools | Replaced by `harness` turns in `iii-sandbox` (D14) | A3 |
+
+Bastion also has what wipp does not: the native window, push updates (wipp
+polls), notifications, the browser agent, and comments on artifacts.
+
+### 7.2 The phases
+
+#### A0 — Spikes (M)
 
 **Goal:** prove that Rust on `iii-sdk` 0.25.0 and Tauri can do what the rest of
 the plan assumes.
@@ -225,7 +274,7 @@ the plan assumes.
 **Exit:** N1 and N3 to N6 pass, and N3 passes three runs in a row. Each result goes in
 `docs/levels.md` with the version of each part.
 
-### A1 — The shell and the stack (M)
+#### A1 — The shell and the stack (M)
 
 **Goal:** the app starts, checks, watches and stops the stack.
 
@@ -250,7 +299,7 @@ the plan assumes.
 link as up. Doctor names a missing `ANTHROPIC_API_KEY` with its fix. After a
 quit with the stack kept running, the next start attaches. CI passes.
 
-### A2 — The engine console (S)
+#### A2 — The engine console (S)
 
 **Goal:** the owner sees the engine without `ade`.
 
@@ -263,7 +312,7 @@ quit with the stack kept running, the next start attaches. CI passes.
 push, start it again, and read its logs. Remove `ade` from the stack if the
 owner no longer needs it.
 
-### A3 — The floor (L)
+#### A3 — The floor (L)
 
 **Goal:** a request becomes a job that runs the short pipeline (D17), and the
 owner watches every job from the floor.
@@ -295,7 +344,7 @@ Quit and reopen the app, and the two other jobs carry on from where they were.
 Every core transition has a unit test, and the adapter's tests run on the fake
 engine and the fake store.
 
-### A4 — Review and landing (M)
+#### A4 — Review and landing (M)
 
 **Goal:** a job's work lands only after a person decides.
 
@@ -313,14 +362,21 @@ engine and the fake store.
 The job is approved and lands locally. Another opens a PR, a failing CI run is
 fixed by the agent, and the owner merges it.
 
-### A5 — The full pipeline (L)
+#### A5 — The full pipeline (L)
 
 **Goal:** a job can run wipp's whole factory.
 
-- The full pipeline, after wipp: scope, clarify, plan, approve; acceptance
-  tests first, and the baseline must fail; one build turn per plan item, tests
-  first; checks; refactor; review; ship; CI fix; merge; a briefing of what
-  changed and why.
+- Every stage wipp has, with its person checkpoints:
+  - Shape: provision, prepare, scope, discover, clarify (person), plan,
+    approve (person).
+  - Acceptance tests: define, your checks (person), specify, baseline (the
+    tests must fail first), falsify.
+  - Build: implement (one turn per plan item, tests first), checks, refactor
+    with the owner's pick, acceptance, review with the owner's pick.
+  - Ship: ship (commit, push, PR), CI, CI fix, prove, comprehend (the
+    briefing), UAT (person), merge (person), deploy (watch CD), learn,
+    teardown.
+  - Side paths: onboard, revive.
 - Split a job into parts that depend on each other. The floor shows parts
   under their job.
 - Read-only stages get a read-only grant. A changed tree in one is reverted.
@@ -330,7 +386,68 @@ fixed by the agent, and the owner merges it.
 merged change. Each stage leaves an artifact, the baseline tests fail before
 the build and pass after it, and each checkpoint obeys its dial.
 
-### A6 — The browser agent (M)
+#### A6 — Governance (L)
+
+**Goal:** every agent action is checked against the rules and recorded, as in
+wipp.
+
+- The gate: every tool call in a turn goes through a `pre-trigger` hook the
+  app binds (N3). The rule lives in `bastion-core`. A call the gate cannot
+  judge is refused.
+- A refused call stops the turn and reaches the inbox. The owner retries with
+  feedback, allows that exact call once, or stops the job.
+- Constraints in three tiers: delivery, workflow, and the workspace's charter.
+  Each turn is told the ones that apply. The Constraints pages show the board,
+  one constraint's detail, and the forms to add and change one.
+- Capabilities: the grant of each stage, shown and changed per stage.
+- Repository hooks: which of the workspace's hooks run at which stage, and
+  their results.
+- The audit record: every decision and every write-like call, in a hash chain
+  with one owner. Verify and export from the Audit page. The audit path has a
+  timeout test, and a stalled audit shows in the console.
+
+**Exit, live:** a turn's write outside its grant is refused and reaches the
+inbox. "Allow once" lets exactly that call through, and the next one is
+refused again. A constraint added on the page is told to the next turn. Audit
+verification passes over a whole job.
+
+#### A7 — Operations (L)
+
+**Goal:** the owner runs the factory day to day with the pages wipp has for it.
+
+- Workspaces, with onboarding for a repository that has no settings.
+- Sessions: every agent session with its transcript.
+- Sandboxes: every VM with its job and age, and Stop. A warm pool keeps one VM
+  ready per workspace.
+- Costs: spend per job, stage, model and day.
+- Settings: the factory, pipelines, workspaces and oversight presets, with
+  history, versions and restore.
+- Models: a model and provider per stage, from what `llm-router` offers, and an
+  override per job.
+- Controls: stop, escape, override, split, pause intake and destroy.
+- Provider keys live in the `secrets` worker.
+
+**Exit, live:** onboard a new repository and land a job in it. The Costs page
+shows that job's spend by stage. Change a setting, restore the version before
+it, and the next job uses the restored value.
+
+#### A8 — Learning and verification (M)
+
+**Goal:** the factory learns from its jobs and measures itself, as wipp does.
+
+- Learn: the stages that report surprises (specify, implement, prove) feed the
+  learn stage, which proposes constraints.
+- Proposals: accept or reject each one. An accepted proposal changes the
+  constraint set.
+- Evals: grade a job, and backtest a constraint against past jobs.
+- Verification: the share of shipped jobs with an escape over a window, against
+  a threshold the owner sets, and what reviews find that no gate does.
+
+**Exit, live:** a job's surprise becomes a proposal, the owner accepts it, and
+the next job is told the new constraint. The Verification page shows the
+escape rate for the jobs so far.
+
+#### A9 — The browser agent (M)
 
 **Goal:** an agent checks its work in a real browser, and the owner sees what
 it saw.
@@ -346,7 +463,7 @@ it saw.
 records the page. The owner comments on the screenshot, and the next turn
 fixes what the comment names.
 
-### A7 — Notifications and tray (M)
+#### A10 — Notifications and tray (M)
 
 **Goal:** the owner learns that a job needs them without watching the window.
 
@@ -359,7 +476,7 @@ fixes what the comment names.
 **Exit, live:** a checkpoint raises a notification within 2 s. A click opens
 it, the approval moves the job on, and the tray count goes from 1 to 0.
 
-### A8 — Packaging and updates (M)
+#### A11 — Packaging and updates (M)
 
 **Goal:** the app installs and updates itself on another machine.
 
@@ -395,12 +512,12 @@ wipp (`~/Code/wipp`) is the model for the pipeline. These lessons carry over.
 | A credential in a VM taints the VM. | D14: pushes happen on the host. |
 | Feedback paraphrased by the factory lost the point. | D16: comments go verbatim. |
 | A fix loop with no bound ran until it was stopped. | D16: a count, and a stop on a repeated refusal. |
-| The gate's own audit log stopped answering, and every call was refused. | A3: the audit path has a timeout test, and its failure shows in the console. |
-| iii upgrades broke pins and config names. | A8: the app refuses a stack it does not know. |
+| The gate's own audit log stopped answering, and every call was refused. | A6: the audit path has a timeout test, and its failure shows in the console. |
+| iii upgrades broke pins and config names. | A11: the app refuses a stack it does not know. |
 
 ## 10. Later: the owner's box
 
-The app will reach a stack on a box the owner controls, after A8. Nothing here
+The app will reach a stack on a box the owner controls, after A11. Nothing here
 starts until the owner asks.
 
 - **Transport:** an SSH tunnel to the engine port on the box's loopback, with
@@ -423,8 +540,8 @@ starts until the owner asks.
 | Risk | What settles it |
 |---|---|
 | N3 failed once under the old name, and the cause is unknown. | It passed three runs in a row in A0. If a turn hook fails again, the spike prints the transcript. |
-| Jobs stop when the app quits (D18). | The adapter resumes every active job on start, and A7 keeps the app running in the tray. |
-| CDP screencasts may be hard to turn into a playable recording. | A6's spike. The fallback is a frame sequence shown as a slideshow. |
+| Jobs stop when the app quits (D18). | The adapter resumes every active job on start, and A10 keeps the app running in the tray. |
+| CDP screencasts may be hard to turn into a playable recording. | A9's spike. The fallback is a frame sequence shown as a slideshow. |
 | A large diff may be slow to render in the webview. | A4 renders one file at a time, and collapses files over a set size. |
 | App checks have no driver on macOS. | Linux CI runs `tauri-driver`. |
 
@@ -433,6 +550,6 @@ starts until the owner asks.
 | Phase | State | Evidence |
 |---|---|---|
 | A0 | done | N1 and N3 to N6 pass (2026-10-30). N2 is dropped (D18). Details in `docs/levels.md`. |
-| A1 | next | — |
-| A2 to A8 | — | — |
+| A1 | in progress | Step 1, the seams: `bastion-protocol`, the Engine trait with its fake, and `scripts/check-seams.sh` (424c69b). |
+| A2 to A11 | — | — |
 | Later (§10) | on hold | — |

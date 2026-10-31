@@ -519,6 +519,8 @@ impl Factory {
         self.set_runtime(&job.id, |r| r.session = Some(session.clone()))
             .await?;
         self.listen_for_turn(&job.id, &session)?;
+        // The owner may have edited the rows directly (D26).
+        self.gate.reload().await?;
 
         let mut message = String::new();
         if let Some(worktree) = &record.runtime.worktree {

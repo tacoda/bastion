@@ -8,7 +8,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use bastion_core::audit::{self, Entry};
-use bastion_core::govern::{self, Call, Capability, Constraint};
+use bastion_core::govern::{Call, Capability, Constraint};
 use bastion_core::{Dial, Dials, Job, Stage};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -191,15 +191,19 @@ fn capability_params(g: &Capability) -> Value {
     json!([name(g.stage), g.function, name(g.rung)])
 }
 
-/// The owner's defaults, written once. A row the owner changed is kept.
-fn seed() -> Vec<Value> {
-    let constraints = govern::default_constraints().into_iter().map(|c| {
-        json!({ "sql": "INSERT OR IGNORE INTO constraints (id, rule, function, contains, rung, source) VALUES (?, ?, ?, ?, ?, ?)", "params": constraint_params(&c) })
-    });
-    let grants = govern::default_capabilities().into_iter().map(|g| {
-        json!({ "sql": "INSERT OR IGNORE INTO capabilities (stage, function, rung) VALUES (?, ?, ?)", "params": capability_params(&g) })
-    });
-    constraints.chain(grants).collect()
+/// The statements in a seed file (D26): `--` comment lines dropped, split on `;`.
+// ponytail: a plain split; a seed value that holds a `;` needs a real SQL tokenizer.
+pub fn seed_statements(sql: &str) -> Vec<Value> {
+    let kept: String = sql
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("--"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    kept.split(';')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| json!({ "sql": s, "params": [] }))
+        .collect()
 }
 
 const JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue";
@@ -218,14 +222,14 @@ pub struct SqlStore {
 }
 
 impl SqlStore {
-    /// Make the tables if they are missing.
-    pub async fn open(engine: Arc<dyn Engine>) -> Result<Self, String> {
+    /// Make the tables if they are missing, then run the seed file's statements.
+    pub async fn open(engine: Arc<dyn Engine>, seed: &str) -> Result<Self, String> {
         let statements: Vec<Value> = SCHEMA
             .iter()
             .chain(eval_store::SCHEMA.iter())
             .chain(settings_store::SCHEMA.iter())
             .map(|sql| json!({ "sql": sql, "params": [] }))
-            .chain(seed())
+            .chain(seed_statements(seed))
             .collect();
         engine
             .call(
@@ -784,6 +788,10 @@ pub mod fake {
     }
 }
 
+/// The seed file the stack carries, for the tests.
+#[cfg(test)]
+pub(crate) const SEED: &str = include_str!("../../seed/governance.sql");
+
 #[cfg(test)]
 mod tests {
     use super::fake::FakeStore;
@@ -824,7 +832,7 @@ mod tests {
                 .answer("database::execute", Ok(json!({ "returned_rows": [] }))),
         );
         tauri::async_runtime::block_on(async {
-            let store = SqlStore::open(engine.clone()).await.unwrap();
+            let store = SqlStore::open(engine.clone(), SEED).await.unwrap();
             assert_eq!(store.save(&record()).await, Err(STALE.into()));
             let calls = engine.calls.lock().unwrap();
             let update = &calls.last().unwrap().2;
@@ -882,7 +890,7 @@ mod tests {
                 .answer("database::execute", Err("duplicate column name: pr".into())),
         );
         tauri::async_runtime::block_on(async {
-            SqlStore::open(engine.clone()).await.unwrap();
+            SqlStore::open(engine.clone(), SEED).await.unwrap();
         });
         let calls = engine.calls.lock().unwrap();
         let statements = calls[0].2["statements"].as_array().unwrap();
@@ -890,10 +898,11 @@ mod tests {
             .iter()
             .filter(|s| s["sql"].as_str().unwrap().starts_with("INSERT OR IGNORE"))
             .collect();
-        assert_eq!(
-            seeds.len(),
-            govern::default_constraints().len() + govern::default_capabilities().len()
-        );
+        let tables: Vec<_> = seeds
+            .iter()
+            .map(|s| s["sql"].as_str().unwrap().split_whitespace().nth(4).unwrap())
+            .collect();
+        assert_eq!(tables, ["constraints", "capabilities"]);
     }
 
     #[test]
@@ -928,7 +937,7 @@ mod live {
         while engine.link() != Link::Up {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
-        let store = SqlStore::open(engine).await.unwrap();
+        let store = SqlStore::open(engine, SEED).await.unwrap();
         let w = Workspace {
             name: tag.into(),
             path: format!("/tmp/{tag}"),
@@ -1045,8 +1054,8 @@ mod live {
                 grants.len(),
                 held_back.len()
             );
-            assert!(rules.len() >= govern::default_constraints().len());
-            assert!(grants.len() >= govern::default_capabilities().len());
+            assert!(rules.len() >= 5, "the seed file's five rules");
+            assert!(grants.len() >= 3, "the seed file's three grants");
             assert_eq!(promoted, was.promote());
             assert_eq!(held_back, vec![held]);
             assert!(released.is_empty());

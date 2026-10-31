@@ -27,3 +27,6 @@ tokio = { version = "1", features = ["time"] }
 toml = "0.9"
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
+
+[dev-dependencies]
+bastion-core = { path = "../crates/bastion-core", features = ["fixtures"] }

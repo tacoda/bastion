@@ -8,3 +8,7 @@ description = "The factory's rules (PLAN.md D18): jobs, pipelines, checkpoints, 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"
+
+[features]
+# The seed file's rules and grants as values, for tests outside this crate (D26).
+fixtures = []

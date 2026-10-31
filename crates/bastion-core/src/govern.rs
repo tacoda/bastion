@@ -5,7 +5,6 @@
 use serde::{Deserialize, Serialize};
 
 use crate::Stage;
-use crate::review::{DELETED_TESTS, DIFF};
 
 /// How hard a constraint binds: the agent is told it, a call that breaks it
 /// is recorded, or that call is refused.
@@ -196,7 +195,9 @@ pub fn gate(
     Verdict { decision, flagged }
 }
 
-/// The owner's default constraints, from what agents did in A4 (PLAN.md).
+/// The rules `seed/governance.sql` writes, as values for tests. The running
+/// factory reads its rules from the database (D26), never from here.
+#[cfg(any(test, feature = "fixtures"))]
 pub fn default_constraints() -> Vec<Constraint> {
     let rule = |id: &str, rule: &str, function: &str, contains: &str, rung| Constraint {
         id: id.into(),
@@ -224,8 +225,8 @@ pub fn default_constraints() -> Vec<Constraint> {
         rule(
             "tests-kept",
             "Every existing test still exists at review.",
-            DIFF,
-            DELETED_TESTS,
+            crate::review::DIFF,
+            crate::review::DELETED_TESTS,
             Enforcement::Checked,
         ),
         rule(
@@ -245,8 +246,8 @@ pub fn default_constraints() -> Vec<Constraint> {
     ]
 }
 
-/// The owner's default grants. A plan reads and runs commands, and asks
-/// before it writes a file. A build may use the whole sandbox.
+/// The grants `seed/governance.sql` writes, as values for tests.
+#[cfg(any(test, feature = "fixtures"))]
 pub fn default_capabilities() -> Vec<Capability> {
     let grant = |stage, function: &str, rung| Capability {
         stage,

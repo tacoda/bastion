@@ -57,10 +57,13 @@ fn start_factory(
         .app_cache_dir()
         .map_err(|e| e.to_string())?
         .join("bundles");
+    // The first-run rules and grants are data the stack carries (D26).
+    let seed = std::fs::read_to_string(format!("{CHECKOUT}/seed/governance.sql"))
+        .map_err(|e| format!("seed/governance.sql: {e}"))?;
     tauri::async_runtime::spawn(async move {
         loop {
             if engine.link() == Link::Up {
-                match SqlStore::open(engine.clone()).await {
+                match SqlStore::open(engine.clone(), &seed).await {
                     Ok(store) => {
                         let emitter = app.clone();
                         let on_change = Arc::new(move |id: &str| {

@@ -71,9 +71,9 @@ pub struct Constraint {
     pub id: String,
     /// What the agent is told.
     pub rule: String,
-    /// The calls it binds: a function pattern (see [`matches`]) and text the
-    /// call contains. An empty pattern binds no call, so the rule can only be
-    /// told.
+    /// The calls it binds: a function pattern (see [`matches`]) and words
+    /// the call holds in this order (see [`mentions`]). An empty pattern
+    /// binds no call, so the rule can only be told.
     pub function: String,
     pub contains: String,
     pub rung: Enforcement,
@@ -125,6 +125,13 @@ pub fn matches(pattern: &str, name: &str) -> bool {
     }
 }
 
+/// `text` holds every word of `words` in order, with any words between, so
+/// `git rm` binds `git -C /work/repo rm a.py`. No words binds every text.
+pub fn mentions(text: &str, words: &str) -> bool {
+    let mut said = text.split_whitespace();
+    words.split_whitespace().all(|w| said.any(|t| t == w))
+}
+
 /// Judge one call. An enforced constraint refuses it first. Then the most
 /// specific grant for the stage decides, and a call no grant covers is
 /// refused.
@@ -137,7 +144,7 @@ pub fn gate(
     let broken = || {
         constraints
             .iter()
-            .filter(|c| matches(&c.function, &call.function) && call.text.contains(&c.contains))
+            .filter(|c| matches(&c.function, &call.function) && mentions(&call.text, &c.contains))
     };
     let flagged = broken()
         .filter(|c| c.rung == Enforcement::Checked)
@@ -274,6 +281,15 @@ mod tests {
     }
 
     #[test]
+    fn rule_words_bind_in_order_with_words_between() {
+        assert!(mentions("git -C /work/repo rm PLAN.txt", "git rm"));
+        assert!(mentions("bash -lc pytest", "bash -lc"));
+        assert!(!mentions("rm git", "git rm"));
+        assert!(!mentions("git rmdir x", "git rm"));
+        assert!(mentions("anything", ""));
+    }
+
+    #[test]
     fn plan_asks_before_a_write_and_build_allows_it() {
         assert!(matches!(
             decide(&write(), Stage::Plan, &[]),
@@ -316,7 +332,7 @@ mod tests {
     #[test]
     fn promoting_a_constraint_turns_a_passing_call_into_a_refused_one() {
         let mut rules = default_constraints();
-        let call = exec("git rm test_calc.py");
+        let call = exec("git -C /work/repo rm test_calc.py");
         assert_eq!(
             gate(&call, Stage::Build, &rules, &default_capabilities()),
             Verdict {

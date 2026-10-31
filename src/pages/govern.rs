@@ -112,7 +112,7 @@ fn ConstraintsList(
                 let binds = if c.function.is_empty() {
                     "binds no call".to_string()
                 } else {
-                    format!("binds {} containing {:?}", c.function, c.contains)
+                    format!("binds {} with the words {:?}", c.function, c.contains)
                 };
                 view! {
                     <li class="flex flex-wrap items-center gap-3 border-t border-line px-3 py-2 first:border-t-0">

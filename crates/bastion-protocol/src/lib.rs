@@ -316,7 +316,7 @@ pub struct HeldCallRef {
 pub struct ConstraintView {
     pub id: String,
     pub rule: String,
-    /// The calls it binds: a function pattern and text the call contains.
+    /// The calls it binds: a function pattern and words the call holds in order.
     /// An empty pattern binds no call.
     pub function: String,
     pub contains: String,

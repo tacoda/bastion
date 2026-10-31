@@ -140,7 +140,7 @@ impl GitHub<'_> {
                     .unwrap_or_else(|e| e),
             );
         }
-        Ok(Checks::Failed(tail(&log)))
+        Ok(Checks::Failed(for_fix(&log)))
     }
 
     pub async fn merge(&self, pr: &str) -> Result<(), String> {
@@ -182,12 +182,37 @@ impl GitHub<'_> {
     }
 }
 
-/// The end of a log, as much as a fix turn reads.
-fn tail(log: &str) -> String {
-    if log.is_empty() {
+/// A `gh run view --log-failed` log as a fix turn should read it: each
+/// line without its job, step and timestamp columns, and without the setup
+/// lines GitHub folds into groups (the command and its environment).
+/// It ends with the log's last `LOG_CHARS` characters.
+fn for_fix(log: &str) -> String {
+    let mut folded = false;
+    let mut out = Vec::new();
+    for line in log.lines() {
+        let text = line.splitn(3, '\t').nth(2).unwrap_or(line);
+        let text = text.trim_start_matches('\u{feff}');
+        let text = match text.split_once(' ') {
+            Some((stamp, rest)) if stamp.len() > 20 && stamp.ends_with('Z') => rest,
+            _ => text,
+        };
+        if text.starts_with("##[group]") {
+            folded = true;
+        } else if text.starts_with("##[endgroup]") {
+            folded = false;
+        } else if !folded {
+            out.push(text.trim_start_matches("##[error]"));
+        }
+    }
+    last_chars(out)
+}
+
+/// The lines joined, cut to their last `LOG_CHARS` characters.
+fn last_chars(lines: Vec<&str>) -> String {
+    let chars: Vec<char> = lines.join("\n").chars().collect();
+    if chars.is_empty() {
         return "A check failed and gave no log.".into();
     }
-    let chars: Vec<char> = log.chars().collect();
     chars[chars.len().saturating_sub(LOG_CHARS)..]
         .iter()
         .collect()
@@ -317,9 +342,22 @@ mod tests {
     }
 
     #[test]
+    fn a_log_keeps_its_errors_and_drops_its_columns_and_setup() {
+        let log = "test\tChangelog\t\u{feff}2026-10-31T17:37:30.6227850Z ##[group]Run python check.py\n\
+                   test\tChangelog\t2026-10-31T17:37:30.6255863Z   pythonLocation: /opt/x\n\
+                   test\tChangelog\t2026-10-31T17:37:30.6257695Z ##[endgroup]\n\
+                   test\tChangelog\t2026-10-31T17:37:30.6505436Z CHANGELOG.md has no entry for this change.\n\
+                   test\tChangelog\t2026-10-31T17:37:30.6547741Z ##[error]Process completed with exit code 1.";
+        assert_eq!(
+            for_fix(log),
+            "CHANGELOG.md has no entry for this change.\nProcess completed with exit code 1."
+        );
+    }
+
+    #[test]
     fn a_long_log_keeps_its_end() {
         let log = "x".repeat(LOG_CHARS) + "the failure";
-        assert!(tail(&log).ends_with("the failure"));
-        assert_eq!(tail(&log).chars().count(), LOG_CHARS);
+        assert!(for_fix(&log).ends_with("the failure"));
+        assert_eq!(for_fix(&log).chars().count(), LOG_CHARS);
     }
 }

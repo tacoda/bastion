@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b5g1uv9ui</task-id>
+<tool-use-id>toolu_01BWxadysjmkThz1xGdX4wD4</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/135a2369-1f42-433b-aacc-5c1b0ce18b48/tasks/b5g1uv9ui.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the app" completed (exit code 0)</summary>
+</task-notification>

@@ -1,0 +1,191 @@
+//! Commands for the floor, the inbox and the job view (PLAN.md A3).
+
+use std::path::Path;
+use std::sync::{Arc, OnceLock};
+
+use bastion_core::{Event, actions};
+use bastion_protocol::{ArtifactView, JobDetail, JobSummary, TranscriptLine, Workspace};
+use serde::Serialize;
+use serde_json::json;
+use tauri::State;
+
+use crate::factory::Factory;
+use crate::machine::Machine;
+use crate::store::{self, Record};
+
+/// Set once the engine is up and the store has its tables.
+pub type FactoryCell = Arc<OnceLock<Arc<Factory>>>;
+
+fn factory(cell: &FactoryCell) -> Result<Arc<Factory>, String> {
+    cell.get()
+        .cloned()
+        .ok_or_else(|| "the factory starts once the engine is up; start the stack".into())
+}
+
+/// An enum as its snake_case name.
+fn name<T: Serialize>(value: T) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_default()
+}
+
+fn summary(r: &Record) -> JobSummary {
+    let j = &r.job;
+    JobSummary {
+        id: j.id.clone(),
+        workspace: j.workspace.clone(),
+        request: j.request.clone(),
+        stage: name(j.stage),
+        state: name(j.state),
+        question: j.question.clone(),
+        error: j.error.clone(),
+        updated_at: j.updated_at,
+        actions: actions(j).into_iter().map(name).collect(),
+    }
+}
+
+#[tauri::command]
+pub async fn workspaces(cell: State<'_, FactoryCell>) -> Result<Vec<Workspace>, String> {
+    let all = factory(&cell)?.store().workspaces().await?;
+    Ok(all
+        .into_iter()
+        .map(|w| Workspace {
+            name: w.name,
+            path: w.path,
+            branch: w.branch,
+        })
+        .collect())
+}
+
+/// Register a repository. The path must be a git repository with the branch.
+#[tauri::command]
+pub async fn workspace_add(
+    cell: State<'_, FactoryCell>,
+    machine: State<'_, Arc<dyn Machine>>,
+    workspace: Workspace,
+) -> Result<(), String> {
+    let (name, path, branch) = (
+        workspace.name.trim(),
+        workspace.path.trim(),
+        workspace.branch.trim(),
+    );
+    if name.is_empty() || path.is_empty() || branch.is_empty() {
+        return Err("a workspace needs a name, a path and a branch".into());
+    }
+    let verify = format!("refs/heads/{branch}");
+    let out = machine.run(
+        "git",
+        &["rev-parse", "--verify", "--quiet", &verify],
+        Some(Path::new(path)),
+    )?;
+    if !out.success {
+        return Err(format!(
+            "{path} is not a git repository with a branch {branch}"
+        ));
+    }
+    let row = store::Workspace {
+        name: name.into(),
+        path: path.into(),
+        branch: branch.into(),
+    };
+    factory(&cell)?.store().add_workspace(&row).await
+}
+
+#[tauri::command]
+pub async fn jobs(cell: State<'_, FactoryCell>) -> Result<Vec<JobSummary>, String> {
+    Ok(factory(&cell)?
+        .store()
+        .jobs()
+        .await?
+        .iter()
+        .map(summary)
+        .collect())
+}
+
+#[tauri::command]
+pub async fn job(cell: State<'_, FactoryCell>, id: String) -> Result<JobDetail, String> {
+    let factory = factory(&cell)?;
+    let record = factory.store().load(&id).await?;
+    let artifacts = factory
+        .store()
+        .artifacts(&id)
+        .await?
+        .into_iter()
+        .map(|a| ArtifactView {
+            stage: name(a.stage),
+            body: a.body,
+            created_at: a.created_at,
+        })
+        .collect();
+    let mut transcript = Vec::new();
+    if let Some(session) = &record.runtime.session
+        && let Ok(out) = factory
+            .engine()
+            .call(
+                "bastion",
+                "session::messages",
+                json!({ "session_id": session }),
+            )
+            .await
+    {
+        for m in out["messages"].as_array().into_iter().flatten() {
+            let text: Vec<&str> = m["message"]["content"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|part| part["text"].as_str())
+                .collect();
+            transcript.push(TranscriptLine {
+                role: m["message"]["role"].as_str().unwrap_or_default().into(),
+                text: text.join("\n"),
+            });
+        }
+    }
+    Ok(JobDetail {
+        job: summary(&record),
+        artifacts,
+        transcript,
+    })
+}
+
+#[tauri::command]
+pub async fn job_submit(
+    cell: State<'_, FactoryCell>,
+    workspace: String,
+    request: String,
+) -> Result<String, String> {
+    if request.trim().is_empty() {
+        return Err("a request needs text".into());
+    }
+    factory(&cell)?.submit(&workspace, request.trim()).await
+}
+
+#[tauri::command]
+pub async fn job_approve(cell: State<'_, FactoryCell>, id: String) -> Result<(), String> {
+    factory(&cell)?.apply(&id, Event::Approved).await
+}
+
+#[tauri::command]
+pub async fn job_comment(
+    cell: State<'_, FactoryCell>,
+    id: String,
+    text: String,
+) -> Result<(), String> {
+    if text.trim().is_empty() {
+        return Err("a comment needs text".into());
+    }
+    factory(&cell)?
+        .apply(
+            &id,
+            Event::Commented {
+                text: text.trim().into(),
+            },
+        )
+        .await
+}
+
+#[tauri::command]
+pub async fn job_stop(cell: State<'_, FactoryCell>, id: String) -> Result<(), String> {
+    factory(&cell)?.apply(&id, Event::Stopped).await
+}

@@ -4,18 +4,22 @@ use bastion_protocol::Link;
 use iii_sdk::iii::WorkerMetadata;
 use iii_sdk::protocol::{RegisterTriggerInput, TriggerRequest};
 use iii_sdk::runtime::IIIConnectionState;
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+use iii_sdk::channel::{ChannelReader, StreamChannelRef};
+use iii_sdk::trigger::Trigger;
 use iii_sdk::{Error, IIIClient, InitOptions, RegisterFunction, register_worker};
 use serde_json::{Value, json};
 
-use super::{Call, Engine, OnPush};
+use super::{Bytes, Call, Engine, OnEvent, OnPush};
 
 const FUNCTIONS_CHANGED: &str = "bastion::app::functions-changed";
-
-const CALL_TIMEOUT_MS: u64 = 5_000;
 
 pub struct IiiEngine {
     url: String,
     client: IIIClient,
+    bindings: Mutex<HashMap<String, Trigger>>,
 }
 
 impl IiiEngine {
@@ -31,6 +35,7 @@ impl IiiEngine {
         Self {
             url: url.into(),
             client: register_worker(url, options),
+            bindings: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -49,10 +54,16 @@ impl Engine for IiiEngine {
         }
     }
 
-    fn call<'a>(&'a self, namespace: &'a str, function_id: &'a str, payload: Value) -> Call<'a> {
+    fn call_for<'a>(
+        &'a self,
+        namespace: &'a str,
+        function_id: &'a str,
+        payload: Value,
+        timeout_ms: u64,
+    ) -> Call<'a> {
         Box::pin(async move {
             let mut request = TriggerRequest::new(function_id, payload);
-            request.timeout_ms = Some(CALL_TIMEOUT_MS);
+            request.timeout_ms = Some(timeout_ms);
             self.client
                 .trigger(request.namespace(namespace))
                 .await
@@ -79,5 +90,42 @@ impl Engine for IiiEngine {
             ))
             .map(|_| ())
             .map_err(|e| e.to_string())
+    }
+
+    // Trigger types such as `harness::turn-completed` and the `pre-trigger`
+    // hook have no `observe` form yet, so this binds them the deprecated way.
+    #[allow(deprecated)]
+    fn bind(&self, trigger_type: &str, config: Value, on_event: OnEvent) -> Result<String, String> {
+        let id = format!("bastion::app::on::{}", uuid::Uuid::new_v4().simple());
+        self.client.register_function(
+            &id,
+            RegisterFunction::new_async(move |event: Value| {
+                let answer = on_event(event);
+                async move { Ok::<_, Error>(answer) }
+            }),
+        );
+        let trigger = self
+            .client
+            .register_trigger(RegisterTriggerInput::new(trigger_type, &id, config))
+            .map_err(|e| e.to_string())?;
+        self.bindings.lock().unwrap().insert(id.clone(), trigger);
+        Ok(id)
+    }
+
+    fn unbind(&self, id: &str) {
+        if let Some(trigger) = self.bindings.lock().unwrap().remove(id) {
+            trigger.unregister();
+        }
+    }
+
+    fn read_channel(&self, content: Value) -> Bytes<'_> {
+        Box::pin(async move {
+            let channel: StreamChannelRef =
+                serde_json::from_value(content).map_err(|e| format!("not a channel: {e}"))?;
+            ChannelReader::new(&self.url, &channel)
+                .read_all()
+                .await
+                .map_err(|e| e.to_string())
+        })
     }
 }

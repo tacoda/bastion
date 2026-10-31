@@ -20,6 +20,18 @@ pub mod command {
     /// Take `{ name: String }`.
     pub const CONTAINER_STOP: &str = "container_stop";
     pub const CONTAINER_START: &str = "container_start";
+    pub const WORKSPACES: &str = "workspaces";
+    /// Takes `{ workspace: Workspace }`.
+    pub const WORKSPACE_ADD: &str = "workspace_add";
+    pub const JOBS: &str = "jobs";
+    /// Takes `{ id: String }`, as do the job actions below.
+    pub const JOB: &str = "job";
+    /// Takes `{ workspace: String, request: String }`.
+    pub const JOB_SUBMIT: &str = "job_submit";
+    pub const JOB_APPROVE: &str = "job_approve";
+    /// Takes `{ id: String, text: String }`: a comment, or the answer to a question.
+    pub const JOB_COMMENT: &str = "job_comment";
+    pub const JOB_STOP: &str = "job_stop";
 }
 
 /// Event names the app emits to the page (D10).
@@ -30,6 +42,8 @@ pub mod event {
     pub const QUIT_REQUESTED: &str = "quit-requested";
     /// A worker joined or left the engine: the page reads the console again.
     pub const CONSOLE_CHANGED: &str = "console-changed";
+    /// Carries a job's id each time it changes: the page reads it again.
+    pub const JOB_CHANGED: &str = "job-changed";
 }
 
 /// The app's link to the engine.
@@ -203,4 +217,50 @@ pub struct LogPage {
     pub cursor: Option<LogCursor>,
     /// The cursor was older than the logs kept, so some lines were skipped.
     pub truncated: bool,
+}
+
+/// A repository the owner registered.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Workspace {
+    pub name: String,
+    pub path: String,
+    pub branch: String,
+}
+
+/// One job as the floor and the inbox show it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JobSummary {
+    pub id: String,
+    pub workspace: String,
+    pub request: String,
+    /// `plan`, `approve`, `build`, `review` or `land`.
+    pub stage: String,
+    /// `queued`, `provisioning`, `running`, `needs_you`, `landed`, `failed` or `stopped`.
+    pub state: String,
+    pub question: Option<String>,
+    pub error: Option<String>,
+    pub updated_at: u64,
+    /// What the owner may do now: `approve`, `comment`, `answer`, `stop`.
+    pub actions: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArtifactView {
+    pub stage: String,
+    pub body: String,
+    pub created_at: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TranscriptLine {
+    pub role: String,
+    pub text: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JobDetail {
+    pub job: JobSummary,
+    pub artifacts: Vec<ArtifactView>,
+    /// The latest turn's messages.
+    pub transcript: Vec<TranscriptLine>,
 }

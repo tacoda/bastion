@@ -5,6 +5,7 @@ mod commands;
 mod console;
 mod doctor;
 mod engine;
+mod factory;
 mod machine;
 mod profile;
 mod stack;
@@ -12,12 +13,15 @@ mod store;
 
 use std::sync::Arc;
 
-use bastion_protocol::event;
+use bastion_protocol::{Link, event};
 use commands::app::{ProfilesFile, should_ask};
+use commands::factory::FactoryCell;
 use engine::{Engine, IiiEngine};
+use factory::Factory;
 use machine::{Machine, ThisMachine};
 use profile::Profiles;
 use stack::Stack;
+use store::SqlStore;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
 
 /// The checkout this build came from, which holds `worker-compose.yaml`.
@@ -32,6 +36,44 @@ fn hold_quit(app: &AppHandle) -> bool {
     }
     let _ = app.emit(event::QUIT_REQUESTED, ());
     true
+}
+
+/// Once the engine is up: open the store, start the factory, and resume its jobs.
+fn start_factory(
+    app: AppHandle,
+    engine: Arc<dyn Engine>,
+    machine: Arc<dyn Machine>,
+    cell: FactoryCell,
+) -> Result<(), String> {
+    let scratch = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| e.to_string())?
+        .join("bundles");
+    tauri::async_runtime::spawn(async move {
+        loop {
+            if engine.link() == Link::Up {
+                match SqlStore::open(engine.clone()).await {
+                    Ok(store) => {
+                        let emitter = app.clone();
+                        let on_change = Arc::new(move |id: &str| {
+                            let _ = emitter.emit(event::JOB_CHANGED, id);
+                        });
+                        let factory =
+                            Factory::new(engine, Arc::new(store), machine, on_change, scratch);
+                        if let Err(e) = factory.start() {
+                            eprintln!("the factory did not start: {e}");
+                        }
+                        let _ = cell.set(factory);
+                        return;
+                    }
+                    Err(e) => eprintln!("the store did not open: {e}"),
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+    });
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -54,8 +96,17 @@ pub fn run() {
             engine.on_functions_changed(Arc::new(move || {
                 let _ = handle.emit(event::CONSOLE_CHANGED, ());
             }))?;
+            let machine: Arc<dyn Machine> = Arc::new(ThisMachine);
+            let cell = FactoryCell::default();
+            start_factory(
+                app.handle().clone(),
+                engine.clone(),
+                machine.clone(),
+                cell.clone(),
+            )?;
+            app.manage(cell);
             app.manage(engine);
-            app.manage(Arc::new(ThisMachine) as Arc<dyn Machine>);
+            app.manage(machine);
             app.manage(profiles);
             app.manage(ProfilesFile(path));
             app.manage(stack);
@@ -76,6 +127,14 @@ pub fn run() {
             commands::console::container_stop,
             commands::console::container_start,
             commands::engine::engine_status,
+            commands::factory::workspaces,
+            commands::factory::workspace_add,
+            commands::factory::jobs,
+            commands::factory::job,
+            commands::factory::job_submit,
+            commands::factory::job_approve,
+            commands::factory::job_comment,
+            commands::factory::job_stop,
             commands::doctor::doctor,
             commands::stack::stack_status,
             commands::stack::stack_start,

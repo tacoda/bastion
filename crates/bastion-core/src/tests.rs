@@ -251,3 +251,24 @@ fn the_request_is_quoted_as_data_in_every_brief() {
     );
     assert!(b.contains(QUESTION_MARKER), "{b}");
 }
+
+#[test]
+fn a_checkpoint_allows_approve_comment_and_stop_and_a_question_allows_an_answer() {
+    let (j, _) = run(&planned());
+    assert_eq!(
+        actions(&j),
+        vec![Action::Approve, Action::Comment, Action::Stop]
+    );
+    let (j, _) = run(&[
+        Event::Admitted,
+        Event::Provisioned,
+        Event::TurnFinished {
+            outcome: Outcome::Asked {
+                question: "?".into(),
+            },
+        },
+    ]);
+    assert_eq!(actions(&j), vec![Action::Answer, Action::Stop]);
+    let (j, _) = run(&[Event::Stopped]);
+    assert!(actions(&j).is_empty());
+}

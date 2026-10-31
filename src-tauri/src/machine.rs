@@ -20,6 +20,8 @@ pub trait Machine: Send + Sync {
     /// Start a program that outlives the app, with its output appended to `log`.
     fn spawn(&self, program: &str, args: &[&str], dir: &Path, log: &Path) -> Result<u32, String>;
     fn read(&self, path: &Path) -> Result<String, String>;
+    fn read_bytes(&self, path: &Path) -> Result<Vec<u8>, String>;
+    fn write_bytes(&self, path: &Path, bytes: &[u8]) -> Result<(), String>;
     fn exists(&self, path: &Path) -> bool;
     /// `std::env::consts::OS` and `ARCH`.
     fn platform(&self) -> (&'static str, &'static str);
@@ -69,6 +71,17 @@ impl Machine for ThisMachine {
 
     fn read(&self, path: &Path) -> Result<String, String> {
         fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))
+    }
+
+    fn read_bytes(&self, path: &Path) -> Result<Vec<u8>, String> {
+        fs::read(path).map_err(|e| format!("{}: {e}", path.display()))
+    }
+
+    fn write_bytes(&self, path: &Path, bytes: &[u8]) -> Result<(), String> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+        }
+        fs::write(path, bytes).map_err(|e| format!("{}: {e}", path.display()))
     }
 
     fn exists(&self, path: &Path) -> bool {
@@ -181,6 +194,23 @@ pub mod fake {
                 .get(path)
                 .cloned()
                 .ok_or_else(|| format!("{}: not found", path.display()))
+        }
+
+        fn read_bytes(&self, path: &Path) -> Result<Vec<u8>, String> {
+            Ok(self
+                .files
+                .get(path)
+                .cloned()
+                .unwrap_or_default()
+                .into_bytes())
+        }
+
+        fn write_bytes(&self, path: &Path, _bytes: &[u8]) -> Result<(), String> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("write {}", path.display()));
+            Ok(())
         }
 
         fn exists(&self, path: &Path) -> bool {

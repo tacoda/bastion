@@ -293,6 +293,34 @@ fn commented(job: &mut Job, text: &str) -> Vec<Effect> {
     enter(job)
 }
 
+/// What the owner may do with a job now. The view shows only these.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Action {
+    /// Approve the checkpoint the job waits at.
+    Approve,
+    /// Comment on the checkpoint's artifact, which sends the work back.
+    Comment,
+    /// Answer the agent's question.
+    Answer,
+    Stop,
+}
+
+pub fn actions(job: &Job) -> Vec<Action> {
+    let mut allowed = Vec::new();
+    if job.state == State::NeedsYou {
+        if job.question.is_some() {
+            allowed.push(Action::Answer);
+        } else {
+            allowed.extend([Action::Approve, Action::Comment]);
+        }
+    }
+    if !job.state.finished() {
+        allowed.push(Action::Stop);
+    }
+    allowed
+}
+
 /// The queued jobs to admit, oldest first, so that at most `limit` jobs hold
 /// a VM at once.
 pub fn admit(jobs: &[Job], limit: usize) -> Vec<String> {

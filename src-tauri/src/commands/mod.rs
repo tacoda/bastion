@@ -4,4 +4,5 @@ pub mod app;
 pub mod console;
 pub mod doctor;
 pub mod engine;
+pub mod factory;
 pub mod stack;

@@ -13,6 +13,7 @@ use bastion_core::{
 };
 use serde_json::{Value, json};
 
+use crate::audit_log::{self, AuditLog};
 use crate::engine::{DEFAULT_NAMESPACE, Engine};
 use crate::gate::Gate;
 use crate::machine::Machine;
@@ -84,7 +85,12 @@ impl Factory {
         on_change: OnChange,
         scratch: PathBuf,
     ) -> Arc<Self> {
-        let gate = Gate::new(store.clone(), engine.clone(), on_change.clone());
+        let audit = audit_log::key(&*machine)
+            .map(|key| AuditLog::start(store.clone(), key, audit_log::WRITE_LIMIT));
+        if let Err(e) = &audit {
+            eprintln!("the audit has no key, so the gate refuses every call: {e}");
+        }
+        let gate = Gate::new(store.clone(), engine.clone(), on_change.clone(), audit);
         Arc::new(Self {
             engine,
             store,

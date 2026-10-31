@@ -1,11 +1,14 @@
 //! Commands for held calls, the two ladders and the audit (PLAN.md A5).
 
-use bastion_core::audit;
+use std::sync::Arc;
+
 use bastion_protocol::{AuditEntryView, AuditView, CapabilityView, ConstraintView, HeldCallRef};
 use serde_json::json;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 use super::factory::{FactoryCell, factory, name};
+use crate::factory::now;
+use crate::machine::Machine;
 
 #[tauri::command]
 pub async fn held_allow(cell: State<'_, FactoryCell>, held: HeldCallRef) -> Result<(), String> {
@@ -83,12 +86,16 @@ pub async fn capability_move(
         .await
 }
 
-/// The whole chain, verified as it is read.
+/// The whole chain, verified under its key as it is read, and the writer's
+/// state, so a stalled audit shows.
 #[tauri::command]
 pub async fn audit(cell: State<'_, FactoryCell>) -> Result<AuditView, String> {
-    let chain = factory(&cell)?.store().audit().await?;
-    let broken_at = audit::verify(&chain).err();
-    let entries = chain
+    let factory = factory(&cell)?;
+    let log = factory.gate().audit()?;
+    let read = log.read().await?;
+    let (pending, last_error) = log.status();
+    let entries = read
+        .chain
         .into_iter()
         .map(|e| AuditEntryView {
             seq: e.seq,
@@ -99,5 +106,34 @@ pub async fn audit(cell: State<'_, FactoryCell>) -> Result<AuditView, String> {
             hash: e.hash,
         })
         .collect();
-    Ok(AuditView { entries, broken_at })
+    Ok(AuditView {
+        entries,
+        broken_at: read.broken_at,
+        pending,
+        last_error,
+    })
+}
+
+/// Write the chain as JSON Lines into the app's data folder, with a last
+/// line that says whether it verified. Returns the file's path.
+#[tauri::command]
+pub async fn audit_export(
+    app: AppHandle,
+    cell: State<'_, FactoryCell>,
+    machine: State<'_, Arc<dyn Machine>>,
+) -> Result<String, String> {
+    let read = factory(&cell)?.gate().audit()?.read().await?;
+    let mut lines: Vec<String> = read
+        .chain
+        .iter()
+        .map(|e| serde_json::to_string(e).map_err(|e| e.to_string()))
+        .collect::<Result<_, _>>()?;
+    lines.push(
+        json!({ "verified": read.broken_at.is_none(), "broken_at": read.broken_at }).to_string(),
+    );
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    machine.make_dir(&dir)?;
+    let path = dir.join(format!("audit-{}.jsonl", now()));
+    machine.write_bytes(&path, (lines.join("\n") + "\n").as_bytes())?;
+    Ok(path.display().to_string())
 }

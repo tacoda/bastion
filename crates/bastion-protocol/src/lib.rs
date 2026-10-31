@@ -46,6 +46,8 @@ pub mod command {
     /// Takes `{ stage: String, function: String, up: bool }`.
     pub const CAPABILITY_MOVE: &str = "capability_move";
     pub const AUDIT: &str = "audit";
+    /// Returns the path of the JSON Lines file it wrote.
+    pub const AUDIT_EXPORT: &str = "audit_export";
 }
 
 /// Event names the app emits to the page (D10).
@@ -349,6 +351,10 @@ pub struct AuditView {
     pub entries: Vec<AuditEntryView>,
     /// The `seq` of the first entry that breaks the chain, if one does.
     pub broken_at: Option<u64>,
+    /// Records queued and not yet written.
+    pub pending: u64,
+    /// Why the last write failed or stalled, if it did.
+    pub last_error: Option<String>,
 }
 
 /// How each checkpoint is decided (PLAN.md D15): `ask`, `hold` or `auto`.

@@ -162,16 +162,36 @@ fn GrantsList(
 
 #[component]
 fn AuditList(audit: ReadSignal<Option<AuditView>>) -> impl IntoView {
+    let (exported, set_exported) = signal(String::new());
+    let export = move |_| {
+        spawn_local(async move {
+            let answer = ipc::call::<String, String>(command::AUDIT_EXPORT, None {}).await;
+            set_exported.set(match answer {
+                Ok(path) => format!("Written to {path}"),
+                Err(e) => e.text(),
+            });
+        });
+    };
     view! {
     <section class="rounded-xl border border-line bg-panel">
-        <h2 class="m-0 border-b border-line px-3 py-2 text-sm font-semibold text-muted">"Audit"</h2>
+        <div class="flex items-center justify-between border-b border-line px-3 py-2">
+            <h2 class="m-0 text-sm font-semibold text-muted">"Audit"</h2>
+            <button class=STEP on:click=export>"Export"</button>
+        </div>
+        <p class="m-0 px-3 pt-2 text-xs text-muted break-all" role="status">{exported}</p>
         {move || audit.get().map(|a| {
             let (status, color) = match a.broken_at {
                 None => (format!("Verified: all {} entries chain from the first.", a.entries.len()), "text-ok"),
                 Some(seq) => (format!("Broken: entry {seq} does not follow from the one before it."), "text-bad"),
             };
+            let writer = match (a.pending, a.last_error) {
+                (_, Some(e)) => Some((format!("The audit writer is failing: {e}"), "text-bad")),
+                (0, None) => None,
+                (n, None) => Some((format!("{n} records waiting to be written."), "text-warn")),
+            };
             view! {
                 <p class={format!("m-0 px-3 py-2 text-sm font-semibold {color}")} role="status">{status}</p>
+                {writer.map(|(text, color)| view! { <p class={format!("m-0 px-3 pb-2 text-sm {color}")} role="alert">{text}</p> })}
                 <ol class="m-0 max-h-[32rem] list-none overflow-auto p-0 text-sm">
                     {a.entries.into_iter().rev().map(|e| view! {
                         <li class="grid grid-cols-[4rem_6rem_7rem_1fr] gap-2 border-t border-line px-3 py-1.5">

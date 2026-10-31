@@ -96,15 +96,6 @@ pub trait Store: Send + Sync {
     fn append_audit<'a>(&'a self, entry: &'a Entry) -> Answer<'a, ()>;
 }
 
-/// Write the next audit entry after the last one in the store.
-// ponytail: reads the whole chain to find its tail; read only the last row when the chain grows large.
-pub async fn write_audit(store: &dyn Store, at: u64, what: audit::Record) -> Result<Entry, String> {
-    let chain = store.audit().await?;
-    let entry = audit::append(chain.last(), at, what);
-    store.append_audit(&entry).await?;
-    Ok(entry)
-}
-
 const NAMESPACE: &str = "bastion";
 
 /// The schema (D8): typed columns with constraints, no JSON in a text column.
@@ -163,7 +154,8 @@ const SCHEMA: [&str; 8] = [
         text TEXT NOT NULL,
         arguments TEXT NOT NULL,
         at INTEGER NOT NULL)",
-    "CREATE TABLE IF NOT EXISTS audit (
+    // The keyed chain (D21). An older unkeyed `audit` table, if any, is left as it was.
+    "CREATE TABLE IF NOT EXISTS audit_log (
         seq INTEGER PRIMARY KEY CHECK (seq >= 1),
         at INTEGER NOT NULL,
         kind TEXT NOT NULL,
@@ -574,7 +566,8 @@ impl Store for SqlStore {
 
     fn audit(&self) -> Answer<'_, Vec<Entry>> {
         Box::pin(async move {
-            let sql = "SELECT seq, at, kind, subject, detail, prev, hash FROM audit ORDER BY seq";
+            let sql =
+                "SELECT seq, at, kind, subject, detail, prev, hash FROM audit_log ORDER BY seq";
             self.rows(sql, json!([]), entry).await
         })
     }
@@ -582,7 +575,7 @@ impl Store for SqlStore {
     fn append_audit<'a>(&'a self, e: &'a Entry) -> Answer<'a, ()> {
         Box::pin(async move {
             self.execute(
-                "INSERT INTO audit (seq, at, kind, subject, detail, prev, hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO audit_log (seq, at, kind, subject, detail, prev, hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 json!([e.seq, e.at, e.record.kind, e.record.subject, e.record.detail, e.prev, e.hash]),
             )
             .await
@@ -619,6 +612,8 @@ pub mod fake {
         pub capabilities: Mutex<Vec<Capability>>,
         pub held: Mutex<Vec<HeldCall>>,
         pub audit: Mutex<Vec<Entry>>,
+        /// Make every audit append wait forever, like a stalled database.
+        pub stall_audit: Mutex<bool>,
     }
 
     impl Store for FakeStore {
@@ -739,6 +734,9 @@ pub mod fake {
         }
 
         fn append_audit<'a>(&'a self, e: &'a Entry) -> Answer<'a, ()> {
+            if *self.stall_audit.lock().unwrap() {
+                return Box::pin(std::future::pending());
+            }
             let mut all = self.audit.lock().unwrap();
             let result = if all.iter().any(|x| x.seq == e.seq) {
                 Err(format!("audit entry {} exists", e.seq))
@@ -807,19 +805,17 @@ mod tests {
     }
 
     #[test]
-    fn audit_entries_chain_and_a_fork_is_refused() {
+    fn a_second_entry_with_the_same_seq_is_refused() {
         let store = FakeStore::default();
-        let what = |detail: &str| audit::Record {
+        let what = audit::Record {
             kind: "gate".into(),
             subject: "j1".into(),
-            detail: detail.into(),
+            detail: "continue".into(),
         };
+        let first = audit::append(None, 1, what, b"k");
         tauri::async_runtime::block_on(async {
-            let first = write_audit(&store, 1, what("continue")).await.unwrap();
-            let second = write_audit(&store, 2, what("hold")).await.unwrap();
-            assert_eq!((first.seq, second.prev.as_str()), (1, first.hash.as_str()));
-            assert_eq!(audit::verify(&store.audit().await.unwrap()), Ok(()));
-            assert!(store.append_audit(&second).await.is_err());
+            store.append_audit(&first).await.unwrap();
+            assert!(store.append_audit(&first).await.is_err());
         });
     }
 

@@ -1,8 +1,8 @@
 //! The gate in the factory (PLAN.md A5, D20, D21). Every `sandbox::*` call a
 //! turn makes reaches `judge` through a `pre-trigger` hook, and
 //! `bastion_core::govern::gate` decides it. The hook reads the policy from
-//! memory and hands every record to one writer task, so a slow store never
-//! stalls a turn.
+//! memory and hands every record to the audit writer, so a slow store never
+//! stalls a turn. Without an audit writer it refuses every call.
 
 use std::sync::{Arc, RwLock};
 
@@ -10,11 +10,11 @@ use bastion_core::Stage;
 use bastion_core::audit;
 use bastion_core::govern::{self, Call, Capability, Constraint, Decision, Verdict};
 use serde_json::{Value, json};
-use tokio::sync::mpsc;
 
+use crate::audit_log::AuditLog;
 use crate::engine::{DEFAULT_NAMESPACE, Engine};
 use crate::factory::{OnChange, now};
-use crate::store::{self, HeldCall, Store};
+use crate::store::{HeldCall, Store};
 
 const NS: &str = "bastion";
 const RUN_MS: u64 = 120_000;
@@ -31,7 +31,8 @@ pub struct Gate {
     on_change: OnChange,
     /// None until the first load. Until then every call is refused.
     policy: RwLock<Option<Policy>>,
-    audit: mpsc::UnboundedSender<audit::Record>,
+    /// The writer, or why there is none (such as no Keychain key).
+    audit: Result<Arc<AuditLog>, String>,
 }
 
 /// What the rules read from a call: its command line, else its path.
@@ -69,16 +70,12 @@ fn text_result(text: &str, details: Value, is_error: bool) -> Value {
 }
 
 impl Gate {
-    pub fn new(store: Arc<dyn Store>, engine: Arc<dyn Engine>, on_change: OnChange) -> Arc<Self> {
-        let (audit, mut records) = mpsc::unbounded_channel::<audit::Record>();
-        let writer = store.clone();
-        tauri::async_runtime::spawn(async move {
-            while let Some(what) = records.recv().await {
-                if let Err(e) = store::write_audit(&*writer, now(), what).await {
-                    eprintln!("the audit record was not written: {e}");
-                }
-            }
-        });
+    pub fn new(
+        store: Arc<dyn Store>,
+        engine: Arc<dyn Engine>,
+        on_change: OnChange,
+        audit: Result<Arc<AuditLog>, String>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             store,
             engine,
@@ -98,12 +95,18 @@ impl Gate {
         Ok(())
     }
 
+    pub fn audit(&self) -> Result<&Arc<AuditLog>, String> {
+        self.audit.as_ref().map_err(Clone::clone)
+    }
+
     fn note(&self, kind: &str, subject: &str, detail: String) {
-        let _ = self.audit.send(audit::Record {
-            kind: kind.into(),
-            subject: subject.into(),
-            detail,
-        });
+        if let Ok(log) = &self.audit {
+            log.note(audit::Record {
+                kind: kind.into(),
+                subject: subject.into(),
+                detail,
+            });
+        }
     }
 
     /// Every rule, for the brief. The agent is told each rule at every rung.
@@ -129,8 +132,14 @@ impl Gate {
             .to_string();
         let stage: Option<Stage> =
             serde_json::from_value(envelope["metadata"]["stage"].clone()).ok();
-        let verdict = match (&*self.policy.read().unwrap(), stage) {
-            (Some(p), Some(stage)) => govern::gate(&call, stage, &p.constraints, &p.grants),
+        let verdict = match (&*self.policy.read().unwrap(), stage, &self.audit) {
+            (_, _, Err(why)) => Verdict {
+                decision: Decision::Deny {
+                    reason: format!("The gate cannot record this call, so it refuses it: {why}"),
+                },
+                flagged: vec![],
+            },
+            (Some(p), Some(stage), Ok(_)) => govern::gate(&call, stage, &p.constraints, &p.grants),
             _ => Verdict {
                 decision: Decision::Deny {
                     reason: "The gate cannot judge this call: it has no policy or no stage.".into(),
@@ -304,6 +313,8 @@ mod tests {
     use crate::store::fake::FakeStore;
     use crate::store::{Record, Runtime};
 
+    const KEY: &[u8] = b"test key";
+
     struct Rig {
         gate: Arc<Gate>,
         engine: Arc<FakeEngine>,
@@ -329,7 +340,13 @@ mod tests {
             created_at: 1,
         };
         store.jobs.lock().unwrap().insert("j1".into(), job);
-        let gate = Gate::new(store.clone(), engine.clone(), Arc::new(|_: &str| {}));
+        let log = AuditLog::start(store.clone(), KEY.to_vec(), crate::audit_log::WRITE_LIMIT);
+        let gate = Gate::new(
+            store.clone(),
+            engine.clone(),
+            Arc::new(|_: &str| {}),
+            Ok(log),
+        );
         tauri::async_runtime::block_on(gate.reload()).unwrap();
         Rig {
             gate,
@@ -406,8 +423,30 @@ mod tests {
             .gate
             .judge(&envelope("", "sandbox::exec", json!({ "argv": ["ls"] })));
         assert_eq!(answer["decision"], "deny");
-        let unloaded = Gate::new(r.store.clone(), r.engine.clone(), Arc::new(|_: &str| {}));
+        let log = AuditLog::start(r.store.clone(), KEY.to_vec(), crate::audit_log::WRITE_LIMIT);
+        let unloaded = Gate::new(
+            r.store.clone(),
+            r.engine.clone(),
+            Arc::new(|_: &str| {}),
+            Ok(log),
+        );
         assert_eq!(unloaded.judge(&write())["decision"], "deny");
+        let unkeyed = Gate::new(
+            r.store.clone(),
+            r.engine.clone(),
+            Arc::new(|_: &str| {}),
+            Err("no key".into()),
+        );
+        tauri::async_runtime::block_on(unkeyed.reload()).unwrap();
+        let answer = unkeyed.judge(&envelope(
+            "build",
+            "sandbox::exec",
+            json!({ "argv": ["ls"] }),
+        ));
+        assert!(
+            answer["reason"].as_str().unwrap().contains("no key"),
+            "{answer}"
+        );
     }
 
     #[test]
@@ -480,7 +519,7 @@ mod tests {
         let chain = r.store.audit.lock().unwrap().clone();
         let kinds: Vec<_> = chain.iter().map(|e| e.record.kind.as_str()).collect();
         assert_eq!(kinds, ["gate", "promote", "promote", "gate"]);
-        assert_eq!(audit::verify(&chain), Ok(()));
+        assert_eq!(audit::verify(&chain, KEY), Ok(()));
     }
 
     #[test]

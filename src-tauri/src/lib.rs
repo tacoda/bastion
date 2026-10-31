@@ -1,6 +1,7 @@
 //! Bastion's Rust core. The pages reach the engine only through these commands
 //! (PLAN.md D9), and the engine reaches the pages only as events (D10).
 
+mod audit_log;
 mod commands;
 mod console;
 mod doctor;
@@ -153,6 +154,7 @@ pub fn run() {
             commands::govern::capabilities,
             commands::govern::capability_move,
             commands::govern::audit,
+            commands::govern::audit_export,
             commands::doctor::doctor,
             commands::stack::stack_status,
             commands::stack::stack_start,

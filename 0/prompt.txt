@@ -1,0 +1,6 @@
+fix the comma freeze, then finish A5
+Is there a way to make the audit log tamper-proof? I would prefer that.
+
+---
+
+done, space freed - build for dev

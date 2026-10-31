@@ -1,0 +1,17 @@
+<task-notification>
+<task-id>b3xcaqusq</task-id>
+<tool-use-id>toolu_011qbsXkvt3bAPeNun6ZUuYz</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/135a2369-1f42-433b-aacc-5c1b0ce18b48/tasks/b3xcaqusq.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for subtract's build to reach review" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b1afigavs</task-id>
+<tool-use-id>toolu_01FAUPfs6TsyjB8QxVxX2EGz</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/135a2369-1f42-433b-aacc-5c1b0ce18b48/tasks/b1afigavs.output</output-file>
+<status>completed</status>
+<summary>Background command "Commit and push the landing fixes" completed (exit code 0)</summary>
+</task-notification>

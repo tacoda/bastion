@@ -126,7 +126,7 @@ async fn main() {
             let readme = std::fs::read_to_string(wt.join("README.md"))?;
             ensure(readme.contains("n7 was here"), format!("README: {readme:?}"))?;
             let head = git(&wt, &["log", "-1", "--format=%s"])?;
-            Ok(format!("worktree {} got commit {head:?} from VM {}, in a {}-byte bundle", &path, &box_id[..8], out.len()))
+            Ok(format!("worktree {} got commit {head:?} from VM {}, in a {}-byte bundle", path, &box_id[..8], out.len()))
         })
         .await;
 

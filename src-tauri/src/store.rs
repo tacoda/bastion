@@ -407,7 +407,7 @@ pub mod fake {
 
         fn jobs(&self) -> Answer<'_, Vec<Record>> {
             let mut all: Vec<Record> = self.jobs.lock().unwrap().values().cloned().collect();
-            all.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+            all.sort_by_key(|r| std::cmp::Reverse(r.created_at));
             Box::pin(async move { Ok(all) })
         }
 

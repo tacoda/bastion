@@ -748,11 +748,11 @@ impl Factory {
                         self.hold_checkpoint(id, stage, left);
                     }
                 }
-                (State::Running, _, Some(session)) => {
-                    // The turn may have ended while the app was closed.
-                    if self.listen_for_turn(&id, &session).is_ok() {
-                        self.turn_done(&id, &session, false).await;
-                    }
+                // The turn may have ended while the app was closed.
+                (State::Running, _, Some(session))
+                    if self.listen_for_turn(&id, &session).is_ok() =>
+                {
+                    self.turn_done(&id, &session, false).await;
                 }
                 _ => {}
             }

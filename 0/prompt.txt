@@ -1,0 +1,8 @@
+I want to pivot from inbox and floor
+The main idea should be the job - that's the request or the ticket
+In that way it should be designed a little closer to github actions, like the jobs page in wipp
+Update the plan and continue
+
+---
+
+[Image #1]

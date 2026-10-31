@@ -30,7 +30,14 @@ fn engine() -> FakeEngine {
         .answer("harness::send", Ok(json!({})))
         .answer(
             "harness::status",
-            Ok(json!({ "status": "completed", "result": "1. Add /health" })),
+            Ok(json!({ "status": "completed", "result": "\"1. Add /h …(truncated)" })),
+        )
+        .answer(
+            "session::messages",
+            Ok(json!({ "messages": [
+                { "message": { "role": "user", "content": [{ "type": "text", "text": "plan it" }] } },
+                { "message": { "role": "assistant", "content": [{ "type": "text", "text": "1. Add /health" }] } },
+            ]})),
         )
         .answer("worktree::land", Ok(json!({ "queued": true })))
 }

@@ -65,6 +65,8 @@ fn start_factory(
                             eprintln!("the factory did not start: {e}");
                         }
                         let _ = cell.set(factory);
+                        // Pages that loaded before the factory read again.
+                        let _ = app.emit(event::JOB_CHANGED, "");
                         return;
                     }
                     Err(e) => eprintln!("the store did not open: {e}"),

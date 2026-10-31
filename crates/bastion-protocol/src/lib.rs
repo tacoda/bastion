@@ -42,7 +42,8 @@ pub mod event {
     pub const QUIT_REQUESTED: &str = "quit-requested";
     /// A worker joined or left the engine: the page reads the console again.
     pub const CONSOLE_CHANGED: &str = "console-changed";
-    /// Carries a job's id each time it changes: the page reads it again.
+    /// Carries a job's id each time it changes: the page reads it again. An
+    /// empty id means the factory just started, so every page reads again.
     pub const JOB_CHANGED: &str = "job-changed";
 }
 

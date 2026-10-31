@@ -26,10 +26,18 @@ pub fn JobPanel(id: String) -> impl IntoView {
     let (error, set_error) = signal(String::new());
     let job_id = StoredValue::new(id);
 
+    // Only the latest read may land: reads overlap when pushes come fast.
+    let latest = StoredValue::new(0u64);
     let reload = move || {
+        let n = latest.get_value() + 1;
+        latest.set_value(n);
         spawn_local(async move {
             let id = job_id.get_value();
-            match ipc::call::<JobDetail, String>(command::JOB, Id { id }).await {
+            let answer = ipc::call::<JobDetail, String>(command::JOB, Id { id }).await;
+            if latest.get_value() != n {
+                return;
+            }
+            match answer {
                 Ok(d) => set_detail.set(Some(d)),
                 Err(e) => set_error.set(e.text()),
             }

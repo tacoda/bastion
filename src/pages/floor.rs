@@ -26,9 +26,17 @@ struct Submit {
 fn jobs_signal() -> (ReadSignal<Vec<JobSummary>>, ReadSignal<String>) {
     let (jobs, set_jobs) = signal(Vec::<JobSummary>::new());
     let (error, set_error) = signal(String::new());
+    // Only the latest read may land: reads overlap when pushes come fast.
+    let latest = StoredValue::new(0u64);
     let reload = move || {
+        let n = latest.get_value() + 1;
+        latest.set_value(n);
         spawn_local(async move {
-            match ipc::call::<Vec<JobSummary>, String>(command::JOBS, None {}).await {
+            let answer = ipc::call::<Vec<JobSummary>, String>(command::JOBS, None {}).await;
+            if latest.get_value() != n {
+                return;
+            }
+            match answer {
                 Ok(all) => {
                     set_error.set(String::new());
                     set_jobs.set(all);
@@ -87,6 +95,11 @@ pub fn FloorPage() -> impl IntoView {
         });
     };
     load_workspaces();
+    ipc::listen(event::JOB_CHANGED, move |id: String| {
+        if id.is_empty() {
+            load_workspaces();
+        }
+    });
 
     let add_workspace = move |_| {
         let workspace = Workspace {

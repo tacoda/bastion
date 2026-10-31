@@ -139,8 +139,16 @@ impl Factory {
                 match self.store.save(&record).await {
                     Ok(rev) => {
                         record.rev = rev;
+                        // Artifacts are written before the page hears of the
+                        // change, so a page that reads at once sees them.
+                        let (artifacts, rest): (Vec<Effect>, Vec<Effect>) = effects
+                            .into_iter()
+                            .partition(|e| matches!(e, Effect::RecordArtifact { .. }));
+                        for effect in artifacts {
+                            self.clone().run(record.clone(), effect).await;
+                        }
                         (self.on_change)(&id);
-                        for effect in effects {
+                        for effect in rest {
                             let (factory, record) = (self.clone(), record.clone());
                             tauri::async_runtime::spawn(factory.run(record, effect));
                         }
@@ -219,9 +227,7 @@ impl Factory {
                     body,
                     created_at: now(),
                 };
-                let saved = self.store.add_artifact(&id, &artifact).await.err();
-                (self.on_change)(&id);
-                saved
+                self.store.add_artifact(&id, &artifact).await.err()
             }
             Effect::Land => match self.land(&record).await {
                 Ok(()) => None,
@@ -320,6 +326,7 @@ impl Factory {
             .await?;
 
         let (path, branch) = self.worktree_path(&worktree).await?;
+        self.machine.make_dir(&self.scratch)?;
         let bundle = self.scratch.join(format!("{}.in.bundle", job.id));
         self.git(
             &path,
@@ -475,7 +482,10 @@ impl Factory {
                     Some(error) => Outcome::Failed {
                         error: error.into(),
                     },
-                    None => outcome(status["result"].as_str().unwrap_or_default()),
+                    None => match self.final_reply(session).await {
+                        Ok(reply) => outcome(&reply),
+                        Err(error) => Outcome::Failed { error },
+                    },
                 },
                 Err(error) => Outcome::Failed { error },
             }
@@ -495,6 +505,31 @@ impl Factory {
         let _ = self
             .apply(id, Event::TurnFinished { outcome: result })
             .await;
+    }
+
+    /// The turn's last assistant message, whole. `harness::status` truncates
+    /// its `result` and encodes it as a JSON string.
+    async fn final_reply(&self, session: &str) -> Result<String, String> {
+        let out = self
+            .engine
+            .call(NS, "session::messages", json!({ "session_id": session }))
+            .await?;
+        out["messages"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .rev()
+            .find(|m| m["message"]["role"] == "assistant")
+            .map(|m| {
+                m["message"]["content"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|part| part["text"].as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .ok_or_else(|| format!("session {session} has no reply"))
     }
 
     /// The VM's commits come back to the worktree (N7), then `worktree::land`

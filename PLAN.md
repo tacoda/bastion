@@ -555,8 +555,9 @@ starts until the owner asks.
 | A0 | done | N1 and N3 to N6 pass (2026-10-30). N2 is dropped (D18). Details in `docs/levels.md`. |
 | A1 | done | All six steps are in: the seams (424c69b), profiles (c62f8e2), Doctor (ea62b16, 763a79a), the stack routine (ac36f24), the shell (8f6e6b5), and CI and the README (0351c35). 19 tests pass, and CI passes on macOS and Linux. Live exit (2026-10-30), driven in the window: from a stopped machine, Start ran Doctor and brought up all 24 containers, and the page showed the link up with 378 functions by push. Doctor named the missing `ANTHROPIC_API_KEY` with its fix. Closing the window asked the quit question, and "Keep it running" quit the app with the stack up. The next start attached to the same compose daemon (pid 89588) and started nothing. |
 | A2 | done | The console on the Engine page: containers with versions, state, stop, start and live logs; functions and trigger types with a filter; queues with depth, delivered, failed and dead letters. One `console` read through the Engine seam, 23 tests. Live exit (2026-10-30): `judge` stopped and started from the window, a stop made from the CLI reached the page by push with no reload, and its logs streamed. `ade` was removed with `compose::remove` (23 containers), so nothing in the stack serves HTTP. |
-| A3 | built; live exit open | `bastion-core` with the short pipeline and its actions, 15 tests (9caf363). The Store over `database`, rev-checked, proven live (93b5cb8). Spike N7: code into a VM, an agent commit, and back (c640769). The factory loop: provision, turns on `harness` with a 60-minute cap, artifacts, landing through `worktree::land`, teardown, and resume (88f45fb), with an end-to-end test on fakes. The floor, the inbox and the job panel (778016d). Open: the live exit with three requests in two workspaces. |
-| A4 to A11 | — | — |
+| A3 | done | `bastion-core` (9caf363), the Store (93b5cb8), spike N7 (c640769), the factory loop (88f45fb), and the floor, inbox and job panel (778016d), with fixes from the exit. 28 app tests and 15 core tests pass. Live exit (2026-10-30), driven in the window: two workspaces added through the form; three requests in them reached the approve checkpoint with plan artifacts, three plan turns on gpt-5-mini; a comment on the `subtract` plan (add a docstring, rename the test) came back in the next plan; `multiply` was stopped and its VM went away; the app was quit with the stack kept running and reopened, and both other jobs were still at approve; `divide` was then approved, ran its build turn, and reached review with its artifact. |
+| A4 | next | — |
+| A5 to A11 | — | — |
 | Later (§10) | on hold | — |
 
 **What A1 found:**
@@ -600,3 +601,11 @@ starts until the owner asks.
   only on its `worktree::landed` and `worktree::land-blocked` triggers.
 - Each turn runs on gpt-5-mini through OpenAI until A7, because the stack has
   no Anthropic credential yet.
+- `harness::status` truncates `result` and encodes it as a JSON string, so a
+  turn's report comes from its last assistant message in `session::messages`.
+- The bundle folder in the app's cache must exist before `git bundle create`.
+- The factory starts after the page loads, so it announces itself with an
+  empty `job-changed`, and every page reads again.
+- Page reads overlap when pushes come fast, so each page keeps only its latest
+  read. An artifact is written before the page hears of a change, so a panel
+  that mounts on that change sees it.

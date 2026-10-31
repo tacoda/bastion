@@ -22,6 +22,8 @@ pub trait Machine: Send + Sync {
     fn read(&self, path: &Path) -> Result<String, String>;
     fn read_bytes(&self, path: &Path) -> Result<Vec<u8>, String>;
     fn write_bytes(&self, path: &Path, bytes: &[u8]) -> Result<(), String>;
+    /// Make a folder and its parents, if missing.
+    fn make_dir(&self, path: &Path) -> Result<(), String>;
     fn exists(&self, path: &Path) -> bool;
     /// `std::env::consts::OS` and `ARCH`.
     fn platform(&self) -> (&'static str, &'static str);
@@ -75,6 +77,10 @@ impl Machine for ThisMachine {
 
     fn read_bytes(&self, path: &Path) -> Result<Vec<u8>, String> {
         fs::read(path).map_err(|e| format!("{}: {e}", path.display()))
+    }
+
+    fn make_dir(&self, path: &Path) -> Result<(), String> {
+        fs::create_dir_all(path).map_err(|e| format!("{}: {e}", path.display()))
     }
 
     fn write_bytes(&self, path: &Path, bytes: &[u8]) -> Result<(), String> {
@@ -210,6 +216,14 @@ pub mod fake {
                 .lock()
                 .unwrap()
                 .push(format!("write {}", path.display()));
+            Ok(())
+        }
+
+        fn make_dir(&self, path: &Path) -> Result<(), String> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("mkdir {}", path.display()));
             Ok(())
         }
 

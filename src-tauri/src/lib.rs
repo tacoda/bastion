@@ -2,6 +2,7 @@
 //! (PLAN.md D9), and the engine reaches the pages only as events (D10).
 
 mod commands;
+mod console;
 mod doctor;
 mod engine;
 mod machine;
@@ -48,6 +49,10 @@ pub fn run() {
             };
             let engine: Arc<dyn Engine> = Arc::new(IiiEngine::connect(&active.engine_url));
             commands::engine::watch(app.handle().clone(), engine.clone());
+            let handle = app.handle().clone();
+            engine.on_functions_changed(Arc::new(move || {
+                let _ = handle.emit(event::CONSOLE_CHANGED, ());
+            }))?;
             app.manage(engine);
             app.manage(Arc::new(ThisMachine) as Arc<dyn Machine>);
             app.manage(profiles);
@@ -65,6 +70,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::app::profile,
             commands::app::quit,
+            commands::console::console,
+            commands::console::container_logs,
+            commands::console::container_stop,
+            commands::console::container_start,
             commands::engine::engine_status,
             commands::doctor::doctor,
             commands::stack::stack_status,

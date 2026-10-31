@@ -1,5 +1,5 @@
 //! The Engine page (PLAN.md A1): the link, the stack with Start and Stop, and
-//! Doctor. A2 adds the console below it.
+//! Doctor, then the console (A2).
 
 use bastion_protocol::{
     Check, CheckState, DoctorReport, EngineStatus, Link, StackState, StackStatus, StartRefused,
@@ -9,6 +9,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use crate::ipc::{self, Failure, None};
+use crate::pages::console::ConsolePanel;
 
 fn describe_link(status: &EngineStatus) -> String {
     match (status.link, status.functions) {
@@ -140,6 +141,7 @@ pub fn EnginePage() -> impl IntoView {
                 {move || report.get().map(|r| r.checks.into_iter().map(check_row).collect_view())}
             </ul>
         </section>
+        <ConsolePanel />
     }
 }
 

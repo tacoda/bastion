@@ -554,8 +554,9 @@ starts until the owner asks.
 |---|---|---|
 | A0 | done | N1 and N3 to N6 pass (2026-10-30). N2 is dropped (D18). Details in `docs/levels.md`. |
 | A1 | done | All six steps are in: the seams (424c69b), profiles (c62f8e2), Doctor (ea62b16, 763a79a), the stack routine (ac36f24), the shell (8f6e6b5), and CI and the README (0351c35). 19 tests pass, and CI passes on macOS and Linux. Live exit (2026-10-30), driven in the window: from a stopped machine, Start ran Doctor and brought up all 24 containers, and the page showed the link up with 378 functions by push. Doctor named the missing `ANTHROPIC_API_KEY` with its fix. Closing the window asked the quit question, and "Keep it running" quit the app with the stack up. The next start attached to the same compose daemon (pid 89588) and started nothing. |
-| A2 | next | — |
-| A3 to A11 | — | — |
+| A2 | done | The console on the Engine page: containers with versions, state, stop, start and live logs; functions and trigger types with a filter; queues with depth, delivered, failed and dead letters. One `console` read through the Engine seam, 23 tests. Live exit (2026-10-30): `judge` stopped and started from the window, a stop made from the CLI reached the page by push with no reload, and its logs streamed. `ade` is still in the stack until the owner decides. |
+| A3 | next | — |
+| A4 to A11 | — | — |
 | Later (§10) | on hold | — |
 
 **What A1 found:**
@@ -573,3 +574,17 @@ starts until the owner asks.
 - The stack inherits the app's environment. A provider key set only in an
   interactive shell does not reach an app started some other way.
 - `iii trigger` prints its answer and then does not exit.
+
+**What A2 found:**
+
+- `observe` watches only functions. `engine::functions-available` is a
+  trigger type, so the app binds it with the deprecated `register_trigger`, as
+  N3 does. It fires when a worker's functions join or leave, which is how a
+  container's state reaches the page.
+- compose reports `owned: false` for a container whose process is gone, so
+  Start shows for any container that is not ready.
+- Trunk watched the whole checkout, and the stack writes logs into it, so each
+  log line rebuilt and reloaded the page. `Trunk.toml` now watches only what
+  the view is built from.
+- `bastion-steps` is still declared in `worker-compose.yaml`, though D18 left
+  the factory with no queue.

@@ -2,7 +2,9 @@
 target = "./index.html"
 
 [watch]
-ignore = ["./src-tauri", "./crates"]
+# Only what the view is built from. The stack writes logs and data inside the
+# checkout, and each write would otherwise rebuild and reload the page.
+watch = ["./src", "./index.html", "./styles.css", "./crates/bastion-protocol"]
 
 [serve]
 port = 1420

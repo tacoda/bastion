@@ -14,6 +14,12 @@ pub mod command {
     pub const PROFILE: &str = "profile";
     /// Takes `{ stopStack: bool }`.
     pub const QUIT: &str = "quit";
+    pub const CONSOLE: &str = "console";
+    /// Takes `{ request: LogRequest }`.
+    pub const CONTAINER_LOGS: &str = "container_logs";
+    /// Take `{ name: String }`.
+    pub const CONTAINER_STOP: &str = "container_stop";
+    pub const CONTAINER_START: &str = "container_start";
 }
 
 /// Event names the app emits to the page (D10).
@@ -22,6 +28,8 @@ pub mod event {
     pub const ENGINE_CHANGED: &str = "engine-changed";
     /// The owner asked to quit while the stack runs: the page asks whether to stop it.
     pub const QUIT_REQUESTED: &str = "quit-requested";
+    /// A worker joined or left the engine: the page reads the console again.
+    pub const CONSOLE_CHANGED: &str = "console-changed";
 }
 
 /// The app's link to the engine.
@@ -127,4 +135,72 @@ pub struct ActiveProfile {
     pub checkout: String,
     /// The file the profiles live in.
     pub file: String,
+}
+
+/// One container of the compose project (PLAN.md A2).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Container {
+    pub name: String,
+    pub version: Option<String>,
+    /// `starting`, `ready`, `restarting`, `failed` or `stopped`, as compose says it.
+    pub state: String,
+    /// The compose daemon started it and can stop it.
+    pub owned: bool,
+    pub last_error: Option<String>,
+}
+
+/// A function or a trigger type the engine has registered.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Registered {
+    pub id: String,
+    pub namespace: String,
+    pub worker: String,
+    pub description: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Queue {
+    pub name: String,
+    pub depth: u64,
+    pub delivered: u64,
+    pub failed: u64,
+    pub dead_letters: u64,
+}
+
+/// Everything the engine console shows, in one read.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Console {
+    pub containers: Vec<Container>,
+    pub functions: Vec<Registered>,
+    pub trigger_types: Vec<Registered>,
+    pub queues: Vec<Queue>,
+}
+
+/// Where the last log read stopped.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LogCursor {
+    pub generation: String,
+    pub offset: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LogRequest {
+    pub container: String,
+    /// `None` reads the most recent lines; a cursor waits for lines after it.
+    pub cursor: Option<LogCursor>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LogLine {
+    /// `stdout` or `stderr`.
+    pub stream: String,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LogPage {
+    pub lines: Vec<LogLine>,
+    pub cursor: Option<LogCursor>,
+    /// The cursor was older than the logs kept, so some lines were skipped.
+    pub truncated: bool,
 }

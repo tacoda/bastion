@@ -1,0 +1,145 @@
+ok, continue
+
+---
+
+<task-notification>
+<task-id>b9u9t518c</task-id>
+<summary>Monitor event: "j4825765c: held calls, state changes, audit entries"</summary>
+<event>job plan running|held sandbox::fs::write /work/repo/PLAN.txt|audit 4|</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b9u9t518c</task-id>
+<summary>Monitor event: "j4825765c: held calls, state changes, audit entries"</summary>
+<event>job plan running|audit 5|</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b9u9t518c</task-id>
+<summary>Monitor event: "j4825765c: held calls, state changes, audit entries"</summary>
+<event>job plan running|held sandbox::fs::write /work/repo/RISKS.txt|audit 6|</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b9u9t518c</task-id>
+<summary>Monitor event: "j4825765c: held calls, state changes, audit entries"</summary>
+<event>job plan running|audit 7|</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b9u9t518c</task-id>
+<summary>Monitor event: "j4825765c: held calls, state changes, audit entries"</summary>
+<event>job plan running|audit 8|</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b9u9t518c</task-id>
+<summary>Monitor event: "j4825765c: held calls, state changes, audit entries"</summary>
+<event>job plan running|audit 9|</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b9u9t518c</task-id>
+<summary>Monitor event: "j4825765c: held calls, state changes, audit entries"</summary>
+<event>job approve needs_you|audit 9|</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b9u9t518c</task-id>
+<summary>Monitor event: "j4825765c: held calls, state changes, audit entries"</summary>
+<event>job approve needs_you|audit 10|</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b9u9t518c</task-id>
+<summary>Monitor event: "j4825765c: held calls, state changes, audit entries"</summary>
+<event>job build running|audit 10|</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b1b2gqduw</task-id>
+<summary>Monitor event: "j4825765c build: state and git calls in audit"</summary>
+<event>job build running|held 0|rm 10 Told -&gt; Checked|</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b1b2gqduw</task-id>
+<summary>Monitor event: "j4825765c build: state and git calls in audit"</summary>
+<event>job review needs_you|held 0|rm 10 Told -&gt; Checked|</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b1b2gqduw</task-id>
+<summary>Monitor event: "j4825765c build: state and git calls in audit"</summary>
+<event>job build running|held 0|rm 10 Told -&gt; Checked|</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b1b2gqduw</task-id>
+<summary>Monitor event: "j4825765c build: state and git calls in audit"</summary>
+<event>job review needs_you|held 0|rm 10 Told -&gt; Checked|</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b1b2gqduw</task-id>
+<summary>Monitor event: "j4825765c build: state and git calls in audit"</summary>
+<event>job build running|held 0|rm 10 Told -&gt; Checked|</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b1b2gqduw</task-id>
+<summary>Monitor event: "j4825765c build: state and git calls in audit"</summary>
+<event>job review needs_you|held 0|rm 10 Told -&gt; Checked|</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b1b2gqduw</task-id>
+<summary>Monitor event: "j4825765c build: state and git calls in audit"</summary>
+<event>job review needs_you|held 0|rm 10 Told -&gt; Checked|rm 40 Checked -&gt; Enforced|</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b1b2gqduw</task-id>
+<summary>Monitor event: "j4825765c build: state and git calls in audit"</summary>
+<event>job build running|held 0|rm 10 Told -&gt; Checked|rm 40 Checked -&gt; Enforced|</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b1b2gqduw</task-id>
+<summary>Monitor event: "j4825765c build: state and git calls in audit"</summary>
+<event>job review needs_you|held 0|rm 10 Told -&gt; Checked|rm 40 Checked -&gt; Enforced|</event>
+</task-notification>

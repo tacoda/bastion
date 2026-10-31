@@ -1,0 +1,8 @@
+<task-notification>
+<task-id>b3608z8s7</task-id>
+<tool-use-id>toolu_011R9Sv7KvsBJTQ8CGLEYr23</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/135a2369-1f42-433b-aacc-5c1b0ce18b48/tasks/b3608z8s7.output</output-file>
+<status>killed</status>
+<summary>Background command "Wait for the next diff and read it" was stopped after reaching its background time limit</summary>
+<note>If the work in progress still needs it, start it again with `run_in_background` and a longer `timeout`. If it already had the longest `timeout` allowed, do not restart it. Either way, report that it was stopped.</note>
+</task-notification>

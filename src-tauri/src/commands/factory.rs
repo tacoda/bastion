@@ -47,6 +47,8 @@ fn summary(r: &Record, dials: &Dials) -> JobSummary {
         updated_at: j.updated_at,
         hold_until: hold_until(j, dials),
         actions: actions(j).into_iter().map(name).collect(),
+        pr: j.pr.clone(),
+        issue: r.runtime.issue.clone(),
     }
 }
 
@@ -237,7 +239,9 @@ pub async fn job_stop(cell: State<'_, FactoryCell>, id: String) -> Result<(), St
 
 #[tauri::command]
 pub async fn dials(cell: State<'_, FactoryCell>) -> Result<DialsView, String> {
-    let d = factory(&cell)?.store().dials().await?;
+    let d = crate::settings_store::current(&**factory(&cell)?.store())
+        .await?
+        .dials;
     Ok(DialsView {
         approve: name(d.approve),
         review: name(d.review),
@@ -250,10 +254,14 @@ pub async fn dials_set(cell: State<'_, FactoryCell>, dials: DialsView) -> Result
         serde_json::from_value(json!(text))
             .map_err(|_| format!("{text:?} is not ask, hold or auto"))
     };
-    let dials = Dials {
+    let factory = factory(&cell)?;
+    let mut next = crate::settings_store::current(&**factory.store()).await?;
+    next.dials = Dials {
         approve: parse(&dials.approve)?,
         review: parse(&dials.review)?,
         ..Dials::default()
     };
-    factory(&cell)?.store().set_dials(&dials).await
+    crate::settings_store::change(&**factory.store(), &next, crate::factory::now())
+        .await
+        .map(|_| ())
 }

@@ -7,6 +7,7 @@ use leptos::task::spawn_local;
 use serde::Serialize;
 
 use crate::ipc::{self, None};
+use crate::pages::factory_settings::{Accounts, FactorySettings, SettingsHistory};
 
 #[derive(Serialize)]
 struct AddWorkspace {
@@ -170,7 +171,10 @@ pub fn SettingsPage() -> impl IntoView {
                 </dl>
             })}
         </section>
+        <FactorySettings />
         <Checkpoints />
+        <SettingsHistory />
         <Workspaces />
+        <Accounts />
     }
 }

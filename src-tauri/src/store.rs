@@ -15,6 +15,7 @@ use serde_json::{Value, json};
 
 use crate::engine::Engine;
 use crate::eval_store::{self, EvalStore};
+use crate::settings_store::{self, SettingsStore};
 
 pub type Answer<'a, T> = Pin<Box<dyn Future<Output = Result<T, String>> + Send + 'a>>;
 
@@ -32,6 +33,8 @@ pub struct Runtime {
     pub worktree: Option<String>,
     pub sandbox: Option<String>,
     pub session: Option<String>,
+    /// The tracker issue the request came from, as its URL.
+    pub issue: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -66,7 +69,7 @@ pub struct HeldCall {
 /// A save lost to another writer (D8). The caller reloads and steps again.
 pub const STALE: &str = "stale: the job changed since it was read";
 
-pub trait Store: EvalStore + Send + Sync {
+pub trait Store: EvalStore + SettingsStore + Send + Sync {
     fn add_workspace<'a>(&'a self, workspace: &'a Workspace) -> Answer<'a, ()>;
     fn workspaces(&self) -> Answer<'_, Vec<Workspace>>;
     fn insert<'a>(&'a self, record: &'a Record) -> Answer<'a, ()>;
@@ -79,7 +82,6 @@ pub trait Store: EvalStore + Send + Sync {
     fn artifacts<'a>(&'a self, job: &'a str) -> Answer<'a, Vec<Artifact>>;
     /// The checkpoint dials. A checkpoint with no row asks.
     fn dials(&self) -> Answer<'_, Dials>;
-    fn set_dials<'a>(&'a self, dials: &'a Dials) -> Answer<'a, ()>;
     fn constraints(&self) -> Answer<'_, Vec<Constraint>>;
     /// Add a constraint, or replace the one with its id.
     fn set_constraint<'a>(&'a self, constraint: &'a Constraint) -> Answer<'a, ()>;
@@ -123,7 +125,10 @@ const SCHEMA: [&str; 8] = [
         session TEXT,
         rev INTEGER NOT NULL CHECK (rev >= 1),
         created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL)",
+        updated_at INTEGER NOT NULL,
+        pr TEXT,
+        ci_fixes INTEGER NOT NULL DEFAULT 0 CHECK (ci_fixes >= 0),
+        issue TEXT)",
     "CREATE TABLE IF NOT EXISTS artifacts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         job TEXT NOT NULL REFERENCES jobs(id),
@@ -197,7 +202,16 @@ fn seed() -> Vec<Value> {
     constraints.chain(grants).collect()
 }
 
-const JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at";
+const JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue";
+
+/// Columns added after a table was first made. Each runs once; on a table
+/// that already has the column it fails, and that failure is expected.
+// ponytail: try-and-ignore ALTERs; a numbered user_version replaces this once a migration is more than a new column.
+const MIGRATIONS: [&str; 3] = [
+    "ALTER TABLE jobs ADD COLUMN pr TEXT",
+    "ALTER TABLE jobs ADD COLUMN ci_fixes INTEGER NOT NULL DEFAULT 0 CHECK (ci_fixes >= 0)",
+    "ALTER TABLE jobs ADD COLUMN issue TEXT",
+];
 
 pub struct SqlStore {
     engine: Arc<dyn Engine>,
@@ -209,6 +223,7 @@ impl SqlStore {
         let statements: Vec<Value> = SCHEMA
             .iter()
             .chain(eval_store::SCHEMA.iter())
+            .chain(settings_store::SCHEMA.iter())
             .map(|sql| json!({ "sql": sql, "params": [] }))
             .chain(seed())
             .collect();
@@ -219,6 +234,22 @@ impl SqlStore {
                 json!({ "statements": statements }),
             )
             .await?;
+        for sql in MIGRATIONS {
+            let applied = engine
+                .call(
+                    NAMESPACE,
+                    "database::execute",
+                    json!({ "sql": sql, "params": [] }),
+                )
+                .await;
+            if let Some(e) = applied
+                .as_ref()
+                .err()
+                .filter(|e| !e.contains("duplicate column"))
+            {
+                return Err(format!("{sql}: {e}"));
+            }
+        }
         Ok(Self { engine })
     }
 
@@ -298,12 +329,15 @@ fn record(row: &Value) -> Result<Record, String> {
             plan: text(row, "plan"),
             failures: parse(row, "failures")?,
             error: text(row, "error"),
+            pr: text(row, "pr"),
+            ci_fixes: row["ci_fixes"].as_u64().unwrap_or(0) as u32,
             updated_at: parse(row, "updated_at")?,
         },
         runtime: Runtime {
             worktree: text(row, "worktree"),
             sandbox: text(row, "sandbox"),
             session: text(row, "session"),
+            issue: text(row, "issue"),
         },
         rev: parse(row, "rev")?,
         created_at: parse(row, "created_at")?,
@@ -378,7 +412,10 @@ fn job_params(r: &Record) -> Value {
         r.runtime.session,
         r.rev,
         r.created_at,
-        j.updated_at
+        j.updated_at,
+        j.pr,
+        j.ci_fixes,
+        r.runtime.issue
     ])
 }
 
@@ -416,7 +453,7 @@ impl Store for SqlStore {
     fn insert<'a>(&'a self, r: &'a Record) -> Answer<'a, ()> {
         Box::pin(async move {
             let sql = format!(
-                "INSERT INTO jobs ({JOB_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO jobs ({JOB_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             );
             self.execute(&sql, job_params(r)).await.map(|_| ())
         })
@@ -446,11 +483,11 @@ impl Store for SqlStore {
             let j = &r.job;
             let rows = self
                 .execute(
-                    "UPDATE jobs SET stage = ?, state = ?, question = ?, feedback = ?, plan = ?, failures = ?, error = ?, worktree = ?, sandbox = ?, session = ?, updated_at = ?, rev = rev + 1
+                    "UPDATE jobs SET stage = ?, state = ?, question = ?, feedback = ?, plan = ?, failures = ?, error = ?, worktree = ?, sandbox = ?, session = ?, updated_at = ?, pr = ?, ci_fixes = ?, issue = ?, rev = rev + 1
                      WHERE id = ? AND rev = ? RETURNING rev",
                     json!([
                         name(j.stage), name(j.state), j.question, j.feedback, j.plan, j.failures, j.error,
-                        r.runtime.worktree, r.runtime.sandbox, r.runtime.session, j.updated_at, j.id, r.rev
+                        r.runtime.worktree, r.runtime.sandbox, r.runtime.session, j.updated_at, j.pr, j.ci_fixes, r.runtime.issue, j.id, r.rev
                     ]),
                 )
                 .await?;
@@ -505,19 +542,6 @@ impl Store for SqlStore {
                 }
             }
             Ok(dials)
-        })
-    }
-
-    fn set_dials<'a>(&'a self, dials: &'a Dials) -> Answer<'a, ()> {
-        Box::pin(async move {
-            for (checkpoint, dial) in [("approve", dials.approve), ("review", dials.review)] {
-                self.execute(
-                    "INSERT INTO dials (checkpoint, dial) VALUES (?, ?) ON CONFLICT (checkpoint) DO UPDATE SET dial = excluded.dial",
-                    json!([checkpoint, name(dial)]),
-                )
-                .await?;
-            }
-            Ok(())
         })
     }
 
@@ -629,6 +653,7 @@ pub mod fake {
         /// Make every audit append wait forever, like a stalled database.
         pub stall_audit: Mutex<bool>,
         pub eval_rows: crate::eval_store::fake::EvalRows,
+        pub versions: crate::settings_store::fake::Versions,
     }
 
     impl Store for FakeStore {
@@ -697,11 +722,6 @@ pub mod fake {
         fn dials(&self) -> Answer<'_, Dials> {
             let dials = *self.dials.lock().unwrap();
             Box::pin(async move { Ok(dials) })
-        }
-
-        fn set_dials<'a>(&'a self, dials: &'a Dials) -> Answer<'a, ()> {
-            *self.dials.lock().unwrap() = *dials;
-            Box::pin(async { Ok(()) })
         }
 
         fn constraints(&self) -> Answer<'_, Vec<Constraint>> {
@@ -814,8 +834,8 @@ mod tests {
                     .unwrap()
                     .contains("WHERE id = ? AND rev = ?")
             );
-            assert_eq!(update["params"][11], "j1");
-            assert_eq!(update["params"][12], 1);
+            assert_eq!(update["params"][14], "j1");
+            assert_eq!(update["params"][15], 1);
         });
     }
 
@@ -857,7 +877,9 @@ mod tests {
     fn open_seeds_the_owner_defaults_without_overwriting() {
         let engine = Arc::new(
             FakeEngine::new(Link::Up)
-                .answer("database::transaction", Ok(json!({ "committed": true }))),
+                .answer("database::transaction", Ok(json!({ "committed": true })))
+                // An older database already has the column; that error is expected.
+                .answer("database::execute", Err("duplicate column name: pr".into())),
         );
         tauri::async_runtime::block_on(async {
             SqlStore::open(engine.clone()).await.unwrap();

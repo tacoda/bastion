@@ -49,6 +49,20 @@ pub mod command {
     pub const CAPABILITY_MOVE: &str = "capability_move";
     pub const AUDIT: &str = "audit";
     pub const EVALS: &str = "evals";
+    pub const SETTINGS: &str = "settings";
+    /// Takes `{ settings: SettingsView }`; saves a version if anything moved.
+    pub const SETTINGS_SET: &str = "settings_set";
+    /// Takes `{ preset: String }`: `high`, `medium`, `low` or `off`.
+    pub const SETTINGS_PRESET: &str = "settings_preset";
+    pub const SETTINGS_HISTORY: &str = "settings_history";
+    /// Takes `{ version: u64 }`.
+    pub const SETTINGS_RESTORE: &str = "settings_restore";
+    pub const MODELS: &str = "models";
+    pub const ACCOUNTS: &str = "accounts";
+    /// Takes `{ workspace: String }`: the open issues of its GitHub repository.
+    pub const ISSUES: &str = "issues";
+    /// Takes `{ workspace: String, number: u64 }`; returns the job's id.
+    pub const JOB_FROM_ISSUE: &str = "job_from_issue";
     /// Takes `{ id: String }`.
     pub const EVAL: &str = "eval";
     /// Takes `{ eval: NewEval }`; returns the eval's id.
@@ -271,6 +285,10 @@ pub struct JobSummary {
     pub hold_until: Option<u64>,
     /// What the owner may do now: `approve`, `comment`, `answer`, `stop`.
     pub actions: Vec<String>,
+    /// The job's pull request, when the forge is GitHub.
+    pub pr: Option<String>,
+    /// The tracker issue the request came from.
+    pub issue: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -456,4 +474,49 @@ pub struct EvalView {
     pub total_a: RunView,
     pub total_b: RunView,
     pub differences: Vec<String>,
+}
+
+/// The owner's settings (PLAN.md A7), each value as its word.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SettingsView {
+    pub approve: String,
+    pub review: String,
+    pub plan_provider: String,
+    pub plan_model: String,
+    pub build_provider: String,
+    pub build_model: String,
+    /// `local` or `github`.
+    pub forge: String,
+    /// `none` or `github_issues`.
+    pub tracker: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VersionView {
+    pub version: u64,
+    pub at: u64,
+    pub note: String,
+}
+
+/// A model `llm-router` offers on a provider with a key.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModelOption {
+    pub provider: String,
+    pub id: String,
+    pub name: String,
+}
+
+/// One of the owner's accounts with another service, and whether it works.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AccountView {
+    pub name: String,
+    pub ok: bool,
+    pub status: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IssueView {
+    pub number: u64,
+    pub title: String,
+    pub url: String,
 }

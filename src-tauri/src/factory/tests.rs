@@ -116,6 +116,17 @@ async fn finish_turn(rig: &Rig, id: &str) {
     panic!("no turn-completed binding for {session}");
 }
 
+/// Run a submitted job through its plan, the approval and its build, to review.
+async fn to_review(rig: &Rig, id: &str) {
+    until(rig, id, Stage::Plan, State::Running).await;
+    finish_turn(rig, id).await;
+    until(rig, id, Stage::Approve, State::NeedsYou).await;
+    rig.factory.apply(id, Event::Approved).await.unwrap();
+    until(rig, id, Stage::Build, State::Running).await;
+    finish_turn(rig, id).await;
+    until(rig, id, Stage::Review, State::NeedsYou).await;
+}
+
 #[test]
 fn a_request_runs_the_short_pipeline_to_landed() {
     let rig = rig();
@@ -310,5 +321,101 @@ fn a_trial_runs_from_its_eval_commit_under_its_arm_and_stops_at_review() {
             rig.engine.called("harness::metrics"),
             "each turn is metered"
         );
+    });
+}
+
+/// A rig whose workspace's origin is on GitHub, where every gh call
+/// answers with the pull request's URL.
+fn github_rig(pr: &str) -> Rig {
+    let engine = Arc::new(
+        engine()
+            .answer(
+                "sandbox::exec",
+                Ok(json!({ "exit_code": 0, "stdout": "+x" })),
+            )
+            .answer(
+                "github::exec",
+                Ok(json!({ "exit_code": 0, "stdout": format!("{pr}\n") })),
+            ),
+    );
+    let store = Arc::new(FakeStore::default());
+    store.workspaces.lock().unwrap().push(Workspace {
+        name: "w".into(),
+        path: "/repo".into(),
+        branch: "main".into(),
+    });
+    let machine = Arc::new(FakeMachine::new().run_ok("git", "git@github.com:o/r.git\n"));
+    let factory = Factory::new(
+        engine.clone() as Arc<dyn Engine>,
+        store.clone() as Arc<dyn Store>,
+        machine,
+        Arc::new(|_| {}),
+        "/s".into(),
+    );
+    Rig {
+        factory,
+        engine,
+        store,
+    }
+}
+
+#[test]
+fn with_github_as_the_forge_a_reviewed_change_goes_up_as_a_pull_request_and_merges() {
+    use crate::settings_store::SettingsStore;
+    use bastion_core::settings::{Forge, Settings};
+
+    let pr = "https://github.com/o/r/pull/1";
+    let rig = github_rig(pr);
+    tauri::async_runtime::block_on(async {
+        let github = Settings {
+            forge: Forge::Github,
+            ..Settings::default()
+        };
+        rig.store
+            .add_version(&github, "forge: local -> github", 1)
+            .await
+            .unwrap();
+        let id = rig.factory.submit("w", "Add modulo").await.unwrap();
+        to_review(&rig, &id).await;
+        rig.factory.apply(&id, Event::Approved).await.unwrap();
+        for _ in 0..200 {
+            if rig.store.load(&id).await.unwrap().job.pr.is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let job = rig.store.load(&id).await.unwrap().job;
+        assert_eq!(
+            (job.pr.as_deref(), job.state),
+            (Some(pr), State::Running),
+            "the pull request is up and CI runs"
+        );
+        assert!(!rig.engine.called("worktree::land"), "nothing merges here");
+        let created = rig
+            .engine
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|c| c.1 == "github::exec")
+            .map(|c| c.2.clone())
+            .unwrap();
+        assert_eq!(
+            (&created["args"][0], &created["args"][1]),
+            (&json!("pr"), &json!("create"))
+        );
+
+        rig.factory.apply(&id, Event::CiPassed).await.unwrap();
+        until(&rig, &id, Stage::Land, State::NeedsYou).await;
+        rig.factory.apply(&id, Event::Approved).await.unwrap();
+        until(&rig, &id, Stage::Land, State::Landed).await;
+        let merged = rig
+            .engine
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|c| c.1 == "github::exec" && c.2["args"][1] == "merge");
+        assert!(merged, "approve at land merges the pull request");
     });
 }

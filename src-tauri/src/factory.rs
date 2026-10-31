@@ -10,6 +10,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use base64::Engine as _;
 use bastion_core::govern::Enforcement;
 use bastion_core::review;
+use bastion_core::settings::Forge;
 use bastion_core::{
     Dial, Dials, Effect, Event, HOLD_SECS, Job, Outcome, Stage, State, admit, outcome, step,
 };
@@ -20,8 +21,10 @@ use crate::charter;
 use crate::engine::{DEFAULT_NAMESPACE, Engine};
 use crate::eval_store::{Eval, EvalRun};
 use crate::evals;
+use crate::forge;
 use crate::gate::Gate;
 use crate::machine::Machine;
+use crate::settings_store;
 use crate::store::{Artifact, Record, Runtime, STALE, Store};
 
 const NS: &str = "bastion";
@@ -54,6 +57,8 @@ Run Python tests with [\"python3\", \"-m\", \"pytest\", \"-q\", \"/work/repo\"].
 Your reply ends your turn. Keep calling tools until the work is done and
 committed, and reply only then. Do not describe a next step; take it.";
 const SAVE_TRIES: usize = 3;
+/// How many times CI is polled, 20 s apart, before the land gives up.
+const CI_POLLS: u32 = 90;
 
 pub type OnChange = Arc<dyn Fn(&str) + Send + Sync>;
 type BoxFuture<T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send>>;
@@ -164,11 +169,24 @@ impl Factory {
         workspace: &str,
         request: &str,
     ) -> Result<String, String> {
+        self.submit_with(workspace, request, None).await
+    }
+
+    /// Submit a request, with the tracker issue it came from if any.
+    pub async fn submit_with(
+        self: &Arc<Self>,
+        workspace: &str,
+        request: &str,
+        issue: Option<String>,
+    ) -> Result<String, String> {
         let id = format!("j{}", short_id());
         let at = now();
         let record = Record {
             job: Job::new(id.clone(), workspace.into(), request.into(), at),
-            runtime: Runtime::default(),
+            runtime: Runtime {
+                issue,
+                ..Runtime::default()
+            },
             rev: 1,
             created_at: at,
         };
@@ -208,7 +226,7 @@ impl Factory {
                 trial: true,
                 ..Dials::default()
             },
-            None => self.store.dials().await?,
+            None => settings_store::current(&*self.store).await?.dials,
         })
     }
 
@@ -342,6 +360,7 @@ impl Factory {
                 Ok(()) => None,
                 Err(error) => self.apply(&id, Event::LandFailed { error }).await.err(),
             },
+            Effect::WatchCi | Effect::Merge => self.forge_effect(&record, effect).await,
             Effect::Teardown => {
                 self.grade_trial(&record);
                 self.teardown(&record).await.err()
@@ -519,6 +538,8 @@ impl Factory {
         message.push_str("\n\n");
         message.push_str(&self.gate.rules(&job.id));
         message.push_str(brief);
+        let settings = settings_store::current(&*self.store).await?;
+        let model = settings.model(stage);
         self.engine
             .call(
                 NS,
@@ -528,7 +549,7 @@ impl Factory {
             .await?;
         self.engine
             .call_for(NS, "harness::send", json!({
-                "session_id": session, "provider": PROVIDER, "model": MODEL, "message": message,
+                "session_id": session, "provider": model.provider, "model": model.model, "message": message,
                 "options": { "max_turns": MAX_TURN_STEPS, "functions": { "allow": TOOLS }, "metadata": { "sandbox_id": sandbox, "job": job.id, "stage": stage } },
             }), 60_000)
             .await?;
@@ -695,7 +716,54 @@ impl Factory {
                 &branch,
             ],
         )?;
+        let target = self
+            .store
+            .workspaces()
+            .await?
+            .into_iter()
+            .find(|w| w.name == record.job.workspace)
+            .map(|w| w.branch)
+            .ok_or(format!("no workspace {}", record.job.workspace))?;
+        match settings_store::current(&*self.store).await?.forge {
+            Forge::Github => self.open_pr(record, &path, &target).await,
+            Forge::Local => self.land_here(record, &worktree, &target).await,
+        }
+    }
 
+    /// Push the job's branch and open its pull request, or reuse the one a
+    /// fix turn pushes to.
+    async fn open_pr(
+        self: &Arc<Self>,
+        record: &Record,
+        path: &Path,
+        base: &str,
+    ) -> Result<(), String> {
+        let job = &record.job;
+        let slug = forge::slug(&*self.machine, path)?;
+        forge::push(&*self.machine, path, &job.id)?;
+        let url = match &job.pr {
+            Some(url) => url.clone(),
+            None => {
+                let pr = forge::describe(job, base, record.runtime.issue.as_deref());
+                forge::GitHub {
+                    engine: &*self.engine,
+                    slug,
+                }
+                .open(&pr)
+                .await?
+            }
+        };
+        self.apply(&job.id, Event::PrOpened { url }).await
+    }
+
+    /// Merge the worktree into the workspace's branch here, with `worktree::land`.
+    async fn land_here(
+        self: &Arc<Self>,
+        record: &Record,
+        worktree: &str,
+        target: &str,
+    ) -> Result<(), String> {
+        let id = &record.job.id;
         for (trigger, landed) in [
             ("worktree::landed", true),
             ("worktree::land-blocked", false),
@@ -725,14 +793,6 @@ impl Factory {
             )?;
             self.hold(id, binding);
         }
-        let target = self
-            .store
-            .workspaces()
-            .await?
-            .into_iter()
-            .find(|w| w.name == record.job.workspace)
-            .map(|w| w.branch)
-            .ok_or(format!("no workspace {}", record.job.workspace))?;
         self.engine
             .call(
                 NS,
@@ -822,6 +882,83 @@ impl Factory {
             .ok_or(format!("worktree::create: {created}"))
     }
 
+    /// The repository a job's pull request lives in, from its worktree's origin.
+    async fn slug(&self, record: &Record) -> Result<String, String> {
+        let worktree = record.runtime.worktree.clone().ok_or("no worktree")?;
+        let (path, _) = self.worktree_path(&worktree).await?;
+        forge::slug(&*self.machine, &path)
+    }
+
+    /// Poll the pull request's checks until they pass or fail.
+    // ponytail: polls every 20 s for 30 min; the github worker's PR webhooks replace this once a tunnel is set up.
+    fn watch_ci(self: &Arc<Self>, record: &Record) {
+        let (factory, record) = (self.clone(), record.clone());
+        tauri::async_runtime::spawn(async move {
+            let id = record.job.id.clone();
+            let (Some(pr), Ok(slug)) = (record.job.pr.clone(), factory.slug(&record).await) else {
+                let error = "the pull request or its repository is unknown".into();
+                let _ = factory.apply(&id, Event::LandFailed { error }).await;
+                return;
+            };
+            for _ in 0..CI_POLLS {
+                tokio::time::sleep(Duration::from_secs(20)).await;
+                let hub = forge::GitHub {
+                    engine: &*factory.engine,
+                    slug: slug.clone(),
+                };
+                let event = match hub.checks(&pr).await {
+                    Ok(forge::Checks::Pending) => continue,
+                    Ok(forge::Checks::Passed) => Event::CiPassed,
+                    Ok(forge::Checks::Failed(log)) => Event::CiFailed { log },
+                    Err(error) => Event::LandFailed { error },
+                };
+                let _ = factory.apply(&id, event).await;
+                return;
+            }
+            let error = "CI did not finish within 30 minutes".into();
+            let _ = factory.apply(&id, Event::LandFailed { error }).await;
+        });
+    }
+
+    /// Watch CI on the job's pull request, or merge it.
+    async fn forge_effect(self: &Arc<Self>, record: &Record, effect: Effect) -> Option<String> {
+        if effect == Effect::WatchCi {
+            self.watch_ci(record);
+            return None;
+        }
+        let event = match self.merge(record).await {
+            Ok(()) => Event::Landed,
+            Err(error) => Event::LandFailed { error },
+        };
+        self.apply(&record.job.id, event).await.err()
+    }
+
+    /// Merge the pull request, then bring the workspace's branch up to date.
+    async fn merge(&self, record: &Record) -> Result<(), String> {
+        let pr = record.job.pr.clone().ok_or("the job has no pull request")?;
+        forge::GitHub {
+            engine: &*self.engine,
+            slug: self.slug(record).await?,
+        }
+        .merge(&pr)
+        .await?;
+        let ws = self
+            .store
+            .workspaces()
+            .await?
+            .into_iter()
+            .find(|w| w.name == record.job.workspace);
+        if let Some(ws) = ws {
+            // Best effort: a workspace with local changes keeps them and stays behind.
+            let _ = self.machine.run(
+                "git",
+                &["pull", "-q", "--ff-only", "origin", &ws.branch],
+                Some(Path::new(&ws.path)),
+            );
+        }
+        Ok(())
+    }
+
     /// Where a job's worktree starts: a trial from its eval's commit, so both
     /// arms see the same code; any other job from the workspace's branch.
     async fn base_of(&self, id: &str, branch: &str) -> Result<String, String> {
@@ -884,11 +1021,15 @@ impl Factory {
                     let error = "the app quit while the job was provisioning".into();
                     let _ = self.apply(&id, Event::ProvisionFailed { error }).await;
                 }
+                // A pull request already up waits on its CI again.
                 (State::Running, Stage::Land, _) => {
+                    let effect = if record.job.pr.is_some() {
+                        Effect::WatchCi
+                    } else {
+                        Effect::Land
+                    };
                     let factory = self.clone();
-                    tauri::async_runtime::spawn(
-                        async move { factory.run(record, Effect::Land).await },
-                    );
+                    tauri::async_runtime::spawn(async move { factory.run(record, effect).await });
                 }
                 (State::NeedsYou, stage, _) => {
                     // A hold that was counting down when the app quit.

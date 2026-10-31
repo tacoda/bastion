@@ -10,9 +10,11 @@ mod engine;
 mod eval_store;
 mod evals;
 mod factory;
+mod forge;
 mod gate;
 mod machine;
 mod profile;
+mod settings_store;
 mod stack;
 mod store;
 
@@ -159,6 +161,15 @@ pub fn run() {
             commands::govern::capability_move,
             commands::govern::audit,
             commands::evals::evals,
+            commands::settings::settings,
+            commands::settings::settings_set,
+            commands::settings::settings_preset,
+            commands::settings::settings_history,
+            commands::settings::settings_restore,
+            commands::settings::models,
+            commands::settings::accounts,
+            commands::settings::issues,
+            commands::settings::job_from_issue,
             commands::evals::eval,
             commands::evals::eval_create,
             commands::evals::eval_apply,

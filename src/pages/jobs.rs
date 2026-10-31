@@ -1,7 +1,7 @@
 //! The Jobs page and New request (PLAN.md A3): every job, the ones waiting on
 //! the owner first, after wipp's Jobs page and GitHub Actions' runs list.
 
-use bastion_protocol::{JobSummary, Workspace, command, event};
+use bastion_protocol::{IssueView, JobSummary, Workspace, command, event};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::Serialize;
@@ -211,6 +211,77 @@ pub fn NewRequestPage() -> impl IntoView {
             <p class="m-0 text-bad" role="alert">{error}</p>
             <button class="w-fit rounded-lg bg-primary px-3 py-2 font-semibold text-white hover:bg-primary-hover disabled:opacity-50"
                 disabled=move || chosen().is_empty() || request.get().trim().is_empty() on:click=submit>"Submit"</button>
+        </section>
+        <FromIssue workspace=Signal::derive(chosen) />
+    }
+}
+
+#[derive(Serialize)]
+struct ForWorkspace {
+    workspace: String,
+}
+
+#[derive(Serialize)]
+struct FromIssueArgs {
+    workspace: String,
+    number: u64,
+}
+
+/// Start a job from one of the workspace's open GitHub issues (PLAN.md A7).
+#[component]
+fn FromIssue(workspace: Signal<String>) -> impl IntoView {
+    let go = nav();
+    let (issues, set_issues) = signal(Vec::<IssueView>::new());
+    let (note, set_note) = signal(String::new());
+    let load = move |_| {
+        let workspace = workspace.get_untracked();
+        spawn_local(async move {
+            match ipc::call::<Vec<IssueView>, String>(command::ISSUES, ForWorkspace { workspace })
+                .await
+            {
+                Ok(all) => {
+                    set_note.set(if all.is_empty() {
+                        "No open issues.".into()
+                    } else {
+                        String::new()
+                    });
+                    set_issues.set(all);
+                }
+                Err(e) => set_note.set(e.text()),
+            }
+        });
+    };
+    let start = move |number: u64| {
+        let workspace = workspace.get_untracked();
+        spawn_local(async move {
+            match ipc::call::<String, String>(
+                command::JOB_FROM_ISSUE,
+                FromIssueArgs { workspace, number },
+            )
+            .await
+            {
+                Ok(id) => go.set(Route::Job(id)),
+                Err(e) => set_note.set(e.text()),
+            }
+        });
+    };
+    view! {
+        <section class="mt-4 grid max-w-2xl gap-2 rounded-xl border border-line bg-panel p-4">
+            <div class="flex items-center justify-between">
+                <h2 class="m-0 text-sm font-semibold text-muted">"Or start from a GitHub issue"</h2>
+                <button class="rounded-lg border border-line px-3 py-1 text-sm hover:bg-line" on:click=load>"Load issues"</button>
+            </div>
+            <ul class="m-0 grid list-none gap-1 p-0 text-sm">
+                {move || issues.get().into_iter().map(|i| {
+                    let number = i.number;
+                    view! {
+                        <li><button class="w-full rounded px-2 py-1 text-left hover:bg-line" on:click=move |_| start(number)>
+                            <span class="text-muted">{format!("#{} ", i.number)}</span>{i.title}
+                        </button></li>
+                    }
+                }).collect_view()}
+            </ul>
+            <p class="m-0 text-sm text-muted" role="status">{note}</p>
         </section>
     }
 }

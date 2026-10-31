@@ -127,6 +127,18 @@ fn charter(c: Option<CharterView>) -> impl IntoView + use<> {
     })
 }
 
+/// What Approve does at the checkpoint the job waits at.
+fn what_approve_does(d: &JobDetail) -> &'static str {
+    match d.job.stage.as_str() {
+        "land" if d.job.pr.is_some() => {
+            "CI passed on the pull request. Approve merges it, or stop the job."
+        }
+        "land" => "Approve retries the land, or stop the job.",
+        "review" => "Approve the build artifact to move on, or send it back with a note.",
+        _ => "Approve the plan artifact to move on, or send it back with a note.",
+    }
+}
+
 /// The request and its badges: state, workspace, id and age.
 fn header(d: &JobDetail) -> impl IntoView + use<> {
     let (symbol, color) = mark(&d.job.state);
@@ -139,6 +151,8 @@ fn header(d: &JobDetail) -> impl IntoView + use<> {
                 <span class=badge>{d.job.workspace.clone()}</span>
                 <span class=badge>{d.job.id.clone()}</span>
                 <span class=badge>{ago(d.job.created_at)}</span>
+                {d.job.issue.clone().map(|url| view! { <a class="rounded-full border border-line px-2 py-0.5 text-link" href=url.clone() target="_blank">{format!("issue {}", url.rsplit('/').next().unwrap_or_default())}</a> })}
+                {d.job.pr.clone().map(|url| view! { <a class="rounded-full border border-line px-2 py-0.5 text-link" href=url.clone() target="_blank">{format!("pull request {}", url.rsplit('/').next().unwrap_or_default())}</a> })}
             </div>
         </div>
     }
@@ -248,11 +262,7 @@ pub fn JobPage(id: String) -> impl IntoView {
                     <p class="m-0"><strong>"The agent asks: "</strong>{q}</p>
                 })}
                 <Show when=move || allows("approve")>
-                    <p class="m-0 text-sm text-muted">{move || detail.get().map(|d| match d.job.stage.as_str() {
-                        "land" => "Approve retries the land, or stop the job.".to_string(),
-                        "review" => "Approve the build artifact to move on, or send it back with a note.".to_string(),
-                        _ => "Approve the plan artifact to move on, or send it back with a note.".to_string(),
-                    })}</p>
+                    <p class="m-0 text-sm text-muted">{move || detail.get().map(|d| what_approve_does(&d))}</p>
                 </Show>
                 {move || detail.get().filter(|_| allows("approve")).map(|d| {
                     // What the checkpoint judges: the plan at approve; the build's report and its diff at review.

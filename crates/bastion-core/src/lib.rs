@@ -8,6 +8,7 @@ pub mod charter;
 pub mod eval;
 pub mod govern;
 pub mod review;
+pub mod settings;
 
 use serde::{Deserialize, Serialize};
 
@@ -99,6 +100,10 @@ pub struct Job {
     pub failures: u32,
     /// Why the job failed, when it did.
     pub error: Option<String>,
+    /// The pull request the job's change went up as, when the forge is one.
+    pub pr: Option<String>,
+    /// Fix turns a failing CI run has started (D16).
+    pub ci_fixes: u32,
     pub updated_at: u64,
 }
 
@@ -126,6 +131,15 @@ pub enum Event {
         error: String,
     },
     Stopped,
+    /// The change went up as a pull request; CI runs on it now.
+    PrOpened {
+        url: String,
+    },
+    CiPassed,
+    /// CI failed on the pull request, with the log of what failed.
+    CiFailed {
+        log: String,
+    },
     /// A held checkpoint's time ran out (D15).
     HoldExpired {
         stage: Stage,
@@ -211,6 +225,10 @@ pub enum Effect {
     Teardown,
     /// Send `HoldExpired` for this checkpoint after `secs`.
     Hold { stage: Stage, secs: u64 },
+    /// Wait for CI on the job's pull request, then send `CiPassed` or `CiFailed`.
+    WatchCi,
+    /// Merge the job's pull request, then send `Landed` or `LandFailed`.
+    Merge,
 }
 
 impl Job {
@@ -226,6 +244,8 @@ impl Job {
             plan: None,
             failures: 0,
             error: None,
+            pr: None,
+            ci_fixes: 0,
             updated_at: at,
         }
     }
@@ -266,21 +286,10 @@ pub fn step(job: &Job, event: &Event, at: u64, dials: &Dials) -> (Job, Vec<Effec
             advance(&mut next, dials)
         }
         (State::NeedsYou, Event::Commented { text }) => commented(&mut next, text, dials),
-        (State::Running, Event::Landed) if next.stage == Stage::Land => {
-            next.state = State::Landed;
-            vec![Effect::Teardown]
-        }
-        // A failed land keeps the VM and its commits, and waits on the owner:
-        // approve retries the land, stop ends the job.
-        (State::Running, Event::LandFailed { error }) if next.stage == Stage::Land => {
-            next.state = State::NeedsYou;
-            next.error = Some(error.clone());
-            Vec::new()
-        }
-        (State::NeedsYou, Event::Approved) if next.stage == Stage::Land => {
-            next.error = None;
-            enter(&mut next, dials)
-        }
+        (_, event) if next.stage == Stage::Land => match land(&mut next, event, dials) {
+            Some(effects) => effects,
+            None => return (job.clone(), Vec::new()),
+        },
         _ => return (job.clone(), Vec::new()),
     };
     (next, effects)
@@ -314,6 +323,67 @@ fn enter(job: &mut Job, dials: &Dials) -> Vec<Effect> {
         read_only: job.stage.read_only(),
         cap_secs: TURN_CAP_SECS,
     }]
+}
+
+/// An event at the land stage: a local land, or a pull request's CI and
+/// merge. `None` means the event does not fit, and nothing changes.
+fn land(job: &mut Job, event: &Event, dials: &Dials) -> Option<Vec<Effect>> {
+    Some(match (job.state, event) {
+        (State::Running, Event::Landed) => {
+            job.state = State::Landed;
+            vec![Effect::Teardown]
+        }
+        // A failed land keeps the VM and its commits, and waits on the owner:
+        // approve retries the land, stop ends the job.
+        (State::Running, Event::LandFailed { error }) => {
+            job.state = State::NeedsYou;
+            job.error = Some(error.clone());
+            Vec::new()
+        }
+        // With a pull request open, approve at land is the merge decision.
+        (State::NeedsYou, Event::Approved) if job.pr.is_some() => {
+            job.error = None;
+            job.state = State::Running;
+            vec![Effect::Merge]
+        }
+        (State::NeedsYou, Event::Approved) => {
+            job.error = None;
+            enter(job, dials)
+        }
+        (State::Running, Event::PrOpened { url }) => {
+            job.pr = Some(url.clone());
+            vec![Effect::WatchCi]
+        }
+        // CI passed: the owner decides the merge.
+        (State::Running, Event::CiPassed) => {
+            job.state = State::NeedsYou;
+            Vec::new()
+        }
+        (State::Running, Event::CiFailed { log }) => ci_failed(job, log, dials),
+        _ => return None,
+    })
+}
+
+/// How many fix turns a failing CI run may start before the job fails (D16).
+pub const MAX_CI_FIXES: u32 = 2;
+
+/// A failing CI run sends the work back to build with its log, at most
+/// `MAX_CI_FIXES` times. The fixed build goes through review again, and its
+/// land pushes to the same pull request.
+fn ci_failed(job: &mut Job, log: &str, dials: &Dials) -> Vec<Effect> {
+    if job.ci_fixes >= MAX_CI_FIXES {
+        return fail(
+            job,
+            &format!("CI still failed after {MAX_CI_FIXES} fixes:\n{log}"),
+        );
+    }
+    job.ci_fixes += 1;
+    job.stage = Stage::Build;
+    job.failures = 0;
+    job.feedback = Some(format!(
+        "CI failed on the pull request. Read the log, fix the cause, and commit.\n<ci-log>\n{log}\n</ci-log>"
+    ));
+    enter(job, dials)
 }
 
 fn advance(job: &mut Job, dials: &Dials) -> Vec<Effect> {

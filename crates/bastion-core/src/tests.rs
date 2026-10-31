@@ -500,3 +500,93 @@ fn a_trial_approves_its_plan_and_stops_at_review_with_its_diff() {
     let teardown = effects.iter().position(|e| *e == Effect::Teardown).unwrap();
     assert!(diff < teardown, "the diff is taken before the VM goes");
 }
+
+/// A job at land, as the adapter leaves it after pushing its pull request.
+fn opened() -> Job {
+    let mut j = run(&[
+        Event::Admitted,
+        Event::Provisioned,
+        done("plan"),
+        Event::Approved,
+        done("built"),
+        Event::Approved,
+    ])
+    .0;
+    assert_eq!((j.stage, j.state), (Stage::Land, State::Running));
+    let (next, effects) = step(
+        &j,
+        &Event::PrOpened {
+            url: "https://github.com/o/r/pull/1".into(),
+        },
+        AT + 20,
+        &Dials::default(),
+    );
+    assert_eq!(effects, vec![Effect::WatchCi]);
+    j = next;
+    j
+}
+
+#[test]
+fn a_passing_pull_request_waits_for_the_owner_and_approve_merges() {
+    let j = opened();
+    let (j, effects) = step(&j, &Event::CiPassed, AT + 21, &Dials::default());
+    assert_eq!((j.state, effects.len()), (State::NeedsYou, 0));
+    assert!(actions(&j).contains(&Action::Approve));
+    let (j, effects) = step(&j, &Event::Approved, AT + 22, &Dials::default());
+    assert_eq!((j.state, effects), (State::Running, vec![Effect::Merge]));
+    let (j, effects) = step(&j, &Event::Landed, AT + 23, &Dials::default());
+    assert_eq!((j.state, effects), (State::Landed, vec![Effect::Teardown]));
+}
+
+#[test]
+fn a_failing_ci_run_sends_a_bounded_fix_turn_with_its_log() {
+    let mut j = opened();
+    for fix in 1..=MAX_CI_FIXES {
+        let (next, effects) = step(
+            &j,
+            &Event::CiFailed {
+                log: "CHANGELOG.md has no entry".into(),
+            },
+            AT + 30,
+            &Dials::default(),
+        );
+        assert_eq!(
+            (next.stage, next.state, next.ci_fixes),
+            (Stage::Build, State::Running, fix)
+        );
+        assert!(
+            next.feedback
+                .as_deref()
+                .unwrap()
+                .contains("CHANGELOG.md has no entry")
+        );
+        let Effect::StartTurn { brief, .. } = &effects[0] else {
+            panic!("a fix turn starts")
+        };
+        assert!(brief.contains("CHANGELOG.md has no entry"), "{brief}");
+        // The fix goes back through review and land to the same pull request.
+        let mut back = next;
+        for e in [done("fixed"), Event::Approved] {
+            back = step(&back, &e, AT + 31, &Dials::default()).0;
+        }
+        assert_eq!((back.stage, back.pr.is_some()), (Stage::Land, true));
+        j = step(
+            &back,
+            &Event::PrOpened {
+                url: "https://github.com/o/r/pull/1".into(),
+            },
+            AT + 32,
+            &Dials::default(),
+        )
+        .0;
+    }
+    let (j, _) = step(
+        &j,
+        &Event::CiFailed {
+            log: "still".into(),
+        },
+        AT + 40,
+        &Dials::default(),
+    );
+    assert_eq!(j.state, State::Failed);
+}

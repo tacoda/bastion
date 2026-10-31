@@ -5,6 +5,7 @@
 pub mod audit;
 mod brief;
 pub mod charter;
+pub mod eval;
 pub mod govern;
 pub mod review;
 
@@ -150,12 +151,22 @@ pub const HOLD_SECS: u64 = 30 * 60;
 pub struct Dials {
     pub approve: Dial,
     pub review: Dial,
+    /// An eval's run (A6): it approves its own plan and stops at review
+    /// with its diff, so nothing lands.
+    pub trial: bool,
 }
 
 impl Dials {
     /// The dial a stage runs under. Review is the merge decision, so it never
     /// goes below hold (D15). A stage that is not a checkpoint asks.
     pub fn at(&self, stage: Stage) -> Dial {
+        if self.trial {
+            return if stage == Stage::Approve {
+                Dial::Auto
+            } else {
+                Dial::Ask
+            };
+        }
         match stage {
             Stage::Approve => self.approve,
             Stage::Review if self.review == Dial::Auto => Dial::Hold,
@@ -278,6 +289,10 @@ pub fn step(job: &Job, event: &Event, at: u64, dials: &Dials) -> (Job, Vec<Effec
 /// Start the current stage.
 fn enter(job: &mut Job, dials: &Dials) -> Vec<Effect> {
     job.question = None;
+    if dials.trial && job.stage == Stage::Review {
+        job.state = State::Stopped;
+        return vec![Effect::Teardown];
+    }
     if job.stage.is_checkpoint() {
         job.state = State::NeedsYou;
         return match dials.at(job.stage) {

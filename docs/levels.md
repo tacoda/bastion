@@ -31,3 +31,9 @@ N6's engine-status line and theme were not checked by eye.
 | Spike | Result | Date | Notes |
 |---|---|---|---|
 | N8 | pass | 2026-10-31 | A `harness::hook::pre-trigger` binding answers `{ "decision": "deny", "reason": … }` or `{ "decision": "hold", … }`. A denied call's reason reaches the turn verbatim as its result. A held call parks the turn (status stays `running`), and the envelope carries `session_id`, `turn_id` and `call.id`. `harness::function::resolve` takes `session_id`, `turn_id`, `function_call_id`, `action` (`deliver` or `execute`), `content`, `details` and `is_error`; an unknown field such as `mode` is ignored and the default `deliver` sends an empty result. The held arguments arrive without the hook's `sandbox_id` mutation, so on approval the app runs the call itself, pinned to the job's VM, and delivers the result. `harness::stop` exists and answers `{ "stopping": … }`. One run: the model gave up after the deny until told to make the second call anyway. |
+
+## A6
+
+| Spike | Result | Date | Notes |
+|---|---|---|---|
+| N9 | partial | 2026-10-31 | `judge::evaluate` lives in namespace `bastion` and answers `{ "status": "error", "code": "provider_unavailable" }`: the stack has the `judge` worker but no `judge-<provider>` worker, so it has no model to grade with. Bastion grades with a harness turn that has no tools instead, and reads its last `GRADE: n` line. `harness::metrics` with `root_session_id` gives each session's `turns`, `function_calls`, `function_call_errors` and `cost_usd`, which the eval tallies. The stock `eval` worker analyzes finished harness sessions; it does not compare two configurations. `worktree::create` takes a commit as `base_ref`, so an eval pins its snapshot as a commit. |

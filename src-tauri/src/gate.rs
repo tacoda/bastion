@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use bastion_core::Stage;
 use bastion_core::audit;
+use bastion_core::eval::Override;
 use bastion_core::govern::{self, Call, Capability, Constraint, Decision, Verdict};
 use serde_json::{Value, json};
 
@@ -41,6 +42,8 @@ pub struct Gate {
     hook_runs: Mutex<HashMap<String, Vec<String>>>,
     /// What each job's latest review diff broke, by constraint.
     findings: Mutex<HashMap<String, Vec<String>>>,
+    /// The rungs an eval's arm sets for each of its trial jobs.
+    overrides: Mutex<HashMap<String, Vec<Override>>>,
 }
 
 /// What the rules read from a call: its command line in any of the shapes
@@ -68,19 +71,6 @@ fn call_of(call: &Value) -> Call {
         function: call["function_id"].as_str().unwrap_or_default().into(),
         text,
     }
-}
-
-fn describe(call: &Call, verdict: &Verdict) -> String {
-    let decision = match &verdict.decision {
-        Decision::Continue => "continue".to_string(),
-        Decision::Deny { reason } => format!("deny ({reason})"),
-        Decision::Hold { reason } => format!("hold ({reason})"),
-    };
-    let mut detail = format!("{decision} {} {}", call.function, call.text);
-    if !verdict.flagged.is_empty() {
-        detail.push_str(&format!(" flagged: {}", verdict.flagged.join(", ")));
-    }
-    detail
 }
 
 /// A call's arguments as a Claude Code hook reads `tool_input`.
@@ -111,6 +101,7 @@ impl Gate {
             charters: Mutex::new(HashMap::new()),
             hook_runs: Mutex::new(HashMap::new()),
             findings: Mutex::new(HashMap::new()),
+            overrides: Mutex::new(HashMap::new()),
         })
     }
 
@@ -208,7 +199,44 @@ impl Gate {
             .unwrap_or_default()
     }
 
-    /// The owner's constraints and the job's charter's, together.
+    /// Judge a trial job under its arm's rungs from now on.
+    pub fn set_overrides(&self, job: &str, overrides: Vec<Override>) {
+        let detail = overrides
+            .iter()
+            .map(|o| format!("{o:?}"))
+            .collect::<Vec<_>>()
+            .join("; ");
+        self.note("arm", job, detail);
+        self.overrides.lock().unwrap().insert(job.into(), overrides);
+    }
+
+    /// Record an eval's creation.
+    pub fn note_eval(&self, e: &crate::eval_store::Eval, requests: usize) {
+        let base = &e.base[..7.min(e.base.len())];
+        let detail = format!(
+            "{}: {requests} requests from {} at {base}",
+            e.name, e.workspace
+        );
+        self.note("eval", &e.id, detail);
+    }
+
+    /// The owner's grants, with the job's arm's rungs set.
+    fn grants(&self, job: &str) -> Vec<Capability> {
+        let mut grants: Vec<Capability> = self
+            .policy
+            .read()
+            .unwrap()
+            .iter()
+            .flat_map(|p| p.grants.clone())
+            .collect();
+        if let Some(o) = self.overrides.lock().unwrap().get(job) {
+            bastion_core::eval::apply(&mut [], &mut grants, o);
+        }
+        grants
+    }
+
+    /// The owner's constraints and the job's charter's, together, with the
+    /// job's arm's rungs set.
     pub fn constraints(&self, job: &str) -> Vec<Constraint> {
         let mut all: Vec<Constraint> = self
             .policy
@@ -222,6 +250,9 @@ impl Gate {
                 .into_iter()
                 .flat_map(|c| c.constraints.clone()),
         );
+        if let Some(o) = self.overrides.lock().unwrap().get(job) {
+            bastion_core::eval::apply(&mut all, &mut [], o);
+        }
         all
     }
 
@@ -254,8 +285,8 @@ impl Gate {
                 },
                 flagged: vec![],
             },
-            (Some(p), Some(stage), Ok(_)) => {
-                govern::gate(&call, stage, &self.constraints(&job), &p.grants)
+            (Some(_), Some(stage), Ok(_)) => {
+                govern::gate(&call, stage, &self.constraints(&job), &self.grants(&job))
             }
             _ => Verdict {
                 decision: Decision::Deny {
@@ -264,7 +295,7 @@ impl Gate {
                 flagged: vec![],
             },
         };
-        self.note("gate", &job, describe(&call, &verdict));
+        self.note("gate", &job, bastion_core::eval::describe(&call, &verdict));
         let hooks: Vec<String> = self
             .charter(&job)
             .iter()
@@ -467,6 +498,45 @@ impl Gate {
         );
         self.note("add", &c.id, detail);
         Ok(())
+    }
+
+    /// Set the live policy to an eval arm's rungs, and record the eval the
+    /// owner acted on with each move.
+    pub async fn apply_arm(
+        &self,
+        eval: &str,
+        arm: &str,
+        overrides: &[Override],
+    ) -> Result<(), String> {
+        let (mut constraints, mut grants) = (
+            self.store.constraints().await?,
+            self.store.capabilities().await?,
+        );
+        let (was_c, was_g) = (constraints.clone(), grants.clone());
+        bastion_core::eval::apply(&mut constraints, &mut grants, overrides);
+        for (c, was) in constraints
+            .iter()
+            .zip(&was_c)
+            .filter(|(c, w)| c.rung != w.rung)
+        {
+            self.store.set_constraint(c).await?;
+            self.note(
+                "apply-eval",
+                &c.id,
+                format!("{eval} arm {arm}: {:?} -> {:?}", was.rung, c.rung),
+            );
+        }
+        for (g, was) in grants.iter().zip(&was_g).filter(|(g, w)| g.rung != w.rung) {
+            self.store.set_capability(g).await?;
+            let subject = format!("{:?} {}", g.stage, g.function);
+            self.note(
+                "apply-eval",
+                &subject,
+                format!("{eval} arm {arm}: {:?} -> {:?}", was.rung, g.rung),
+            );
+        }
+        self.note("eval", eval, format!("the owner applied arm {arm}"));
+        self.reload().await
     }
 
     /// Move a constraint one rung up or down its ladder, and record it.
@@ -872,6 +942,71 @@ mod tests {
             json!({ "argv": ["curl", "-s", "x"] }),
         ));
         assert_eq!(answer["decision"], "deny");
+    }
+
+    #[test]
+    fn an_arm_moves_rungs_for_its_trial_job_only() {
+        let r = rig();
+        let rm = || {
+            envelope(
+                "build",
+                "sandbox::exec",
+                json!({ "argv": ["git", "rm", "t.py"] }),
+            )
+        };
+        assert_eq!(r.gate.judge(&rm())["decision"], "continue");
+        r.gate.set_overrides(
+            "j1",
+            vec![
+                Override::Constraint {
+                    id: "keep-tests".into(),
+                    rung: govern::Enforcement::Enforced,
+                },
+                Override::Capability {
+                    stage: Stage::Plan,
+                    function: "sandbox::fs::write".into(),
+                    rung: govern::Access::Allowed,
+                },
+            ],
+        );
+        assert_eq!(r.gate.judge(&rm())["decision"], "deny");
+        assert_eq!(r.gate.judge(&write())["decision"], "continue");
+        let other = json!({ "call": { "id": "fc9", "function_id": "sandbox::exec", "arguments": { "argv": ["git", "rm", "t.py"] } },
+            "metadata": { "job": "j2", "stage": "build", "sandbox_id": "vm2" } });
+        assert_eq!(
+            r.gate.judge(&other)["decision"],
+            "continue",
+            "another job keeps the owner's rungs"
+        );
+    }
+
+    #[test]
+    fn applying_an_arm_moves_the_live_rung_and_records_the_eval() {
+        let r = rig();
+        let b = [Override::Constraint {
+            id: "keep-tests".into(),
+            rung: govern::Enforcement::Enforced,
+        }];
+        tauri::async_runtime::block_on(r.gate.apply_arm("e1", "b", &b)).unwrap();
+        let rm = envelope(
+            "build",
+            "sandbox::exec",
+            json!({ "argv": ["git", "rm", "t.py"] }),
+        );
+        assert_eq!(r.gate.judge(&rm)["decision"], "deny");
+        settle();
+        let chain = r.store.audit.lock().unwrap().clone();
+        let applied = chain
+            .iter()
+            .find(|e| e.record.kind == "apply-eval")
+            .unwrap();
+        assert_eq!(applied.record.subject, "keep-tests");
+        assert!(
+            applied
+                .record
+                .detail
+                .starts_with("e1 arm b: Told -> Enforced")
+        );
     }
 
     #[test]

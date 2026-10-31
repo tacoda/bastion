@@ -45,7 +45,7 @@ fn jobs_signal() -> (ReadSignal<Vec<JobSummary>>, ReadSignal<String>) {
     (jobs, error)
 }
 
-fn workspaces_signal() -> ReadSignal<Vec<Workspace>> {
+pub fn workspaces_signal() -> ReadSignal<Vec<Workspace>> {
     let (workspaces, set_workspaces) = signal(Vec::<Workspace>::new());
     let load = move || {
         spawn_local(async move {

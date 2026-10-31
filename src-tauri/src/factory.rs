@@ -11,13 +11,15 @@ use base64::Engine as _;
 use bastion_core::govern::Enforcement;
 use bastion_core::review;
 use bastion_core::{
-    Dial, Effect, Event, HOLD_SECS, Job, Outcome, Stage, State, admit, outcome, step,
+    Dial, Dials, Effect, Event, HOLD_SECS, Job, Outcome, Stage, State, admit, outcome, step,
 };
 use serde_json::{Value, json};
 
 use crate::audit_log::{self, AuditLog};
 use crate::charter;
 use crate::engine::{DEFAULT_NAMESPACE, Engine};
+use crate::eval_store::{Eval, EvalRun};
+use crate::evals;
 use crate::gate::Gate;
 use crate::machine::Machine;
 use crate::store::{Artifact, Record, Runtime, STALE, Store};
@@ -27,8 +29,8 @@ const NS: &str = "bastion";
 const MAX_VMS: usize = 8;
 /// Every turn's model until A7 lets the owner pick one per stage.
 // ponytail: one fixed model; A7 moves it into settings.
-const PROVIDER: &str = "openai";
-const MODEL: &str = "gpt-5-mini";
+pub const PROVIDER: &str = "openai";
+pub const MODEL: &str = "gpt-5-mini";
 const MAX_TURN_STEPS: u64 = 40;
 /// The tools a turn may call. A pre-trigger hook pins each to the job's VM.
 const TOOLS: [&str; 4] = [
@@ -68,13 +70,36 @@ pub struct Factory {
     gate: Arc<Gate>,
 }
 
+/// The text of a session's last assistant message.
+pub async fn final_reply(engine: &dyn Engine, session: &str) -> Result<String, String> {
+    let out = engine
+        .call(NS, "session::messages", json!({ "session_id": session }))
+        .await?;
+    out["messages"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .rev()
+        .find(|m| m["message"]["role"] == "assistant")
+        .map(|m| {
+            m["message"]["content"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|part| part["text"].as_str())
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .ok_or_else(|| format!("session {session} has no reply"))
+}
+
 pub fn now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs())
 }
 
-fn short_id() -> String {
+pub fn short_id() -> String {
     uuid::Uuid::new_v4().simple().to_string()[..8].to_string()
 }
 
@@ -153,6 +178,40 @@ impl Factory {
         Ok(id)
     }
 
+    /// Submit one request of an eval under one arm: a trial job, kept with
+    /// its eval run before it is admitted.
+    pub async fn submit_trial(
+        self: &Arc<Self>,
+        e: &Eval,
+        mut run: EvalRun,
+    ) -> Result<String, String> {
+        let id = format!("j{}", short_id());
+        let at = now();
+        let record = Record {
+            job: Job::new(id.clone(), e.workspace.clone(), run.request.clone(), at),
+            runtime: Runtime::default(),
+            rev: 1,
+            created_at: at,
+        };
+        self.store.insert(&record).await?;
+        run.job = id.clone();
+        self.store.add_eval_run(&run).await?;
+        (self.on_change)(&id);
+        self.pump();
+        Ok(id)
+    }
+
+    /// The dials a job runs under: a trial's own, or the owner's.
+    async fn dials_for(&self, id: &str) -> Result<Dials, String> {
+        Ok(match self.store.eval_run_of(id).await? {
+            Some(_) => Dials {
+                trial: true,
+                ..Dials::default()
+            },
+            None => self.store.dials().await?,
+        })
+    }
+
     /// Step one job with one event, save it, and run its effects.
     pub async fn apply(self: &Arc<Self>, id: &str, event: Event) -> Result<(), String> {
         self.clone().apply_owned(id.to_string(), event).await
@@ -163,7 +222,7 @@ impl Factory {
         Box::pin(async move {
             for _ in 0..SAVE_TRIES {
                 let mut record = self.store.load(&id).await?;
-                let dials = self.store.dials().await?;
+                let dials = self.dials_for(&id).await?;
                 let (job, effects) = step(&record.job, &event, now(), &dials);
                 if job == record.job && effects.is_empty() {
                     return Ok(());
@@ -283,7 +342,10 @@ impl Factory {
                 Ok(()) => None,
                 Err(error) => self.apply(&id, Event::LandFailed { error }).await.err(),
             },
-            Effect::Teardown => self.teardown(&record).await.err(),
+            Effect::Teardown => {
+                self.grade_trial(&record);
+                self.teardown(&record).await.err()
+            }
             Effect::Hold { stage, secs } => {
                 self.hold_checkpoint(id.clone(), stage, secs);
                 None
@@ -343,25 +405,7 @@ impl Factory {
     /// A worktree on the host, a VM, and the worktree's branch cloned into it (N7).
     async fn provision(&self, record: &Record) -> Result<(), String> {
         let job = &record.job;
-        let workspaces = self.store.workspaces().await?;
-        let ws = workspaces
-            .iter()
-            .find(|w| w.name == job.workspace)
-            .ok_or(format!("no workspace {}", job.workspace))?;
-        let created = self
-            .engine
-            .call_for(
-                NS,
-                "worktree::create",
-                json!({ "repo_path": ws.path, "base_ref": ws.branch, "session_id": job.id }),
-                60_000,
-            )
-            .await?;
-        let worktree = created["worktree_id"]
-            .as_str()
-            .or(created["id"].as_str())
-            .ok_or(format!("worktree::create: {created}"))?
-            .to_string();
+        let worktree = self.create_worktree(job).await?;
         self.set_runtime(&job.id, |r| r.worktree = Some(worktree.clone()))
             .await?;
         let sandbox = self
@@ -462,6 +506,7 @@ impl Factory {
             let (path, _) = self.worktree_path(worktree).await?;
             self.gate
                 .set_charter(&job.id, charter::read(&*self.machine, &path));
+            self.load_arm(&job.id).await?;
             for name in charter::BRIEF_FILES {
                 if let Ok(text) = self.machine.read(&path.join(name)) {
                     message.push_str(&format!(
@@ -550,6 +595,7 @@ impl Factory {
             }
         };
         self.release(id);
+        evals::meter(&*self.engine, &*self.store, &record.job, session).await;
         if record.job.stage.read_only()
             && let Some(sandbox) = &record.runtime.sandbox
         {
@@ -603,26 +649,7 @@ impl Factory {
     /// The turn's last assistant message, whole. `harness::status` truncates
     /// its `result` and encodes it as a JSON string.
     async fn final_reply(&self, session: &str) -> Result<String, String> {
-        let out = self
-            .engine
-            .call(NS, "session::messages", json!({ "session_id": session }))
-            .await?;
-        out["messages"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .rev()
-            .find(|m| m["message"]["role"] == "assistant")
-            .map(|m| {
-                m["message"]["content"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|part| part["text"].as_str())
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            })
-            .ok_or_else(|| format!("session {session} has no reply"))
+        final_reply(&*self.engine, session).await
     }
 
     /// The VM's commits come back to the worktree (N7), then `worktree::land`
@@ -771,8 +798,68 @@ impl Factory {
         });
     }
 
+    /// Make the job's worktree from its workspace, at the base it starts from.
+    async fn create_worktree(&self, job: &Job) -> Result<String, String> {
+        let workspaces = self.store.workspaces().await?;
+        let ws = workspaces
+            .iter()
+            .find(|w| w.name == job.workspace)
+            .ok_or(format!("no workspace {}", job.workspace))?;
+        let base = self.base_of(&job.id, &ws.branch).await?;
+        let created = self
+            .engine
+            .call_for(
+                NS,
+                "worktree::create",
+                json!({ "repo_path": ws.path, "base_ref": base, "session_id": job.id }),
+                60_000,
+            )
+            .await?;
+        created["worktree_id"]
+            .as_str()
+            .or(created["id"].as_str())
+            .map(String::from)
+            .ok_or(format!("worktree::create: {created}"))
+    }
+
+    /// Where a job's worktree starts: a trial from its eval's commit, so both
+    /// arms see the same code; any other job from the workspace's branch.
+    async fn base_of(&self, id: &str, branch: &str) -> Result<String, String> {
+        Ok(match self.store.eval_run_of(id).await? {
+            Some(run) => self.store.eval(&run.eval).await?.base,
+            None => branch.into(),
+        })
+    }
+
+    /// Grade a trial whose diff reached review, off the effect's path.
+    fn grade_trial(self: &Arc<Self>, record: &Record) {
+        if record.job.stage != Stage::Review {
+            return;
+        }
+        let (factory, id) = (self.clone(), record.job.id.clone());
+        tauri::async_runtime::spawn(async move {
+            let Ok(Some(run)) = factory.store.eval_run_of(&id).await else {
+                return;
+            };
+            match evals::grade(&*factory.engine, &*factory.store, &run).await {
+                Ok(_) => (factory.on_change)(&id),
+                Err(e) => eprintln!("job {id}: the run was not graded: {e}"),
+            }
+        });
+    }
+
+    /// A trial's calls are judged under its arm's rungs.
+    async fn load_arm(&self, id: &str) -> Result<(), String> {
+        if let Some(run) = self.store.eval_run_of(id).await? {
+            self.gate
+                .set_overrides(id, self.store.arm(&run.eval, &run.arm).await?);
+        }
+        Ok(())
+    }
+
     /// Judge the job's calls by its charter, read again from its worktree.
     async fn read_charter(&self, record: &Record) {
+        let _ = self.load_arm(&record.job.id).await;
         if let Some(worktree) = &record.runtime.worktree
             && let Ok((path, _)) = self.worktree_path(worktree).await
         {

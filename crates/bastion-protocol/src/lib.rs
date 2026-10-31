@@ -48,6 +48,13 @@ pub mod command {
     /// Takes `{ stage: String, function: String, up: bool }`.
     pub const CAPABILITY_MOVE: &str = "capability_move";
     pub const AUDIT: &str = "audit";
+    pub const EVALS: &str = "evals";
+    /// Takes `{ id: String }`.
+    pub const EVAL: &str = "eval";
+    /// Takes `{ eval: NewEval }`; returns the eval's id.
+    pub const EVAL_CREATE: &str = "eval_create";
+    /// Takes `{ id: String, arm: String }`: set the live policy to that arm's rungs.
+    pub const EVAL_APPLY: &str = "eval_apply";
     /// Returns the path of the JSON Lines file it wrote.
     pub const AUDIT_EXPORT: &str = "audit_export";
 }
@@ -380,4 +387,73 @@ pub struct AuditView {
 pub struct DialsView {
     pub approve: String,
     pub review: String,
+}
+
+/// An eval to run (PLAN.md A6): its requests, and the one rung its two arms
+/// set differently. `target` is `constraint:<id>` or
+/// `capability:<stage>:<function>`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NewEval {
+    pub name: String,
+    pub workspace: String,
+    pub requests: Vec<String>,
+    pub target: String,
+    pub rung_a: String,
+    pub rung_b: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EvalSummary {
+    pub id: String,
+    pub name: String,
+    pub workspace: String,
+    /// The commit every run started from.
+    pub base: String,
+    pub created_at: u64,
+    pub runs: u32,
+    /// Runs that finished and, if they reached review, were graded.
+    pub done: u32,
+}
+
+/// One run, or an arm's total, as the comparison shows it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunView {
+    /// Empty for a total.
+    pub job: String,
+    pub state: String,
+    pub reviewed: bool,
+    pub passed: u32,
+    pub refused: u32,
+    pub held: u32,
+    pub flagged: u32,
+    pub hook_refused: u32,
+    pub findings: u32,
+    pub turns: u32,
+    pub cost_micros: u64,
+    pub seconds: u64,
+    pub grade: Option<u8>,
+    /// The audit lines of the calls refused, each with its entry number.
+    pub refused_calls: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EvalRow {
+    pub idx: u32,
+    pub request: String,
+    pub a: Option<RunView>,
+    pub b: Option<RunView>,
+    /// Each measure that differs, as "name: a -> b".
+    pub differences: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EvalView {
+    pub summary: EvalSummary,
+    /// The rungs each arm sets.
+    pub arm_a: Vec<String>,
+    pub arm_b: Vec<String>,
+    pub rows: Vec<EvalRow>,
+    pub total_a: RunView,
+    pub total_b: RunView,
+    pub differences: Vec<String>,
 }

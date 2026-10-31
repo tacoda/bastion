@@ -7,6 +7,8 @@ mod commands;
 mod console;
 mod doctor;
 mod engine;
+mod eval_store;
+mod evals;
 mod factory;
 mod gate;
 mod machine;
@@ -156,6 +158,10 @@ pub fn run() {
             commands::govern::capabilities,
             commands::govern::capability_move,
             commands::govern::audit,
+            commands::evals::evals,
+            commands::evals::eval,
+            commands::evals::eval_create,
+            commands::evals::eval_apply,
             commands::govern::audit_export,
             commands::doctor::doctor,
             commands::stack::stack_status,

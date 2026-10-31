@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::engine::Engine;
+use crate::eval_store::{self, EvalStore};
 
 pub type Answer<'a, T> = Pin<Box<dyn Future<Output = Result<T, String>> + Send + 'a>>;
 
@@ -65,7 +66,7 @@ pub struct HeldCall {
 /// A save lost to another writer (D8). The caller reloads and steps again.
 pub const STALE: &str = "stale: the job changed since it was read";
 
-pub trait Store: Send + Sync {
+pub trait Store: EvalStore + Send + Sync {
     fn add_workspace<'a>(&'a self, workspace: &'a Workspace) -> Answer<'a, ()>;
     fn workspaces(&self) -> Answer<'_, Vec<Workspace>>;
     fn insert<'a>(&'a self, record: &'a Record) -> Answer<'a, ()>;
@@ -207,6 +208,7 @@ impl SqlStore {
     pub async fn open(engine: Arc<dyn Engine>) -> Result<Self, String> {
         let statements: Vec<Value> = SCHEMA
             .iter()
+            .chain(eval_store::SCHEMA.iter())
             .map(|sql| json!({ "sql": sql, "params": [] }))
             .chain(seed())
             .collect();
@@ -218,6 +220,18 @@ impl SqlStore {
             )
             .await?;
         Ok(Self { engine })
+    }
+
+    /// Run statements in one transaction.
+    pub(crate) async fn transaction(&self, statements: Vec<Value>) -> Result<(), String> {
+        self.engine
+            .call(
+                NAMESPACE,
+                "database::transaction",
+                json!({ "statements": statements }),
+            )
+            .await
+            .map(|_| ())
     }
 
     async fn query(&self, sql: &str, params: Value) -> Result<Vec<Value>, String> {
@@ -233,7 +247,7 @@ impl SqlStore {
     }
 
     /// Each row of a query, read by `row`.
-    async fn rows<T>(
+    pub(crate) async fn rows<T>(
         &self,
         sql: &str,
         params: Value,
@@ -242,7 +256,7 @@ impl SqlStore {
         self.query(sql, params).await?.iter().map(row).collect()
     }
 
-    async fn execute(&self, sql: &str, params: Value) -> Result<Vec<Value>, String> {
+    pub(crate) async fn execute(&self, sql: &str, params: Value) -> Result<Vec<Value>, String> {
         let out = self
             .engine
             .call(
@@ -256,14 +270,14 @@ impl SqlStore {
 }
 
 /// An enum as the snake_case text its column holds.
-fn name<T: Serialize>(value: T) -> String {
+pub(crate) fn name<T: Serialize>(value: T) -> String {
     serde_json::to_value(value)
         .ok()
         .and_then(|v| v.as_str().map(String::from))
         .unwrap_or_default()
 }
 
-fn parse<T: for<'de> Deserialize<'de>>(row: &Value, column: &str) -> Result<T, String> {
+pub(crate) fn parse<T: for<'de> Deserialize<'de>>(row: &Value, column: &str) -> Result<T, String> {
     serde_json::from_value(row[column].clone()).map_err(|e| format!("column {column}: {e}"))
 }
 
@@ -614,6 +628,7 @@ pub mod fake {
         pub audit: Mutex<Vec<Entry>>,
         /// Make every audit append wait forever, like a stalled database.
         pub stall_audit: Mutex<bool>,
+        pub eval_rows: crate::eval_store::fake::EvalRows,
     }
 
     impl Store for FakeStore {

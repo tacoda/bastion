@@ -8,6 +8,8 @@ pub enum Route {
     NewRequest,
     Job(String),
     Governance,
+    Evals,
+    Eval(String),
     Engine,
     Settings,
 }

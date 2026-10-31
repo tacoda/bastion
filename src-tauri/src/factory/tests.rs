@@ -233,11 +233,82 @@ fn an_auto_approve_dial_skips_the_owner_at_approve() {
     *rig.store.dials.lock().unwrap() = bastion_core::Dials {
         approve: bastion_core::Dial::Auto,
         review: bastion_core::Dial::Ask,
+        ..bastion_core::Dials::default()
     };
     tauri::async_runtime::block_on(async {
         let id = rig.factory.submit("w", "x").await.unwrap();
         until(&rig, &id, Stage::Plan, State::Running).await;
         finish_turn(&rig, &id).await;
         until(&rig, &id, Stage::Build, State::Running).await;
+    });
+}
+
+#[test]
+fn a_trial_runs_from_its_eval_commit_under_its_arm_and_stops_at_review() {
+    use crate::eval_store::{Eval, EvalStore};
+    use bastion_core::eval::Override;
+    use bastion_core::govern::Enforcement;
+
+    let rig = rig();
+    let e = Eval {
+        id: "e1".into(),
+        name: "keep tests".into(),
+        workspace: "w".into(),
+        base: "abc1234".into(),
+        created_at: 1,
+    };
+    let b = [Override::Constraint {
+        id: "keep-tests".into(),
+        rung: Enforcement::Enforced,
+    }];
+    tauri::async_runtime::block_on(async {
+        rig.store.add_eval(&e, &[], &b).await.unwrap();
+        let run = crate::eval_store::EvalRun {
+            eval: "e1".into(),
+            arm: "b".into(),
+            idx: 0,
+            request: "x".into(),
+            job: String::new(),
+            grade: None,
+        };
+        let id = rig.factory.submit_trial(&e, run).await.unwrap();
+        until(&rig, &id, Stage::Plan, State::Running).await;
+        let create = rig
+            .engine
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|c| c.1 == "worktree::create")
+            .map(|c| c.2.clone())
+            .unwrap();
+        assert_eq!(
+            create["base_ref"], "abc1234",
+            "the trial starts from the eval's commit"
+        );
+        let rules = rig.factory.gate().constraints(&id);
+        assert_eq!(
+            rules.iter().find(|c| c.id == "keep-tests").map(|c| c.rung),
+            None,
+            "the fake store has no owner rules"
+        );
+
+        finish_turn(&rig, &id).await;
+        until(&rig, &id, Stage::Build, State::Running).await;
+        finish_turn(&rig, &id).await;
+        until(&rig, &id, Stage::Review, State::Stopped).await;
+        assert!(
+            rig.store
+                .artifacts(&id)
+                .await
+                .unwrap()
+                .iter()
+                .any(|a| a.stage == Stage::Review)
+        );
+        assert!(!rig.engine.called("worktree::land"), "a trial never lands");
+        assert!(
+            rig.engine.called("harness::metrics"),
+            "each turn is metered"
+        );
     });
 }

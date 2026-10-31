@@ -3,6 +3,7 @@
 pub mod console;
 pub mod diff;
 pub mod engine;
+pub mod evals;
 pub mod govern;
 pub mod job;
 pub mod jobs;

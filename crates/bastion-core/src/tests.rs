@@ -348,6 +348,7 @@ fn an_auto_approve_goes_straight_to_build() {
     let dials = Dials {
         approve: Dial::Auto,
         review: Dial::Ask,
+        ..Dials::default()
     };
     let (j, effects) = run_with(dials, &planned());
     assert_eq!((j.stage, j.state), (Stage::Build, State::Running));
@@ -368,6 +369,7 @@ fn a_held_checkpoint_waits_then_approves_when_the_hold_expires() {
     let dials = Dials {
         approve: Dial::Hold,
         review: Dial::Ask,
+        ..Dials::default()
     };
     let (j, effects) = run_with(dials, &planned());
     assert_eq!((j.stage, j.state), (Stage::Approve, State::NeedsYou));
@@ -391,6 +393,7 @@ fn a_hold_that_expires_after_the_owner_acted_changes_nothing() {
     let dials = Dials {
         approve: Dial::Hold,
         review: Dial::Ask,
+        ..Dials::default()
     };
     let mut events = planned();
     events.extend([
@@ -410,6 +413,7 @@ fn review_never_goes_below_hold() {
     let dials = Dials {
         approve: Dial::Auto,
         review: Dial::Auto,
+        ..Dials::default()
     };
     assert_eq!(dials.at(Stage::Review), Dial::Hold);
     let (j, effects) = run_with(
@@ -436,6 +440,7 @@ fn a_held_checkpoint_says_when_it_approves_itself() {
     let dials = Dials {
         approve: Dial::Hold,
         review: Dial::Ask,
+        ..Dials::default()
     };
     let (j, _) = run_with(dials, &planned());
     assert_eq!(hold_until(&j, &dials), Some(j.updated_at + HOLD_SECS));
@@ -466,4 +471,32 @@ fn a_failed_land_waits_on_the_owner_with_its_vm_and_approve_retries_it() {
         (j.state, j.error, effects),
         (State::Running, None, vec![Effect::Land])
     );
+}
+
+#[test]
+fn a_trial_approves_its_plan_and_stops_at_review_with_its_diff() {
+    let trial = Dials {
+        trial: true,
+        ..Dials::default()
+    };
+    let mut j = job();
+    for (i, e) in [Event::Admitted, Event::Provisioned, done("1. plan")]
+        .iter()
+        .enumerate()
+    {
+        j = step(&j, e, AT + i as u64, &trial).0;
+    }
+    assert_eq!(
+        (j.stage, j.state),
+        (Stage::Build, State::Running),
+        "the plan approved itself"
+    );
+    let (j, effects) = step(&j, &done("built"), AT + 9, &trial);
+    assert_eq!((j.stage, j.state), (Stage::Review, State::Stopped));
+    let diff = effects
+        .iter()
+        .position(|e| *e == Effect::CaptureDiff)
+        .unwrap();
+    let teardown = effects.iter().position(|e| *e == Effect::Teardown).unwrap();
+    assert!(diff < teardown, "the diff is taken before the VM goes");
 }

@@ -253,6 +253,7 @@ pub async fn dials_set(cell: State<'_, FactoryCell>, dials: DialsView) -> Result
     let dials = Dials {
         approve: parse(&dials.approve)?,
         review: parse(&dials.review)?,
+        ..Dials::default()
     };
     factory(&cell)?.store().set_dials(&dials).await
 }

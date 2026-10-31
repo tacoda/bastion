@@ -1,0 +1,57 @@
+{
+  "cli_version": "0.12.2",
+  "checkpoint_id": "01M67P03WW2KH70YGP0FHRVZ3R",
+  "session_id": "135a2369-1f42-433b-aacc-5c1b0ce18b48",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-31T00:33:22.129103Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/bastion-protocol/Cargo.toml",
+    "crates/bastion-protocol/src/lib.rs",
+    "scripts/check-seams.sh",
+    "src-tauri/src/commands/engine.rs",
+    "src-tauri/src/engine/fake.rs",
+    "src-tauri/src/engine/iii.rs",
+    "src-tauri/src/engine/mod.rs",
+    "src-tauri/src/lib.rs",
+    "src/app.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "2bd8f5fabf1b",
+  "checkpoint_transcript_start": 680,
+  "transcript_lines_at_start": 680,
+  "compact_transcript_start": 90,
+  "token_usage": {
+    "input_tokens": 28,
+    "cache_creation_tokens": 21675,
+    "cache_read_tokens": 2968842,
+    "output_tokens": 13749,
+    "api_call_count": 14,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 8
+  }
+}

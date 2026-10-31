@@ -30,7 +30,18 @@ fn parse(diff: &str) -> Vec<File> {
         let Some(file) = files.last_mut() else {
             continue;
         };
-        if raw.starts_with("+++ ") || raw.starts_with("--- ") || raw.starts_with("index ") {
+        let header = [
+            "+++ ",
+            "--- ",
+            "index ",
+            "new file mode",
+            "deleted file mode",
+            "similarity",
+            "rename ",
+            "old mode",
+            "new mode",
+        ];
+        if header.iter().any(|h| raw.starts_with(h)) {
             continue;
         }
         let new = if let Some(hunk) = raw.strip_prefix("@@ ") {
@@ -91,7 +102,7 @@ pub fn DiffView(diff: String, comment: WriteSignal<String>) -> impl IntoView {
                 view! {
                     <details open class="rounded border border-line">
                         <summary class="cursor-pointer px-3 py-1.5 font-mono text-sm">{file.path.clone()}</summary>
-                        <div class="overflow-x-auto bg-bg font-mono text-xs">
+                        <div class="overflow-x-auto bg-bg font-mono text-xs [contain:inline-size]">
                             {file.lines.into_iter().map(|line| {
                                 let at = line.new.map(|n| format!("{path}:{n}: "));
                                 let number = line.new.map(|n| n.to_string()).unwrap_or_default();
@@ -138,5 +149,15 @@ mod tests {
         assert_eq!(numbered[0], (None, "@@ -1,2 +1,5 @@"));
         assert_eq!(numbered[1], (Some(1), " def add(a, b):"));
         assert_eq!(numbered[4], (Some(4), "+def divide(a, b):"));
+    }
+
+    #[test]
+    fn file_headers_are_not_lines() {
+        let files = parse(
+            "diff --git a/N.txt b/N.txt\nnew file mode 100644\nindex 0000000..1\n--- /dev/null\n+++ b/N.txt\n@@ -0,0 +1 @@\n+hi\n",
+        );
+        let texts: Vec<&str> = files[0].lines.iter().map(|l| l.text.as_str()).collect();
+        assert_eq!(texts, ["@@ -0,0 +1 @@", "+hi"]);
+        assert_eq!(files[0].lines[1].new, Some(1));
     }
 }

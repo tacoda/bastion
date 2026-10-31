@@ -74,7 +74,7 @@ fn HeldCall(job: String, call: HeldCallView, error: WriteSignal<String>) -> impl
         <li class="grid gap-2 border-t border-line pt-3 first:border-t-0 first:pt-0">
             <p class="m-0"><strong>{call.function}</strong>" "<code class="break-all">{call.text}</code>
                 <span class="text-xs text-muted">{format!(" · held {}", ago(call.at))}</span></p>
-            <textarea class="min-h-16 rounded border border-line bg-bg p-2 text-ink" aria-label="What the agent should do instead"
+            <textarea class="min-h-16 rounded border border-line bg-bg p-2 text-ink" spellcheck="false" aria-label="What the agent should do instead"
                 placeholder="What the agent should do instead"
                 prop:value=feedback on:input=move |e| set_feedback.set(event_target_value(&e))></textarea>
             <div class="flex flex-wrap gap-2">
@@ -235,7 +235,7 @@ pub fn JobPage(id: String) -> impl IntoView {
                     let diff = if reviewing { latest("review") } else { None };
                     view! {
                         {report.map(|body| view! {
-                            <pre class="m-0 max-h-96 overflow-auto whitespace-pre-wrap rounded bg-bg p-3 text-sm">{body}</pre>
+                            <pre class="m-0 max-h-96 overflow-auto whitespace-pre-wrap wrap-anywhere rounded bg-bg p-3 text-sm">{body}</pre>
                         })}
                         {diff.map(|diff| view! {
                             <h3 class="m-0 text-sm font-semibold text-muted">"The change (click a line to comment on it)"</h3>
@@ -246,7 +246,9 @@ pub fn JobPage(id: String) -> impl IntoView {
                 <Show when=move || allows("comment") || allows("answer")>
                 <label class="grid gap-1 text-sm text-muted">
                     {move || if allows("answer") { "Your answer" } else { "A note for the agent (sends the work back)" }}
-                    <textarea class="min-h-20 rounded border border-line bg-bg p-2 text-ink"
+                    // Spellcheck off: macOS text checking measures the whole page through
+                    // accessibility after each comma, and a large diff froze the webview.
+                    <textarea class="min-h-20 rounded border border-line bg-bg p-2 text-ink" spellcheck="false"
                         prop:value=text on:input=move |e| set_text.set(event_target_value(&e))></textarea>
                 </label>
                 </Show>
@@ -306,7 +308,7 @@ fn step_row(
                         {artifacts.into_iter().rev().map(|a| view! {
                             <article class="grid gap-1">
                                 <h3 class="m-0 text-xs font-semibold text-muted">{format!("{} artifact · {}", a.stage, ago(a.created_at))}</h3>
-                                <pre class="m-0 max-h-96 overflow-auto whitespace-pre-wrap rounded bg-bg p-3 text-sm">{a.body}</pre>
+                                <pre class="m-0 max-h-96 overflow-auto whitespace-pre-wrap wrap-anywhere rounded bg-bg p-3 text-sm">{a.body}</pre>
                             </article>
                         }).collect_view()}
                         {transcript.filter(|t| !t.is_empty()).map(|t| view! {

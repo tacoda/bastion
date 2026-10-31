@@ -59,7 +59,7 @@ pub fn App() -> impl IntoView {
         <a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:m-2 focus:rounded focus:bg-primary focus:px-3 focus:py-2 focus:text-white">
             "Skip to content"
         </a>
-        <div class="grid min-h-screen grid-cols-[200px_1fr]">
+        <div class="grid min-h-screen grid-cols-[200px_minmax(0,1fr)]">
             <nav aria-label="Main" class="sticky top-0 flex h-screen flex-col gap-1 border-r border-line bg-panel p-3">
                 <p class="m-0 mb-3 px-2 text-lg font-extrabold">"Bastion"</p>
                 {PAGES.map(|(target, label)| {
@@ -74,7 +74,7 @@ pub fn App() -> impl IntoView {
                 })}
                 <p class="mt-auto px-2 text-xs text-muted">{profile}</p>
             </nav>
-            <main id="main" tabindex="-1" class="p-8">
+            <main id="main" tabindex="-1" class="min-w-0 p-8">
                 {move || match route.get() {
                     Route::Jobs => view! { <JobsPage /> }.into_any(),
                     Route::NewRequest => view! { <NewRequestPage /> }.into_any(),

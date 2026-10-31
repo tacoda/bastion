@@ -33,6 +33,9 @@ pub struct Charter {
     pub before: Vec<Hook>,
     /// `Stop` hooks: they run when a build turn ends, and their results are kept.
     pub stop: Vec<String>,
+    /// The repository's `permissions.allow` rules. Bastion reads them; the
+    /// harness's grants still decide.
+    pub allow: Vec<String>,
 }
 
 pub fn read(machine: &dyn Machine, worktree: &Path) -> Charter {
@@ -57,6 +60,7 @@ pub fn read(machine: &dyn Machine, worktree: &Path) -> Charter {
                     .collect()
             };
             found.constraints = charter::constraints(&list("deny"), &list("ask"));
+            found.allow = list("allow");
             found.before = hooks(&settings, "PreToolUse");
             found.stop = hooks(&settings, "Stop")
                 .into_iter()

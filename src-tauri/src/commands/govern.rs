@@ -3,7 +3,10 @@
 use std::sync::Arc;
 
 use bastion_core::govern::{Constraint, Source};
-use bastion_protocol::{AuditEntryView, AuditView, CapabilityView, ConstraintView, HeldCallRef};
+use bastion_protocol::{
+    AuditEntryView, AuditView, CapabilityView, ConstraintView, FactoryCapabilityView, HeldCallRef,
+    WorkspaceCharterView,
+};
 use serde_json::json;
 use tauri::{AppHandle, Manager, State};
 
@@ -40,6 +43,7 @@ pub async fn constraints(cell: State<'_, FactoryCell>) -> Result<Vec<ConstraintV
     Ok(all
         .into_iter()
         .map(|c| ConstraintView {
+            layer: name(bastion_core::govern::layer(&c)),
             id: c.id,
             rule: c.rule,
             function: c.function,
@@ -156,4 +160,88 @@ pub async fn audit_export(
     let path = dir.join(format!("audit-{}.jsonl", now()));
     machine.write_bytes(&path, (lines.join("\n") + "\n").as_bytes())?;
     Ok(path.display().to_string())
+}
+
+/// Each workspace's charter, read from its repository now.
+#[tauri::command]
+pub async fn charters(
+    cell: State<'_, FactoryCell>,
+    machine: State<'_, Arc<dyn Machine>>,
+) -> Result<Vec<WorkspaceCharterView>, String> {
+    let workspaces = factory(&cell)?.store().workspaces().await?;
+    Ok(workspaces
+        .into_iter()
+        .map(|w| {
+            let c = crate::charter::read(machine.inner().as_ref(), std::path::Path::new(&w.path));
+            let before = c
+                .before
+                .iter()
+                .map(|h| format!("before {}: {}", h.functions.join(", "), h.command));
+            let stop = c.stop.iter().map(|h| format!("when a build ends: {h}"));
+            WorkspaceCharterView {
+                workspace: w.name,
+                files: c.files.clone(),
+                rules: c.constraints.iter().map(|r| r.rule.clone()).collect(),
+                hooks: before.chain(stop).collect(),
+                allow: c.allow.clone(),
+            }
+        })
+        .collect())
+}
+
+/// What the factory itself may do, as the settings set it.
+#[tauri::command]
+pub async fn factory_capabilities(
+    cell: State<'_, FactoryCell>,
+) -> Result<Vec<FactoryCapabilityView>, String> {
+    let s = crate::settings_store::current(&**factory(&cell)?.store()).await?;
+    let row = |name: &str, rung: String, how: &str| FactoryCapabilityView {
+        name: name.into(),
+        rung,
+        how: how.into(),
+    };
+    let github = s.forge == bastion_core::settings::Forge::Github;
+    Ok(vec![
+        row(
+            "Approve a plan",
+            name(s.dials.approve),
+            "The approve checkpoint's dial.",
+        ),
+        row(
+            "Approve a change",
+            name(s.dials.at(bastion_core::Stage::Review)),
+            "The review checkpoint's dial; never below hold.",
+        ),
+        if github {
+            row(
+                "Push the job's branch and open a pull request",
+                "allowed".into(),
+                "After review, to the workspace's GitHub origin.",
+            )
+        } else {
+            row(
+                "Land on the workspace's branch",
+                "allowed".into(),
+                "After review, merged here.",
+            )
+        },
+        row(
+            "Merge a pull request",
+            if github {
+                "ask".into()
+            } else {
+                "denied".into()
+            },
+            "Approve at land, once CI passes.",
+        ),
+        row(
+            "Start a fix turn when CI fails",
+            if github {
+                "allowed".into()
+            } else {
+                "denied".into()
+            },
+            "At most 2 per job, with the failing log.",
+        ),
+    ])
 }

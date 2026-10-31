@@ -818,6 +818,7 @@ mod tests {
                 command: "./check.sh".into(),
             }],
             stop: vec![],
+            allow: vec![],
         }
     }
 

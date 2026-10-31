@@ -45,6 +45,10 @@ pub mod command {
     /// Takes `{ id: String, up: bool }`: one rung up or down.
     pub const CONSTRAINT_MOVE: &str = "constraint_move";
     pub const CAPABILITIES: &str = "capabilities";
+    /// Each workspace's charter, read from its repository.
+    pub const CHARTERS: &str = "charters";
+    /// What the factory itself may do, from the settings.
+    pub const FACTORY_CAPABILITIES: &str = "factory_capabilities";
     /// Takes `{ stage: String, function: String, up: bool }`.
     pub const CAPABILITY_MOVE: &str = "capability_move";
     pub const AUDIT: &str = "audit";
@@ -367,6 +371,9 @@ pub struct ConstraintView {
     pub rung: String,
     /// `charter` or `owner`.
     pub source: String,
+    /// `charter`, `harness` or `factory`.
+    #[serde(default)]
+    pub layer: String,
 }
 
 /// A grant on its ladder (PLAN.md D20): `denied`, `ask` or `allowed`.
@@ -519,4 +526,26 @@ pub struct IssueView {
     pub number: u64,
     pub title: String,
     pub url: String,
+}
+
+/// One workspace's charter, as its repository has it (PLAN.md D25).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceCharterView {
+    pub workspace: String,
+    pub files: Vec<String>,
+    /// Constraints from its `permissions` deny and ask rules.
+    pub rules: Vec<String>,
+    /// Its hooks: before a call (exit 2 refuses it) and when a build ends.
+    pub hooks: Vec<String>,
+    /// Its `permissions.allow` rules.
+    pub allow: Vec<String>,
+}
+
+/// One thing the factory may do, and who decides it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FactoryCapabilityView {
+    pub name: String,
+    /// `allowed`, `ask`, `hold` or `denied`.
+    pub rung: String,
+    pub how: String,
 }

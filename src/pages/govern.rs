@@ -1,7 +1,10 @@
 //! The governance pages (PLAN.md A5): Constraints and Capabilities, each on
 //! its ladder with promote and demote, and the Audit Log with its check.
 
-use bastion_protocol::{AuditView, CapabilityView, ConstraintView, command, event};
+use bastion_protocol::{
+    AuditView, CapabilityView, ConstraintView, FactoryCapabilityView, WorkspaceCharterView,
+    command, event,
+};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::Serialize;
@@ -120,7 +123,12 @@ pub fn ConstraintsPage() -> impl IntoView {
     };
     view! {
         {heading("Constraints", g)}
-        <ConstraintsList constraints=g.constraints audit=g.audit step=step />
+        <p class="m-0 mb-4 max-w-3xl text-sm text-muted">
+            "Each rule climbs told, then checked (recorded), then enforced (refused). The charter's rules come from each repository; the harness binds an agent's turn; the factory binds the pipeline."
+        </p>
+        <CharterRules />
+        <ConstraintsList layer="harness" constraints=g.constraints audit=g.audit step=step />
+        <ConstraintsList layer="factory" constraints=g.constraints audit=g.audit step=step />
         <AddConstraint added=move |r| g.done(r) />
     }
 }
@@ -139,7 +147,9 @@ pub fn CapabilitiesPage() -> impl IntoView {
     };
     view! {
         {heading("Capabilities", g)}
+        <CharterAllows />
         <GrantsList grants=g.grants step=step />
+        <FactoryCapabilities />
     }
 }
 
@@ -155,6 +165,8 @@ pub fn AuditPage() -> impl IntoView {
 
 #[component]
 fn ConstraintsList(
+    /// The layer this section shows: `harness` or `factory`.
+    layer: &'static str,
     constraints: ReadSignal<Vec<ConstraintView>>,
     audit: ReadSignal<Option<AuditView>>,
     step: impl Fn(String, bool) + Copy + Send + Sync + 'static,
@@ -180,11 +192,9 @@ fn ConstraintsList(
     };
     view! {
     <section class="mb-4 rounded-xl border border-line bg-panel">
-        <h2 class="m-0 border-b border-line px-3 py-2 text-sm font-semibold text-muted">
-            "Constraints: told, then checked (recorded), then enforced (refused)"
-        </h2>
+        <h2 class="m-0 border-b border-line px-3 py-2 text-sm font-semibold text-muted">{layer_title(layer)}</h2>
         <ul class="m-0 list-none p-0">
-            {move || constraints.get().into_iter().map(|c| {
+            {move || constraints.get().into_iter().filter(|c| c.layer == layer).map(|c| {
                 let (up, down, here) = (c.id.clone(), c.id.clone(), c.id.clone());
                 let shown = { let id = c.id.clone(); move || open.get() == id };
                 let (shown_for_list, toggle_id) = (shown.clone(), c.id.clone());
@@ -246,6 +256,7 @@ fn AddConstraint(
             contains: contains.get_untracked(),
             rung: rung.get_untracked(),
             source: "owner".into(),
+            layer: String::new(),
         };
         send(
             command::CONSTRAINT_ADD,
@@ -288,7 +299,7 @@ fn GrantsList(
     view! {
     <section class="mb-4 rounded-xl border border-line bg-panel">
         <h2 class="m-0 border-b border-line px-3 py-2 text-sm font-semibold text-muted">
-            "Capabilities: denied, then ask (held for you), then allowed, per stage"
+            "Harness: what an agent's calls may do per stage: denied, then ask (held for you), then allowed"
         </h2>
         <ul class="m-0 list-none p-0">
             {move || grants.get().into_iter().map(|g| {
@@ -355,5 +366,105 @@ fn AuditList(audit: ReadSignal<Option<AuditView>>) -> impl IntoView {
             }
         })}
     </section>
+    }
+}
+
+/// A layer's section title on the Constraints page.
+fn layer_title(layer: &str) -> &'static str {
+    if layer == "factory" {
+        "Factory: rules on the pipeline, checked at review"
+    } else {
+        "Harness: rules on an agent's calls"
+    }
+}
+
+const SECTION: &str = "mb-4 rounded-xl border border-line bg-panel";
+const SECTION_TITLE: &str = "m-0 border-b border-line px-3 py-2 text-sm font-semibold text-muted";
+
+/// Read a list command once and on every push.
+fn listed<T: serde::de::DeserializeOwned + Send + Sync + 'static>(
+    cmd: &'static str,
+) -> ReadSignal<Vec<T>> {
+    let (all, set_all) = signal(Vec::<T>::new());
+    let load = move || {
+        spawn_local(async move {
+            if let Ok(v) = ipc::call::<Vec<T>, String>(cmd, None {}).await {
+                set_all.set(v);
+            }
+        });
+    };
+    ipc::listen(event::JOB_CHANGED, move |_: String| load());
+    load();
+    all
+}
+
+/// Lines under a label, or nothing when there are none.
+fn lines(label: &'static str, items: Vec<String>) -> impl IntoView {
+    (!items.is_empty()).then(|| view! {
+        <p class="m-0 mt-1 text-xs text-muted">{label}</p>
+        <ul class="m-0 pl-5 text-sm">{items.into_iter().map(|i| view! { <li class="break-all">{i}</li> }).collect_view()}</ul>
+    })
+}
+
+/// Each workspace's charter rules and hooks, read from its repository.
+#[component]
+fn CharterRules() -> impl IntoView {
+    let charters = listed::<WorkspaceCharterView>(command::CHARTERS);
+    view! {
+        <section class=SECTION>
+            <h2 class=SECTION_TITLE>"Charter: each repository's own rules, from .claude/settings.json"</h2>
+            <ul class="m-0 list-none p-0">
+                {move || charters.get().into_iter().map(|c| view! {
+                    <li class="border-t border-line px-3 py-2 first:border-t-0">
+                        <strong>{c.workspace.clone()}</strong>
+                        {c.files.is_empty().then(|| view! { <span class="text-sm text-muted">" · no charter: the owner's rules apply"</span> })}
+                        {lines("Rules (enforced)", c.rules)}
+                        {lines("Hooks (exit 2 refuses the call)", c.hooks)}
+                    </li>
+                }).collect_view()}
+            </ul>
+        </section>
+    }
+}
+
+/// Each workspace's charter allow rules.
+#[component]
+fn CharterAllows() -> impl IntoView {
+    let charters = listed::<WorkspaceCharterView>(command::CHARTERS);
+    view! {
+        <section class=SECTION>
+            <h2 class=SECTION_TITLE>"Charter: what each repository allows"</h2>
+            <ul class="m-0 list-none p-0">
+                {move || charters.get().into_iter().map(|c| {
+                    let none = c.allow.is_empty();
+                    view! {
+                        <li class="border-t border-line px-3 py-2 first:border-t-0">
+                            <strong>{c.workspace.clone()}</strong>
+                            {none.then(|| view! { <span class="text-sm text-muted">" · allows nothing beyond the harness"</span> })}
+                            {lines("Allowed by the repository; the harness's grants still decide", c.allow)}
+                        </li>
+                    }
+                }).collect_view()}
+            </ul>
+        </section>
+    }
+}
+
+/// What the factory itself may do, from the settings.
+#[component]
+fn FactoryCapabilities() -> impl IntoView {
+    let all = listed::<FactoryCapabilityView>(command::FACTORY_CAPABILITIES);
+    view! {
+        <section class=SECTION>
+            <h2 class=SECTION_TITLE>"Factory: what the factory may do, as Settings set it"</h2>
+            <ul class="m-0 list-none p-0">
+                {move || all.get().into_iter().map(|f| view! {
+                    <li class="flex flex-wrap items-center gap-3 border-t border-line px-3 py-2 first:border-t-0">
+                        <span class=RUNG>{f.rung}</span>
+                        <span class="grid flex-1"><span>{f.name}</span><span class="text-xs text-muted">{f.how}</span></span>
+                    </li>
+                }).collect_view()}
+            </ul>
+        </section>
     }
 }

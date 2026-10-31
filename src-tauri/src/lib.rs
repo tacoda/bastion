@@ -120,20 +120,25 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Ask before closing while the stack runs, and read every page again on focus.
+fn on_window(window: &tauri::Window, e: &WindowEvent) {
+    match e {
+        WindowEvent::CloseRequested { api, .. } if hold_quit(window.app_handle()) => {
+            api.prevent_close();
+        }
+        // A hidden webview can miss pushes, so every page reads again.
+        WindowEvent::Focused(true) => {
+            let _ = window.emit(event::JOB_CHANGED, "");
+        }
+        _ => {}
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .setup(setup)
-        .on_window_event(|window, e| match e {
-            WindowEvent::CloseRequested { api, .. } if hold_quit(window.app_handle()) => {
-                api.prevent_close();
-            }
-            // A hidden webview can miss pushes, so every page reads again.
-            WindowEvent::Focused(true) => {
-                let _ = window.emit(event::JOB_CHANGED, "");
-            }
-            _ => {}
-        })
+        .on_window_event(on_window)
         .invoke_handler(tauri::generate_handler![
             commands::app::profile,
             commands::app::quit,
@@ -158,6 +163,8 @@ pub fn run() {
             commands::govern::constraint_add,
             commands::govern::constraint_move,
             commands::govern::capabilities,
+            commands::govern::charters,
+            commands::govern::factory_capabilities,
             commands::govern::capability_move,
             commands::govern::audit,
             commands::evals::evals,

@@ -67,6 +67,26 @@ pub enum Source {
     Owner,
 }
 
+/// Where a rule acts (D25): the repository's charter, the harness that runs
+/// an agent's turn, or the factory that moves a job through its pipeline.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Layer {
+    Charter,
+    Harness,
+    Factory,
+}
+
+/// A constraint from the charter belongs to it; one that binds the review
+/// diff belongs to the factory; the rest bind a turn, so the harness.
+pub fn layer(c: &Constraint) -> Layer {
+    match (c.source, c.function == crate::review::DIFF) {
+        (Source::Charter, _) => Layer::Charter,
+        (_, true) => Layer::Factory,
+        _ => Layer::Harness,
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Constraint {
     pub id: String,
@@ -374,6 +394,18 @@ mod tests {
             decide(&exec("pytest -q"), Stage::Build, &rules),
             Decision::Continue
         );
+    }
+
+    #[test]
+    fn each_constraint_has_its_layer() {
+        let rules = default_constraints();
+        let of = |id: &str| layer(rules.iter().find(|c| c.id == id).unwrap());
+        assert_eq!(
+            (of("no-login-shell"), of("tests-kept"), of("commit-work")),
+            (Layer::Harness, Layer::Factory, Layer::Harness)
+        );
+        let charter = crate::charter::constraints(&["Bash(git push:*)".into()], &[]);
+        assert_eq!(layer(&charter[0]), Layer::Charter);
     }
 
     #[test]

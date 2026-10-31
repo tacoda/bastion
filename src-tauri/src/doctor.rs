@@ -116,10 +116,10 @@ fn unpinned(compose: &str) -> Vec<String> {
             loose.extend(open.replace(name.into()));
         } else if let Some(version) = line.strip_prefix("version:") {
             let version = version.trim().trim_matches('"');
-            if let Some(name) = open.take() {
-                if !exact(version) {
-                    loose.push(format!("{name} ({version})"));
-                }
+            if let Some(name) = open.take()
+                && !exact(version)
+            {
+                loose.push(format!("{name} ({version})"));
             }
         }
     }

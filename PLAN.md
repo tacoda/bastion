@@ -60,7 +60,7 @@ code inside Bastion is the diff a job proposes.
 | D7 | A stock registry worker comes first. Bastion writes a worker only for what no pinned worker does, and §5 records each choice. | Less code to own. The stack already pins `harness`, `iii-sandbox`, `worktree`, `approval-gate`, `workflow`, `session-manager`, `github` and `storage`. |
 | D8 | Bastion's records (jobs, stages, artifacts, comments, decisions) live in the `database` worker as typed columns. Each row carries a `rev`, and a stale write is refused. | wipp lost a live job in the `state` worker on restart, and a last write once overrode a Stop. |
 | D9 | The pages reach the engine only through typed Tauri commands. A command maps to one engine function or one core routine, and no command takes a function id. | One narrow surface, listed in one file. |
-| D10 | Live updates are push. The core observes `bastion::*::changed` and emits a Tauri event `{kind, id, revision}`, and the page reads the resource again. | wipp polled. Push needs no timers and no stale views. |
+| D10 | Live updates are push. The engine adapter observes engine events (a turn completed, a CI run changed) by push. After each change it persists, the app emits a Tauri event `{kind, id, revision}`, and the page reads the resource again. | wipp polled. Push needs no timers and no stale views. |
 | D11 | One owner, no sign-in. The actor on every record is `git config user.name`. | One person on one machine needs no accounts. |
 | D12 | Local is the default and only mode for now. The engine address is a profile field, never a constant. | The remote box (§10) becomes a new profile kind, not a rewrite. |
 | D13 | The app starts the stack with `iii compose --up -f worker-compose.yaml`, and attaches to a stack that already runs. On quit, the owner chooses whether it keeps running. | The owner's choice. No terminal. |
@@ -68,6 +68,8 @@ code inside Bastion is the diff a job proposes.
 | D15 | Merge is a person's decision, or `hold` at the lowest. Every other checkpoint has a dial: `ask`, `hold` (default after 30 min) or `auto`. | wipp's oversight model. |
 | D16 | A comment on an artifact goes to the agent verbatim, as its next brief. A fix loop stops after a set count, or sooner when a refusal repeats word for word. | wipp's bounded loops. Paraphrased feedback loses the point. |
 | D17 | Every job runs a pipeline. The smallest pipeline is plan, approve, build, review, land, and it is the default until A5 adds the rest. | The factory is the unit. A free-form task is a short pipeline, not a second mode. |
+| D18 | All factory logic lives in the app, in `crates/bastion-core`, apart from the view and from iii (§6.1). The core takes an event and the current state, and returns the new state and a list of effects. It does no I/O, has no `async`, and does not depend on `iii-sdk`, Tauri or Leptos. | The owner's choice. The rules are tested as plain functions, with no engine and no window. |
+| D19 | The seams in §6.2 are the only ways across layers, and Cargo dependencies enforce them. A CI check fails if `bastion-core` or `bastion-protocol` gains a dependency other than `serde`, or if `iii-sdk` is imported outside `src-tauri/src/engine/`. | The owner wants clean seams. A seam that only a reviewer guards erodes. |
 
 ## 4. The repository
 
@@ -75,15 +77,16 @@ code inside Bastion is the diff a job proposes.
 Cargo.toml  index.html  Trunk.toml  styles.css
 src/                  bastion-ui: the Leptos frontend (WASM)
 src-tauri/            bastion: Tauri, the Rust core
-  src/engine.rs       the iii-sdk link
+  src/engine/         the engine adapter: every iii call, and effects run
   src/commands/       one file per resource (D9)
   src/stack.rs        iii compose as a child process
   src/doctor.rs
 crates/
-  bastion-core/       shared types: job, stage, artifact, pipeline, checkpoint
+  bastion-protocol/   the typed commands the view calls (D9)
+  bastion-core/       the factory logic (D18): jobs, pipelines, stages,
+                      checkpoints, the dial, fix loops, briefs
   bastion-spikes/     spikes and live checks, as examples
 workers/
-  bastion-factory/    jobs, stages, artifacts, comments, checkpoints
   bastion-browser/    a browser driven over CDP
 worker-compose.yaml   the stack the app starts
 PLAN.md  docs/
@@ -109,16 +112,23 @@ talks to the OS.
 | Doctor | app: it runs before the engine | — | A1 |
 | Profiles | app | — | A1 |
 | Engine console: workers, functions, triggers, queues | app view over the engine | engine built-ins | A2 |
-| Jobs, stages, artifacts, comments, checkpoints | worker | `bastion-factory` | A3 |
-| Running a pipeline | worker | `workflow` (stock), if A3's spike passes | A3 |
+| Factory logic: jobs, pipelines, stages, checkpoints, the dial, fix loops, briefs | app: `bastion-core` (D18) | — | A3 |
+| Running effects and resuming jobs | app: the engine adapter | — | A3 |
+| Records | worker | `database` (stock) | A3 |
 | Worktrees and local land | worker | `worktree` (stock) | A3 |
 | Agent turns | worker | `harness`, `llm-router`, `iii-sandbox` (stock) | A3 |
 | Transcripts | worker | `session-manager` (stock) | A3 |
-| Diffs | worker: computed in the job's worktree | `bastion-factory` | A4 |
+| Diffs | app: the adapter reads them from the job's worktree | `worktree` or `ide` (stock) | A4 |
 | Approvals | worker | `approval-gate` (stock) | A4 |
 | Push, PRs, CI watch, merge | worker | `github` (stock) | A4 |
 | Browser | worker | `bastion-browser` | A6 |
 | Notifications and tray | app | — | A7 |
+
+The factory logic is the one exception to the worker rule above. The owner
+chose to keep it in the app (D18), and the cost is that jobs advance only while
+the app runs. A7 lets the app keep running in the tray with its window closed.
+Because the core does no I/O, moving it into a worker later means writing a
+second adapter, not changing the core.
 
 `ade` is iii's own console, on `127.0.0.1:3114`. It stays in the stack until
 A2's console covers what the owner uses in it, and then it leaves.
@@ -146,6 +156,50 @@ From the top down:
 - **Turn:** one agent run inside a stage, with its transcript. The lowest
   level the app shows.
 
+### 6.1 Three layers
+
+| Layer | Where | Knows | Does not know |
+|---|---|---|---|
+| **Core** | `crates/bastion-core` | The factory's rules: which stage comes next, when a checkpoint waits, what the dial does, when a fix loop stops, what a brief says. | iii, Tauri, Leptos, the clock, the disk. |
+| **Engine adapter** | `src-tauri/src/engine/` | How to run each effect on iii, and how to turn each engine event into a core event. It persists every new state with its `rev` (D8). | Any factory rule. |
+| **View** | `src/` | How to draw a resource, and which typed command to call (D9). | iii and the factory's rules. |
+
+One loop joins them. An event arrives: the owner's decision through a command,
+or an engine event such as a turn that completed. The adapter loads the job,
+calls the core, writes the new state, runs the effects the core returned, and
+emits the change to the page (D10). An effect is data, such as "start a turn
+with this brief" or "open a PR". The core never waits on one.
+
+On start, the adapter reads every active job and resumes it. Read commands ask
+the core for derived facts, such as which actions a checkpoint allows, so the
+view never computes a rule itself.
+
+### 6.2 Seams
+
+Each seam is named, has one owner, and has a fake that tests use. Crate
+dependencies enforce the seams, so code that crosses one does not compile
+(D19).
+
+| Seam | Shape | Owner | Fake in tests |
+|---|---|---|---|
+| **Event in, decision out** | `bastion_core::step(state, event) -> (state, Vec<Effect>)`. `Event` and `Effect` are enums. The time comes in on the event. | `bastion-core` | None needed: the core is pure, so tests call `step` directly. |
+| **Engine** | A trait in the adapter: `call`, `observe`, `register`. The only code that imports `iii-sdk`. | `src-tauri/src/engine/` | An in-memory engine that records calls and replays events. |
+| **Store** | A trait in the adapter: load a job, save a job with its `rev`, list active jobs. Backed by `database` through the Engine seam. | `src-tauri/src/engine/` | An in-memory store that refuses a stale `rev`. |
+| **Commands** | The typed Tauri commands and their request and response types, in `crates/bastion-protocol`. The view and the app both depend on it. | `bastion-protocol` | The view's tests use canned responses. |
+
+Allowed dependencies:
+
+```
+bastion-ui (view)  ──>  bastion-protocol
+bastion (app)      ──>  bastion-protocol, bastion-core, iii-sdk, tauri
+bastion-core       ──>  serde only
+bastion-protocol   ──>  serde only
+```
+
+`bastion-core` and `bastion-protocol` never depend on each other's internals.
+The app maps between them, so the core's types can change without changing
+the page.
+
 ## 7. Phases
 
 Each phase uses paired pacing and stops at its exit evidence, run live after
@@ -160,8 +214,7 @@ the plan assumes.
 
 - **N1:** a Rust worker registers a function, triggers one, observes a
   `changed` function, and calls `database::query` and `database::transaction`.
-- **N2:** it enqueues with `TriggerAction::Enqueue` on `bastion-steps`, and
-  sends with `Void`.
+- **N2:** dropped by D18. The factory runs in the app and needs no queue.
 - **N3:** it binds `harness::turn-completed` for one session, and a
   `harness::hook::pre-trigger` that rewrites `sandbox_id`.
 - **N4:** it reads a `sandbox::fs::read` content channel.
@@ -169,7 +222,7 @@ the plan assumes.
 - **N6:** a Tauri 2 window shows a Leptos page in the dark purple theme. An
   `invoke` round trip works, and the core emits an event the page receives.
 
-**Exit:** N1 to N6 pass, and N3 passes three runs in a row. Each result goes in
+**Exit:** N1 and N3 to N6 pass, and N3 passes three runs in a row. Each result goes in
 `docs/levels.md` with the version of each part.
 
 ### A1 — The shell and the stack (M)
@@ -178,6 +231,10 @@ the plan assumes.
 
 - The shell: a sidebar with Floor, Inbox, Engine and Settings, a skip link,
   and the dark theme.
+- The seams first (§6.2): `crates/bastion-protocol`, the Engine trait with its
+  in-memory fake, and the D19 dependency check in CI. `iii-sdk` moves behind
+  the Engine seam, and today's `engine_status` command moves into
+  `bastion-protocol`.
 - The engine link, with reconnect and backoff. The `this machine` profile, in
   TOML in the OS config directory, with no secret (D12).
 - Doctor: `iii` and its version, the pins in `worker-compose.yaml`, provider
@@ -211,12 +268,12 @@ owner no longer needs it.
 **Goal:** a request becomes a job that runs the short pipeline (D17), and the
 owner watches every job from the floor.
 
-- **Spike first:** the stock `workflow` worker (0.1.9) runs a two-stage
-  template with a person's checkpoint between them, and the run survives an
-  engine restart. If it fails, `bastion-factory` runs stages from
-  `bastion-steps` instead, as wipp does.
-- `bastion-factory`: jobs, stages, artifacts, comments and checkpoints, as rows
-  in `database` (D8), with `bastion::factory::changed` for push (D10).
+- `bastion-core`, tests first: the job, the short pipeline, its stages and
+  checkpoints, as `step(state, event) -> (state, effects)` (D18).
+- The Store seam over `database`, with its in-memory fake: jobs, stages,
+  artifacts, comments and checkpoints as rows with a `rev` (D8).
+- The adapter loop (§6.1): load, step, save, run effects, emit. On start it
+  resumes every active job.
 - Register a workspace: a local repository path and its default branch.
 - New request: a workspace and the request text. The job gets a worktree from
   `worktree` and a VM from `iii-sandbox`.
@@ -234,14 +291,16 @@ owner watches every job from the floor.
 **Exit, live:** submit three requests in two workspaces. Each job reaches the
 approve checkpoint with a plan artifact, and the inbox shows three items. A
 comment on one plan changes the next plan. Stop one job, and its VM is gone.
-Restart the stack, and the two other jobs carry on from where they were.
+Quit and reopen the app, and the two other jobs carry on from where they were.
+Every core transition has a unit test, and the adapter's tests run on the fake
+engine and the fake store.
 
 ### A4 — Review and landing (M)
 
 **Goal:** a job's work lands only after a person decides.
 
-- The diff artifact: `bastion-factory` computes it in the job's worktree
-  against its base. The page renders it per file, unified or side by side,
+- The diff artifact: the adapter reads it from the job's worktree against its
+  base. The page renders it per file, unified or side by side,
   with syntax colors, and shows only the changed files.
 - Comments on a diff line, sent verbatim (D16).
 - The checkpoint dial (D15), per checkpoint, with merge never below `hold`.
@@ -350,7 +409,11 @@ starts until the owner asks.
 - **Spike first:** N1 passes through the tunnel.
 - Features in workers need nothing new. The app's core features (Doctor, the
   stack) run on the box over SSH.
-- Diffs come from `bastion-factory` on the box, so review needs no file sync.
+- Diffs come from the worktree on the box through the engine, so review needs
+  no file sync.
+- The factory still runs in the app (D18), so jobs on the box advance only
+  while the laptop's app is connected. If that is too limiting, a second
+  adapter hosts `bastion-core` in a worker on the box, with no core change.
 - The title bar names the profile.
 - **Exit, live:** from the laptop, a job on the box lands. The tunnel is killed
   mid-job, the app reconnects, and the job finishes once.
@@ -359,8 +422,8 @@ starts until the owner asks.
 
 | Risk | What settles it |
 |---|---|
-| N3 passed two of three runs, and the cause of the failure is unknown. | A0's exit needs three passes in a row. |
-| `workflow` 0.1.9 is young. | A3's spike, with `bastion-steps` as the fallback. |
+| N3 failed once under the old name, and the cause is unknown. | It passed three runs in a row in A0. If a turn hook fails again, the spike prints the transcript. |
+| Jobs stop when the app quits (D18). | The adapter resumes every active job on start, and A7 keeps the app running in the tray. |
 | CDP screencasts may be hard to turn into a playable recording. | A6's spike. The fallback is a frame sequence shown as a slideshow. |
 | A large diff may be slow to render in the webview. | A4 renders one file at a time, and collapses files over a set size. |
 | App checks have no driver on macOS. | Linux CI runs `tauri-driver`. |
@@ -369,6 +432,7 @@ starts until the owner asks.
 
 | Phase | State | Evidence |
 |---|---|---|
-| A0 | in progress | N1, N2, N4, N5 pass (2026-10-30). N3 passed two of three runs. N6 is built in the app at the root, and its live run has not been recorded. |
-| A1 to A8 | — | — |
+| A0 | done | N1 and N3 to N6 pass (2026-10-30). N2 is dropped (D18). Details in `docs/levels.md`. |
+| A1 | next | — |
+| A2 to A8 | — | — |
 | Later (§10) | on hold | — |

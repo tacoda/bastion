@@ -113,7 +113,7 @@ code inside Bastion is the diff a job proposes.
 | D18 | All factory logic lives in the app, in `crates/bastion-core`, apart from the view and from iii (§6.1). The core takes an event and the current state, and returns the new state and a list of effects. It does no I/O, has no `async`, and does not depend on `iii-sdk`, Tauri or Leptos. | The owner's choice. The rules are tested as plain functions, with no engine and no window. |
 | D19 | The seams in §6.2 are the only ways across layers, and Cargo dependencies enforce them. A CI check fails if `bastion-protocol` gains a dependency other than `serde`, if `bastion-core` gains one other than `serde` and `sha2` (for the audit chain, D21), or if `iii-sdk` is imported outside `src-tauri/src/engine/`. | The owner wants clean seams. A seam that only a reviewer guards erodes. |
 | D20 | Every constraint and capability is enforced in a harness hook, and its ladder position is data. A turn's behavior changes only through those hooks and that data. | An eval can then name what changed. A rule kept only in a prompt cannot be measured. |
-| D21 | The audit record is a hash chain with one writer. Each entry carries the hash of the one before it, and verification walks the chain. | Any change to a past entry breaks the chain, so the record is tamper-evident. It cannot stop a change; it shows one. |
+| D21 | The audit record is a hash chain with one writer. Each entry carries an HMAC-SHA256 of its fields and the entry before it, keyed with a secret kept in the macOS Keychain, not in the record, and verification walks the chain. | Any change to a past entry breaks the chain, and whoever can edit the database cannot recompute it without the Keychain key. It still cannot stop a change, or detect entries cut from the end; a remote append-only copy (§10) closes that, later. |
 | D22 | An eval compares two harness configurations on the same requests and the same workspace snapshots, and reports the difference with the hook decisions behind it. | A promotion or demotion comes with evidence, not a guess. |
 | D23 | Forge, tracker, CI, model providers and notifications are adapters behind seams, chosen in Settings. A new product is a new adapter, not a core change. | The owner keeps the tools they already use. |
 
@@ -648,8 +648,9 @@ starts until the owner asks.
 | A2 | done | The console on the Engine page: containers with versions, state, stop, start and live logs; functions and trigger types with a filter; queues with depth, delivered, failed and dead letters. One `console` read through the Engine seam, 23 tests. Live exit (2026-10-30): `judge` stopped and started from the window, a stop made from the CLI reached the page by push with no reload, and its logs streamed. `ade` was removed with `compose::remove` (23 containers), so nothing in the stack serves HTTP. |
 | A3 | done | `bastion-core` (9caf363), the Store (93b5cb8), spike N7 (c640769), the factory loop (88f45fb), and the first views (778016d), with fixes from the exit. 28 app tests and 15 core tests pass. Live exit (2026-10-30), driven in the window: two workspaces added through the form; three requests in them reached the approve checkpoint with plan artifacts, three plan turns on gpt-5-mini; a comment on the `subtract` plan (add a docstring, rename the test) came back in the next plan; `multiply` was stopped and its VM went away; the app was quit with the stack kept running and reopened, and both other jobs were still at approve; `divide` was then approved, ran its build turn, and reached review with its artifact. The owner then moved the views from a floor and an inbox to a Jobs page and a job page, after GitHub Actions and wipp (2026-10-30): the Jobs page groups waiting for you, in progress and finished, with a workspace filter and search; the job page shows the badges, a waiting panel with the artifact it judges, and the pipeline as steps whose states come from `bastion_core::steps`; workspaces moved to Settings. Checked in the window on the live jobs. |
 | A4 | done | The diff, captured from the VM after each build and shown per file with line comments (e5da6d7). The checkpoint dial: ask, hold and auto, review never below hold, holds resumed after a restart (0bdb745). Turn guide and uncommitted-work flag (4b46dca). Landing fixes: the bundle names the branch, a failed land waits on the owner with its VM, and the land passes `target_branch` (75adbe2, f2898c6). 24 core tests, 29 app tests. Live exit (2026-10-31), driven in the window: on `divide`, line comments on `calc.py:5` and `test_calc.py:3` came back verbatim and each next diff answered them; on `subtract`, the owner approved the plan and the review, the land failed once on `target_checked_out_dirty` (an untracked `__pycache__` in the target) and waited, and Approve retried it: `demo-a` main got `0e30e2f`, both tests pass, and the VM is gone. Not run live: a hold expiring (30 min); the core and loop tests cover it. |
-| A5 | in progress | Spike N8 passes: a hook denies, holds and releases a call (e7fb375). `mise.toml` pins Rust 1.97 so local checks match CI (c8c6518). Step 1, the rules in `bastion-core`: constraint and capability ladders, the gate, and the audit chain (def679b). Steps 2 and 3: the governance tables with the owner's defaults seeded once, and the `pre-trigger` hook judged by the gate, with holds and audit records written by one task off the hook's path (a509bb1). Step 4: held calls on the job page (allow once, or refuse with a note), and a Governance page with the constraints and grants on their ladders and the audit chain verified as it is read. 38 core tests, 39 app tests. Live exit (2026-10-31), driven in the window on `j4825765c` in `demo-a`: the plan turn's `sandbox::fs::write` to `PLAN.txt` waited on the job page; Allow once ran exactly that write in the VM, and the next write (`RISKS.txt`) waited again; Refuse with a note reached the agent, which put the risks in its reply instead. `keep-tests` at checked let `git -C /work/repo rm -n test_calc.py` through with `flagged: keep-tests` (audit entry 39); promoted to enforced (entry 40), the same call was refused with the rule's reason (entry 41). The Governance page verified all 41 entries, reported "entry 20 does not follow" after one byte of entry 20 was changed in the database, and verified again once it was restored. Still to build before A5 closes: charter-sourced constraints, repository hooks, audit export, and the audit timeout test. |
-| A6 to A13 | — | — |
+| A5 | done | The gate, the ladders and the audit chain in `bastion-core` (def679b); the governance tables, the hook and the owner's commands (a509bb1); held calls and the Governance page (b4f2704). First live exit on `j4825765c` (ee4435e): a plan's write held, Allow once ran exactly it, Refuse reached the agent, `keep-tests` passed a `git rm` at checked and refused it at enforced, and verification failed after one byte of entry 20 changed. Then, from what that exit found: the review page freeze (513da6c); a keyed chain, its writer's state with a 5 s limit per write, and export (d0d3a27); charter constraints and repository hooks from `.claude/settings.json` (37a4b8e); a `tests-kept` constraint on the review diff (c7e992b); Stop during a busy turn and a single send-back (2b9afae); the add form and each constraint's history (4855dca). 45 core tests, 49 app tests, 2 view tests. Second live exit (2026-10-31) on `j3e0ca30c`, with a charter in `demo-a` (deny `Bash(git push:*)`, a PreToolUse hook that refuses `rm`, a Stop hook that runs pytest): the job page showed the charter, its rule and every hook run; the hook passed 12 calls with exit 0 and refused `rm -f /work/repo/notes.txt` with exit 2 and its own message; the Stop hook ran pytest after each build; with `tests-kept` enforced, a build that dropped `test_add` went back to build with the rule, and at checked the same finding waited for the owner. On the Governance page, the form added `no-curl` (entry 333), History listed `tests-kept`'s promotion and demotion, the chain verified 332 and then 335 entries under the Keychain key, and Export wrote 335 entries and `{"verified":true}`. Not run live: the `git push` deny rule (the agent read it in its brief and never made the call; the core and gate tests cover it), and a stalled audit (the unit test covers it). |
+| A6 | next | — |
+| A7 to A13 | — | — |
 | Later (§10) | on hold | — |
 
 **What A1 found:**
@@ -718,7 +719,7 @@ starts until the owner asks.
 - A hidden webview can miss pushes, so the window reloads every page when it
   regains focus.
 
-**What A5 found so far:**
+**What A5 found:**
 
 - A `pre-trigger` hook answers `continue`, `deny` with a `reason`, or `hold`.
   The deny reason reaches the turn as the call's result, word for word (N8).
@@ -741,10 +742,30 @@ starts until the owner asks.
 - A closed page's push handler read its disposed `StoredValue` and panicked,
   so open pages stopped updating on push. `ipc::listen` now stops a handler
   when its page closes.
-- Not fixed: typing a comma into the review note box while a wide diff is on
-  the page spins the webview at 100% CPU. The same comma in the Jobs search
-  box is fine. The page also scrolls sideways at review, so a layout loop is
-  the first suspect.
+- Typing a comma into the review note froze the webview at 100% CPU. A
+  sample showed the main thread answering `AXVisibleCharacterRange`, which
+  WebKit measures across the whole page; macOS text checking asks for it after
+  punctuation. `spellcheck="false"` on the note boxes fixed it. The layout was
+  not the cause, though the page did scroll sideways, which is also fixed.
 - `iii-sandbox` passes the shell's whole environment, secrets included, into
   worker VMs such as `opengantry` as `--env` flags. A9 starts the stack with
   only the variables it needs.
+- A rule on a call cannot see a test deleted by rewriting its file. A
+  constraint on the review diff (`tests-kept`) can. An enforced finding sends
+  the work back once: live, eight builds in a row restored `test_add` under a
+  new name until the job was stopped.
+- Every hook run pushes a change, and the job page rebuilt its header on each
+  one, so a click on Stop during a busy turn was lost. Stop now sits outside
+  the part that re-renders.
+- The repository's charter is read at each turn start. A job that has not
+  started a turn since the app started shows no charter yet.
+- `sandbox::exec` takes `cmd` and `args` as well as `argv`; the gate reads
+  all three, or a rule on a command line sees nothing.
+- An agent that reads a deny rule in its brief does not try the call, so the
+  gate never sees it. A rule told is often a rule obeyed.
+- The page shifts under a click when it reloads, and a mis-aimed click
+  promoted a grant during the exit. The audit showed the promotion and the
+  demotion that undid it. Two-step confirmation on a promotion is worth
+  considering in A7.
+- Trunk's file watcher died after the disk filled, and a timestamp-only touch
+  does not trigger a rebuild. Restart `cargo tauri dev` after a full disk.

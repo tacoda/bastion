@@ -7,10 +7,10 @@
 use std::time::Duration;
 
 use anyhow::Context;
-use bastion_spikes::{connect, ensure, Checks};
+use bastion_spikes::{Checks, connect, ensure};
 use iii_sdk::protocol::TriggerRequest;
 use iii_sdk::{Error, RegisterFunction, TriggerAction};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 
@@ -32,7 +32,12 @@ async fn main() {
     let _ = iii.wait_until_registered(Duration::from_secs(5)).await;
 
     for (name, action) in [
-        ("Enqueue on bastion-steps delivers the step", TriggerAction::Enqueue { queue: "bastion-steps".into() }),
+        (
+            "Enqueue on bastion-steps delivers the step",
+            TriggerAction::Enqueue {
+                queue: "bastion-steps".into(),
+            },
+        ),
         ("Void delivers and returns at once", TriggerAction::Void),
     ] {
         let mark = format!("{action:?}");
@@ -42,7 +47,9 @@ async fn main() {
         checks
             .run(name, async {
                 let answer = sent?;
-                let got = timeout(Duration::from_secs(10), rx.recv()).await?.context("handler closed")?;
+                let got = timeout(Duration::from_secs(10), rx.recv())
+                    .await?
+                    .context("handler closed")?;
                 ensure(got["mark"] == mark.as_str(), format!("delivered {got}"))?;
                 Ok(format!("answered {answer}, delivered {}", got["mark"]))
             })

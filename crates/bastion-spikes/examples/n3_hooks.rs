@@ -14,10 +14,10 @@
 use std::time::Duration;
 
 use anyhow::Context;
-use bastion_spikes::{call, call_default, connect, ensure, Checks};
+use bastion_spikes::{Checks, call, call_default, connect, ensure};
 use iii_sdk::protocol::RegisterTriggerInput;
 use iii_sdk::{Error, RegisterFunction};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 
@@ -26,11 +26,19 @@ async fn main() {
     let iii = connect("spike-n3");
     let mut checks = Checks::default();
     let marker = format!("n3-{}", &uuid::Uuid::new_v4().simple().to_string()[..8]);
-    let session_id = format!("s_spike_{}", &uuid::Uuid::new_v4().simple().to_string()[..12]);
+    let session_id = format!(
+        "s_spike_{}",
+        &uuid::Uuid::new_v4().simple().to_string()[..12]
+    );
 
-    let box_id = call_default(&iii, "sandbox::create", json!({ "image": "python", "network": false, "idle_timeout_secs": 600 }), 120_000)
-        .await
-        .expect("sandbox::create")["sandbox_id"]
+    let box_id = call_default(
+        &iii,
+        "sandbox::create",
+        json!({ "image": "python", "network": false, "idle_timeout_secs": 600 }),
+        120_000,
+    )
+    .await
+    .expect("sandbox::create")["sandbox_id"]
         .as_str()
         .expect("sandbox_id")
         .to_string();
@@ -44,7 +52,9 @@ async fn main() {
                 let mut arguments = envelope["call"]["arguments"].clone();
                 arguments["sandbox_id"] = envelope["metadata"]["sandbox_id"].clone();
                 let _ = seen_tx.send(envelope).await;
-                Ok::<_, Error>(json!({ "decision": "continue", "mutations": { "arguments": arguments } }))
+                Ok::<_, Error>(
+                    json!({ "decision": "continue", "mutations": { "arguments": arguments } }),
+                )
             }
         }),
     );
@@ -96,6 +106,12 @@ async fn main() {
         })
         .await;
 
-    let _ = call_default(&iii, "sandbox::stop", json!({ "sandbox_id": box_id, "wait": true }), 60_000).await;
+    let _ = call_default(
+        &iii,
+        "sandbox::stop",
+        json!({ "sandbox_id": box_id, "wait": true }),
+        60_000,
+    )
+    .await;
     checks.finish(iii)
 }

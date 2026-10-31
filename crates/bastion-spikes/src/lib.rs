@@ -7,10 +7,10 @@
 use std::future::Future;
 use std::time::Instant;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use iii_sdk::iii::WorkerMetadata;
 use iii_sdk::protocol::TriggerRequest;
-use iii_sdk::{register_worker, IIIClient, InitOptions};
+use iii_sdk::{IIIClient, InitOptions, register_worker};
 use serde_json::Value;
 
 pub const NAMESPACE: &str = "bastion";
@@ -20,7 +20,10 @@ pub fn engine_url() -> String {
 }
 
 pub fn connect(name: &str) -> IIIClient {
-    let metadata = WorkerMetadata { name: name.into(), ..WorkerMetadata::default() };
+    let metadata = WorkerMetadata {
+        name: name.into(),
+        ..WorkerMetadata::default()
+    };
     let options = InitOptions {
         metadata: Some(metadata),
         namespace: Some(NAMESPACE.into()),
@@ -31,11 +34,18 @@ pub fn connect(name: &str) -> IIIClient {
 
 /// Call a function in this worker's namespace and wait for its answer.
 pub async fn call(iii: &IIIClient, function_id: &str, payload: Value) -> Result<Value> {
-    Ok(iii.trigger(TriggerRequest::new(function_id, payload)).await?)
+    Ok(iii
+        .trigger(TriggerRequest::new(function_id, payload))
+        .await?)
 }
 
 /// Call a function the engine registers in `default`, such as `sandbox::*` or `engine::*`.
-pub async fn call_default(iii: &IIIClient, function_id: &str, payload: Value, timeout_ms: u64) -> Result<Value> {
+pub async fn call_default(
+    iii: &IIIClient,
+    function_id: &str,
+    payload: Value,
+    timeout_ms: u64,
+) -> Result<Value> {
     let mut request = TriggerRequest::new(function_id, payload);
     request.timeout_ms = Some(timeout_ms);
     Ok(iii.trigger(request.namespace("default")).await?)
@@ -55,7 +65,10 @@ impl Checks {
     pub async fn run<F: Future<Output = Result<String>>>(&mut self, name: &str, check: F) {
         let started = Instant::now();
         match check.await {
-            Ok(detail) => println!("PASS  {name}  ({} ms)  {detail}", started.elapsed().as_millis()),
+            Ok(detail) => println!(
+                "PASS  {name}  ({} ms)  {detail}",
+                started.elapsed().as_millis()
+            ),
             Err(error) => {
                 println!("FAIL  {name}: {error:#}");
                 self.failed.push(name.into());
@@ -69,7 +82,11 @@ impl Checks {
         if self.failed.is_empty() {
             std::process::exit(0);
         }
-        println!("\n{} check(s) failed: {}", self.failed.len(), self.failed.join(", "));
+        println!(
+            "\n{} check(s) failed: {}",
+            self.failed.len(),
+            self.failed.join(", ")
+        );
         std::process::exit(1);
     }
 }

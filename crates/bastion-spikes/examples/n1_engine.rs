@@ -8,9 +8,9 @@
 use std::time::Duration;
 
 use anyhow::Context;
-use bastion_spikes::{call, call_default, connect, ensure, Checks};
+use bastion_spikes::{Checks, call, call_default, connect, ensure};
 use iii_sdk::{Capture, Error, RegisterFunction, Source};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 
@@ -21,13 +21,18 @@ async fn main() {
 
     iii.register_function(
         "bastion::spike::n1::echo",
-        RegisterFunction::new_async(|input: Value| async move { Ok::<_, Error>(json!({ "echo": input })) }),
+        RegisterFunction::new_async(|input: Value| async move {
+            Ok::<_, Error>(json!({ "echo": input }))
+        }),
     );
     checks
         .run("a Rust function answers a call", async {
             iii.wait_until_registered(Duration::from_secs(5)).await?;
             let out = call(&iii, "bastion::spike::n1::echo", json!({ "word": "hi" })).await?;
-            ensure(out["echo"]["word"] == "hi", format!("unexpected answer: {out}"))?;
+            ensure(
+                out["echo"]["word"] == "hi",
+                format!("unexpected answer: {out}"),
+            )?;
             Ok(format!("{out}"))
         })
         .await;
@@ -63,9 +68,16 @@ async fn main() {
     checks
         .run("an observer receives each call by push", async {
             observer.ready().await?;
-            call(&iii, "bastion::spike::n1::source", json!({ "id": "spike-n1", "revision": 7 })).await?;
+            call(
+                &iii,
+                "bastion::spike::n1::source",
+                json!({ "id": "spike-n1", "revision": 7 }),
+            )
+            .await?;
             loop {
-                let event = timeout(Duration::from_secs(5), rx.recv()).await?.context("observer closed")?;
+                let event = timeout(Duration::from_secs(5), rx.recv())
+                    .await?
+                    .context("observer closed")?;
                 if event["input"]["id"] == "spike-n1" {
                     return Ok(format!("{}", event["input"]));
                 }

@@ -138,7 +138,11 @@ pub fn JobPage(id: String) -> impl IntoView {
                     // What the checkpoint judges: the plan at approve; the build's report and its diff at review.
                     let latest = |stage: &str| d.artifacts.iter().rev().find(|a| a.stage == stage).map(|a| a.body.clone());
                     let reviewing = d.job.stage == "review";
-                    let report = latest(if reviewing { "build" } else { "plan" });
+                    let report = match d.job.stage.as_str() {
+                        "review" => latest("build"),
+                        "approve" => latest("plan"),
+                        _ => None,
+                    };
                     let diff = if reviewing { latest("review") } else { None };
                     view! {
                         {report.map(|body| view! {

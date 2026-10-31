@@ -114,12 +114,15 @@ pub fn run() {
             app.manage(stack);
             Ok(())
         })
-        .on_window_event(|window, e| {
-            if let WindowEvent::CloseRequested { api, .. } = e
-                && hold_quit(window.app_handle())
-            {
+        .on_window_event(|window, e| match e {
+            WindowEvent::CloseRequested { api, .. } if hold_quit(window.app_handle()) => {
                 api.prevent_close();
             }
+            // A hidden webview can miss pushes, so every page reads again.
+            WindowEvent::Focused(true) => {
+                let _ = window.emit(event::JOB_CHANGED, "");
+            }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             commands::app::profile,

@@ -175,6 +175,16 @@ fn a_request_runs_the_short_pipeline_to_landed() {
         }
         until(&rig, &id, Stage::Land, State::Landed).await;
         assert!(rig.engine.called("worktree::land"));
+        let land = rig
+            .engine
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|c| c.1 == "worktree::land")
+            .map(|c| c.2.clone())
+            .unwrap();
+        assert_eq!(land["target_branch"], "main");
         for _ in 0..200 {
             if rig.engine.called("sandbox::stop") {
                 return;

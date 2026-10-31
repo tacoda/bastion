@@ -673,8 +673,20 @@ impl Factory {
             )?;
             self.hold(id, binding);
         }
+        let target = self
+            .store
+            .workspaces()
+            .await?
+            .into_iter()
+            .find(|w| w.name == record.job.workspace)
+            .map(|w| w.branch)
+            .ok_or(format!("no workspace {}", record.job.workspace))?;
         self.engine
-            .call(NS, "worktree::land", json!({ "worktree_id": worktree }))
+            .call(
+                NS,
+                "worktree::land",
+                json!({ "worktree_id": worktree, "target_branch": target }),
+            )
             .await?;
         Ok(())
     }

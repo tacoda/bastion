@@ -138,12 +138,3 @@ containers:
     worker: package://eval
     version: "0.2.24"
 
-  # The operator console, on loopback .
-  ade:
-    worker: package://ade
-    version: "1.9.71"
-    config_override:
-      # The default is 0.0.0.0. The console reaches the engine, so it stays
-      # on this machine .
-      http_host: 127.0.0.1
-      http_port: 3114

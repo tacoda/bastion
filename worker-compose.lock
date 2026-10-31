@@ -1,41 +1,5 @@
 version: 1
 containers:
-  ade:
-    worker: package://ade
-    requested: 1.9.71
-    resolved:
-      name: ade
-      version: 1.9.71
-      type: binary
-      artifacts:
-        aarch64-apple-darwin:
-          sha256: 3128a62cc938d8f56e575aca5828a7be2dd068d1f257b8d912694580832bc7ec
-          url: https://api.workers.iii.dev/download/ade/1.9.71/aarch64-apple-darwin
-        aarch64-pc-windows-msvc:
-          sha256: a03ededa920c0a2b9fa2665daa2c00a28b07d0f223a84f2a8cc9230c3b211d7f
-          url: https://api.workers.iii.dev/download/ade/1.9.71/aarch64-pc-windows-msvc
-        aarch64-unknown-linux-gnu:
-          sha256: da41815ed65c682f0a0b5a40600e90c7151124d8e7e84c07c4c9f271e1142289
-          url: https://api.workers.iii.dev/download/ade/1.9.71/aarch64-unknown-linux-gnu
-        armv7-unknown-linux-gnueabihf:
-          sha256: 25deecd0659cc5287f4c3278260ad722432832078e31385c6895ce4a94c9123c
-          url: https://api.workers.iii.dev/download/ade/1.9.71/armv7-unknown-linux-gnueabihf
-        x86_64-apple-darwin:
-          sha256: 1616cb82db9c122152bee7ef6517aed0c34a894a755ca38bebc7d623594b548b
-          url: https://api.workers.iii.dev/download/ade/1.9.71/x86_64-apple-darwin
-        x86_64-pc-windows-msvc:
-          sha256: fc789b1906e745d293b30caced6f8da7e9afad7cf3844872a08a5aa57f5eddfa
-          url: https://api.workers.iii.dev/download/ade/1.9.71/x86_64-pc-windows-msvc
-        x86_64-unknown-linux-gnu:
-          sha256: ad589dd8e1be76697ae12f311674341210f60ac149b2a6e45bb70fc357265ab2
-          url: https://api.workers.iii.dev/download/ade/1.9.71/x86_64-unknown-linux-gnu
-        x86_64-unknown-linux-musl:
-          sha256: d6ef41a6cdb91426bb71078ee40f97703f5c75ef637f817c238e954b0cb23f10
-          url: https://api.workers.iii.dev/download/ade/1.9.71/x86_64-unknown-linux-musl
-      default_config:
-        data_dir: data/ade
-        http_host: 0.0.0.0
-        http_port: 3113
   approval-gate:
     worker: package://approval-gate
     requested: 1.0.26

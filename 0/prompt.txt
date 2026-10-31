@@ -1,0 +1,11 @@
+continue
+
+---
+
+<task-notification>
+<task-id>bspcs7qql</task-id>
+<tool-use-id>toolu_016Rn2tzhBqxopsetz9spske</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/135a2369-1f42-433b-aacc-5c1b0ce18b48/tasks/bspcs7qql.output</output-file>
+<status>completed</status>
+<summary>Background command "Push" completed (exit code 0)</summary>
+</task-notification>

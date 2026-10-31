@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b71e3dh7m</task-id>
+<tool-use-id>toolu_01R87G59tTQpKMv7pQutKXbp</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/135a2369-1f42-433b-aacc-5c1b0ce18b48/tasks/b71e3dh7m.output</output-file>
+<status>completed</status>
+<summary>Background command "Run governance live test with a 90s alarm" completed (exit code 0)</summary>
+</task-notification>

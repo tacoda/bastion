@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.12.2",
+  "checkpoint_id": "01M697GFCPCSS1QMDHTC5PTD20",
+  "session_id": "135a2369-1f42-433b-aacc-5c1b0ce18b48",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-31T14:58:41.336578Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src-tauri/src/gate.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "2888387c245c",
+  "checkpoint_transcript_start": 5211,
+  "transcript_lines_at_start": 5211,
+  "compact_transcript_start": 623,
+  "token_usage": {
+    "input_tokens": 82,
+    "cache_creation_tokens": 96881,
+    "cache_read_tokens": 6603518,
+    "output_tokens": 41371,
+    "api_call_count": 40
+  },
+  "redaction": {
+    "replacements": 482,
+    "layers": {
+      "betterleaks": 30,
+      "connection_string": 0,
+      "credential_key": 414,
+      "credential_value": 30,
+      "credentialed_uri": 0,
+      "entropy": 82,
+      "key_context": 0,
+      "provider_token": 4,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 25
+  }
+}

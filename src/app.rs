@@ -52,7 +52,7 @@ pub fn App() -> impl IntoView {
             "Skip to content"
         </a>
         <div class="grid min-h-screen grid-cols-[200px_1fr]">
-            <nav aria-label="Main" class="flex flex-col gap-1 border-r border-line bg-panel p-3">
+            <nav aria-label="Main" class="sticky top-0 flex h-screen flex-col gap-1 border-r border-line bg-panel p-3">
                 <p class="m-0 mb-3 px-2 text-lg font-extrabold">"Bastion"</p>
                 {PAGES.map(|(p, label)| view! {
                     <button

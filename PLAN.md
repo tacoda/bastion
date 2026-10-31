@@ -553,8 +553,9 @@ starts until the owner asks.
 | Phase | State | Evidence |
 |---|---|---|
 | A0 | done | N1 and N3 to N6 pass (2026-10-30). N2 is dropped (D18). Details in `docs/levels.md`. |
-| A1 | built; live exit open | All six steps are in: the seams (424c69b), profiles (c62f8e2), Doctor (ea62b16, 763a79a), the stack routine (ac36f24), the shell (8f6e6b5), and CI and the README (0351c35). 19 tests pass, and clippy and the seam check are clean. Live so far: Doctor names the missing `ANTHROPIC_API_KEY` with its fix, attach finds a running stack and starts nothing, and the window renders the shell. Open: start from a stopped machine, quit with the stack kept running, and attach on the next start, all from the window. The first CI run had not finished when this was written. |
-| A2 to A11 | — | — |
+| A1 | done | All six steps are in: the seams (424c69b), profiles (c62f8e2), Doctor (ea62b16, 763a79a), the stack routine (ac36f24), the shell (8f6e6b5), and CI and the README (0351c35). 19 tests pass, and CI passes on macOS and Linux. Live exit (2026-10-30), driven in the window: from a stopped machine, Start ran Doctor and brought up all 24 containers, and the page showed the link up with 378 functions by push. Doctor named the missing `ANTHROPIC_API_KEY` with its fix. Closing the window asked the quit question, and "Keep it running" quit the app with the stack up. The next start attached to the same compose daemon (pid 89588) and started nothing. |
+| A2 | next | — |
+| A3 to A11 | — | — |
 | Later (§10) | on hold | — |
 
 **What A1 found:**

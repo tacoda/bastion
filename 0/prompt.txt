@@ -1,0 +1,8 @@
+<task-notification>
+<task-id>b8qb78x4z</task-id>
+<tool-use-id>3b8db383-4854-48a8-a59a-d5b8b14d3a08:inner</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/135a2369-1f42-433b-aacc-5c1b0ce18b48/tasks/b8qb78x4z.output</output-file>
+<status>killed</status>
+<summary>Background command "iii kill --port 49160 &amp;&amp; iii compose --up -f worker-compose.yaml" was stopped after reaching its background time limit</summary>
+<note>If the work in progress still needs it, start it again with `run_in_background` and a longer `timeout`. If it already had the longest `timeout` allowed, do not restart it. Either way, report that it was stopped.</note>
+</task-notification>

@@ -7,7 +7,11 @@ use leptos::task::spawn_local;
 use serde::Serialize;
 
 use crate::ipc::{self, None};
-use crate::pages::{engine::EnginePage, settings::SettingsPage};
+use crate::pages::{
+    engine::EnginePage,
+    floor::{FloorPage, InboxPage},
+    settings::SettingsPage,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Page {
@@ -32,7 +36,7 @@ struct Quit {
 
 #[component]
 pub fn App() -> impl IntoView {
-    let (page, set_page) = signal(Page::Engine);
+    let (page, set_page) = signal(Page::Floor);
     let (profile, set_profile) = signal(String::new());
     let (asking, set_asking) = signal(false);
     spawn_local(async move {
@@ -65,8 +69,8 @@ pub fn App() -> impl IntoView {
             </nav>
             <main id="main" tabindex="-1" class="p-8">
                 {move || match page.get() {
-                    Page::Floor => later("Floor", "A3").into_any(),
-                    Page::Inbox => later("Inbox", "A3").into_any(),
+                    Page::Floor => view! { <FloorPage /> }.into_any(),
+                    Page::Inbox => view! { <InboxPage /> }.into_any(),
                     Page::Engine => view! { <EnginePage /> }.into_any(),
                     Page::Settings => view! { <SettingsPage /> }.into_any(),
                 }}
@@ -85,13 +89,5 @@ pub fn App() -> impl IntoView {
                 </div>
             </div>
         </Show>
-    }
-}
-
-/// A page a later phase builds.
-fn later(title: &'static str, phase: &'static str) -> impl IntoView {
-    view! {
-        <h1 class="mt-0 text-2xl font-bold">{title}</h1>
-        <p class="text-muted">{format!("Not built yet: {phase} builds this page.")}</p>
     }
 }

@@ -1,43 +1,49 @@
-//! Bastion's first page (PLAN.md A0, N6): the engine's state through a command,
-//! and each push from the core as it arrives.
+//! Bastion's first page: the engine link, read through a command and kept
+//! current by the `engine-changed` event (PLAN.md D9, D10).
 
+use bastion_protocol::{EngineStatus, Link, command, event};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"])]
-    async fn invoke(cmd: &str, args: JsValue) -> JsValue;
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"], catch)]
+    async fn invoke(cmd: &str, args: JsValue) -> Result<JsValue, JsValue>;
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "event"])]
     async fn listen(event: &str, handler: &Closure<dyn FnMut(JsValue)>) -> JsValue;
 }
 
-#[derive(Serialize)]
-struct Seen {
-    event: String,
+fn describe(status: &EngineStatus) -> String {
+    match (status.link, status.functions) {
+        (Link::Up, Some(n)) => format!("up at {}, {n} functions", status.url),
+        (Link::Up, None) => format!("up at {}", status.url),
+        (Link::Connecting, _) => format!("connecting to {}", status.url),
+        (Link::Reconnecting, _) => format!("reconnecting to {}", status.url),
+        (Link::Down, _) => format!("down: {} does not answer", status.url),
+    }
 }
 
 #[component]
 pub fn App() -> impl IntoView {
     let (engine, set_engine) = signal(String::from("…"));
-    let (last, set_last) = signal(String::from("nothing yet"));
     spawn_local(async move {
-        let answer = invoke("engine_status", JsValue::NULL).await;
-        set_engine.set(answer.as_string().unwrap_or_else(|| format!("{answer:?}")));
+        let text = match invoke(command::ENGINE_STATUS, JsValue::NULL).await {
+            Ok(value) => serde_wasm_bindgen::from_value::<EngineStatus>(value)
+                .map(|status| describe(&status))
+                .unwrap_or_else(|e| format!("unreadable status: {e}")),
+            Err(e) => format!("{e:?}"),
+        };
+        set_engine.set(text);
     });
     spawn_local(async move {
         let handler = Closure::new(move |event: JsValue| {
             let payload = js_sys::Reflect::get(&event, &"payload".into()).unwrap_or(JsValue::NULL);
-            let text = js_sys::JSON::stringify(&payload).map(String::from).unwrap_or_default();
-            set_last.set(text.clone());
-            spawn_local(async move {
-                let args = serde_wasm_bindgen::to_value(&Seen { event: text }).unwrap();
-                invoke("seen", args).await;
-            });
+            if let Ok(status) = serde_wasm_bindgen::from_value::<EngineStatus>(payload) {
+                set_engine.set(describe(&status));
+            }
         });
-        listen("changed", &handler).await;
+        listen(event::ENGINE_CHANGED, &handler).await;
         handler.forget(); // the page lives as long as the window
     });
 
@@ -48,13 +54,6 @@ pub fn App() -> impl IntoView {
                 <h2 class="m-0 text-sm font-semibold text-muted">"Engine"</h2>
                 <p data-testid="engine">{engine}</p>
             </section>
-            <section class="rounded-xl border border-line bg-panel p-4">
-                <h2 class="m-0 text-sm font-semibold text-muted">"Last push from the engine"</h2>
-                <p data-testid="last"><code class="text-link">{last}</code></p>
-            </section>
-            <button class="w-fit rounded-lg bg-primary px-4 py-2 font-semibold text-white hover:bg-primary-hover">
-                "Purple"
-            </button>
         </main>
     }
 }

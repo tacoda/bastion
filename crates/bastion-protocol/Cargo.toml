@@ -1,0 +1,9 @@
+[package]
+name = "bastion-protocol"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "The typed commands and events between the view and the app (PLAN.md D9, §6.2)."
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }

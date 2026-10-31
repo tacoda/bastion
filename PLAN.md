@@ -192,6 +192,7 @@ dependencies enforce the seams, so code that crosses one does not compile
 | **Event in, decision out** | `bastion_core::step(state, event) -> (state, Vec<Effect>)`. `Event` and `Effect` are enums. The time comes in on the event. | `bastion-core` | None needed: the core is pure, so tests call `step` directly. |
 | **Engine** | A trait in the adapter: `call`, `observe`, `register`. The only code that imports `iii-sdk`. | `src-tauri/src/engine/` | An in-memory engine that records calls and replays events. |
 | **Store** | A trait in the adapter: load a job, save a job with its `rev`, list active jobs. Backed by `database` through the Engine seam. | `src-tauri/src/engine/` | An in-memory store that refuses a stale `rev`. |
+| **Machine** | A trait in the app: run a program, read a file, test a path, name the platform. Doctor and the stack routine reach the OS only through it. | `src-tauri/src/machine.rs` | A machine with canned runs, files and platform. |
 | **Commands** | The typed Tauri commands and their request and response types, in `crates/bastion-protocol`. The view and the app both depend on it. | `bastion-protocol` | The view's tests use canned responses. |
 
 Allowed dependencies:
@@ -286,8 +287,10 @@ the plan assumes.
   `bastion-protocol`.
 - The engine link, with reconnect and backoff. The `this machine` profile, in
   TOML in the OS config directory, with no secret (D12).
-- Doctor: `iii` and its version, the pins in `worker-compose.yaml`, provider
-  keys, `gh` login, and sandbox support. Each failed check names its fix.
+- Doctor: `iii` and its version, the pins in `worker-compose.yaml`, sandbox
+  support and `gh` login run with the engine down. Model providers need the
+  engine: `router::provider::list` says which have a credential, without the
+  secret. Each failed check names its fix.
 - The stack routine: Start runs Doctor and stops on a failed required check,
   then runs `iii compose --up`. Stop runs `iii kill --compose`. A stack that
   already runs is attached, not started twice. On quit, the owner chooses.

@@ -2,6 +2,7 @@
 //! (PLAN.md D9), and the engine reaches the pages only as events (D10).
 
 mod audit_log;
+mod charter;
 mod commands;
 mod console;
 mod doctor;

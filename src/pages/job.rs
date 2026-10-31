@@ -3,7 +3,8 @@
 //! their artifacts and turn. Read again on each push.
 
 use bastion_protocol::{
-    ArtifactView, HeldCallRef, HeldCallView, JobDetail, StepView, TranscriptLine, command, event,
+    ArtifactView, CharterView, HeldCallRef, HeldCallView, JobDetail, StepView, TranscriptLine,
+    command, event,
 };
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -86,10 +87,10 @@ fn HeldCall(job: String, call: HeldCallView, error: WriteSignal<String>) -> impl
     }
 }
 
-/// Every call the gate holds for this job, if any.
+/// What governs this job: the calls the gate holds, then its charter.
 #[component]
-fn HeldCalls(detail: ReadSignal<Option<JobDetail>>, error: WriteSignal<String>) -> impl IntoView {
-    move || {
+fn Governed(detail: ReadSignal<Option<JobDetail>>, error: WriteSignal<String>) -> impl IntoView {
+    let held = move || {
         detail.get().filter(|d| !d.held.is_empty()).map(|d| view! {
             <section class="mb-4 grid gap-3 rounded-xl border border-warn bg-panel p-4">
                 <h2 class="m-0 text-sm font-semibold text-warn">"The gate holds a call for you"</h2>
@@ -98,7 +99,31 @@ fn HeldCalls(detail: ReadSignal<Option<JobDetail>>, error: WriteSignal<String>) 
                 </ul>
             </section>
         })
-    }
+    };
+    view! { {held} {move || detail.get().map(|d| charter(d.charter))} }
+}
+
+/// What the repository asks of this job, or that it asks nothing.
+fn charter(c: Option<CharterView>) -> impl IntoView + use<> {
+    let c = c?;
+    let files = if c.files.is_empty() {
+        "No charter: this job runs on the owner's defaults.".to_string()
+    } else {
+        format!("Charter: {}", c.files.join(", "))
+    };
+    let lines = |title: &'static str, items: Vec<String>| {
+        (!items.is_empty()).then(|| view! {
+            <h3 class="m-0 mt-2 text-xs font-semibold text-muted">{title}</h3>
+            <ul class="m-0 pl-5 text-xs">{items.into_iter().map(|i| view! { <li class="break-all">{i}</li> }).collect_view()}</ul>
+        })
+    };
+    Some(view! {
+        <section class="mb-4 rounded-xl border border-line bg-panel p-4">
+            <p class="m-0 text-sm">{files}</p>
+            {lines("The repository's rules", c.rules)}
+            {lines("The repository's hooks, as they ran", c.hook_runs)}
+        </section>
+    })
 }
 
 /// Why the job failed, or why its land did.
@@ -265,7 +290,7 @@ pub fn JobPage(id: String) -> impl IntoView {
                 </div>
             </section>
         </Show>
-        <HeldCalls detail=detail error=set_error />
+        <Governed detail=detail error=set_error />
         <p class="text-bad" role="alert">{error}</p>
 
         <section class="rounded-xl border border-line bg-panel">

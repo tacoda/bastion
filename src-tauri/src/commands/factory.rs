@@ -5,8 +5,8 @@ use std::sync::{Arc, OnceLock};
 
 use bastion_core::{Dials, Event, actions, hold_until, steps};
 use bastion_protocol::{
-    ArtifactView, DialsView, HeldCallView, JobDetail, JobSummary, StepView, TranscriptLine,
-    Workspace,
+    ArtifactView, CharterView, DialsView, HeldCallView, JobDetail, JobSummary, StepView,
+    TranscriptLine, Workspace,
 };
 use serde::Serialize;
 use serde_json::json;
@@ -110,6 +110,40 @@ pub async fn jobs(cell: State<'_, FactoryCell>) -> Result<Vec<JobSummary>, Strin
         .collect())
 }
 
+/// The latest turn's messages, or none when the job has no turn or the
+/// session cannot be read.
+async fn transcript(factory: &Factory, session: Option<&str>) -> Vec<TranscriptLine> {
+    let Some(session) = session else {
+        return Vec::new();
+    };
+    let Ok(out) = factory
+        .engine()
+        .call(
+            "bastion",
+            "session::messages",
+            json!({ "session_id": session }),
+        )
+        .await
+    else {
+        return Vec::new();
+    };
+    out["messages"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|m| TranscriptLine {
+            role: m["message"]["role"].as_str().unwrap_or_default().into(),
+            text: m["message"]["content"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|part| part["text"].as_str())
+                .collect::<Vec<_>>()
+                .join("\n"),
+        })
+        .collect()
+}
+
 #[tauri::command]
 pub async fn job(cell: State<'_, FactoryCell>, id: String) -> Result<JobDetail, String> {
     let factory = factory(&cell)?;
@@ -125,30 +159,7 @@ pub async fn job(cell: State<'_, FactoryCell>, id: String) -> Result<JobDetail, 
             created_at: a.created_at,
         })
         .collect();
-    let mut transcript = Vec::new();
-    if let Some(session) = &record.runtime.session
-        && let Ok(out) = factory
-            .engine()
-            .call(
-                "bastion",
-                "session::messages",
-                json!({ "session_id": session }),
-            )
-            .await
-    {
-        for m in out["messages"].as_array().into_iter().flatten() {
-            let text: Vec<&str> = m["message"]["content"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|part| part["text"].as_str())
-                .collect();
-            transcript.push(TranscriptLine {
-                role: m["message"]["role"].as_str().unwrap_or_default().into(),
-                text: text.join("\n"),
-            });
-        }
-    }
+    let transcript = transcript(&factory, record.runtime.session.as_deref()).await;
     let steps = steps(&record.job)
         .into_iter()
         .map(|(stage, state)| StepView {
@@ -174,6 +185,11 @@ pub async fn job(cell: State<'_, FactoryCell>, id: String) -> Result<JobDetail, 
         artifacts,
         transcript,
         held,
+        charter: factory.gate().charter(&id).map(|c| CharterView {
+            files: c.files.clone(),
+            rules: c.constraints.iter().map(|r| r.rule.clone()).collect(),
+            hook_runs: factory.gate().hook_runs(&id),
+        }),
     })
 }
 

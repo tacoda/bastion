@@ -294,6 +294,19 @@ pub struct JobDetail {
     pub transcript: Vec<TranscriptLine>,
     /// Calls the gate holds for the owner (PLAN.md A5).
     pub held: Vec<HeldCallView>,
+    /// The repository's charter as the job's last turn read it.
+    pub charter: Option<CharterView>,
+}
+
+/// A workspace's charter for one job (PLAN.md A5). No files means the job
+/// runs on the owner's defaults.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CharterView {
+    pub files: Vec<String>,
+    /// Constraints from the repository's `permissions`.
+    pub rules: Vec<String>,
+    /// The repository's hooks as they ran, latest last.
+    pub hook_runs: Vec<String>,
 }
 
 /// A call the gate holds: allow it once, or refuse it with feedback.

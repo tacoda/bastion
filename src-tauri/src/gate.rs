@@ -4,7 +4,8 @@
 //! memory and hands every record to the audit writer, so a slow store never
 //! stalls a turn. Without an audit writer it refuses every call.
 
-use std::sync::{Arc, RwLock};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, RwLock};
 
 use bastion_core::Stage;
 use bastion_core::audit;
@@ -12,6 +13,7 @@ use bastion_core::govern::{self, Call, Capability, Constraint, Decision, Verdict
 use serde_json::{Value, json};
 
 use crate::audit_log::AuditLog;
+use crate::charter::{self, Charter};
 use crate::engine::{DEFAULT_NAMESPACE, Engine};
 use crate::factory::{OnChange, now};
 use crate::store::{HeldCall, Store};
@@ -33,18 +35,32 @@ pub struct Gate {
     policy: RwLock<Option<Policy>>,
     /// The writer, or why there is none (such as no Keychain key).
     audit: Result<Arc<AuditLog>, String>,
+    /// Each job's charter, read from its worktree when a turn starts.
+    charters: Mutex<HashMap<String, Arc<Charter>>>,
+    /// Each job's repository hook runs, latest last.
+    hook_runs: Mutex<HashMap<String, Vec<String>>>,
 }
 
-/// What the rules read from a call: its command line, else its path.
+/// What the rules read from a call: its command line in any of the shapes
+/// `sandbox::exec` takes (`argv`, or `cmd` with `args`), else its path.
 fn call_of(call: &Value) -> Call {
     let arguments = &call["arguments"];
-    let text = match arguments["argv"].as_array() {
-        Some(argv) => argv
-            .iter()
-            .filter_map(Value::as_str)
-            .collect::<Vec<_>>()
-            .join(" "),
-        None => arguments["path"].as_str().unwrap_or_default().to_string(),
+    let words = |v: &Value| -> Vec<String> {
+        v.as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|w| w.as_str().map(String::from))
+            .collect()
+    };
+    let mut line = words(&arguments["argv"]);
+    if let Some(cmd) = arguments["cmd"].as_str() {
+        line.push(cmd.into());
+        line.extend(words(&arguments["args"]));
+    }
+    let text = if line.is_empty() {
+        arguments["path"].as_str().unwrap_or_default().to_string()
+    } else {
+        line.join(" ")
     };
     Call {
         function: call["function_id"].as_str().unwrap_or_default().into(),
@@ -65,6 +81,14 @@ fn describe(call: &Call, verdict: &Verdict) -> String {
     detail
 }
 
+/// A call's arguments as a Claude Code hook reads `tool_input`.
+fn tool_input(held: &HeldCall) -> Value {
+    match held.call.function.as_str() {
+        "sandbox::exec" => json!({ "command": held.call.text }),
+        _ => json!({ "file_path": held.call.text, "content": held.arguments["content"] }),
+    }
+}
+
 fn text_result(text: &str, details: Value, is_error: bool) -> Value {
     json!({ "content": [{ "type": "text", "text": text }], "details": details, "is_error": is_error })
 }
@@ -82,7 +106,52 @@ impl Gate {
             on_change,
             policy: RwLock::new(None),
             audit,
+            charters: Mutex::new(HashMap::new()),
+            hook_runs: Mutex::new(HashMap::new()),
         })
+    }
+
+    /// Use this charter for the job's calls from now on, and record it.
+    pub fn set_charter(&self, job: &str, charter: Charter) {
+        let files = if charter.files.is_empty() {
+            "none: owner defaults".into()
+        } else {
+            charter.files.join(", ")
+        };
+        let detail = format!(
+            "{files}; {} rules, {} hooks before calls, {} stop hooks",
+            charter.constraints.len(),
+            charter.before.len(),
+            charter.stop.len()
+        );
+        self.note("charter", job, detail);
+        self.charters
+            .lock()
+            .unwrap()
+            .insert(job.into(), Arc::new(charter));
+    }
+
+    pub fn charter(&self, job: &str) -> Option<Arc<Charter>> {
+        self.charters.lock().unwrap().get(job).cloned()
+    }
+
+    pub fn hook_runs(&self, job: &str) -> Vec<String> {
+        self.hook_runs
+            .lock()
+            .unwrap()
+            .get(job)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn ran(&self, job: &str, kind: &str, ran: &charter::Ran) {
+        self.note(kind, job, ran.line());
+        self.hook_runs
+            .lock()
+            .unwrap()
+            .entry(job.into())
+            .or_default()
+            .push(ran.line());
     }
 
     /// Read the constraints and grants again, after a change to either.
@@ -109,12 +178,28 @@ impl Gate {
         }
     }
 
-    /// Every rule, for the brief. The agent is told each rule at every rung.
-    pub fn rules(&self) -> String {
-        let policy = self.policy.read().unwrap();
-        let rules: Vec<String> = policy
+    /// The owner's constraints and the job's charter's, together.
+    fn constraints(&self, job: &str) -> Vec<Constraint> {
+        let mut all: Vec<Constraint> = self
+            .policy
+            .read()
+            .unwrap()
             .iter()
-            .flat_map(|p| &p.constraints)
+            .flat_map(|p| p.constraints.clone())
+            .collect();
+        all.extend(
+            self.charter(job)
+                .into_iter()
+                .flat_map(|c| c.constraints.clone()),
+        );
+        all
+    }
+
+    /// Every rule, for the brief. The agent is told each rule at every rung.
+    pub fn rules(&self, job: &str) -> String {
+        let rules: Vec<String> = self
+            .constraints(job)
+            .iter()
             .map(|c| format!("- {}", c.rule))
             .collect();
         if rules.is_empty() {
@@ -124,7 +209,7 @@ impl Gate {
     }
 
     /// The hook: decide one call, pin it to the job's VM, and record it.
-    pub fn judge(&self, envelope: &Value) -> Value {
+    pub fn judge(self: &Arc<Self>, envelope: &Value) -> Value {
         let call = call_of(&envelope["call"]);
         let job = envelope["metadata"]["job"]
             .as_str()
@@ -139,7 +224,9 @@ impl Gate {
                 },
                 flagged: vec![],
             },
-            (Some(p), Some(stage), Ok(_)) => govern::gate(&call, stage, &p.constraints, &p.grants),
+            (Some(p), Some(stage), Ok(_)) => {
+                govern::gate(&call, stage, &self.constraints(&job), &p.grants)
+            }
             _ => Verdict {
                 decision: Decision::Deny {
                     reason: "The gate cannot judge this call: it has no policy or no stage.".into(),
@@ -148,7 +235,29 @@ impl Gate {
             },
         };
         self.note("gate", &job, describe(&call, &verdict));
+        let hooks: Vec<String> = self
+            .charter(&job)
+            .iter()
+            .flat_map(|c| c.before.iter())
+            .filter(|h| h.functions.contains(&call.function.as_str()))
+            .map(|h| h.command.clone())
+            .collect();
+        let held = || HeldCall {
+            id: envelope["call"]["id"].as_str().unwrap_or_default().into(),
+            job: job.clone(),
+            session: envelope["session_id"].as_str().unwrap_or_default().into(),
+            turn: envelope["turn_id"].as_str().unwrap_or_default().into(),
+            call: call.clone(),
+            arguments: envelope["call"]["arguments"].clone(),
+            at: now(),
+        };
         match verdict.decision {
+            // The repository's hooks run first, in the VM, so the call waits on them.
+            Decision::Continue if !hooks.is_empty() => {
+                let (gate, held) = (self.clone(), held());
+                tauri::async_runtime::spawn(async move { gate.before(held, hooks).await });
+                json!({ "decision": "hold", "reason": "The repository's hooks run first." })
+            }
             Decision::Continue => {
                 let mut arguments = envelope["call"]["arguments"].clone();
                 arguments["sandbox_id"] = envelope["metadata"]["sandbox_id"].clone();
@@ -156,15 +265,7 @@ impl Gate {
             }
             Decision::Deny { reason } => json!({ "decision": "deny", "reason": reason }),
             Decision::Hold { reason } => {
-                self.keep(HeldCall {
-                    id: envelope["call"]["id"].as_str().unwrap_or_default().into(),
-                    job,
-                    session: envelope["session_id"].as_str().unwrap_or_default().into(),
-                    turn: envelope["turn_id"].as_str().unwrap_or_default().into(),
-                    call,
-                    arguments: envelope["call"]["arguments"].clone(),
-                    at: now(),
-                });
+                self.keep(held());
                 json!({ "decision": "hold", "reason": reason })
             }
         }
@@ -214,13 +315,77 @@ impl Gate {
         Ok(())
     }
 
+    /// Run the repository's hooks on a call. Exit 2 from any of them refuses
+    /// it with the hook's output; otherwise the call runs.
+    async fn before(&self, held: HeldCall, hooks: Vec<String>) {
+        let outcome = match self.sandbox(&held.job).await {
+            Ok(sandbox) => {
+                let input = json!({
+                    "hook_event_name": "PreToolUse", "cwd": "/work/repo",
+                    "tool_name": bastion_core::charter::tool_name(&held.call.function),
+                    "tool_input": tool_input(&held),
+                });
+                let mut refused = None;
+                for command in hooks {
+                    let ran = charter::run(&*self.engine, &sandbox, &command, &input).await;
+                    self.ran(&held.job, "hook", &ran);
+                    if ran.refuses() {
+                        refused = Some(ran);
+                        break;
+                    }
+                }
+                match refused {
+                    Some(ran) => {
+                        let text = format!(
+                            "The repository's hook refused this call: {}",
+                            ran.output.trim()
+                        );
+                        self.resolve(&held, text_result(&text, Value::Null, true), "hook-refuse")
+                            .await
+                    }
+                    None => self.run_held(&held, "hook-pass").await,
+                }
+            }
+            Err(e) => Err(e),
+        };
+        if let Err(e) = outcome {
+            eprintln!("job {}: a hooked call was not settled: {e}", held.job);
+        }
+    }
+
+    /// Run each `Stop` hook of the job's charter in its VM, and keep the results.
+    pub async fn stop_hooks(&self, job: &str, sandbox: &str) {
+        let Some(charter) = self.charter(job) else {
+            return;
+        };
+        let input = json!({ "hook_event_name": "Stop", "cwd": "/work/repo" });
+        for command in &charter.stop {
+            let ran = charter::run(&*self.engine, sandbox, command, &input).await;
+            self.ran(job, "stop-hook", &ran);
+        }
+    }
+
+    async fn sandbox(&self, job: &str) -> Result<String, String> {
+        Ok(self
+            .store
+            .load(job)
+            .await?
+            .runtime
+            .sandbox
+            .ok_or("the job has no VM")?)
+    }
+
     /// Run exactly this call once, in the job's VM, and deliver its result.
     /// The hold dropped the VM pin, so the app pins it again here (N8).
     pub async fn allow_once(&self, job: &str, id: &str) -> Result<(), String> {
         let held = self.find(job, id).await?;
+        self.run_held(&held, "allow-once").await
+    }
+
+    async fn run_held(&self, held: &HeldCall, kind: &str) -> Result<(), String> {
         let sandbox = self
             .store
-            .load(job)
+            .load(&held.job)
             .await?
             .runtime
             .sandbox
@@ -235,7 +400,7 @@ impl Gate {
             Ok(out) => text_result(&out.to_string(), out, false),
             Err(e) => text_result(&e, Value::Null, true),
         };
-        self.resolve(&held, result, "allow-once").await
+        self.resolve(held, result, kind).await
     }
 
     /// Refuse a held call, and tell the agent why and what to do instead.
@@ -322,11 +487,15 @@ mod tests {
     }
 
     fn rig() -> Rig {
-        let engine = Arc::new(
+        rig_with(
             FakeEngine::new(Link::Up)
                 .answer("harness::function::resolve", Ok(json!({})))
                 .answer("sandbox::fs::write", Ok(json!({ "written": 3 }))),
-        );
+        )
+    }
+
+    fn rig_with(engine: FakeEngine) -> Rig {
+        let engine = Arc::new(engine);
         let store = Arc::new(FakeStore::default());
         *store.constraints.lock().unwrap() = govern::default_constraints();
         *store.capabilities.lock().unwrap() = govern::default_capabilities();
@@ -522,9 +691,105 @@ mod tests {
         assert_eq!(audit::verify(&chain, KEY), Ok(()));
     }
 
+    fn charter() -> Charter {
+        Charter {
+            files: vec![".claude/settings.json".into()],
+            constraints: bastion_core::charter::constraints(&["Bash(git push:*)".into()], &[]),
+            before: vec![crate::charter::Hook {
+                functions: vec!["sandbox::exec"],
+                command: "./check.sh".into(),
+            }],
+            stop: vec![],
+        }
+    }
+
+    fn hooked(exit_code: i64) -> Rig {
+        let r = rig_with(
+            FakeEngine::new(Link::Up)
+                .answer("harness::function::resolve", Ok(json!({})))
+                .answer(
+                    "sandbox::exec",
+                    Ok(json!({ "exit_code": exit_code, "stderr": "tests first" })),
+                ),
+        );
+        r.gate.set_charter("j1", charter());
+        r
+    }
+
+    #[test]
+    fn a_charter_rule_refuses_and_reads_the_cmd_shape() {
+        let r = hooked(0);
+        let answer = r.gate.judge(&envelope(
+            "build",
+            "sandbox::exec",
+            json!({ "cmd": "git push origin main" }),
+        ));
+        assert_eq!(answer["decision"], "deny");
+        assert!(
+            answer["reason"]
+                .as_str()
+                .unwrap()
+                .contains("Bash(git push:*)")
+        );
+        assert!(r.gate.rules("j1").contains("Bash(git push:*)"));
+    }
+
+    #[test]
+    fn a_hook_that_exits_2_refuses_the_call_with_its_output() {
+        let r = hooked(2);
+        let answer = r.gate.judge(&envelope(
+            "build",
+            "sandbox::exec",
+            json!({ "argv": ["pytest"] }),
+        ));
+        assert_eq!(answer["decision"], "hold");
+        settle();
+        let calls = r.engine.calls.lock().unwrap().clone();
+        let execs: Vec<_> = calls.iter().filter(|c| c.1 == "sandbox::exec").collect();
+        assert_eq!(execs.len(), 1, "only the hook ran");
+        assert!(
+            execs[0].2["env"]["BASTION_HOOK_INPUT"]
+                .as_str()
+                .unwrap()
+                .contains("\"command\":\"pytest\"")
+        );
+        let resolved = calls
+            .iter()
+            .find(|c| c.1 == "harness::function::resolve")
+            .unwrap();
+        assert_eq!(resolved.2["is_error"], true);
+        assert!(
+            resolved.2["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("tests first")
+        );
+        assert!(r.gate.hook_runs("j1")[0].contains("exit 2"));
+    }
+
+    #[test]
+    fn a_hook_that_passes_lets_the_call_run_in_the_vm() {
+        let r = hooked(0);
+        r.gate.judge(&envelope(
+            "build",
+            "sandbox::exec",
+            json!({ "argv": ["pytest"] }),
+        ));
+        settle();
+        let calls = r.engine.calls.lock().unwrap().clone();
+        let execs: Vec<_> = calls.iter().filter(|c| c.1 == "sandbox::exec").collect();
+        assert_eq!(execs.len(), 2, "the hook, then the call");
+        assert_eq!(execs[1].2["sandbox_id"], "vm1");
+        let resolved = calls
+            .iter()
+            .find(|c| c.1 == "harness::function::resolve")
+            .unwrap();
+        assert_eq!(resolved.2["is_error"], false);
+    }
+
     #[test]
     fn the_brief_names_every_rule() {
-        let rules = rig().gate.rules();
+        let rules = rig().gate.rules("j1");
         for c in govern::default_constraints() {
             assert!(rules.contains(&c.rule), "{rules}");
         }

@@ -14,6 +14,7 @@ use bastion_core::{
 use serde_json::{Value, json};
 
 use crate::audit_log::{self, AuditLog};
+use crate::charter;
 use crate::engine::{DEFAULT_NAMESPACE, Engine};
 use crate::gate::Gate;
 use crate::machine::Machine;
@@ -49,8 +50,6 @@ Run Python tests with [\"python3\", \"-m\", \"pytest\", \"-q\", \"/work/repo\"].
 Your reply ends your turn. Keep calling tools until the work is done and
 committed, and reply only then. Do not describe a next step; take it.";
 const SAVE_TRIES: usize = 3;
-/// Read from the worktree and put before every brief, when present.
-const CHARTERS: [&str; 2] = ["CLAUDE.md", "AGENTS.md"];
 
 pub type OnChange = Arc<dyn Fn(&str) + Send + Sync>;
 type BoxFuture<T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send>>;
@@ -263,6 +262,9 @@ impl Factory {
                 self.store.add_artifact(&id, &artifact).await.err()
             }
             Effect::CaptureDiff => {
+                if let Some(sandbox) = &record.runtime.sandbox {
+                    self.gate.stop_hooks(&id, sandbox).await;
+                }
                 let body = self
                     .diff(&record)
                     .await
@@ -455,7 +457,9 @@ impl Factory {
         let mut message = String::new();
         if let Some(worktree) = &record.runtime.worktree {
             let (path, _) = self.worktree_path(worktree).await?;
-            for name in CHARTERS {
+            self.gate
+                .set_charter(&job.id, charter::read(&*self.machine, &path));
+            for name in charter::BRIEF_FILES {
                 if let Ok(text) = self.machine.read(&path.join(name)) {
                     message.push_str(&format!(
                         "The repository's charter ({name}):\n<charter>\n{text}\n</charter>\n\n"
@@ -465,7 +469,7 @@ impl Factory {
         }
         message.push_str(TOOL_GUIDE);
         message.push_str("\n\n");
-        message.push_str(&self.gate.rules());
+        message.push_str(&self.gate.rules(&job.id));
         message.push_str(brief);
         self.engine
             .call(
@@ -736,6 +740,16 @@ impl Factory {
         });
     }
 
+    /// Judge the job's calls by its charter, read again from its worktree.
+    async fn read_charter(&self, record: &Record) {
+        if let Some(worktree) = &record.runtime.worktree
+            && let Ok((path, _)) = self.worktree_path(worktree).await
+        {
+            self.gate
+                .set_charter(&record.job.id, charter::read(&*self.machine, &path));
+        }
+    }
+
     /// After a restart: pick every active job back up where it was.
     async fn resume(self: Arc<Self>) {
         let Ok(records) = self.store.jobs().await else {
@@ -771,6 +785,7 @@ impl Factory {
                 (State::Running, _, Some(session))
                     if self.listen_for_turn(&id, &session).is_ok() =>
                 {
+                    self.read_charter(&record).await;
                     self.turn_done(&id, &session, false).await;
                 }
                 _ => {}

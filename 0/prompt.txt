@@ -1,0 +1,9 @@
+Put all the business logic of the factory in the app separate from the view and iii calls.
+
+---
+
+I want clean seams in my code
+
+---
+
+Try again. Shut down the iii workers. Then rerun and commit and push

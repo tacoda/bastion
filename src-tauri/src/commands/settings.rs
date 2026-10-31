@@ -6,13 +6,19 @@ use std::path::Path;
 
 use bastion_core::settings::{Forge, Model, Oversight, Settings, Tracker};
 use bastion_core::{Dial, Dials};
+use bastion_protocol::event;
 use bastion_protocol::{AccountView, IssueView, ModelOption, SettingsView, VersionView};
 use serde_json::json;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 
 use super::factory::{FactoryCell, factory, name};
 use crate::factory::now;
 use crate::{forge, settings_store};
+
+/// Tell every page the settings changed, so each section reads them again.
+fn changed(app: &AppHandle) {
+    let _ = app.emit(event::JOB_CHANGED, "");
+}
 
 fn word<T: for<'de> serde::Deserialize<'de>>(text: &str, what: &str) -> Result<T, String> {
     serde_json::from_value(json!(text)).map_err(|_| format!("{text:?} is not a {what}"))
@@ -58,24 +64,29 @@ pub async fn settings(cell: State<'_, FactoryCell>) -> Result<SettingsView, Stri
 
 #[tauri::command]
 pub async fn settings_set(
+    app: AppHandle,
     cell: State<'_, FactoryCell>,
     settings: SettingsView,
 ) -> Result<(), String> {
     let next = settings_of(&settings)?;
-    settings_store::change(&**factory(&cell)?.store(), &next, now())
-        .await
-        .map(|_| ())
+    settings_store::change(&**factory(&cell)?.store(), &next, now()).await?;
+    changed(&app);
+    Ok(())
 }
 
 /// Set both dials from one oversight preset.
 #[tauri::command]
-pub async fn settings_preset(cell: State<'_, FactoryCell>, preset: String) -> Result<(), String> {
+pub async fn settings_preset(
+    app: AppHandle,
+    cell: State<'_, FactoryCell>,
+    preset: String,
+) -> Result<(), String> {
     let factory = factory(&cell)?;
     let mut next = settings_store::current(&**factory.store()).await?;
     next.dials = word::<Oversight>(&preset, "preset")?.dials();
-    settings_store::change(&**factory.store(), &next, now())
-        .await
-        .map(|_| ())
+    settings_store::change(&**factory.store(), &next, now()).await?;
+    changed(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -92,10 +103,14 @@ pub async fn settings_history(cell: State<'_, FactoryCell>) -> Result<Vec<Versio
 }
 
 #[tauri::command]
-pub async fn settings_restore(cell: State<'_, FactoryCell>, version: u64) -> Result<(), String> {
-    settings_store::restore(&**factory(&cell)?.store(), version, now())
-        .await
-        .map(|_| ())
+pub async fn settings_restore(
+    app: AppHandle,
+    cell: State<'_, FactoryCell>,
+    version: u64,
+) -> Result<(), String> {
+    settings_store::restore(&**factory(&cell)?.store(), version, now()).await?;
+    changed(&app);
+    Ok(())
 }
 
 /// The chat models with tools on providers that have a key.

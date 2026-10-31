@@ -650,7 +650,8 @@ starts until the owner asks.
 | A4 | done | The diff, captured from the VM after each build and shown per file with line comments (e5da6d7). The checkpoint dial: ask, hold and auto, review never below hold, holds resumed after a restart (0bdb745). Turn guide and uncommitted-work flag (4b46dca). Landing fixes: the bundle names the branch, a failed land waits on the owner with its VM, and the land passes `target_branch` (75adbe2, f2898c6). 24 core tests, 29 app tests. Live exit (2026-10-31), driven in the window: on `divide`, line comments on `calc.py:5` and `test_calc.py:3` came back verbatim and each next diff answered them; on `subtract`, the owner approved the plan and the review, the land failed once on `target_checked_out_dirty` (an untracked `__pycache__` in the target) and waited, and Approve retried it: `demo-a` main got `0e30e2f`, both tests pass, and the VM is gone. Not run live: a hold expiring (30 min); the core and loop tests cover it. |
 | A5 | done | The gate, the ladders and the audit chain in `bastion-core` (def679b); the governance tables, the hook and the owner's commands (a509bb1); held calls and the Governance page (b4f2704). First live exit on `j4825765c` (ee4435e): a plan's write held, Allow once ran exactly it, Refuse reached the agent, `keep-tests` passed a `git rm` at checked and refused it at enforced, and verification failed after one byte of entry 20 changed. Then, from what that exit found: the review page freeze (513da6c); a keyed chain, its writer's state with a 5 s limit per write, and export (d0d3a27); charter constraints and repository hooks from `.claude/settings.json` (37a4b8e); a `tests-kept` constraint on the review diff (c7e992b); Stop during a busy turn and a single send-back (2b9afae); the add form and each constraint's history (4855dca). 45 core tests, 49 app tests, 2 view tests. Second live exit (2026-10-31) on `j3e0ca30c`, with a charter in `demo-a` (deny `Bash(git push:*)`, a PreToolUse hook that refuses `rm`, a Stop hook that runs pytest): the job page showed the charter, its rule and every hook run; the hook passed 12 calls with exit 0 and refused `rm -f /work/repo/notes.txt` with exit 2 and its own message; the Stop hook ran pytest after each build; with `tests-kept` enforced, a build that dropped `test_add` went back to build with the rule, and at checked the same finding waited for the owner. On the Governance page, the form added `no-curl` (entry 333), History listed `tests-kept`'s promotion and demotion, the chain verified 332 and then 335 entries under the Keychain key, and Export wrote 335 entries and `{"verified":true}`. Not run live: the `git push` deny rule (the agent read it in its brief and never made the call; the core and gate tests cover it), and a stalled audit (the unit test covers it). |
 | A6 | done | Spike N9: `judge::evaluate` has no provider worker in this stack, so a run is graded by a harness turn with no tools; `harness::metrics` meters each session (docs/levels.md). Build (38519c5): `Dials::trial` in the core (a trial approves its own plan and stops at review with its diff, so nothing lands), the core's `eval` module (arms, tally from the audit, totals, differences, grade), an arm's rungs applied per trial job in the gate, every turn of every job metered into `turns`, the eval tables, and the Evals page. 51 core tests, 58 app tests. Live exit (2026-10-31), eval `ee8eaaddd` on `demo-a` from `d6227b2`: three requests that each ask for a `wc` count, A with `no-wc` told and B with it enforced. All six runs reached review and were graded. In total B differs from A: refused 0 -> 5, review findings 2 -> 0, turns 39 -> 28, calls 33 -> 17, cost $0.0344 -> $0.0207; grades 7 and 7. Each request lists B's refused calls with their audit entries (#375, #405, #363, #452, ...) and links to the trial job, which shows it stopped at review with Land pending. Apply B set `no-wc` to enforced and the audit recorded `ee8eaaddd arm b: Told -> Enforced` (#487) and the eval the owner acted on (#488). Not varied yet: the model per stage and the pipeline, since there is one of each until A7 and A8. |
-| A7 to A13 | — | — |
+| A7 | in progress | Built (3605253): the GitHub forge (push `bastion/<job>`, open or reuse the pull request, poll its checks, a bounded CI fix turn with the failing log, merge on Approve), issues as requests that link back and close on merge, versioned settings with Restore, oversight presets, a model per stage from `llm-router`, and the Accounts list; the governance pages split into Constraints, Capabilities and Audit Log with Lucide icons (dbe1cf7). 57 core tests, 66 app tests. Live exit (2026-10-31) on `ianparo/bastion` (private, CI runs pytest and needs a CHANGELOG.md entry): job `j7eb804a7` started from issue #1 and links to it; it opened pull request #2 (`bastion/j7eb804a7`, body `Closes #1`); CI failed on the changelog, Bastion sent the fix turn with the CI log (ci_fixes 1), the fixed change was pushed to the same pull request, and CI passed. Settings: forge set to GitHub (v1), the medium preset set both dials to hold (v2), Restore of v1 wrote v3 with the dials back at ask, and the next job (`ja0b04eb6`) waited at approve with no hold timer. Left for the owner: the merge of pull request #2. |
+| A8 to A13 | — | — |
 | Later (§10) | on hold | — |
 
 **What A1 found:**
@@ -784,3 +785,24 @@ starts until the owner asks.
   review); under B none did. Three requests is too few to say B caused that.
 - A trial job is an ordinary job, so it shows on the Jobs page, and the
   factory's admission limit counts it.
+
+**What A7 found:**
+
+- The fix turn after CI's first failure changed nothing that fixed it: the
+  log it got was `gh run view --log-failed` cut to its last 4000 characters,
+  and the failing message sat in the middle of the step's environment dump.
+  It took a note from the owner to add the CHANGELOG line. A fix turn needs
+  the failing step's own error lines, not the tail of the log.
+- The agent asks before acting on an owner's note, and once ignored part of
+  one (it moved the tests into `tests/` after being told to keep them at the
+  root). `origin/main` does not exist in the VM: the branch it starts from is
+  `@{u}`.
+- The webview freeze in A5 came back with spellcheck off. A sample showed the
+  same `AXVisibleCharacterRange` walk; the trigger is the test driver, which
+  reads that attribute after scrolls and typing, not macOS text checking.
+  Driving with keys (Page Down, End) avoided it. Whether VoiceOver does the
+  same has not been checked.
+- A settings change pushed nothing, so the other sections of the page kept
+  the old values; each settings command now pushes a change.
+- The `Approve` and `Review` labels on the Jobs list are badges, not buttons,
+  and read as buttons.

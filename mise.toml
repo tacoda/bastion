@@ -1,0 +1,4 @@
+# The repo pins Rust in rust-toolchain.toml; this keeps a global mise pin
+# from overriding it, so local checks match CI.
+[tools]
+rust = "1.97.0"

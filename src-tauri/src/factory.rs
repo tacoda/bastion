@@ -34,6 +34,18 @@ const TOOLS: [&str; 4] = [
 ];
 const REPO: &str = "/work/repo";
 const SLOW_MS: u64 = 180_000;
+/// How a turn reaches its VM. The pre-trigger hook replaces `sandbox_id`, so
+/// the turn passes any value; without one some calls fail their schema.
+const TOOL_GUIDE: &str = "\
+Your tools run in this job's VM. The repository is at /work/repo.
+Call sandbox::exec with {\"sandbox_id\": \"job\", \"argv\": [\"git\", \"-C\", \"/work/repo\", \"status\"]},
+and sandbox::fs::read, sandbox::fs::write and sandbox::fs::ls with {\"sandbox_id\": \"job\", \"path\": ...}.
+Bastion points \"job\" at your VM. Only committed work leaves the VM.
+Run each program directly as an argv, never through bash -lc, and pass
+\"timeout_ms\": 60000 so a hung command fails instead of stalling the turn.
+Run Python tests with [\"python3\", \"-m\", \"pytest\", \"-q\", \"/work/repo\"].
+Your reply ends your turn. Keep calling tools until the work is done and
+committed, and reply only then. Do not describe a next step; take it.";
 const SAVE_TRIES: usize = 3;
 /// Read from the worktree and put before every brief, when present.
 const CHARTERS: [&str; 2] = ["CLAUDE.md", "AGENTS.md"];
@@ -434,6 +446,8 @@ impl Factory {
                 }
             }
         }
+        message.push_str(TOOL_GUIDE);
+        message.push_str("\n\n");
         message.push_str(brief);
         self.engine
             .call(
@@ -539,11 +553,26 @@ impl Factory {
             )
             .await?;
         let text = out["stdout"].as_str().unwrap_or_default();
-        Ok(if text.trim().is_empty() {
-            "No commits: the build left nothing to land.".into()
+        let mut body = if text.trim().is_empty() {
+            "No commits: the build left nothing to land.".to_string()
         } else {
-            text.into()
-        })
+            text.to_string()
+        };
+        // Work the turn left uncommitted does not land, so the review says so.
+        let status = self
+            .vm_exec(&sandbox, &["git", "-C", REPO, "status", "--porcelain"])
+            .await?;
+        let dirty: Vec<&str> = status["stdout"]
+            .as_str()
+            .unwrap_or_default()
+            .lines()
+            .filter(|l| !l.contains("__pycache__"))
+            .collect();
+        if !dirty.is_empty() {
+            body.push_str("\n\nNot committed, so it will not land:\n");
+            body.push_str(&dirty.join("\n"));
+        }
+        Ok(body)
     }
 
     /// The turn's last assistant message, whole. `harness::status` truncates

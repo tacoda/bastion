@@ -67,12 +67,25 @@ fn line_class(text: &str) -> &'static str {
 
 #[component]
 pub fn DiffView(diff: String, comment: WriteSignal<String>) -> impl IntoView {
+    // The adapter appends work the turn left uncommitted after the diff.
+    let (diff, uncommitted) = match diff.split_once("\n\nNot committed, so it will not land:\n") {
+        Some((d, rest)) => (d.to_string(), Some(rest.to_string())),
+        None => (diff, None),
+    };
+    let warning = uncommitted.map(|files| {
+        view! {
+            <p class="m-0 rounded border border-warn p-2 text-sm text-warn">
+                "Not committed, so it will not land: "<code>{files}</code>
+            </p>
+        }
+    });
     let files = parse(&diff);
     if files.is_empty() {
-        return view! { <p class="m-0 text-sm text-muted">{diff}</p> }.into_any();
+        return view! { {warning}<p class="m-0 text-sm text-muted">{diff}</p> }.into_any();
     }
     view! {
         <div class="grid gap-3">
+            {warning}
             {files.into_iter().map(|file| {
                 let path = file.path.clone();
                 view! {

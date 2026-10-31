@@ -1,0 +1,5 @@
+The main benefit that bastion provides is providing constraints and capabilities, a way to promote and demote them, a tamper-proof audit log, A/B evals and a consistent definition of charter/harness/factory. Each project has a charter (or a lack of one). Bastion is a harness and factory. Constratints and capabilities should be built into hooks so evals at higher levels can produce actionable results - like a difference in the harness behavior.
+
+---
+
+This app should be general and allow you to configure all of your settings and accounts to use the processes, products, tools, and policies that you already use

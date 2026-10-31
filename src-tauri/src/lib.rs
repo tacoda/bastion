@@ -8,6 +8,7 @@ mod engine;
 mod machine;
 mod profile;
 mod stack;
+mod store;
 
 use std::sync::Arc;
 

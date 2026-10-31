@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.12.2",
+  "checkpoint_id": "01M67SB1SVYJDGWBSVRK1DSBPS",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "src-tauri/src/commands/factory.rs",
+    "src-tauri/src/factory.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 41987,
+    "cache_read_tokens": 10111040,
+    "output_tokens": 34831,
+    "api_call_count": 19
+  },
+  "redaction": {
+    "replacements": 197,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 185,
+      "credential_value": 2,
+      "credentialed_uri": 0,
+      "entropy": 10,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}

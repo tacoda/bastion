@@ -11,12 +11,17 @@ pub mod command {
     pub const STACK_STATUS: &str = "stack_status";
     pub const STACK_START: &str = "stack_start";
     pub const STACK_STOP: &str = "stack_stop";
+    pub const PROFILE: &str = "profile";
+    /// Takes `{ stopStack: bool }`.
+    pub const QUIT: &str = "quit";
 }
 
 /// Event names the app emits to the page (D10).
 pub mod event {
     /// Carries an [`EngineStatus`](super::EngineStatus) each time the link changes.
     pub const ENGINE_CHANGED: &str = "engine-changed";
+    /// The owner asked to quit while the stack runs: the page asks whether to stop it.
+    pub const QUIT_REQUESTED: &str = "quit-requested";
 }
 
 /// The app's link to the engine.
@@ -111,4 +116,15 @@ pub enum StartRefused {
     Failed {
         message: String,
     },
+}
+
+/// The profile the app runs with (PLAN.md D12). It holds no secret.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActiveProfile {
+    pub name: String,
+    pub kind: String,
+    pub engine_url: String,
+    pub checkout: String,
+    /// The file the profiles live in.
+    pub file: String,
 }

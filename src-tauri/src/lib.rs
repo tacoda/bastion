@@ -10,15 +10,27 @@ mod stack;
 
 use std::sync::Arc;
 
+use bastion_protocol::event;
+use commands::app::{ProfilesFile, should_ask};
 use engine::{Engine, IiiEngine};
 use machine::{Machine, ThisMachine};
 use profile::Profiles;
 use stack::Stack;
-use tauri::Manager;
+use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
 
 /// The checkout this build came from, which holds `worker-compose.yaml`.
 // ponytail: a build-time path; packaging the stack replaces it (PLAN.md A11).
 const CHECKOUT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
+
+/// Ask the page before a quit while the stack runs. True means the quit waits.
+fn hold_quit(app: &AppHandle) -> bool {
+    let machine = app.state::<Arc<dyn Machine>>();
+    if !should_ask(&app.state::<Stack>(), machine.inner().as_ref()) {
+        return false;
+    }
+    let _ = app.emit(event::QUIT_REQUESTED, ());
+    true
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -39,16 +51,36 @@ pub fn run() {
             app.manage(engine);
             app.manage(Arc::new(ThisMachine) as Arc<dyn Machine>);
             app.manage(profiles);
+            app.manage(ProfilesFile(path));
             app.manage(stack);
             Ok(())
         })
+        .on_window_event(|window, e| {
+            if let WindowEvent::CloseRequested { api, .. } = e
+                && hold_quit(window.app_handle())
+            {
+                api.prevent_close();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
+            commands::app::profile,
+            commands::app::quit,
             commands::engine::engine_status,
             commands::doctor::doctor,
             commands::stack::stack_status,
             commands::stack::stack_start,
             commands::stack::stack_stop
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, e| {
+            // ⌘Q has no exit code; the `quit` command exits with one.
+            if let RunEvent::ExitRequested {
+                api, code: None, ..
+            } = e
+                && hold_quit(app)
+            {
+                api.prevent_exit();
+            }
+        });
 }

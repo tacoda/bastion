@@ -1,59 +1,97 @@
-//! Bastion's first page: the engine link, read through a command and kept
-//! current by the `engine-changed` event (PLAN.md D9, D10).
+//! The shell (PLAN.md A1): the sidebar, the page it shows, and the question on
+//! quit while the stack runs.
 
-use bastion_protocol::{EngineStatus, Link, command, event};
+use bastion_protocol::{ActiveProfile, command, event};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use wasm_bindgen::prelude::*;
+use serde::Serialize;
 
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"], catch)]
-    async fn invoke(cmd: &str, args: JsValue) -> Result<JsValue, JsValue>;
-    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "event"])]
-    async fn listen(event: &str, handler: &Closure<dyn FnMut(JsValue)>) -> JsValue;
+use crate::ipc::{self, None};
+use crate::pages::{engine::EnginePage, settings::SettingsPage};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Page {
+    Floor,
+    Inbox,
+    Engine,
+    Settings,
 }
 
-fn describe(status: &EngineStatus) -> String {
-    match (status.link, status.functions) {
-        (Link::Up, Some(n)) => format!("up at {}, {n} functions", status.url),
-        (Link::Up, None) => format!("up at {}", status.url),
-        (Link::Connecting, _) => format!("connecting to {}", status.url),
-        (Link::Reconnecting, _) => format!("reconnecting to {}", status.url),
-        (Link::Down, _) => format!("down: {} does not answer", status.url),
-    }
+const PAGES: [(Page, &str); 4] = [
+    (Page::Floor, "Floor"),
+    (Page::Inbox, "Inbox"),
+    (Page::Engine, "Engine"),
+    (Page::Settings, "Settings"),
+];
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Quit {
+    stop_stack: bool,
 }
 
 #[component]
 pub fn App() -> impl IntoView {
-    let (engine, set_engine) = signal(String::from("…"));
+    let (page, set_page) = signal(Page::Engine);
+    let (profile, set_profile) = signal(String::new());
+    let (asking, set_asking) = signal(false);
     spawn_local(async move {
-        let text = match invoke(command::ENGINE_STATUS, JsValue::NULL).await {
-            Ok(value) => serde_wasm_bindgen::from_value::<EngineStatus>(value)
-                .map(|status| describe(&status))
-                .unwrap_or_else(|e| format!("unreadable status: {e}")),
-            Err(e) => format!("{e:?}"),
-        };
-        set_engine.set(text);
+        if let Ok(p) = ipc::call::<ActiveProfile, String>(command::PROFILE, None {}).await {
+            set_profile.set(p.name);
+        }
     });
-    spawn_local(async move {
-        let handler = Closure::new(move |event: JsValue| {
-            let payload = js_sys::Reflect::get(&event, &"payload".into()).unwrap_or(JsValue::NULL);
-            if let Ok(status) = serde_wasm_bindgen::from_value::<EngineStatus>(payload) {
-                set_engine.set(describe(&status));
-            }
+    ipc::listen(event::QUIT_REQUESTED, move |()| set_asking.set(true));
+    let quit = move |stop_stack: bool| {
+        spawn_local(async move {
+            let _ = ipc::call::<(), String>(command::QUIT, Quit { stop_stack }).await;
         });
-        listen(event::ENGINE_CHANGED, &handler).await;
-        handler.forget(); // the page lives as long as the window
-    });
+    };
 
     view! {
-        <main class="min-h-screen p-8 grid gap-4 content-start">
-            <h1 class="m-0 text-2xl font-extrabold">"Bastion"</h1>
-            <section class="rounded-xl border border-line bg-panel p-4">
-                <h2 class="m-0 text-sm font-semibold text-muted">"Engine"</h2>
-                <p data-testid="engine">{engine}</p>
-            </section>
-        </main>
+        <a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:m-2 focus:rounded focus:bg-primary focus:px-3 focus:py-2 focus:text-white">
+            "Skip to content"
+        </a>
+        <div class="grid min-h-screen grid-cols-[200px_1fr]">
+            <nav aria-label="Main" class="flex flex-col gap-1 border-r border-line bg-panel p-3">
+                <p class="m-0 mb-3 px-2 text-lg font-extrabold">"Bastion"</p>
+                {PAGES.map(|(p, label)| view! {
+                    <button
+                        class="rounded-lg px-2 py-1.5 text-left hover:bg-line aria-[current=page]:bg-primary aria-[current=page]:text-white"
+                        aria-current=move || (page.get() == p).then_some("page")
+                        on:click=move |_| set_page.set(p)
+                    >{label}</button>
+                })}
+                <p class="mt-auto px-2 text-xs text-muted">{profile}</p>
+            </nav>
+            <main id="main" tabindex="-1" class="p-8">
+                {move || match page.get() {
+                    Page::Floor => later("Floor", "A3").into_any(),
+                    Page::Inbox => later("Inbox", "A3").into_any(),
+                    Page::Engine => view! { <EnginePage /> }.into_any(),
+                    Page::Settings => view! { <SettingsPage /> }.into_any(),
+                }}
+            </main>
+        </div>
+        <Show when=move || asking.get()>
+            <div class="fixed inset-0 grid place-items-center bg-black/60">
+                <div role="dialog" aria-modal="true" aria-labelledby="quit-title" class="grid max-w-sm gap-3 rounded-xl border border-line bg-panel p-5">
+                    <h2 id="quit-title" class="m-0 text-lg font-bold">"The stack is running"</h2>
+                    <p class="m-0 text-muted">"Stop it with the app, or keep it running for the next start to attach to?"</p>
+                    <div class="flex flex-wrap gap-2">
+                        <button class="rounded-lg bg-primary px-3 py-2 font-semibold text-white hover:bg-primary-hover" on:click=move |_| quit(false)>"Keep it running"</button>
+                        <button class="rounded-lg border border-line px-3 py-2 hover:bg-line" on:click=move |_| quit(true)>"Stop the stack"</button>
+                        <button class="rounded-lg px-3 py-2 text-muted hover:bg-line" on:click=move |_| set_asking.set(false)>"Cancel"</button>
+                    </div>
+                </div>
+            </div>
+        </Show>
+    }
+}
+
+/// A page a later phase builds.
+fn later(title: &'static str, phase: &'static str) -> impl IntoView {
+    view! {
+        <h1 class="mt-0 text-2xl font-bold">{title}</h1>
+        <p class="text-muted">{format!("Not built yet: {phase} builds this page.")}</p>
     }
 }

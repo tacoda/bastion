@@ -12,6 +12,7 @@
   --color-link: #c4b5fd;
   --color-ok: #4ade80;
   --color-bad: #f87171;
+  --color-warn: #fbbf24;
 }
 
 html { color-scheme: dark; }

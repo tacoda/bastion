@@ -1,0 +1,310 @@
+//! The factory's rules (PLAN.md D18, §6.1). Everything here is a pure
+//! function: an event and the current job go in, the next job and the effects
+//! to run come out. No I/O, no clock, no engine.
+
+mod brief;
+
+use serde::{Deserialize, Serialize};
+
+pub use brief::{QUESTION_MARKER, brief, outcome};
+
+/// How many failed turns in a row a stage gets before the job fails (D16).
+pub const MAX_TURN_FAILURES: u32 = 2;
+/// The longest a turn may run before it counts as failed (PLAN.md §9).
+// ponytail: one cap for every stage; give each stage its own when a stage needs longer.
+pub const TURN_CAP_SECS: u64 = 60 * 60;
+
+/// The stages of the short pipeline (D17), in order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Stage {
+    /// An agent reads the code and writes a plan.
+    Plan,
+    /// The owner approves the plan, or comments on it.
+    Approve,
+    /// An agent carries the plan out.
+    Build,
+    /// The owner approves the change, or comments on it.
+    Review,
+    /// The change lands on the workspace's branch.
+    Land,
+}
+
+pub const SHORT_PIPELINE: [Stage; 5] = [
+    Stage::Plan,
+    Stage::Approve,
+    Stage::Build,
+    Stage::Review,
+    Stage::Land,
+];
+
+impl Stage {
+    /// The checkpoint a person decides, if this stage is one.
+    pub fn is_checkpoint(self) -> bool {
+        matches!(self, Stage::Approve | Stage::Review)
+    }
+
+    /// An agent stage may not change the tree.
+    pub fn read_only(self) -> bool {
+        self == Stage::Plan
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum State {
+    /// Waiting for a free sandbox.
+    Queued,
+    /// Getting its worktree and VM.
+    Provisioning,
+    /// An agent turn is running.
+    Running,
+    /// A checkpoint or a question waits on the owner.
+    NeedsYou,
+    Landed,
+    Failed,
+    Stopped,
+}
+
+impl State {
+    pub fn finished(self) -> bool {
+        matches!(self, State::Landed | State::Failed | State::Stopped)
+    }
+
+    /// Holds a sandbox VM.
+    pub fn holds_vm(self) -> bool {
+        !self.finished() && self != State::Queued
+    }
+}
+
+/// One request against one workspace, and where it is in its pipeline.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Job {
+    pub id: String,
+    pub workspace: String,
+    pub request: String,
+    pub stage: Stage,
+    pub state: State,
+    /// What the owner must answer while `NeedsYou` holds outside a checkpoint.
+    pub question: Option<String>,
+    /// The note that becomes the next turn's brief (D16).
+    pub feedback: Option<String>,
+    /// The latest plan the agent wrote, carried into the build brief.
+    pub plan: Option<String>,
+    pub failures: u32,
+    /// Why the job failed, when it did.
+    pub error: Option<String>,
+    pub updated_at: u64,
+}
+
+/// Something that happened to a job.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum Event {
+    /// A sandbox is free for this queued job.
+    Admitted,
+    Provisioned,
+    ProvisionFailed {
+        error: String,
+    },
+    TurnFinished {
+        outcome: Outcome,
+    },
+    /// The owner approved the checkpoint the job waits at.
+    Approved,
+    /// The owner commented on the artifact at the checkpoint, or answered a question.
+    Commented {
+        text: String,
+    },
+    Landed,
+    LandFailed {
+        error: String,
+    },
+    Stopped,
+}
+
+/// How an agent turn ended.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum Outcome {
+    /// The turn finished its stage, with the text it reported.
+    Done { report: String },
+    /// The agent stopped with a question for the owner.
+    Asked { question: String },
+    /// The turn failed, or ran past the cap.
+    Failed { error: String },
+}
+
+/// What the adapter must do after a step. Effects are data; the core never
+/// waits on one (§6.1).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum Effect {
+    /// Make the job's worktree and VM, and put its code in the VM.
+    Provision,
+    StartTurn {
+        stage: Stage,
+        brief: String,
+        read_only: bool,
+        cap_secs: u64,
+    },
+    /// Keep the turn's report as the stage's artifact.
+    RecordArtifact { stage: Stage, body: String },
+    /// Bring the VM's commits back to the worktree, then land them.
+    Land,
+    /// Stop the VM and release the worktree.
+    Teardown,
+}
+
+impl Job {
+    pub fn new(id: String, workspace: String, request: String, at: u64) -> Self {
+        Job {
+            id,
+            workspace,
+            request,
+            stage: SHORT_PIPELINE[0],
+            state: State::Queued,
+            question: None,
+            feedback: None,
+            plan: None,
+            failures: 0,
+            error: None,
+            updated_at: at,
+        }
+    }
+}
+
+/// Apply one event to one job. An event that does not fit the job's state
+/// changes nothing and returns no effects.
+pub fn step(job: &Job, event: &Event, at: u64) -> (Job, Vec<Effect>) {
+    let mut next = job.clone();
+    next.updated_at = at;
+    let effects = match (job.state, event) {
+        (state, _) if state.finished() => return (job.clone(), Vec::new()),
+        (_, Event::Stopped) => {
+            next.state = State::Stopped;
+            vec![Effect::Teardown]
+        }
+        (State::Queued, Event::Admitted) => {
+            next.state = State::Provisioning;
+            vec![Effect::Provision]
+        }
+        (State::Provisioning, Event::Provisioned) => enter(&mut next),
+        (State::Provisioning, Event::ProvisionFailed { error }) => fail(&mut next, error),
+        (State::Running, Event::TurnFinished { outcome }) => turn_finished(&mut next, outcome),
+        (State::NeedsYou, Event::Approved) if next.question.is_none() => {
+            next.feedback = None;
+            advance(&mut next)
+        }
+        (State::NeedsYou, Event::Commented { text }) => commented(&mut next, text),
+        (State::Running, Event::Landed) if next.stage == Stage::Land => {
+            next.state = State::Landed;
+            vec![Effect::Teardown]
+        }
+        (State::Running, Event::LandFailed { error }) if next.stage == Stage::Land => {
+            fail(&mut next, error)
+        }
+        _ => return (job.clone(), Vec::new()),
+    };
+    (next, effects)
+}
+
+/// Start the current stage.
+fn enter(job: &mut Job) -> Vec<Effect> {
+    job.question = None;
+    if job.stage.is_checkpoint() {
+        job.state = State::NeedsYou;
+        return Vec::new();
+    }
+    job.state = State::Running;
+    if job.stage == Stage::Land {
+        return vec![Effect::Land];
+    }
+    vec![Effect::StartTurn {
+        stage: job.stage,
+        brief: brief(job),
+        read_only: job.stage.read_only(),
+        cap_secs: TURN_CAP_SECS,
+    }]
+}
+
+fn advance(job: &mut Job) -> Vec<Effect> {
+    let at = SHORT_PIPELINE.iter().position(|s| *s == job.stage);
+    match at.and_then(|i| SHORT_PIPELINE.get(i + 1)) {
+        Some(stage) => {
+            job.stage = *stage;
+            job.failures = 0;
+            enter(job)
+        }
+        None => Vec::new(),
+    }
+}
+
+fn fail(job: &mut Job, error: &str) -> Vec<Effect> {
+    job.state = State::Failed;
+    job.error = Some(error.into());
+    vec![Effect::Teardown]
+}
+
+fn turn_finished(job: &mut Job, outcome: &Outcome) -> Vec<Effect> {
+    match outcome {
+        Outcome::Done { report } => {
+            job.failures = 0;
+            if job.stage == Stage::Plan {
+                job.plan = Some(report.clone());
+            }
+            let mut effects = vec![Effect::RecordArtifact {
+                stage: job.stage,
+                body: report.clone(),
+            }];
+            job.feedback = None;
+            effects.extend(advance(job));
+            effects
+        }
+        Outcome::Asked { question } => {
+            job.state = State::NeedsYou;
+            job.question = Some(question.clone());
+            Vec::new()
+        }
+        Outcome::Failed { error } => {
+            job.failures += 1;
+            if job.failures >= MAX_TURN_FAILURES {
+                return fail(job, error);
+            }
+            enter(job)
+        }
+    }
+}
+
+/// A comment at a checkpoint sends the work back to the agent stage before
+/// it. An answer to a question goes to the stage that asked.
+fn commented(job: &mut Job, text: &str) -> Vec<Effect> {
+    if let Some(question) = job.question.take() {
+        job.feedback = Some(format!("You asked: {question}\nThe answer: {text}"));
+    } else {
+        job.feedback = Some(text.into());
+        job.stage = match job.stage {
+            Stage::Approve => Stage::Plan,
+            Stage::Review => Stage::Build,
+            other => other,
+        };
+        job.failures = 0;
+    }
+    enter(job)
+}
+
+/// The queued jobs to admit, oldest first, so that at most `limit` jobs hold
+/// a VM at once.
+pub fn admit(jobs: &[Job], limit: usize) -> Vec<String> {
+    let busy = jobs.iter().filter(|j| j.state.holds_vm()).count();
+    let mut queued: Vec<&Job> = jobs.iter().filter(|j| j.state == State::Queued).collect();
+    queued.sort_by_key(|j| j.updated_at);
+    queued
+        .into_iter()
+        .take(limit.saturating_sub(busy))
+        .map(|j| j.id.clone())
+        .collect()
+}
+
+#[cfg(test)]
+mod tests;

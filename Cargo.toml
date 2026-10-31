@@ -16,7 +16,7 @@ bastion-protocol = { path = "crates/bastion-protocol" }
 console_error_panic_hook = "0.1.7"
 
 [workspace]
-members = ["src-tauri", "crates/bastion-protocol", "crates/bastion-spikes"]
+members = ["src-tauri", "crates/bastion-core", "crates/bastion-protocol", "crates/bastion-spikes"]
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

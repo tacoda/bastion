@@ -1,8 +1,10 @@
 //! The Machine seam (PLAN.md §6.2): the programs, files and platform of this
 //! machine. Doctor and the stack routine reach the OS only through it.
 
+use std::fs::{self, OpenOptions};
+use std::os::unix::process::CommandExt;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 /// What a program printed and how it ended.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -15,6 +17,8 @@ pub struct Output {
 pub trait Machine: Send + Sync {
     /// Run a program to its end. `Err` means it could not start at all.
     fn run(&self, program: &str, args: &[&str], dir: Option<&Path>) -> Result<Output, String>;
+    /// Start a program that outlives the app, with its output appended to `log`.
+    fn spawn(&self, program: &str, args: &[&str], dir: &Path, log: &Path) -> Result<u32, String>;
     fn read(&self, path: &Path) -> Result<String, String>;
     fn exists(&self, path: &Path) -> bool;
     /// `std::env::consts::OS` and `ARCH`.
@@ -39,8 +43,32 @@ impl Machine for ThisMachine {
         })
     }
 
+    // ponytail: the child is never waited on, so if it exits while the app runs it stays a zombie until the app quits.
+    fn spawn(&self, program: &str, args: &[&str], dir: &Path, log: &Path) -> Result<u32, String> {
+        if let Some(parent) = log.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+        }
+        let file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log)
+            .map_err(|e| format!("{}: {e}", log.display()))?;
+        let err = file.try_clone().map_err(|e| e.to_string())?;
+        Command::new(program)
+            .args(args)
+            .current_dir(dir)
+            .stdin(Stdio::null())
+            .stdout(file)
+            .stderr(err)
+            // Its own process group, so a signal to the app does not reach it.
+            .process_group(0)
+            .spawn()
+            .map(|child| child.id())
+            .map_err(|e| format!("{program}: {e}"))
+    }
+
     fn read(&self, path: &Path) -> Result<String, String> {
-        std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))
+        fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))
     }
 
     fn exists(&self, path: &Path) -> bool {
@@ -56,64 +84,96 @@ impl Machine for ThisMachine {
 pub mod fake {
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};
+    use std::sync::Mutex;
 
     use super::{Machine, Output};
 
-    /// Canned runs by program name, files by path, and a fixed platform.
+    /// Canned runs by program name, files by path, and a fixed platform. A
+    /// program given several answers returns them in turn, then keeps the last.
     pub struct FakeMachine {
-        pub runs: HashMap<String, Result<Output, String>>,
+        runs: Mutex<HashMap<String, Vec<Result<Output, String>>>>,
         pub files: HashMap<PathBuf, String>,
         pub platform: (&'static str, &'static str),
+        /// Every run and spawn, as `program arg arg`.
+        pub calls: Mutex<Vec<String>>,
     }
 
     impl FakeMachine {
         pub fn new() -> Self {
             Self {
-                runs: HashMap::new(),
+                runs: Mutex::new(HashMap::new()),
                 files: HashMap::new(),
                 platform: ("macos", "aarch64"),
+                calls: Mutex::new(Vec::new()),
             }
         }
 
-        pub fn run_ok(mut self, program: &str, text: &str) -> Self {
-            self.runs.insert(
-                program.into(),
-                Ok(Output {
-                    success: true,
-                    text: text.into(),
-                }),
-            );
+        fn answer(self, program: &str, answer: Result<Output, String>) -> Self {
+            self.runs
+                .lock()
+                .unwrap()
+                .entry(program.into())
+                .or_default()
+                .push(answer);
             self
         }
 
-        pub fn run_fails(mut self, program: &str, text: &str) -> Self {
-            self.runs.insert(
-                program.into(),
-                Ok(Output {
-                    success: false,
-                    text: text.into(),
-                }),
-            );
-            self
+        pub fn run_ok(self, program: &str, text: &str) -> Self {
+            let output = Output {
+                success: true,
+                text: text.into(),
+            };
+            self.answer(program, Ok(output))
+        }
+
+        pub fn run_fails(self, program: &str, text: &str) -> Self {
+            let output = Output {
+                success: false,
+                text: text.into(),
+            };
+            self.answer(program, Ok(output))
         }
 
         pub fn file(mut self, path: &str, text: &str) -> Self {
             self.files.insert(path.into(), text.into());
             self
         }
+
+        pub fn called(&self, prefix: &str) -> bool {
+            self.calls
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|c| c.starts_with(prefix))
+        }
     }
 
     impl Machine for FakeMachine {
-        fn run(
+        fn run(&self, program: &str, args: &[&str], _dir: Option<&Path>) -> Result<Output, String> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("{program} {}", args.join(" ")));
+            let mut runs = self.runs.lock().unwrap();
+            match runs.get_mut(program) {
+                Some(answers) if answers.len() > 1 => answers.remove(0),
+                Some(answers) => answers[0].clone(),
+                None => Err(format!("{program}: not found")),
+            }
+        }
+
+        fn spawn(
             &self,
             program: &str,
-            _args: &[&str],
-            _dir: Option<&Path>,
-        ) -> Result<Output, String> {
-            self.runs
-                .get(program)
-                .cloned()
-                .unwrap_or_else(|| Err(format!("{program}: not found")))
+            args: &[&str],
+            _dir: &Path,
+            _log: &Path,
+        ) -> Result<u32, String> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("spawn {program} {}", args.join(" ")));
+            Ok(4242)
         }
 
         fn read(&self, path: &Path) -> Result<String, String> {

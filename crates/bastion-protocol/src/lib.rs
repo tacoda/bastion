@@ -8,6 +8,9 @@ use serde::{Deserialize, Serialize};
 pub mod command {
     pub const ENGINE_STATUS: &str = "engine_status";
     pub const DOCTOR: &str = "doctor";
+    pub const STACK_STATUS: &str = "stack_status";
+    pub const STACK_START: &str = "stack_start";
+    pub const STACK_STOP: &str = "stack_stop";
 }
 
 /// Event names the app emits to the page (D10).
@@ -70,4 +73,42 @@ impl DoctorReport {
             .iter()
             .any(|c| c.required && c.state == CheckState::Fail)
     }
+}
+
+/// The stack this profile runs, as `iii ps` sees it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "state")]
+pub enum StackState {
+    Stopped,
+    Running,
+    /// Another engine holds the profile's port.
+    Taken {
+        pid: u32,
+        compose_file: Option<String>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StackStatus {
+    pub state: StackState,
+    pub compose_file: String,
+    /// Where the compose daemon's output goes when the app started it.
+    pub log: String,
+}
+
+/// Why the stack did not start.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "reason")]
+pub enum StartRefused {
+    /// A required Doctor check failed.
+    Doctor {
+        report: DoctorReport,
+    },
+    Taken {
+        pid: u32,
+        compose_file: Option<String>,
+    },
+    Failed {
+        message: String,
+    },
 }

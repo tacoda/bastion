@@ -268,13 +268,21 @@ mod tests {
     }
 
     fn healthy() -> FakeMachine {
-        FakeMachine::new()
-            .run_ok("iii", "0.25.0\n")
-            .run_ok("gh", "Logged in")
-            .file(
-                "/repo/worker-compose.yaml",
-                "containers:\n  a:\n    worker: package://a\n    version: \"1.2.3\"\n",
-            )
+        machine("0.25.0\n", true)
+    }
+
+    /// A machine whose `iii --version` prints `iii` and whose `gh` is signed in or not.
+    fn machine(iii: &str, gh_signed_in: bool) -> FakeMachine {
+        let machine = FakeMachine::new().run_ok("iii", iii);
+        let machine = if gh_signed_in {
+            machine.run_ok("gh", "Logged in")
+        } else {
+            machine.run_fails("gh", "not logged in")
+        };
+        machine.file(
+            "/repo/worker-compose.yaml",
+            "containers:\n  a:\n    worker: package://a\n    version: \"1.2.3\"\n",
+        )
     }
 
     fn report(machine: &FakeMachine, engine: &FakeEngine) -> DoctorReport {
@@ -301,7 +309,7 @@ mod tests {
 
     #[test]
     fn a_wrong_iii_blocks_the_start_with_its_fix() {
-        let machine = healthy().run_ok("iii", "0.23.0");
+        let machine = machine("0.23.0", true);
         let report = report(&machine, &FakeEngine::new(Link::Down));
         let iii = by_name(&report, "iii");
         assert_eq!(
@@ -314,7 +322,7 @@ mod tests {
 
     #[test]
     fn gh_signed_out_only_warns() {
-        let machine = healthy().run_fails("gh", "not logged in");
+        let machine = machine("0.25.0", false);
         let report = report(&machine, &FakeEngine::new(Link::Down));
         assert_eq!(by_name(&report, "GitHub CLI").state, CheckState::Warn);
         assert!(report.ready());

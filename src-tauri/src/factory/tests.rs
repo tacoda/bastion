@@ -152,7 +152,10 @@ fn a_request_runs_the_short_pipeline_to_landed() {
             .into_iter()
             .filter(|a| a.stage == Stage::Review)
             .collect();
-        assert_eq!(review[0].body, "No commits: the build left nothing to land.");
+        assert_eq!(
+            review[0].body,
+            "No commits: the build left nothing to land."
+        );
 
         rig.factory.apply(&id, Event::Approved).await.unwrap();
         until(&rig, &id, Stage::Land, State::Running).await;

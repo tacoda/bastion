@@ -6,6 +6,7 @@ pub mod audit;
 mod brief;
 pub mod charter;
 pub mod govern;
+pub mod review;
 
 use serde::{Deserialize, Serialize};
 

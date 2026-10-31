@@ -5,6 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::Stage;
+use crate::review::{DELETED_TESTS, DIFF};
 
 /// How hard a constraint binds: the agent is told it, a call that breaks it
 /// is recorded, or that call is refused.
@@ -199,6 +200,13 @@ pub fn default_constraints() -> Vec<Constraint> {
             "sandbox::exec",
             "git rm",
             Enforcement::Told,
+        ),
+        rule(
+            "tests-kept",
+            "Every existing test still exists at review.",
+            DIFF,
+            DELETED_TESTS,
+            Enforcement::Checked,
         ),
         rule(
             "commit-work",

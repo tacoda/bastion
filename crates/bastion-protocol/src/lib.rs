@@ -307,6 +307,8 @@ pub struct CharterView {
     pub rules: Vec<String>,
     /// The repository's hooks as they ran, latest last.
     pub hook_runs: Vec<String>,
+    /// What the latest review diff broke, by constraint.
+    pub findings: Vec<String>,
 }
 
 /// A call the gate holds: allow it once, or refuse it with feedback.

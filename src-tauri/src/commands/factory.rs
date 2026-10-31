@@ -189,6 +189,7 @@ pub async fn job(cell: State<'_, FactoryCell>, id: String) -> Result<JobDetail, 
             files: c.files.clone(),
             rules: c.constraints.iter().map(|r| r.rule.clone()).collect(),
             hook_runs: factory.gate().hook_runs(&id),
+            findings: factory.gate().findings(&id),
         }),
     })
 }

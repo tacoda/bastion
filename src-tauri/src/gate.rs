@@ -39,6 +39,8 @@ pub struct Gate {
     charters: Mutex<HashMap<String, Arc<Charter>>>,
     /// Each job's repository hook runs, latest last.
     hook_runs: Mutex<HashMap<String, Vec<String>>>,
+    /// What each job's latest review diff broke, by constraint.
+    findings: Mutex<HashMap<String, Vec<String>>>,
 }
 
 /// What the rules read from a call: its command line in any of the shapes
@@ -108,6 +110,7 @@ impl Gate {
             audit,
             charters: Mutex::new(HashMap::new()),
             hook_runs: Mutex::new(HashMap::new()),
+            findings: Mutex::new(HashMap::new()),
         })
     }
 
@@ -178,8 +181,29 @@ impl Gate {
         }
     }
 
+    /// Keep and record what a job's review diff broke.
+    pub fn reviewed(&self, job: &str, findings: &[bastion_core::review::Finding]) {
+        let lines: Vec<String> = findings
+            .iter()
+            .map(|f| format!("{} ({:?}): {}", f.constraint, f.rung, f.detail))
+            .collect();
+        for line in &lines {
+            self.note("review", job, line.clone());
+        }
+        self.findings.lock().unwrap().insert(job.into(), lines);
+    }
+
+    pub fn findings(&self, job: &str) -> Vec<String> {
+        self.findings
+            .lock()
+            .unwrap()
+            .get(job)
+            .cloned()
+            .unwrap_or_default()
+    }
+
     /// The owner's constraints and the job's charter's, together.
-    fn constraints(&self, job: &str) -> Vec<Constraint> {
+    pub fn constraints(&self, job: &str) -> Vec<Constraint> {
         let mut all: Vec<Constraint> = self
             .policy
             .read()

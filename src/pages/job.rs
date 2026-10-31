@@ -122,6 +122,7 @@ fn charter(c: Option<CharterView>) -> impl IntoView + use<> {
             <p class="m-0 text-sm">{files}</p>
             {lines("The repository's rules", c.rules)}
             {lines("The repository's hooks, as they ran", c.hook_runs)}
+            {lines("What review found", c.findings)}
         </section>
     })
 }

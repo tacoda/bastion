@@ -2,7 +2,9 @@
 //! function: an event and the current job go in, the next job and the effects
 //! to run come out. No I/O, no clock, no engine.
 
+pub mod audit;
 mod brief;
+pub mod govern;
 
 use serde::{Deserialize, Serialize};
 

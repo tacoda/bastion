@@ -6,10 +6,11 @@ cd "$(dirname "$0")/.."
 fail=0
 deps() { cargo tree -p "$1" --depth 1 -e normal --prefix none | tail -n +2 | awk '{print $1}' | sort -u; }
 
-# The pure crates depend on serde only.
+# The pure crates depend on serde only; the core also hashes the audit chain (D21).
 for crate in bastion-protocol bastion-core; do
+  allowed=serde; [ "$crate" = bastion-core ] && allowed="serde|sha2"
   cargo metadata --no-deps --format-version 1 | grep -q "\"name\":\"$crate\"" || continue
-  extra=$(deps "$crate" | grep -vx serde || true)
+  extra=$(deps "$crate" | grep -vxE "$allowed" || true)
   if [ -n "$extra" ]; then echo "FAIL $crate depends on: $extra"; fail=1; fi
 done
 

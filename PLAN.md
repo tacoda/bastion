@@ -111,7 +111,7 @@ code inside Bastion is the diff a job proposes.
 | D16 | A comment on an artifact goes to the agent verbatim, as its next brief. A fix loop stops after a set count, or sooner when a refusal repeats word for word. | wipp's bounded loops. Paraphrased feedback loses the point. |
 | D17 | Every job runs a pipeline. The smallest pipeline is plan, approve, build, review, land, and it is the default until A8 adds the rest. | The factory is the unit. A free-form task is a short pipeline, not a second mode. |
 | D18 | All factory logic lives in the app, in `crates/bastion-core`, apart from the view and from iii (§6.1). The core takes an event and the current state, and returns the new state and a list of effects. It does no I/O, has no `async`, and does not depend on `iii-sdk`, Tauri or Leptos. | The owner's choice. The rules are tested as plain functions, with no engine and no window. |
-| D19 | The seams in §6.2 are the only ways across layers, and Cargo dependencies enforce them. A CI check fails if `bastion-core` or `bastion-protocol` gains a dependency other than `serde`, or if `iii-sdk` is imported outside `src-tauri/src/engine/`. | The owner wants clean seams. A seam that only a reviewer guards erodes. |
+| D19 | The seams in §6.2 are the only ways across layers, and Cargo dependencies enforce them. A CI check fails if `bastion-protocol` gains a dependency other than `serde`, if `bastion-core` gains one other than `serde` and `sha2` (for the audit chain, D21), or if `iii-sdk` is imported outside `src-tauri/src/engine/`. | The owner wants clean seams. A seam that only a reviewer guards erodes. |
 | D20 | Every constraint and capability is enforced in a harness hook, and its ladder position is data. A turn's behavior changes only through those hooks and that data. | An eval can then name what changed. A rule kept only in a prompt cannot be measured. |
 | D21 | The audit record is a hash chain with one writer. Each entry carries the hash of the one before it, and verification walks the chain. | Any change to a past entry breaks the chain, so the record is tamper-evident. It cannot stop a change; it shows one. |
 | D22 | An eval compares two harness configurations on the same requests and the same workspace snapshots, and reports the difference with the hook decisions behind it. | A promotion or demotion comes with evidence, not a guess. |
@@ -246,7 +246,7 @@ Allowed dependencies:
 ```
 bastion-ui (view)  ──>  bastion-protocol
 bastion (app)      ──>  bastion-protocol, bastion-core, iii-sdk, tauri
-bastion-core       ──>  serde only
+bastion-core       ──>  serde, sha2 (the audit chain, D21)
 bastion-protocol   ──>  serde only
 ```
 
@@ -648,7 +648,7 @@ starts until the owner asks.
 | A2 | done | The console on the Engine page: containers with versions, state, stop, start and live logs; functions and trigger types with a filter; queues with depth, delivered, failed and dead letters. One `console` read through the Engine seam, 23 tests. Live exit (2026-10-30): `judge` stopped and started from the window, a stop made from the CLI reached the page by push with no reload, and its logs streamed. `ade` was removed with `compose::remove` (23 containers), so nothing in the stack serves HTTP. |
 | A3 | done | `bastion-core` (9caf363), the Store (93b5cb8), spike N7 (c640769), the factory loop (88f45fb), and the first views (778016d), with fixes from the exit. 28 app tests and 15 core tests pass. Live exit (2026-10-30), driven in the window: two workspaces added through the form; three requests in them reached the approve checkpoint with plan artifacts, three plan turns on gpt-5-mini; a comment on the `subtract` plan (add a docstring, rename the test) came back in the next plan; `multiply` was stopped and its VM went away; the app was quit with the stack kept running and reopened, and both other jobs were still at approve; `divide` was then approved, ran its build turn, and reached review with its artifact. The owner then moved the views from a floor and an inbox to a Jobs page and a job page, after GitHub Actions and wipp (2026-10-30): the Jobs page groups waiting for you, in progress and finished, with a workspace filter and search; the job page shows the badges, a waiting panel with the artifact it judges, and the pipeline as steps whose states come from `bastion_core::steps`; workspaces moved to Settings. Checked in the window on the live jobs. |
 | A4 | done | The diff, captured from the VM after each build and shown per file with line comments (e5da6d7). The checkpoint dial: ask, hold and auto, review never below hold, holds resumed after a restart (0bdb745). Turn guide and uncommitted-work flag (4b46dca). Landing fixes: the bundle names the branch, a failed land waits on the owner with its VM, and the land passes `target_branch` (75adbe2, f2898c6). 24 core tests, 29 app tests. Live exit (2026-10-31), driven in the window: on `divide`, line comments on `calc.py:5` and `test_calc.py:3` came back verbatim and each next diff answered them; on `subtract`, the owner approved the plan and the review, the land failed once on `target_checked_out_dirty` (an untracked `__pycache__` in the target) and waited, and Approve retried it: `demo-a` main got `0e30e2f`, both tests pass, and the VM is gone. Not run live: a hold expiring (30 min); the core and loop tests cover it. |
-| A5 | next | — |
+| A5 | in progress | Spike N8 passes: a hook denies, holds and releases a call (e7fb375). `mise.toml` pins Rust 1.97 so local checks match CI (c8c6518). Step 1, the rules in `bastion-core`: constraint and capability ladders, the gate, and the audit chain. Next: the Store tables, the hook wired to the gate, held calls on the job page, and the Constraints, Capabilities and Audit pages. |
 | A6 to A13 | — | — |
 | Later (§10) | on hold | — |
 
@@ -717,3 +717,15 @@ starts until the owner asks.
   through `worktree::land-blocked` with a `reason`.
 - A hidden webview can miss pushes, so the window reloads every page when it
   regains focus.
+
+**What A5 found so far:**
+
+- A `pre-trigger` hook answers `continue`, `deny` with a `reason`, or `hold`.
+  The deny reason reaches the turn as the call's result, word for word (N8).
+- A held call arrives without the hook's `sandbox_id` pin. On approval the app
+  runs the call itself in the job's VM and sends the result back with
+  `harness::function::resolve` (`action: "deliver"`).
+- `harness::stop` exists, so the turn cap can stop a turn, which A4 thought it
+  could not.
+- `bastion-core` takes `sha2` for the audit chain. The hash is part of the
+  rule, so it stays pure and tested with the rest (D19 updated).

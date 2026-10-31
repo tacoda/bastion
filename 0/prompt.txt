@@ -1,0 +1,23 @@
+<task-notification>
+<task-id>bas6q1u3e</task-id>
+<tool-use-id>toolu_01PqcCiYcJtYRa5HRgD9MrqQ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/135a2369-1f42-433b-aacc-5c1b0ce18b48/tasks/bas6q1u3e.output</output-file>
+<status>completed</status>
+<summary>Background command "Push and list CI runs" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+continue
+
+---
+
+Instead of "Governance", I'd like to break that out to "Audit Log", "Constraints", and "Capabilities"
+
+---
+
+Add some icons to the sidebar sections - I prefer lucide
+
+---
+
+"Jobs" icons should be a briefcase

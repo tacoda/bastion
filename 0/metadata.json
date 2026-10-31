@@ -31,11 +31,11 @@
     }
   },
   "redaction": {
-    "replacements": 187,
+    "replacements": 197,
     "layers": {
       "betterleaks": 0,
       "connection_string": 0,
-      "credential_key": 175,
+      "credential_key": 185,
       "credential_value": 2,
       "credentialed_uri": 0,
       "entropy": 10,

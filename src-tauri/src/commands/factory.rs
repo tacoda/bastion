@@ -5,7 +5,8 @@ use std::sync::{Arc, OnceLock};
 
 use bastion_core::{Dials, Event, actions, hold_until, steps};
 use bastion_protocol::{
-    ArtifactView, DialsView, JobDetail, JobSummary, StepView, TranscriptLine, Workspace,
+    ArtifactView, DialsView, HeldCallView, JobDetail, JobSummary, StepView, TranscriptLine,
+    Workspace,
 };
 use serde::Serialize;
 use serde_json::json;
@@ -18,14 +19,14 @@ use crate::store::{self, Record};
 /// Set once the engine is up and the store has its tables.
 pub type FactoryCell = Arc<OnceLock<Arc<Factory>>>;
 
-fn factory(cell: &FactoryCell) -> Result<Arc<Factory>, String> {
+pub(super) fn factory(cell: &FactoryCell) -> Result<Arc<Factory>, String> {
     cell.get()
         .cloned()
         .ok_or_else(|| "the factory starts once the engine is up; start the stack".into())
 }
 
 /// An enum as its snake_case name.
-fn name<T: Serialize>(value: T) -> String {
+pub(super) fn name<T: Serialize>(value: T) -> String {
     serde_json::to_value(value)
         .ok()
         .and_then(|v| v.as_str().map(String::from))
@@ -155,11 +156,24 @@ pub async fn job(cell: State<'_, FactoryCell>, id: String) -> Result<JobDetail, 
             state: name(state),
         })
         .collect();
+    let held = factory
+        .store()
+        .held(&id)
+        .await?
+        .into_iter()
+        .map(|h| HeldCallView {
+            id: h.id,
+            function: h.call.function,
+            text: h.call.text,
+            at: h.at,
+        })
+        .collect();
     Ok(JobDetail {
         job: summary(&record, &factory.store().dials().await?),
         steps,
         artifacts,
         transcript,
+        held,
     })
 }
 

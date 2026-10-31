@@ -279,6 +279,65 @@ pub struct JobDetail {
     pub artifacts: Vec<ArtifactView>,
     /// The latest turn's messages.
     pub transcript: Vec<TranscriptLine>,
+    /// Calls the gate holds for the owner (PLAN.md A5).
+    pub held: Vec<HeldCallView>,
+}
+
+/// A call the gate holds: allow it once, or refuse it with feedback.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HeldCallView {
+    pub id: String,
+    pub function: String,
+    /// Its command line or path.
+    pub text: String,
+    pub at: u64,
+}
+
+/// Which held call an owner's decision is for.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HeldCallRef {
+    pub job: String,
+    pub call: String,
+}
+
+/// A rule on its ladder (PLAN.md D20): `told`, `checked` or `enforced`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConstraintView {
+    pub id: String,
+    pub rule: String,
+    /// The calls it binds: a function pattern and text the call contains.
+    /// An empty pattern binds no call.
+    pub function: String,
+    pub contains: String,
+    pub rung: String,
+    /// `charter` or `owner`.
+    pub source: String,
+}
+
+/// A grant on its ladder (PLAN.md D20): `denied`, `ask` or `allowed`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CapabilityView {
+    pub stage: String,
+    pub function: String,
+    pub rung: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuditEntryView {
+    pub seq: u64,
+    pub at: u64,
+    pub kind: String,
+    pub subject: String,
+    pub detail: String,
+    pub hash: String,
+}
+
+/// The audit chain and whether it verifies (PLAN.md D21).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuditView {
+    pub entries: Vec<AuditEntryView>,
+    /// The `seq` of the first entry that breaks the chain, if one does.
+    pub broken_at: Option<u64>,
 }
 
 /// How each checkpoint is decided (PLAN.md D15): `ask`, `hold` or `auto`.

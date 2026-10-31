@@ -6,6 +6,7 @@ mod console;
 mod doctor;
 mod engine;
 mod factory;
+mod gate;
 mod machine;
 mod profile;
 mod stack;
@@ -78,42 +79,45 @@ fn start_factory(
     Ok(())
 }
 
+/// Load the profile, connect to the engine, and start the factory once it is up.
+fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let path = app.path().app_config_dir()?.join(profile::FILE_NAME);
+    let checkout = std::path::Path::new(CHECKOUT).canonicalize()?;
+    let profiles = Profiles::load_or_create(&path, checkout)?;
+    let active = profiles.active();
+    let stack = Stack {
+        checkout: active.checkout.clone(),
+        port: stack::port(&active.engine_url)
+            .ok_or_else(|| format!("no port in engine_url {:?}", active.engine_url))?,
+        log: app.path().app_log_dir()?.join("compose.log"),
+    };
+    let engine: Arc<dyn Engine> = Arc::new(IiiEngine::connect(&active.engine_url));
+    commands::engine::watch(app.handle().clone(), engine.clone());
+    let handle = app.handle().clone();
+    engine.on_functions_changed(Arc::new(move || {
+        let _ = handle.emit(event::CONSOLE_CHANGED, ());
+    }))?;
+    let machine: Arc<dyn Machine> = Arc::new(ThisMachine);
+    let cell = FactoryCell::default();
+    start_factory(
+        app.handle().clone(),
+        engine.clone(),
+        machine.clone(),
+        cell.clone(),
+    )?;
+    app.manage(cell);
+    app.manage(engine);
+    app.manage(machine);
+    app.manage(profiles);
+    app.manage(ProfilesFile(path));
+    app.manage(stack);
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .setup(|app| {
-            let path = app.path().app_config_dir()?.join(profile::FILE_NAME);
-            let checkout = std::path::Path::new(CHECKOUT).canonicalize()?;
-            let profiles = Profiles::load_or_create(&path, checkout)?;
-            let active = profiles.active();
-            let stack = Stack {
-                checkout: active.checkout.clone(),
-                port: stack::port(&active.engine_url)
-                    .ok_or_else(|| format!("no port in engine_url {:?}", active.engine_url))?,
-                log: app.path().app_log_dir()?.join("compose.log"),
-            };
-            let engine: Arc<dyn Engine> = Arc::new(IiiEngine::connect(&active.engine_url));
-            commands::engine::watch(app.handle().clone(), engine.clone());
-            let handle = app.handle().clone();
-            engine.on_functions_changed(Arc::new(move || {
-                let _ = handle.emit(event::CONSOLE_CHANGED, ());
-            }))?;
-            let machine: Arc<dyn Machine> = Arc::new(ThisMachine);
-            let cell = FactoryCell::default();
-            start_factory(
-                app.handle().clone(),
-                engine.clone(),
-                machine.clone(),
-                cell.clone(),
-            )?;
-            app.manage(cell);
-            app.manage(engine);
-            app.manage(machine);
-            app.manage(profiles);
-            app.manage(ProfilesFile(path));
-            app.manage(stack);
-            Ok(())
-        })
+        .setup(setup)
         .on_window_event(|window, e| match e {
             WindowEvent::CloseRequested { api, .. } if hold_quit(window.app_handle()) => {
                 api.prevent_close();
@@ -142,6 +146,13 @@ pub fn run() {
             commands::factory::job_stop,
             commands::factory::dials,
             commands::factory::dials_set,
+            commands::govern::held_allow,
+            commands::govern::held_refuse,
+            commands::govern::constraints,
+            commands::govern::constraint_move,
+            commands::govern::capabilities,
+            commands::govern::capability_move,
+            commands::govern::audit,
             commands::doctor::doctor,
             commands::stack::stack_status,
             commands::stack::stack_start,

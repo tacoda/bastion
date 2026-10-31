@@ -1,11 +1,14 @@
 //! The Store seam (PLAN.md §6.2): workspaces, jobs and artifacts as rows in
 //! the `database` worker, each job with a `rev` so a stale write is refused
-//! (D8). `SqlStore` is the only code that writes SQL.
+//! (D8), and the governance rows of A5: constraints, capabilities, held
+//! calls and the audit chain. `SqlStore` is the only code that writes SQL.
 
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use bastion_core::audit::{self, Entry};
+use bastion_core::govern::{self, Call, Capability, Constraint};
 use bastion_core::{Dial, Dials, Job, Stage};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -45,6 +48,20 @@ pub struct Artifact {
     pub created_at: u64,
 }
 
+/// A call the gate held for the owner, with what is needed to run it later.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HeldCall {
+    /// The harness's `function_call_id`.
+    pub id: String,
+    pub job: String,
+    pub session: String,
+    pub turn: String,
+    pub call: Call,
+    /// The call's arguments as the engine sent them, to run on approval.
+    pub arguments: Value,
+    pub at: u64,
+}
+
 /// A save lost to another writer (D8). The caller reloads and steps again.
 pub const STALE: &str = "stale: the job changed since it was read";
 
@@ -62,13 +79,37 @@ pub trait Store: Send + Sync {
     /// The checkpoint dials. A checkpoint with no row asks.
     fn dials(&self) -> Answer<'_, Dials>;
     fn set_dials<'a>(&'a self, dials: &'a Dials) -> Answer<'a, ()>;
+    fn constraints(&self) -> Answer<'_, Vec<Constraint>>;
+    /// Add a constraint, or replace the one with its id.
+    fn set_constraint<'a>(&'a self, constraint: &'a Constraint) -> Answer<'a, ()>;
+    fn capabilities(&self) -> Answer<'_, Vec<Capability>>;
+    /// Add a grant, or replace the one for its stage and function.
+    fn set_capability<'a>(&'a self, grant: &'a Capability) -> Answer<'a, ()>;
+    fn hold<'a>(&'a self, call: &'a HeldCall) -> Answer<'a, ()>;
+    /// The calls held for a job, oldest first.
+    fn held<'a>(&'a self, job: &'a str) -> Answer<'a, Vec<HeldCall>>;
+    fn release<'a>(&'a self, id: &'a str) -> Answer<'a, ()>;
+    /// The whole audit chain, oldest first.
+    fn audit(&self) -> Answer<'_, Vec<Entry>>;
+    /// Add the next entry. A second entry with the same `seq` is refused, so
+    /// two writers cannot fork the chain.
+    fn append_audit<'a>(&'a self, entry: &'a Entry) -> Answer<'a, ()>;
+}
+
+/// Write the next audit entry after the last one in the store.
+// ponytail: reads the whole chain to find its tail; read only the last row when the chain grows large.
+pub async fn write_audit(store: &dyn Store, at: u64, what: audit::Record) -> Result<Entry, String> {
+    let chain = store.audit().await?;
+    let entry = audit::append(chain.last(), at, what);
+    store.append_audit(&entry).await?;
+    Ok(entry)
 }
 
 const NAMESPACE: &str = "bastion";
 
 /// The schema (D8): typed columns with constraints, no JSON in a text column.
 // ponytail: idempotent CREATEs; add numbered migrations when a column changes.
-const SCHEMA: [&str; 4] = [
+const SCHEMA: [&str; 8] = [
     "CREATE TABLE IF NOT EXISTS workspaces (
         name TEXT PRIMARY KEY CHECK (length(name) > 0),
         path TEXT NOT NULL UNIQUE,
@@ -100,7 +141,68 @@ const SCHEMA: [&str; 4] = [
     "CREATE TABLE IF NOT EXISTS dials (
         checkpoint TEXT PRIMARY KEY CHECK (checkpoint IN ('approve','review')),
         dial TEXT NOT NULL CHECK (dial IN ('ask','hold','auto')))",
+    "CREATE TABLE IF NOT EXISTS constraints (
+        id TEXT PRIMARY KEY CHECK (length(id) > 0),
+        rule TEXT NOT NULL CHECK (length(rule) > 0),
+        function TEXT NOT NULL,
+        contains TEXT NOT NULL,
+        rung TEXT NOT NULL CHECK (rung IN ('told','checked','enforced')),
+        source TEXT NOT NULL CHECK (source IN ('charter','owner')))",
+    "CREATE TABLE IF NOT EXISTS capabilities (
+        stage TEXT NOT NULL CHECK (stage IN ('plan','approve','build','review','land')),
+        function TEXT NOT NULL CHECK (length(function) > 0),
+        rung TEXT NOT NULL CHECK (rung IN ('denied','ask','allowed')),
+        PRIMARY KEY (stage, function))",
+    // `arguments` is the engine's JSON, kept opaque to run the call later.
+    "CREATE TABLE IF NOT EXISTS held_calls (
+        id TEXT PRIMARY KEY,
+        job TEXT NOT NULL REFERENCES jobs(id),
+        session TEXT NOT NULL,
+        turn TEXT NOT NULL,
+        function TEXT NOT NULL,
+        text TEXT NOT NULL,
+        arguments TEXT NOT NULL,
+        at INTEGER NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS audit (
+        seq INTEGER PRIMARY KEY CHECK (seq >= 1),
+        at INTEGER NOT NULL,
+        kind TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        detail TEXT NOT NULL,
+        prev TEXT NOT NULL CHECK (length(prev) = 64),
+        hash TEXT NOT NULL UNIQUE CHECK (length(hash) = 64))",
 ];
+
+const UPSERT_CONSTRAINT: &str = "INSERT INTO constraints (id, rule, function, contains, rung, source) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT (id) DO UPDATE SET rule = excluded.rule, function = excluded.function, contains = excluded.contains, rung = excluded.rung, source = excluded.source";
+const UPSERT_CAPABILITY: &str = "INSERT INTO capabilities (stage, function, rung) VALUES (?, ?, ?)
+    ON CONFLICT (stage, function) DO UPDATE SET rung = excluded.rung";
+
+fn constraint_params(c: &Constraint) -> Value {
+    json!([
+        c.id,
+        c.rule,
+        c.function,
+        c.contains,
+        name(c.rung),
+        name(c.source)
+    ])
+}
+
+fn capability_params(g: &Capability) -> Value {
+    json!([name(g.stage), g.function, name(g.rung)])
+}
+
+/// The owner's defaults, written once. A row the owner changed is kept.
+fn seed() -> Vec<Value> {
+    let constraints = govern::default_constraints().into_iter().map(|c| {
+        json!({ "sql": "INSERT OR IGNORE INTO constraints (id, rule, function, contains, rung, source) VALUES (?, ?, ?, ?, ?, ?)", "params": constraint_params(&c) })
+    });
+    let grants = govern::default_capabilities().into_iter().map(|g| {
+        json!({ "sql": "INSERT OR IGNORE INTO capabilities (stage, function, rung) VALUES (?, ?, ?)", "params": capability_params(&g) })
+    });
+    constraints.chain(grants).collect()
+}
 
 const JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at";
 
@@ -114,6 +216,7 @@ impl SqlStore {
         let statements: Vec<Value> = SCHEMA
             .iter()
             .map(|sql| json!({ "sql": sql, "params": [] }))
+            .chain(seed())
             .collect();
         engine
             .call(
@@ -135,6 +238,16 @@ impl SqlStore {
             )
             .await?;
         Ok(out["rows"].as_array().cloned().unwrap_or_default())
+    }
+
+    /// Each row of a query, read by `row`.
+    async fn rows<T>(
+        &self,
+        sql: &str,
+        params: Value,
+        row: fn(&Value) -> Result<T, String>,
+    ) -> Result<Vec<T>, String> {
+        self.query(sql, params).await?.iter().map(row).collect()
     }
 
     async fn execute(&self, sql: &str, params: Value) -> Result<Vec<Value>, String> {
@@ -188,6 +301,56 @@ fn record(row: &Value) -> Result<Record, String> {
         },
         rev: parse(row, "rev")?,
         created_at: parse(row, "created_at")?,
+    })
+}
+
+fn constraint(r: &Value) -> Result<Constraint, String> {
+    Ok(Constraint {
+        id: parse(r, "id")?,
+        rule: parse(r, "rule")?,
+        function: parse(r, "function")?,
+        contains: parse(r, "contains")?,
+        rung: parse(r, "rung")?,
+        source: parse(r, "source")?,
+    })
+}
+
+fn capability(r: &Value) -> Result<Capability, String> {
+    Ok(Capability {
+        stage: parse(r, "stage")?,
+        function: parse(r, "function")?,
+        rung: parse(r, "rung")?,
+    })
+}
+
+fn held_call(row: &Value) -> Result<HeldCall, String> {
+    let arguments: String = parse(row, "arguments")?;
+    Ok(HeldCall {
+        id: parse(row, "id")?,
+        job: parse(row, "job")?,
+        session: parse(row, "session")?,
+        turn: parse(row, "turn")?,
+        call: Call {
+            function: parse(row, "function")?,
+            text: parse(row, "text")?,
+        },
+        arguments: serde_json::from_str(&arguments)
+            .map_err(|e| format!("column arguments: {e}"))?,
+        at: parse(row, "at")?,
+    })
+}
+
+fn entry(row: &Value) -> Result<Entry, String> {
+    Ok(Entry {
+        seq: parse(row, "seq")?,
+        at: parse(row, "at")?,
+        record: audit::Record {
+            kind: parse(row, "kind")?,
+            subject: parse(row, "subject")?,
+            detail: parse(row, "detail")?,
+        },
+        prev: parse(row, "prev")?,
+        hash: parse(row, "hash")?,
     })
 }
 
@@ -267,14 +430,8 @@ impl Store for SqlStore {
 
     fn jobs(&self) -> Answer<'_, Vec<Record>> {
         Box::pin(async move {
-            self.query(
-                &format!("SELECT {JOB_COLUMNS} FROM jobs ORDER BY created_at DESC, id"),
-                json!([]),
-            )
-            .await?
-            .iter()
-            .map(record)
-            .collect()
+            let sql = format!("SELECT {JOB_COLUMNS} FROM jobs ORDER BY created_at DESC, id");
+            self.rows(&sql, json!([]), record).await
         })
     }
 
@@ -357,6 +514,81 @@ impl Store for SqlStore {
             Ok(())
         })
     }
+
+    fn constraints(&self) -> Answer<'_, Vec<Constraint>> {
+        Box::pin(async move {
+            let sql =
+                "SELECT id, rule, function, contains, rung, source FROM constraints ORDER BY id";
+            self.rows(sql, json!([]), constraint).await
+        })
+    }
+
+    fn set_constraint<'a>(&'a self, c: &'a Constraint) -> Answer<'a, ()> {
+        Box::pin(async move {
+            self.execute(UPSERT_CONSTRAINT, constraint_params(c))
+                .await
+                .map(|_| ())
+        })
+    }
+
+    fn capabilities(&self) -> Answer<'_, Vec<Capability>> {
+        Box::pin(async move {
+            let sql = "SELECT stage, function, rung FROM capabilities ORDER BY stage, function";
+            self.rows(sql, json!([]), capability).await
+        })
+    }
+
+    fn set_capability<'a>(&'a self, g: &'a Capability) -> Answer<'a, ()> {
+        Box::pin(async move {
+            self.execute(UPSERT_CAPABILITY, capability_params(g))
+                .await
+                .map(|_| ())
+        })
+    }
+
+    fn hold<'a>(&'a self, h: &'a HeldCall) -> Answer<'a, ()> {
+        Box::pin(async move {
+            self.execute(
+                "INSERT INTO held_calls (id, job, session, turn, function, text, arguments, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                json!([h.id, h.job, h.session, h.turn, h.call.function, h.call.text, h.arguments.to_string(), h.at]),
+            )
+            .await
+            .map(|_| ())
+        })
+    }
+
+    fn held<'a>(&'a self, job: &'a str) -> Answer<'a, Vec<HeldCall>> {
+        Box::pin(async move {
+            let sql = "SELECT id, job, session, turn, function, text, arguments, at FROM held_calls WHERE job = ? ORDER BY at, id";
+            self.rows(sql, json!([job]), held_call).await
+        })
+    }
+
+    fn release<'a>(&'a self, id: &'a str) -> Answer<'a, ()> {
+        Box::pin(async move {
+            self.execute("DELETE FROM held_calls WHERE id = ?", json!([id]))
+                .await
+                .map(|_| ())
+        })
+    }
+
+    fn audit(&self) -> Answer<'_, Vec<Entry>> {
+        Box::pin(async move {
+            let sql = "SELECT seq, at, kind, subject, detail, prev, hash FROM audit ORDER BY seq";
+            self.rows(sql, json!([]), entry).await
+        })
+    }
+
+    fn append_audit<'a>(&'a self, e: &'a Entry) -> Answer<'a, ()> {
+        Box::pin(async move {
+            self.execute(
+                "INSERT INTO audit (seq, at, kind, subject, detail, prev, hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                json!([e.seq, e.at, e.record.kind, e.record.subject, e.record.detail, e.prev, e.hash]),
+            )
+            .await
+            .map(|_| ())
+        })
+    }
 }
 
 #[cfg(test)]
@@ -366,6 +598,16 @@ pub mod fake {
 
     use super::*;
 
+    /// The rows `keep` picks, in order.
+    fn matching<T: Clone>(rows: &Mutex<Vec<T>>, keep: impl Fn(&T) -> bool) -> Vec<T> {
+        rows.lock()
+            .unwrap()
+            .iter()
+            .filter(|r| keep(r))
+            .cloned()
+            .collect()
+    }
+
     /// Rows in memory, with the same `rev` rule as `SqlStore`.
     #[derive(Default)]
     pub struct FakeStore {
@@ -373,6 +615,10 @@ pub mod fake {
         pub jobs: Mutex<BTreeMap<String, Record>>,
         pub artifacts: Mutex<Vec<(String, Artifact)>>,
         pub dials: Mutex<Dials>,
+        pub constraints: Mutex<Vec<Constraint>>,
+        pub capabilities: Mutex<Vec<Capability>>,
+        pub held: Mutex<Vec<HeldCall>>,
+        pub audit: Mutex<Vec<Entry>>,
     }
 
     impl Store for FakeStore {
@@ -431,13 +677,9 @@ pub mod fake {
         }
 
         fn artifacts<'a>(&'a self, job: &'a str) -> Answer<'a, Vec<Artifact>> {
-            let found = self
-                .artifacts
-                .lock()
-                .unwrap()
-                .iter()
-                .filter(|(j, _)| j == job)
-                .map(|(_, a)| a.clone())
+            let found = matching(&self.artifacts, |(j, _)| j == job)
+                .into_iter()
+                .map(|(_, a)| a)
                 .collect();
             Box::pin(async move { Ok(found) })
         }
@@ -450,6 +692,61 @@ pub mod fake {
         fn set_dials<'a>(&'a self, dials: &'a Dials) -> Answer<'a, ()> {
             *self.dials.lock().unwrap() = *dials;
             Box::pin(async { Ok(()) })
+        }
+
+        fn constraints(&self) -> Answer<'_, Vec<Constraint>> {
+            let all = self.constraints.lock().unwrap().clone();
+            Box::pin(async move { Ok(all) })
+        }
+
+        fn set_constraint<'a>(&'a self, c: &'a Constraint) -> Answer<'a, ()> {
+            let mut all = self.constraints.lock().unwrap();
+            all.retain(|x| x.id != c.id);
+            all.push(c.clone());
+            Box::pin(async { Ok(()) })
+        }
+
+        fn capabilities(&self) -> Answer<'_, Vec<Capability>> {
+            let all = self.capabilities.lock().unwrap().clone();
+            Box::pin(async move { Ok(all) })
+        }
+
+        fn set_capability<'a>(&'a self, g: &'a Capability) -> Answer<'a, ()> {
+            let mut all = self.capabilities.lock().unwrap();
+            all.retain(|x| (x.stage, &x.function) != (g.stage, &g.function));
+            all.push(g.clone());
+            Box::pin(async { Ok(()) })
+        }
+
+        fn hold<'a>(&'a self, h: &'a HeldCall) -> Answer<'a, ()> {
+            self.held.lock().unwrap().push(h.clone());
+            Box::pin(async { Ok(()) })
+        }
+
+        fn held<'a>(&'a self, job: &'a str) -> Answer<'a, Vec<HeldCall>> {
+            let found = matching(&self.held, |h| h.job == job);
+            Box::pin(async move { Ok(found) })
+        }
+
+        fn release<'a>(&'a self, id: &'a str) -> Answer<'a, ()> {
+            self.held.lock().unwrap().retain(|h| h.id != id);
+            Box::pin(async { Ok(()) })
+        }
+
+        fn audit(&self) -> Answer<'_, Vec<Entry>> {
+            let all = self.audit.lock().unwrap().clone();
+            Box::pin(async move { Ok(all) })
+        }
+
+        fn append_audit<'a>(&'a self, e: &'a Entry) -> Answer<'a, ()> {
+            let mut all = self.audit.lock().unwrap();
+            let result = if all.iter().any(|x| x.seq == e.seq) {
+                Err(format!("audit entry {} exists", e.seq))
+            } else {
+                all.push(e.clone());
+                Ok(())
+            };
+            Box::pin(async move { result })
         }
     }
 }
@@ -510,6 +807,63 @@ mod tests {
     }
 
     #[test]
+    fn audit_entries_chain_and_a_fork_is_refused() {
+        let store = FakeStore::default();
+        let what = |detail: &str| audit::Record {
+            kind: "gate".into(),
+            subject: "j1".into(),
+            detail: detail.into(),
+        };
+        tauri::async_runtime::block_on(async {
+            let first = write_audit(&store, 1, what("continue")).await.unwrap();
+            let second = write_audit(&store, 2, what("hold")).await.unwrap();
+            assert_eq!((first.seq, second.prev.as_str()), (1, first.hash.as_str()));
+            assert_eq!(audit::verify(&store.audit().await.unwrap()), Ok(()));
+            assert!(store.append_audit(&second).await.is_err());
+        });
+    }
+
+    #[test]
+    fn a_held_call_row_reads_back_with_its_arguments() {
+        let h = HeldCall {
+            id: "fc1".into(),
+            job: "j1".into(),
+            session: "s".into(),
+            turn: "t".into(),
+            call: Call {
+                function: "sandbox::fs::write".into(),
+                text: "/work/repo/a.py".into(),
+            },
+            arguments: json!({ "path": "/work/repo/a.py", "content": "x" }),
+            at: 9,
+        };
+        let row = json!({ "id": "fc1", "job": "j1", "session": "s", "turn": "t", "function": "sandbox::fs::write",
+            "text": "/work/repo/a.py", "arguments": h.arguments.to_string(), "at": 9 });
+        assert_eq!(held_call(&row).unwrap(), h);
+    }
+
+    #[test]
+    fn open_seeds_the_owner_defaults_without_overwriting() {
+        let engine = Arc::new(
+            FakeEngine::new(Link::Up)
+                .answer("database::transaction", Ok(json!({ "committed": true }))),
+        );
+        tauri::async_runtime::block_on(async {
+            SqlStore::open(engine.clone()).await.unwrap();
+        });
+        let calls = engine.calls.lock().unwrap();
+        let statements = calls[0].2["statements"].as_array().unwrap();
+        let seeds: Vec<_> = statements
+            .iter()
+            .filter(|s| s["sql"].as_str().unwrap().starts_with("INSERT OR IGNORE"))
+            .collect();
+        assert_eq!(
+            seeds.len(),
+            govern::default_constraints().len() + govern::default_capabilities().len()
+        );
+    }
+
+    #[test]
     fn a_row_reads_back_as_the_record_it_was_written_from() {
         let mut r = record();
         r.job.state = State::NeedsYou;
@@ -534,29 +888,36 @@ mod live {
     use crate::engine::IiiEngine;
     use bastion_protocol::Link;
 
+    /// The store on this machine's stack, with one workspace and one job
+    /// named `tag`.
+    async fn open_with_job(tag: &str) -> (SqlStore, Record) {
+        let engine: Arc<dyn Engine> = Arc::new(IiiEngine::connect("ws://127.0.0.1:49160"));
+        while engine.link() != Link::Up {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        let store = SqlStore::open(engine).await.unwrap();
+        let w = Workspace {
+            name: tag.into(),
+            path: format!("/tmp/{tag}"),
+            branch: "main".into(),
+        };
+        store.add_workspace(&w).await.unwrap();
+        let r = Record {
+            job: Job::new(tag.into(), tag.into(), "check the store".into(), 7),
+            runtime: Runtime::default(),
+            rev: 1,
+            created_at: 7,
+        };
+        store.insert(&r).await.unwrap();
+        (store, r)
+    }
+
     #[test]
     #[ignore = "needs this machine's stack"]
     fn live_store() {
         tauri::async_runtime::block_on(async {
-            let engine: Arc<dyn Engine> = Arc::new(IiiEngine::connect("ws://127.0.0.1:49160"));
-            while engine.link() != Link::Up {
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-            }
-            let store = SqlStore::open(engine.clone()).await.unwrap();
             let tag = format!("live-{}", std::process::id());
-            let w = Workspace {
-                name: tag.clone(),
-                path: format!("/tmp/{tag}"),
-                branch: "main".into(),
-            };
-            store.add_workspace(&w).await.unwrap();
-            let mut r = Record {
-                job: Job::new(tag.clone(), tag.clone(), "check the store".into(), 7),
-                runtime: Runtime::default(),
-                rev: 1,
-                created_at: 7,
-            };
-            store.insert(&r).await.unwrap();
+            let (store, mut r) = open_with_job(&tag).await;
             r.job.state = bastion_core::State::Running;
             r.runtime.sandbox = Some("vm".into());
             let rev = store.save(&r).await.unwrap();
@@ -604,6 +965,64 @@ mod live {
                 bad.is_err(),
                 "the CHECK constraint refuses an unknown state"
             );
+        });
+    }
+
+    #[test]
+    #[ignore = "needs this machine's stack"]
+    fn live_governance() {
+        tauri::async_runtime::block_on(async {
+            let tag = format!("live-gov-{}", std::process::id());
+            let (store, _) = open_with_job(&tag).await;
+            let rules = store.constraints().await.unwrap();
+            let grants = store.capabilities().await.unwrap();
+            let mut keep = rules.iter().find(|c| c.id == "keep-tests").unwrap().clone();
+            let was = keep.rung;
+            keep.rung = keep.rung.promote();
+            store.set_constraint(&keep).await.unwrap();
+            let promoted = store
+                .constraints()
+                .await
+                .unwrap()
+                .into_iter()
+                .find(|c| c.id == "keep-tests")
+                .unwrap()
+                .rung;
+            keep.rung = was;
+            store.set_constraint(&keep).await.unwrap();
+            let held = HeldCall {
+                id: format!("fc-{tag}"),
+                job: tag.clone(),
+                session: "s".into(),
+                turn: "t".into(),
+                call: Call {
+                    function: "sandbox::fs::write".into(),
+                    text: "/work/repo/a.py".into(),
+                },
+                arguments: json!({ "path": "/work/repo/a.py" }),
+                at: 9,
+            };
+            store.hold(&held).await.unwrap();
+            let held_back = store.held(&tag).await.unwrap();
+            store.release(&held.id).await.unwrap();
+            let released = store.held(&tag).await.unwrap();
+            println!(
+                "constraints {}, grants {}, promoted {promoted:?}, held {}",
+                rules.len(),
+                grants.len(),
+                held_back.len()
+            );
+            assert!(rules.len() >= govern::default_constraints().len());
+            assert!(grants.len() >= govern::default_capabilities().len());
+            assert_eq!(promoted, was.promote());
+            assert_eq!(held_back, vec![held]);
+            assert!(released.is_empty());
+            for sql in [
+                "DELETE FROM jobs WHERE id = ?",
+                "DELETE FROM workspaces WHERE name = ?",
+            ] {
+                store.execute(sql, json!([tag])).await.unwrap();
+            }
         });
     }
 }

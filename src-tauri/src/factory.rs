@@ -14,6 +14,7 @@ use bastion_core::{
 use serde_json::{Value, json};
 
 use crate::engine::{DEFAULT_NAMESPACE, Engine};
+use crate::gate::Gate;
 use crate::machine::Machine;
 use crate::store::{Artifact, Record, Runtime, STALE, Store};
 
@@ -62,6 +63,7 @@ pub struct Factory {
     scratch: PathBuf,
     /// The trigger bindings each running turn or land holds, by job.
     bindings: Mutex<HashMap<String, Vec<String>>>,
+    gate: Arc<Gate>,
 }
 
 pub fn now() -> u64 {
@@ -82,6 +84,7 @@ impl Factory {
         on_change: OnChange,
         scratch: PathBuf,
     ) -> Arc<Self> {
+        let gate = Gate::new(store.clone(), engine.clone(), on_change.clone());
         Arc::new(Self {
             engine,
             store,
@@ -89,6 +92,7 @@ impl Factory {
             on_change,
             scratch,
             bindings: Mutex::new(HashMap::new()),
+            gate,
         })
     }
 
@@ -100,19 +104,26 @@ impl Factory {
         &self.engine
     }
 
-    /// Pin every `sandbox::*` call a turn makes to its job's VM, then resume.
+    pub fn gate(&self) -> &Arc<Gate> {
+        &self.gate
+    }
+
+    /// Put every `sandbox::*` call a turn makes through the gate, which pins
+    /// it to the job's VM, then resume.
     pub fn start(self: &Arc<Self>) -> Result<(), String> {
+        let gate = self.gate.clone();
         self.engine.bind(
             "harness::hook::pre-trigger",
             json!({ "functions": ["sandbox::*"], "on_error": "fail_closed", "timeout_ms": 5000 }),
-            Arc::new(|envelope: Value| {
-                let mut arguments = envelope["call"]["arguments"].clone();
-                arguments["sandbox_id"] = envelope["metadata"]["sandbox_id"].clone();
-                json!({ "decision": "continue", "mutations": { "arguments": arguments } })
-            }),
+            Arc::new(move |envelope: Value| gate.judge(&envelope)),
         )?;
         let factory = self.clone();
-        tauri::async_runtime::spawn(async move { factory.resume().await });
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) = factory.gate.reload().await {
+                eprintln!("the gate has no policy, so it refuses every call: {e}");
+            }
+            factory.resume().await
+        });
         Ok(())
     }
 
@@ -448,6 +459,7 @@ impl Factory {
         }
         message.push_str(TOOL_GUIDE);
         message.push_str("\n\n");
+        message.push_str(&self.gate.rules());
         message.push_str(brief);
         self.engine
             .call(
@@ -694,6 +706,7 @@ impl Factory {
     /// Stop the VM. The worktree stays for the owner to look at.
     async fn teardown(&self, record: &Record) -> Result<(), String> {
         self.release(&record.job.id);
+        self.gate.clear(&record.job.id).await;
         if let Some(sandbox) = &record.runtime.sandbox {
             self.engine
                 .call_for(

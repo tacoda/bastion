@@ -6,11 +6,12 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::Serialize;
 
+use crate::icons;
 use crate::ipc::{self, None};
 use crate::pages::{
     engine::EnginePage,
     evals::{EvalPage, EvalsPage},
-    govern::GovernPage,
+    govern::{AuditPage, CapabilitiesPage, ConstraintsPage},
     job::JobPage,
     jobs::{JobsPage, NewRequestPage},
     settings::SettingsPage,
@@ -18,12 +19,14 @@ use crate::pages::{
 use crate::route::{Nav, Route};
 
 /// The sidebar's pages. A job and New request belong to Jobs.
-const PAGES: [(Route, &str); 5] = [
-    (Route::Jobs, "Jobs"),
-    (Route::Governance, "Governance"),
-    (Route::Evals, "Evals"),
-    (Route::Engine, "Engine"),
-    (Route::Settings, "Settings"),
+const PAGES: [(Route, &str, &str); 7] = [
+    (Route::Jobs, "Jobs", icons::JOBS),
+    (Route::Constraints, "Constraints", icons::CONSTRAINTS),
+    (Route::Capabilities, "Capabilities", icons::CAPABILITIES),
+    (Route::Audit, "Audit Log", icons::AUDIT),
+    (Route::Evals, "Evals", icons::EVALS),
+    (Route::Engine, "Engine", icons::ENGINE),
+    (Route::Settings, "Settings", icons::SETTINGS),
 ];
 
 fn section(route: &Route) -> Route {
@@ -65,14 +68,14 @@ pub fn App() -> impl IntoView {
         <div class="grid min-h-screen grid-cols-[200px_minmax(0,1fr)]">
             <nav aria-label="Main" class="sticky top-0 flex h-screen flex-col gap-1 border-r border-line bg-panel p-3">
                 <p class="m-0 mb-3 px-2 text-lg font-extrabold">"Bastion"</p>
-                {PAGES.map(|(target, label)| {
+                {PAGES.map(|(target, label, glyph)| {
                     let here = target.clone();
                     view! {
                         <button
-                            class="rounded-lg px-2 py-1.5 text-left hover:bg-line aria-[current=page]:bg-primary aria-[current=page]:text-white"
+                            class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-line aria-[current=page]:bg-primary aria-[current=page]:text-white"
                             aria-current=move || (section(&route.get()) == here).then_some("page")
                             on:click=move |_| set_route.set(target.clone())
-                        >{label}</button>
+                        >{icons::icon(glyph)}{label}</button>
                     }
                 })}
                 <p class="mt-auto px-2 text-xs text-muted">{profile}</p>
@@ -82,7 +85,9 @@ pub fn App() -> impl IntoView {
                     Route::Jobs => view! { <JobsPage /> }.into_any(),
                     Route::NewRequest => view! { <NewRequestPage /> }.into_any(),
                     Route::Job(id) => view! { <JobPage id=id /> }.into_any(),
-                    Route::Governance => view! { <GovernPage /> }.into_any(),
+                    Route::Constraints => view! { <ConstraintsPage /> }.into_any(),
+                    Route::Capabilities => view! { <CapabilitiesPage /> }.into_any(),
+                    Route::Audit => view! { <AuditPage /> }.into_any(),
                     Route::Evals => view! { <EvalsPage /> }.into_any(),
                     Route::Eval(id) => view! { <EvalPage id=id /> }.into_any(),
                     Route::Engine => view! { <EnginePage /> }.into_any(),

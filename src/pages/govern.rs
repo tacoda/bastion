@@ -1,5 +1,5 @@
-//! The Governance page (PLAN.md A5): the constraints and grants on their
-//! ladders, with promote and demote, and the audit chain with its check.
+//! The governance pages (PLAN.md A5): Constraints and Capabilities, each on
+//! its ladder with promote and demote, and the Audit Log with its check.
 
 use bastion_protocol::{AuditView, CapabilityView, ConstraintView, command, event};
 use leptos::prelude::*;
@@ -41,13 +41,36 @@ const RUNG: &str = "rounded-full border border-line px-2 py-0.5 text-xs";
 const STEP: &str =
     "rounded border border-line px-2 py-0.5 text-sm hover:bg-line disabled:opacity-40";
 
-#[component]
-pub fn GovernPage() -> impl IntoView {
+/// What the three governance pages read, kept current by every push.
+#[derive(Clone, Copy)]
+struct Governance {
+    constraints: ReadSignal<Vec<ConstraintView>>,
+    grants: ReadSignal<Vec<CapabilityView>>,
+    audit: ReadSignal<Option<AuditView>>,
+    error: ReadSignal<String>,
+    set_error: WriteSignal<String>,
+    reload: Callback<()>,
+}
+
+impl Governance {
+    /// Report a change's error, or read the page again.
+    fn done(self, result: Result<(), String>) {
+        match result {
+            Ok(()) => {
+                self.set_error.set(String::new());
+                self.reload.run(());
+            }
+            Err(e) => self.set_error.set(e),
+        }
+    }
+}
+
+fn governance() -> Governance {
     let (constraints, set_constraints) = signal(Vec::<ConstraintView>::new());
     let (grants, set_grants) = signal(Vec::<CapabilityView>::new());
     let (audit, set_audit) = signal(None::<AuditView>);
     let (error, set_error) = signal(String::new());
-    let reload = move || {
+    let reload = Callback::new(move |()| {
         spawn_local(async move {
             let answers = (
                 ipc::call::<Vec<ConstraintView>, String>(command::CONSTRAINTS, None {}).await,
@@ -63,35 +86,70 @@ pub fn GovernPage() -> impl IntoView {
                 (Err(e), ..) | (_, Err(e), _) | (.., Err(e)) => set_error.set(e.text()),
             }
         });
+    });
+    ipc::listen(event::JOB_CHANGED, move |_: String| reload.run(()));
+    reload.run(());
+    Governance {
+        constraints,
+        grants,
+        audit,
+        error,
+        set_error,
+        reload,
+    }
+}
+
+fn heading(title: &'static str, g: Governance) -> impl IntoView {
+    view! {
+        <h1 class="m-0 mb-4 text-2xl font-bold">{title}</h1>
+        <p class="text-bad" role="alert">{g.error}</p>
+    }
+}
+
+/// The Constraints page (PLAN.md A5): each rule on its ladder, its history,
+/// and the form to add one.
+#[component]
+pub fn ConstraintsPage() -> impl IntoView {
+    let g = governance();
+    let step = move |id: String, up: bool| {
+        send(
+            command::CONSTRAINT_MOVE,
+            MoveConstraint { id, up },
+            move |r| g.done(r),
+        )
     };
-    ipc::listen(event::JOB_CHANGED, move |_: String| reload());
-    reload();
-    let done = move |result: Result<(), String>| match result {
-        Ok(()) => {
-            set_error.set(String::new());
-            reload();
-        }
-        Err(e) => set_error.set(e),
-    };
-    let move_constraint =
-        move |id: String, up: bool| send(command::CONSTRAINT_MOVE, MoveConstraint { id, up }, done);
-    let move_grant = move |g: &CapabilityView, up: bool| {
+    view! {
+        {heading("Constraints", g)}
+        <ConstraintsList constraints=g.constraints audit=g.audit step=step />
+        <AddConstraint added=move |r| g.done(r) />
+    }
+}
+
+/// The Capabilities page (PLAN.md A5): each grant on its ladder, per stage.
+#[component]
+pub fn CapabilitiesPage() -> impl IntoView {
+    let g = governance();
+    let step = move |grant: &CapabilityView, up: bool| {
         let args = MoveCapability {
-            stage: g.stage.clone(),
-            function: g.function.clone(),
+            stage: grant.stage.clone(),
+            function: grant.function.clone(),
             up,
         };
-        send(command::CAPABILITY_MOVE, args, done)
+        send(command::CAPABILITY_MOVE, args, move |r| g.done(r))
     };
-
     view! {
-        <h1 class="m-0 mb-4 text-2xl font-bold">"Governance"</h1>
-        <p class="text-bad" role="alert">{error}</p>
+        {heading("Capabilities", g)}
+        <GrantsList grants=g.grants step=step />
+    }
+}
 
-        <ConstraintsList constraints=constraints audit=audit step=move_constraint />
-        <AddConstraint added=done />
-        <GrantsList grants=grants step=move_grant />
-        <AuditList audit=audit />
+/// The Audit Log page (PLAN.md D21): the keyed chain, verified as it is read.
+#[component]
+pub fn AuditPage() -> impl IntoView {
+    let g = governance();
+    view! {
+        {heading("Audit Log", g)}
+        <AuditList audit=g.audit />
     }
 }
 

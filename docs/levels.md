@@ -19,3 +19,9 @@ Trunk 0.22.1, rustc 1.92.0, macOS on Apple Silicon.
 
 A0's exit is met: N1 and N3 to N6 pass, and N3 passed three runs in a row.
 N6's engine-status line and theme were not checked by eye.
+
+## A3
+
+| Spike | Result | Date | Notes |
+|---|---|---|---|
+| N7 | pass | 2026-10-30 | Two runs, 6.7 s and 5.9 s: `worktree::create` made a worktree of a scratch repo, its branch went into a fresh VM as a git bundle (`sandbox::fs::write` with `content_b64`), one `harness` turn on gpt-5-mini committed there through `sandbox::exec` pinned by the `pre-trigger` hook, and the 377-byte bundle came back through the content channel and fast-forwarded the worktree. `content_b64` is for small files; a large repo needs a channel upload. The spike's cleanup sent the wrong id field to `worktree::remove`, which left one scratch worktree registered. |

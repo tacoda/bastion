@@ -33,7 +33,7 @@ fn failed() -> Event {
 fn run(events: &[Event]) -> (Job, Vec<Effect>) {
     let mut current = (job(), Vec::new());
     for (i, e) in events.iter().enumerate() {
-        current = step(&current.0, e, AT + 1 + i as u64);
+        current = step(&current.0, e, AT + 1 + i as u64, &Dials::default());
     }
     current
 }
@@ -163,7 +163,7 @@ fn a_question_waits_on_the_owner_and_the_answer_goes_back_to_the_same_stage() {
         (j.stage, j.state, j.question.as_deref()),
         (Stage::Plan, State::NeedsYou, Some("Which port?"))
     );
-    let (_, effects) = step(&j, &Event::Approved, AT + 9);
+    let (_, effects) = step(&j, &Event::Approved, AT + 9, &Dials::default());
     assert!(
         effects.is_empty(),
         "a question needs an answer, not an approval"
@@ -205,15 +205,21 @@ fn a_failed_turn_is_retried_once_then_fails_the_job() {
 fn stop_tears_down_from_any_live_state_and_a_finished_job_ignores_everything() {
     let (j, effects) = run(&[Event::Admitted, Event::Stopped]);
     assert_eq!((j.state, effects), (State::Stopped, vec![Effect::Teardown]));
-    let (after, effects) = step(&j, &Event::Admitted, AT + 9);
+    let (after, effects) = step(&j, &Event::Admitted, AT + 9, &Dials::default());
     assert_eq!((after, effects), (j, Vec::new()));
 }
 
 #[test]
 fn an_event_that_does_not_fit_changes_nothing() {
     let j = job();
-    assert_eq!(step(&j, &Event::Approved, AT + 1), (j.clone(), Vec::new()));
-    assert_eq!(step(&j, &done("x"), AT + 1), (j, Vec::new()));
+    assert_eq!(
+        step(&j, &Event::Approved, AT + 1, &Dials::default()),
+        (j.clone(), Vec::new())
+    );
+    assert_eq!(
+        step(&j, &done("x"), AT + 1, &Dials::default()),
+        (j, Vec::new())
+    );
 }
 
 #[test]
@@ -327,4 +333,111 @@ fn a_finished_build_records_its_report_and_captures_the_diff_for_review() {
             Effect::CaptureDiff,
         ]
     );
+}
+
+fn run_with(dials: Dials, events: &[Event]) -> (Job, Vec<Effect>) {
+    let mut current = (job(), Vec::new());
+    for (i, e) in events.iter().enumerate() {
+        current = step(&current.0, e, AT + 1 + i as u64, &dials);
+    }
+    current
+}
+
+#[test]
+fn an_auto_approve_goes_straight_to_build() {
+    let dials = Dials {
+        approve: Dial::Auto,
+        review: Dial::Ask,
+    };
+    let (j, effects) = run_with(dials, &planned());
+    assert_eq!((j.stage, j.state), (Stage::Build, State::Running));
+    assert!(matches!(
+        &effects[..],
+        [
+            Effect::RecordArtifact { .. },
+            Effect::StartTurn {
+                stage: Stage::Build,
+                ..
+            }
+        ]
+    ));
+}
+
+#[test]
+fn a_held_checkpoint_waits_then_approves_when_the_hold_expires() {
+    let dials = Dials {
+        approve: Dial::Hold,
+        review: Dial::Ask,
+    };
+    let (j, effects) = run_with(dials, &planned());
+    assert_eq!((j.stage, j.state), (Stage::Approve, State::NeedsYou));
+    assert_eq!(
+        effects.last(),
+        Some(&Effect::Hold {
+            stage: Stage::Approve,
+            secs: HOLD_SECS
+        })
+    );
+    let mut events = planned();
+    events.push(Event::HoldExpired {
+        stage: Stage::Approve,
+    });
+    let (j, _) = run_with(dials, &events);
+    assert_eq!((j.stage, j.state), (Stage::Build, State::Running));
+}
+
+#[test]
+fn a_hold_that_expires_after_the_owner_acted_changes_nothing() {
+    let dials = Dials {
+        approve: Dial::Hold,
+        review: Dial::Ask,
+    };
+    let mut events = planned();
+    events.extend([
+        Event::Commented {
+            text: "redo".into(),
+        },
+        Event::HoldExpired {
+            stage: Stage::Approve,
+        },
+    ]);
+    let (j, _) = run_with(dials, &events);
+    assert_eq!((j.stage, j.state), (Stage::Plan, State::Running));
+}
+
+#[test]
+fn review_never_goes_below_hold() {
+    let dials = Dials {
+        approve: Dial::Auto,
+        review: Dial::Auto,
+    };
+    assert_eq!(dials.at(Stage::Review), Dial::Hold);
+    let (j, effects) = run_with(
+        dials,
+        &[
+            Event::Admitted,
+            Event::Provisioned,
+            done("plan"),
+            done("built"),
+        ],
+    );
+    assert_eq!((j.stage, j.state), (Stage::Review, State::NeedsYou));
+    assert_eq!(
+        effects.last(),
+        Some(&Effect::Hold {
+            stage: Stage::Review,
+            secs: HOLD_SECS
+        })
+    );
+}
+
+#[test]
+fn a_held_checkpoint_says_when_it_approves_itself() {
+    let dials = Dials {
+        approve: Dial::Hold,
+        review: Dial::Ask,
+    };
+    let (j, _) = run_with(dials, &planned());
+    assert_eq!(hold_until(&j, &dials), Some(j.updated_at + HOLD_SECS));
+    assert_eq!(hold_until(&j, &Dials::default()), None);
 }

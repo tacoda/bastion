@@ -9,7 +9,7 @@ use serde::Serialize;
 
 use crate::ipc;
 use crate::pages::diff::DiffView;
-use crate::route::{Route, ago, mark, nav};
+use crate::route::{Route, ago, mark, nav, until};
 
 #[derive(Serialize)]
 struct Id {
@@ -116,6 +116,12 @@ pub fn JobPage(id: String) -> impl IntoView {
         <Show when=waits>
             <section class="mb-4 grid gap-3 rounded-xl border border-warn bg-panel p-4">
                 <h2 class="m-0 text-sm font-semibold text-warn">"Waiting for you"</h2>
+                {move || detail.get().and_then(|d| d.job.hold_until).map(|at| view! {
+                    <p class="m-0 text-sm text-warn">{format!(
+                        "Held: this approves itself {} unless you act first.",
+                        until(at)
+                    )}</p>
+                })}
                 {move || detail.get().and_then(|d| d.job.question).map(|q| view! {
                     <p class="m-0"><strong>"The agent asks: "</strong>{q}</p>
                 })}

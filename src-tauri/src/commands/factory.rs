@@ -3,8 +3,10 @@
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
-use bastion_core::{Event, actions, steps};
-use bastion_protocol::{ArtifactView, JobDetail, JobSummary, StepView, TranscriptLine, Workspace};
+use bastion_core::{Dials, Event, actions, hold_until, steps};
+use bastion_protocol::{
+    ArtifactView, DialsView, JobDetail, JobSummary, StepView, TranscriptLine, Workspace,
+};
 use serde::Serialize;
 use serde_json::json;
 use tauri::State;
@@ -30,7 +32,7 @@ fn name<T: Serialize>(value: T) -> String {
         .unwrap_or_default()
 }
 
-fn summary(r: &Record) -> JobSummary {
+fn summary(r: &Record, dials: &Dials) -> JobSummary {
     let j = &r.job;
     JobSummary {
         id: j.id.clone(),
@@ -42,6 +44,7 @@ fn summary(r: &Record) -> JobSummary {
         error: j.error.clone(),
         created_at: r.created_at,
         updated_at: j.updated_at,
+        hold_until: hold_until(j, dials),
         actions: actions(j).into_iter().map(name).collect(),
     }
 }
@@ -95,12 +98,14 @@ pub async fn workspace_add(
 
 #[tauri::command]
 pub async fn jobs(cell: State<'_, FactoryCell>) -> Result<Vec<JobSummary>, String> {
-    Ok(factory(&cell)?
+    let factory = factory(&cell)?;
+    let dials = factory.store().dials().await?;
+    Ok(factory
         .store()
         .jobs()
         .await?
         .iter()
-        .map(summary)
+        .map(|r| summary(r, &dials))
         .collect())
 }
 
@@ -151,7 +156,7 @@ pub async fn job(cell: State<'_, FactoryCell>, id: String) -> Result<JobDetail, 
         })
         .collect();
     Ok(JobDetail {
-        job: summary(&record),
+        job: summary(&record, &factory.store().dials().await?),
         steps,
         artifacts,
         transcript,
@@ -197,4 +202,26 @@ pub async fn job_comment(
 #[tauri::command]
 pub async fn job_stop(cell: State<'_, FactoryCell>, id: String) -> Result<(), String> {
     factory(&cell)?.apply(&id, Event::Stopped).await
+}
+
+#[tauri::command]
+pub async fn dials(cell: State<'_, FactoryCell>) -> Result<DialsView, String> {
+    let d = factory(&cell)?.store().dials().await?;
+    Ok(DialsView {
+        approve: name(d.approve),
+        review: name(d.review),
+    })
+}
+
+#[tauri::command]
+pub async fn dials_set(cell: State<'_, FactoryCell>, dials: DialsView) -> Result<(), String> {
+    let parse = |text: &str| {
+        serde_json::from_value(json!(text))
+            .map_err(|_| format!("{text:?} is not ask, hold or auto"))
+    };
+    let dials = Dials {
+        approve: parse(&dials.approve)?,
+        review: parse(&dials.review)?,
+    };
+    factory(&cell)?.store().set_dials(&dials).await
 }

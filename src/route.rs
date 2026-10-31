@@ -40,3 +40,13 @@ pub fn ago(at: u64) -> String {
         s => format!("{} d ago", s / 86_400),
     }
 }
+
+/// "in 12 min", to a time in seconds since the epoch.
+pub fn until(at: u64) -> String {
+    let now = (js_sys::Date::now() / 1000.0) as u64;
+    match at.saturating_sub(now) {
+        0 => "now".into(),
+        s if s < 60 => "in under a minute".into(),
+        s => format!("in {} min", s.div_ceil(60)),
+    }
+}

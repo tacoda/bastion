@@ -137,6 +137,8 @@ pub fn run() {
             commands::factory::job_approve,
             commands::factory::job_comment,
             commands::factory::job_stop,
+            commands::factory::dials,
+            commands::factory::dials_set,
             commands::doctor::doctor,
             commands::stack::stack_status,
             commands::stack::stack_start,

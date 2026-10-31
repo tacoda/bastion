@@ -8,7 +8,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::Engine as _;
-use bastion_core::{Effect, Event, Job, Outcome, Stage, State, admit, outcome, step};
+use bastion_core::{
+    Dial, Effect, Event, HOLD_SECS, Job, Outcome, Stage, State, admit, outcome, step,
+};
 use serde_json::{Value, json};
 
 use crate::engine::{DEFAULT_NAMESPACE, Engine};
@@ -131,7 +133,8 @@ impl Factory {
         Box::pin(async move {
             for _ in 0..SAVE_TRIES {
                 let mut record = self.store.load(&id).await?;
-                let (job, effects) = step(&record.job, &event, now());
+                let dials = self.store.dials().await?;
+                let (job, effects) = step(&record.job, &event, now(), &dials);
                 if job == record.job && effects.is_empty() {
                     return Ok(());
                 }
@@ -247,6 +250,10 @@ impl Factory {
                 Err(error) => self.apply(&id, Event::LandFailed { error }).await.err(),
             },
             Effect::Teardown => self.teardown(&record).await.err(),
+            Effect::Hold { stage, secs } => {
+                self.hold_checkpoint(id.clone(), stage, secs);
+                None
+            }
         };
         if let Some(error) = failed {
             eprintln!("job {id}: {error}");
@@ -659,6 +666,16 @@ impl Factory {
         Ok(())
     }
 
+    /// Approve a held checkpoint when its time runs out. The core ignores it if
+    /// the owner acted first.
+    fn hold_checkpoint(self: &Arc<Self>, id: String, stage: Stage, secs: u64) {
+        let factory = self.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(secs)).await;
+            let _ = factory.apply(&id, Event::HoldExpired { stage }).await;
+        });
+    }
+
     /// After a restart: pick every active job back up where it was.
     async fn resume(self: Arc<Self>) {
         let Ok(records) = self.store.jobs().await else {
@@ -680,6 +697,15 @@ impl Factory {
                     tauri::async_runtime::spawn(
                         async move { factory.run(record, Effect::Land).await },
                     );
+                }
+                (State::NeedsYou, stage, _) => {
+                    // A hold that was counting down when the app quit.
+                    if let Ok(dials) = self.store.dials().await
+                        && dials.at(stage) == Dial::Hold
+                    {
+                        let left = (record.job.updated_at + HOLD_SECS).saturating_sub(now());
+                        self.hold_checkpoint(id, stage, left);
+                    }
                 }
                 (State::Running, _, Some(session)) => {
                     // The turn may have ended while the app was closed.

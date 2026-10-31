@@ -6,7 +6,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use bastion_core::{Job, Stage};
+use bastion_core::{Dial, Dials, Job, Stage};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -59,13 +59,16 @@ pub trait Store: Send + Sync {
     fn save<'a>(&'a self, record: &'a Record) -> Answer<'a, i64>;
     fn add_artifact<'a>(&'a self, job: &'a str, artifact: &'a Artifact) -> Answer<'a, ()>;
     fn artifacts<'a>(&'a self, job: &'a str) -> Answer<'a, Vec<Artifact>>;
+    /// The checkpoint dials. A checkpoint with no row asks.
+    fn dials(&self) -> Answer<'_, Dials>;
+    fn set_dials<'a>(&'a self, dials: &'a Dials) -> Answer<'a, ()>;
 }
 
 const NAMESPACE: &str = "bastion";
 
 /// The schema (D8): typed columns with constraints, no JSON in a text column.
 // ponytail: idempotent CREATEs; add numbered migrations when a column changes.
-const SCHEMA: [&str; 3] = [
+const SCHEMA: [&str; 4] = [
     "CREATE TABLE IF NOT EXISTS workspaces (
         name TEXT PRIMARY KEY CHECK (length(name) > 0),
         path TEXT NOT NULL UNIQUE,
@@ -94,6 +97,9 @@ const SCHEMA: [&str; 3] = [
         stage TEXT NOT NULL CHECK (stage IN ('plan','approve','build','review','land')),
         body TEXT NOT NULL,
         created_at INTEGER NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS dials (
+        checkpoint TEXT PRIMARY KEY CHECK (checkpoint IN ('approve','review')),
+        dial TEXT NOT NULL CHECK (dial IN ('ask','hold','auto')))",
 ];
 
 const JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at";
@@ -320,6 +326,37 @@ impl Store for SqlStore {
             .collect()
         })
     }
+
+    fn dials(&self) -> Answer<'_, Dials> {
+        Box::pin(async move {
+            let mut dials = Dials::default();
+            for row in self
+                .query("SELECT checkpoint, dial FROM dials", json!([]))
+                .await?
+            {
+                let dial: Dial = parse(&row, "dial")?;
+                match row["checkpoint"].as_str() {
+                    Some("approve") => dials.approve = dial,
+                    Some("review") => dials.review = dial,
+                    _ => {}
+                }
+            }
+            Ok(dials)
+        })
+    }
+
+    fn set_dials<'a>(&'a self, dials: &'a Dials) -> Answer<'a, ()> {
+        Box::pin(async move {
+            for (checkpoint, dial) in [("approve", dials.approve), ("review", dials.review)] {
+                self.execute(
+                    "INSERT INTO dials (checkpoint, dial) VALUES (?, ?) ON CONFLICT (checkpoint) DO UPDATE SET dial = excluded.dial",
+                    json!([checkpoint, name(dial)]),
+                )
+                .await?;
+            }
+            Ok(())
+        })
+    }
 }
 
 #[cfg(test)]
@@ -335,6 +372,7 @@ pub mod fake {
         pub workspaces: Mutex<Vec<Workspace>>,
         pub jobs: Mutex<BTreeMap<String, Record>>,
         pub artifacts: Mutex<Vec<(String, Artifact)>>,
+        pub dials: Mutex<Dials>,
     }
 
     impl Store for FakeStore {
@@ -402,6 +440,16 @@ pub mod fake {
                 .map(|(_, a)| a.clone())
                 .collect();
             Box::pin(async move { Ok(found) })
+        }
+
+        fn dials(&self) -> Answer<'_, Dials> {
+            let dials = *self.dials.lock().unwrap();
+            Box::pin(async move { Ok(dials) })
+        }
+
+        fn set_dials<'a>(&'a self, dials: &'a Dials) -> Answer<'a, ()> {
+            *self.dials.lock().unwrap() = *dials;
+            Box::pin(async { Ok(()) })
         }
     }
 }

@@ -216,3 +216,18 @@ fn a_failed_provision_fails_the_job_with_its_reason() {
         assert!(job.error.unwrap().contains("W503"));
     });
 }
+
+#[test]
+fn an_auto_approve_dial_skips_the_owner_at_approve() {
+    let rig = rig();
+    *rig.store.dials.lock().unwrap() = bastion_core::Dials {
+        approve: bastion_core::Dial::Auto,
+        review: bastion_core::Dial::Ask,
+    };
+    tauri::async_runtime::block_on(async {
+        let id = rig.factory.submit("w", "x").await.unwrap();
+        until(&rig, &id, Stage::Plan, State::Running).await;
+        finish_turn(&rig, &id).await;
+        until(&rig, &id, Stage::Build, State::Running).await;
+    });
+}

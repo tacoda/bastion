@@ -32,6 +32,9 @@ pub mod command {
     /// Takes `{ id: String, text: String }`: a comment, or the answer to a question.
     pub const JOB_COMMENT: &str = "job_comment";
     pub const JOB_STOP: &str = "job_stop";
+    pub const DIALS: &str = "dials";
+    /// Takes `{ dials: DialsView }`.
+    pub const DIALS_SET: &str = "dials_set";
 }
 
 /// Event names the app emits to the page (D10).
@@ -242,6 +245,8 @@ pub struct JobSummary {
     pub error: Option<String>,
     pub created_at: u64,
     pub updated_at: u64,
+    /// When a held checkpoint approves itself, if the job waits at one.
+    pub hold_until: Option<u64>,
     /// What the owner may do now: `approve`, `comment`, `answer`, `stop`.
     pub actions: Vec<String>,
 }
@@ -274,4 +279,12 @@ pub struct JobDetail {
     pub artifacts: Vec<ArtifactView>,
     /// The latest turn's messages.
     pub transcript: Vec<TranscriptLine>,
+}
+
+/// How each checkpoint is decided (PLAN.md D15): `ask`, `hold` or `auto`.
+/// Review never runs below `hold`, whatever it is set to.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DialsView {
+    pub approve: String,
+    pub review: String,
 }

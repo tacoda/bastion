@@ -121,6 +121,44 @@ pub enum Event {
         error: String,
     },
     Stopped,
+    /// A held checkpoint's time ran out (D15).
+    HoldExpired {
+        stage: Stage,
+    },
+}
+
+/// How a checkpoint is decided (D15): the owner decides, the default lands
+/// after a hold unless the owner acts first, or the default lands at once.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Dial {
+    #[default]
+    Ask,
+    Hold,
+    Auto,
+}
+
+/// How long a held checkpoint waits before it approves itself.
+pub const HOLD_SECS: u64 = 30 * 60;
+
+/// The dial of each checkpoint, as the owner set them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Dials {
+    pub approve: Dial,
+    pub review: Dial,
+}
+
+impl Dials {
+    /// The dial a stage runs under. Review is the merge decision, so it never
+    /// goes below hold (D15). A stage that is not a checkpoint asks.
+    pub fn at(&self, stage: Stage) -> Dial {
+        match stage {
+            Stage::Approve => self.approve,
+            Stage::Review if self.review == Dial::Auto => Dial::Hold,
+            Stage::Review => self.review,
+            _ => Dial::Ask,
+        }
+    }
 }
 
 /// How an agent turn ended.
@@ -156,6 +194,8 @@ pub enum Effect {
     Land,
     /// Stop the VM and release the worktree.
     Teardown,
+    /// Send `HoldExpired` for this checkpoint after `secs`.
+    Hold { stage: Stage, secs: u64 },
 }
 
 impl Job {
@@ -178,7 +218,7 @@ impl Job {
 
 /// Apply one event to one job. An event that does not fit the job's state
 /// changes nothing and returns no effects.
-pub fn step(job: &Job, event: &Event, at: u64) -> (Job, Vec<Effect>) {
+pub fn step(job: &Job, event: &Event, at: u64, dials: &Dials) -> (Job, Vec<Effect>) {
     let mut next = job.clone();
     next.updated_at = at;
     let effects = match (job.state, event) {
@@ -191,14 +231,24 @@ pub fn step(job: &Job, event: &Event, at: u64) -> (Job, Vec<Effect>) {
             next.state = State::Provisioning;
             vec![Effect::Provision]
         }
-        (State::Provisioning, Event::Provisioned) => enter(&mut next),
+        (State::Provisioning, Event::Provisioned) => enter(&mut next, dials),
         (State::Provisioning, Event::ProvisionFailed { error }) => fail(&mut next, error),
-        (State::Running, Event::TurnFinished { outcome }) => turn_finished(&mut next, outcome),
+        (State::Running, Event::TurnFinished { outcome }) => {
+            turn_finished(&mut next, outcome, dials)
+        }
         (State::NeedsYou, Event::Approved) if next.question.is_none() => {
             next.feedback = None;
-            advance(&mut next)
+            advance(&mut next, dials)
         }
-        (State::NeedsYou, Event::Commented { text }) => commented(&mut next, text),
+        (State::NeedsYou, Event::HoldExpired { stage })
+            if *stage == next.stage
+                && next.question.is_none()
+                && dials.at(*stage) == Dial::Hold =>
+        {
+            next.feedback = None;
+            advance(&mut next, dials)
+        }
+        (State::NeedsYou, Event::Commented { text }) => commented(&mut next, text, dials),
         (State::Running, Event::Landed) if next.stage == Stage::Land => {
             next.state = State::Landed;
             vec![Effect::Teardown]
@@ -212,11 +262,18 @@ pub fn step(job: &Job, event: &Event, at: u64) -> (Job, Vec<Effect>) {
 }
 
 /// Start the current stage.
-fn enter(job: &mut Job) -> Vec<Effect> {
+fn enter(job: &mut Job, dials: &Dials) -> Vec<Effect> {
     job.question = None;
     if job.stage.is_checkpoint() {
         job.state = State::NeedsYou;
-        return Vec::new();
+        return match dials.at(job.stage) {
+            Dial::Ask => Vec::new(),
+            Dial::Hold => vec![Effect::Hold {
+                stage: job.stage,
+                secs: HOLD_SECS,
+            }],
+            Dial::Auto => advance(job, dials),
+        };
     }
     job.state = State::Running;
     if job.stage == Stage::Land {
@@ -230,13 +287,13 @@ fn enter(job: &mut Job) -> Vec<Effect> {
     }]
 }
 
-fn advance(job: &mut Job) -> Vec<Effect> {
+fn advance(job: &mut Job, dials: &Dials) -> Vec<Effect> {
     let at = SHORT_PIPELINE.iter().position(|s| *s == job.stage);
     match at.and_then(|i| SHORT_PIPELINE.get(i + 1)) {
         Some(stage) => {
             job.stage = *stage;
             job.failures = 0;
-            enter(job)
+            enter(job, dials)
         }
         None => Vec::new(),
     }
@@ -248,7 +305,7 @@ fn fail(job: &mut Job, error: &str) -> Vec<Effect> {
     vec![Effect::Teardown]
 }
 
-fn turn_finished(job: &mut Job, outcome: &Outcome) -> Vec<Effect> {
+fn turn_finished(job: &mut Job, outcome: &Outcome, dials: &Dials) -> Vec<Effect> {
     match outcome {
         Outcome::Done { report } => {
             job.failures = 0;
@@ -263,7 +320,7 @@ fn turn_finished(job: &mut Job, outcome: &Outcome) -> Vec<Effect> {
                 effects.push(Effect::CaptureDiff);
             }
             job.feedback = None;
-            effects.extend(advance(job));
+            effects.extend(advance(job, dials));
             effects
         }
         Outcome::Asked { question } => {
@@ -276,14 +333,14 @@ fn turn_finished(job: &mut Job, outcome: &Outcome) -> Vec<Effect> {
             if job.failures >= MAX_TURN_FAILURES {
                 return fail(job, error);
             }
-            enter(job)
+            enter(job, dials)
         }
     }
 }
 
 /// A comment at a checkpoint sends the work back to the agent stage before
 /// it. An answer to a question goes to the stage that asked.
-fn commented(job: &mut Job, text: &str) -> Vec<Effect> {
+fn commented(job: &mut Job, text: &str, dials: &Dials) -> Vec<Effect> {
     if let Some(question) = job.question.take() {
         job.feedback = Some(format!("You asked: {question}\nThe answer: {text}"));
     } else {
@@ -295,7 +352,7 @@ fn commented(job: &mut Job, text: &str) -> Vec<Effect> {
         };
         job.failures = 0;
     }
-    enter(job)
+    enter(job, dials)
 }
 
 /// Where one step of a job's pipeline stands, as a run of steps shows it.
@@ -339,6 +396,12 @@ pub fn steps(job: &Job) -> Vec<(Stage, StepState)> {
             (*stage, state)
         })
         .collect()
+}
+
+/// When a held checkpoint approves itself, if the job waits at one.
+pub fn hold_until(job: &Job, dials: &Dials) -> Option<u64> {
+    (job.state == State::NeedsYou && job.question.is_none() && dials.at(job.stage) == Dial::Hold)
+        .then_some(job.updated_at + HOLD_SECS)
 }
 
 /// What the owner may do with a job now. The view shows only these.

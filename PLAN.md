@@ -128,7 +128,7 @@ code inside Bastion is the diff a job proposes.
 | D32 | A Bastion server listens on loopback unless its admin gives it an address and a TLS certificate and key; it refuses a non-loopback address without them. | A token sent over plain HTTP can be read by anyone on the network. |
 | D33 | Every step of a pipeline is lights-on (it waits for a person to approve its result or send it back with feedback) or dark (it goes on at once). Every step starts lights-on, and each can be set on its own, merge included. A workflow's level follows from its steps: lights-on when every step has a person's gate, dim when at least one step up to the merge has one, and dark when none up to the merge has one (no human oversight of what merges). No step waits on a timer. The checkpoint stages fold into the steps they judge, and merge is a step that merges. Oversight decides only human approval and feedback: every step's result is kept, and every decision is logged, whatever the dial. A person's decisions are in the audit log with their name, and a dark step's decision is there too, named as the dial's. Replaces D15. | The owner's choice (2026-11-06): the factory runs the whole pipeline, and the amount of oversight is the variable. A step is governed by a person or runs alone; a timer that approves by itself governs nothing. |
 | D34 | Model provider keys are configuration, not environment. Bastion stores each key in the stack's `secrets` worker (store `vault`, readable only by `llm-router`) and points the router's provider entry at it as `secret://NAME`; the router resolves it at each request and reports whether a provider has a key without returning it. Providers with their own worker (Anthropic, OpenAI, DeepSeek, xAI, Z.AI for GLM, Kimi, OpenRouter) take their key that way; other OpenAI-compatible hosts (Together, Fireworks, Qwen through DashScope, a local Ollama) go through a Bastion provider worker that serves any number of them. | The owner's choice (2026-11-06): a key for any provider, with a spread wide enough that most people can use it, and no dependency on `ANTHROPIC_API_KEY` in the environment. |
-| D35 | A pipeline is a workflow: a graph of steps that a person edits on a canvas. Each node is a step: what runs (a Bastion stage, a command such as a bash command, a script or a task runner, an agent, or a skill), its oversight dial (D33), a note that the node expands to show and that the step's agent reads, and the results it declares, such as documents, kept in the database. A link sends one step's results to another. Links carry no conditions: a step's entry criteria are the results of the steps linked into it, and its exit criteria are the results it declares, and a code check, not a model, holds a step that lacks either. Bastion ships a few workflows, and people make their own for themselves and others to use. For now only an admin makes or changes a workflow; members and viewers use them. | The owner's choice (2026-11-06). |
+| D35 | A pipeline is a workflow: a graph of steps that a person edits on a canvas. Each node is a step: what runs (a skill, the preferred building block; a prompt; a command such as a bash command, a script or a task runner; or a Bastion stage), its oversight dial (D33), a note that the node expands to show and that the step's agent reads, and the results it declares, such as documents, kept in the database. A link sends one step's results to another. Links carry no conditions: a step's entry criteria are the results of the steps linked into it, and its exit criteria are the results it declares, and a code check, not a model, holds a step that lacks either. Bastion ships a few workflows, and people make their own for themselves and others to use. For now only an admin makes or changes a workflow; members and viewers use them. | The owner's choice (2026-11-06). |
 
 ## 4. The repository
 
@@ -665,15 +665,16 @@ workflows as an interactive flow chart on a canvas (D35).
   try with the reason, then a wait on a person. The built-in workflows
   (short, full, full without acceptance tests) are chains with no results
   and the settings' dials; they cannot be changed or deleted, only copied.
-- **W1b, step kinds.** A node is a built-in step (a Bastion stage), a
-  command, an agent or a skill. A command is one shell line run in the
-  job's VM in the repository, with no agent: a bash command, a script or a
-  task runner (`make test`, `./scripts/lint.sh`, `npm run build`); exit 0
-  passes, and its output is its result. An agent is a turn whose
-  instructions are the node's note. A skill is a turn that reads and
-  follows `.claude/skills/<name>/SKILL.md` in the repository. Each node has
-  its own id, so a workflow can hold several commands or agents, and a job
-  tracks the node it is at.
+- **W1b, step kinds.** A node is a skill, a prompt, a command or a
+  built-in step (a Bastion stage). A skill is the preferred building block,
+  and the palette offers it first: an agent turn that reads and follows
+  `.claude/skills/<name>/SKILL.md` in the repository. A prompt is an agent
+  turn whose instructions are the node's note. A command is one shell line
+  run in the job's VM in the repository, with no agent: a bash command, a
+  script or a task runner (`make test`, `./scripts/lint.sh`, `npm run
+  build`); exit 0 passes, and its output is its result. Each node has its
+  own id, so a workflow can hold several skills, prompts or commands, and a
+  job tracks the node it is at.
 - **W2, the canvas.** A Workflows page draws each workflow's nodes and
   links. An admin (D31) drags a node, links two by dragging from one to the
   other, removes a node or a link, adds a step from a palette, and expands

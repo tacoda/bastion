@@ -205,46 +205,30 @@ async fn providers(engine: &dyn Engine) -> Check {
     }
 }
 
+/// Ready when any provider has a key, from Settings or the environment
+/// (D34). The others are named, but none is required.
 fn provider_check(out: &Value) -> Check {
     let providers = out["providers"].as_array().cloned().unwrap_or_default();
-    let name = |p: &Value| p["display_name"].as_str().unwrap_or("?").to_string();
-    let ready: Vec<String> = providers
-        .iter()
-        .filter(|p| p["configured"] == true)
-        .map(name)
-        .collect();
-    let missing: Vec<&Value> = providers
-        .iter()
-        .filter(|p| p["configured"] != true)
-        .collect();
-    let fix = (!missing.is_empty()).then(|| {
-        let vars: Vec<String> = missing
+    let names = |configured: bool| -> Vec<String> {
+        providers
             .iter()
-            .map(|p| {
-                format!(
-                    "{} for {}",
-                    p["credential_env_var"].as_str().unwrap_or("?"),
-                    name(p)
-                )
-            })
-            .collect();
-        format!(
-            "Set {} in the environment you start Bastion from, then restart the stack.",
-            vars.join(", ")
-        )
-    });
-    let missing_names: Vec<String> = missing.into_iter().map(name).collect();
-    let detail = format!(
-        "ready: {}; no credential: {}",
-        list(&ready),
-        list(&missing_names)
-    );
-    let state = match (ready.is_empty(), fix.is_some()) {
-        (true, _) => CheckState::Fail,
-        (false, true) => CheckState::Warn,
-        (false, false) => CheckState::Pass,
+            .filter(|p| (p["configured"] == true) == configured)
+            .map(|p| p["display_name"].as_str().unwrap_or("?").to_string())
+            .collect()
     };
-    check("Model providers", true, state, detail, fix)
+    let (ready, missing) = (names(true), names(false));
+    let detail = format!("ready: {}; no key: {}", list(&ready), list(&missing));
+    if ready.is_empty() {
+        let fix = "Add a key for a model provider in Settings, under Model providers.";
+        return check(
+            "Model providers",
+            true,
+            CheckState::Fail,
+            detail,
+            Some(fix.into()),
+        );
+    }
+    check("Model providers", true, CheckState::Pass, detail, None)
 }
 
 fn list(names: &[String]) -> String {
@@ -343,23 +327,18 @@ mod tests {
     }
 
     #[test]
-    fn a_provider_with_no_credential_is_named_with_its_variable() {
+    fn one_provider_with_a_key_is_enough() {
         let engine = FakeEngine::new(Link::Up).answer(
             "router::provider::list",
             Ok(json!({ "providers": [
-                { "display_name": "Anthropic", "configured": false, "credential_env_var": "ANTHROPIC_API_KEY" },
-                { "display_name": "OpenAI", "configured": true, "credential_env_var": "OPENAI_API_KEY" },
+                { "display_name": "Anthropic", "configured": false },
+                { "display_name": "OpenAI", "configured": true },
             ]})),
         );
         let check = by_name(&report(&healthy(), &engine), "Model providers").clone();
-        assert_eq!(check.state, CheckState::Warn);
-        assert_eq!(check.detail, "ready: OpenAI; no credential: Anthropic");
-        assert!(
-            check
-                .fix
-                .unwrap()
-                .contains("ANTHROPIC_API_KEY for Anthropic")
-        );
+        assert_eq!(check.state, CheckState::Pass);
+        assert_eq!(check.detail, "ready: OpenAI; no key: Anthropic");
+        assert_eq!(check.fix, None);
     }
 
     #[test]

@@ -27,6 +27,11 @@ pub mod command {
     pub const TOKEN_ISSUE: &str = "token_issue";
     pub const TOKENS: &str = "tokens";
     pub const TOKEN_REVOKE: &str = "token_revoke";
+    /// The model providers and where each one's key comes from (D34).
+    pub const PROVIDERS: &str = "providers";
+    /// Takes `{ id, key }`.
+    pub const PROVIDER_KEY_SET: &str = "provider_key_set";
+    pub const PROVIDER_KEY_REMOVE: &str = "provider_key_remove";
     pub const CONSOLE: &str = "console";
     /// Takes `{ request: LogRequest }`.
     pub const CONTAINER_LOGS: &str = "container_logs";
@@ -143,6 +148,15 @@ pub struct TokenView {
     pub label: String,
     pub created_at: u64,
     pub last_used: Option<u64>,
+}
+
+/// A model provider and where its key comes from: `secret` (set in
+/// Settings), `env`, or `none`. Never the key (D34).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderView {
+    pub id: String,
+    pub name: String,
+    pub source: String,
 }
 
 /// The name of the Bastion server the app starts on this machine.

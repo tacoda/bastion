@@ -542,6 +542,70 @@ containers:
         x86_64-unknown-linux-musl:
           sha256: 15122602ade9fb83b295a13bc4aa9f2e442264edea234db9e32a4b82aeca354f
           url: https://api.workers.iii.dev/download/provider-anthropic/1.2.29/x86_64-unknown-linux-musl
+  provider-deepseek:
+    worker: package://provider-deepseek
+    requested: 0.1.24
+    resolved:
+      name: provider-deepseek
+      version: 0.1.24
+      type: binary
+      artifacts:
+        aarch64-apple-darwin:
+          sha256: 8f8559d52da541d4fd8a353f25b79102e324f152ef7873eeb070d37e22471393
+          url: https://api.workers.iii.dev/download/provider-deepseek/0.1.24/aarch64-apple-darwin
+        aarch64-pc-windows-msvc:
+          sha256: 1c2ee83c164e890222c4bcebeda58b41a9895220e220cdff759a2dedc2365f2d
+          url: https://api.workers.iii.dev/download/provider-deepseek/0.1.24/aarch64-pc-windows-msvc
+        aarch64-unknown-linux-gnu:
+          sha256: 7dcfa0d63c7d8afefd883264614d202290e24d70130b4accd75f4e7026c36b79
+          url: https://api.workers.iii.dev/download/provider-deepseek/0.1.24/aarch64-unknown-linux-gnu
+        armv7-unknown-linux-gnueabihf:
+          sha256: 0085cbeb62967b3136c15a5b09665323399b313ae3d5ec993743f6bd16b2e344
+          url: https://api.workers.iii.dev/download/provider-deepseek/0.1.24/armv7-unknown-linux-gnueabihf
+        x86_64-apple-darwin:
+          sha256: ac34e0c6b81bebef51de10c7a2b760aad3833dd226e676ba32f390ab212e0b95
+          url: https://api.workers.iii.dev/download/provider-deepseek/0.1.24/x86_64-apple-darwin
+        x86_64-pc-windows-msvc:
+          sha256: 1fd63c0f19a5bb77b3bfc66b9dd0d7872b02149fac14672f01e8cac1f2c34604
+          url: https://api.workers.iii.dev/download/provider-deepseek/0.1.24/x86_64-pc-windows-msvc
+        x86_64-unknown-linux-gnu:
+          sha256: d0dcbef018c896ca85eac387abadbccacac6bc89b7896f6b78bdbd9816b67527
+          url: https://api.workers.iii.dev/download/provider-deepseek/0.1.24/x86_64-unknown-linux-gnu
+        x86_64-unknown-linux-musl:
+          sha256: 19dc0ab2f0794bf210945f84d0148fca552eda4af6454213b15c118717753e4f
+          url: https://api.workers.iii.dev/download/provider-deepseek/0.1.24/x86_64-unknown-linux-musl
+  provider-kimi:
+    worker: package://provider-kimi
+    requested: 1.1.19
+    resolved:
+      name: provider-kimi
+      version: 1.1.19
+      type: binary
+      artifacts:
+        aarch64-apple-darwin:
+          sha256: 5bd06cb1bd859598766d220f722729e7cd17c991c7b7abecb3bebb29015a5e56
+          url: https://api.workers.iii.dev/download/provider-kimi/1.1.19/aarch64-apple-darwin
+        aarch64-pc-windows-msvc:
+          sha256: fe48c57675b69107a62d8712f4a727e1d658f6b54c83173a611455e3fd389f03
+          url: https://api.workers.iii.dev/download/provider-kimi/1.1.19/aarch64-pc-windows-msvc
+        aarch64-unknown-linux-gnu:
+          sha256: 36475b2996da9813f9e2154c7d0f8cbe3516b4d1e83713fad816fc800f1406b8
+          url: https://api.workers.iii.dev/download/provider-kimi/1.1.19/aarch64-unknown-linux-gnu
+        armv7-unknown-linux-gnueabihf:
+          sha256: 18c5a17b1eb2bb816eb88e127bd749476c8d7008f08171995bfddb2a25e28743
+          url: https://api.workers.iii.dev/download/provider-kimi/1.1.19/armv7-unknown-linux-gnueabihf
+        x86_64-apple-darwin:
+          sha256: 19b4c6c8eea5a9d07a018b2950e025128b3cc74e3aebf5e8eedfc07c170c1de9
+          url: https://api.workers.iii.dev/download/provider-kimi/1.1.19/x86_64-apple-darwin
+        x86_64-pc-windows-msvc:
+          sha256: 2bb17eaeb5129606f123aa035ed1a792d642955a6341f6c9b07feccf84470f32
+          url: https://api.workers.iii.dev/download/provider-kimi/1.1.19/x86_64-pc-windows-msvc
+        x86_64-unknown-linux-gnu:
+          sha256: 66b21853f146bc1ff15149e1081a51cc19483f193b9b05cfba469197d0a95e15
+          url: https://api.workers.iii.dev/download/provider-kimi/1.1.19/x86_64-unknown-linux-gnu
+        x86_64-unknown-linux-musl:
+          sha256: 127c2e05c3bf8ee922b4a62ba156747d2565799a5b3c98e075581f43bbf95879
+          url: https://api.workers.iii.dev/download/provider-kimi/1.1.19/x86_64-unknown-linux-musl
   provider-openai:
     worker: package://provider-openai
     requested: 1.2.29
@@ -574,6 +638,102 @@ containers:
         x86_64-unknown-linux-musl:
           sha256: 5ed128a023cb8da632442fac2cec0d0a5eea1ec123be8c68ccf4f9717c6e422d
           url: https://api.workers.iii.dev/download/provider-openai/1.2.29/x86_64-unknown-linux-musl
+  provider-openrouter:
+    worker: package://provider-openrouter
+    requested: 0.1.16
+    resolved:
+      name: provider-openrouter
+      version: 0.1.16
+      type: binary
+      artifacts:
+        aarch64-apple-darwin:
+          sha256: 4100f3aa3648f839528843b5a1ee8856d5b9b46be38aa74ceb41b470a4d61193
+          url: https://api.workers.iii.dev/download/provider-openrouter/0.1.16/aarch64-apple-darwin
+        aarch64-pc-windows-msvc:
+          sha256: e38cd5df5ec6e50b04d1b859a10e68d829ccd2e65de9e894d8e8e95308e95d17
+          url: https://api.workers.iii.dev/download/provider-openrouter/0.1.16/aarch64-pc-windows-msvc
+        aarch64-unknown-linux-gnu:
+          sha256: d576cd4d3028626b072b67ad0b222de38096e3ae89701905f3d0951745f6f05e
+          url: https://api.workers.iii.dev/download/provider-openrouter/0.1.16/aarch64-unknown-linux-gnu
+        armv7-unknown-linux-gnueabihf:
+          sha256: 54e332061767e53fba4ff81ded55f2cf80e3e7d9e7dadf70caea72e430d3e12d
+          url: https://api.workers.iii.dev/download/provider-openrouter/0.1.16/armv7-unknown-linux-gnueabihf
+        x86_64-apple-darwin:
+          sha256: a5f4013c8ef92c3ab9c2c19675f8973e4645784676537df17299ecd0385e04f3
+          url: https://api.workers.iii.dev/download/provider-openrouter/0.1.16/x86_64-apple-darwin
+        x86_64-pc-windows-msvc:
+          sha256: c3748ee1068cc72102d518454abe8e8c5754314c6ede6778feaffc86b8f42ef4
+          url: https://api.workers.iii.dev/download/provider-openrouter/0.1.16/x86_64-pc-windows-msvc
+        x86_64-unknown-linux-gnu:
+          sha256: 8889ffe7aee964726e43a686a3d2503feb4fb9d6524741467d231c8ddf7ab170
+          url: https://api.workers.iii.dev/download/provider-openrouter/0.1.16/x86_64-unknown-linux-gnu
+        x86_64-unknown-linux-musl:
+          sha256: 9e5a6fd0e81cdb17390aa38cadf06c6d376f4f9ccc760de3e1ea43e8cd1e59b0
+          url: https://api.workers.iii.dev/download/provider-openrouter/0.1.16/x86_64-unknown-linux-musl
+  provider-xai:
+    worker: package://provider-xai
+    requested: 1.3.23
+    resolved:
+      name: provider-xai
+      version: 1.3.23
+      type: binary
+      artifacts:
+        aarch64-apple-darwin:
+          sha256: 027ea5e6b9f6e8f93beb98ee8832a0500bc1d08f988b4fb5c1d0e6be467625dd
+          url: https://api.workers.iii.dev/download/provider-xai/1.3.23/aarch64-apple-darwin
+        aarch64-pc-windows-msvc:
+          sha256: 036239afd13d4b24c89c8caeb5acc6dfa67b999f29f54b2a612b2d7f650b9fe7
+          url: https://api.workers.iii.dev/download/provider-xai/1.3.23/aarch64-pc-windows-msvc
+        aarch64-unknown-linux-gnu:
+          sha256: 95ccc7ba71632c67606bdfdc18f511d4f914257dd2d31a077c8870f78a7dc0c3
+          url: https://api.workers.iii.dev/download/provider-xai/1.3.23/aarch64-unknown-linux-gnu
+        armv7-unknown-linux-gnueabihf:
+          sha256: 6b8c0e9d5e24f0800f436406cfa5a0095ee68d5ad20c6025a659a3a9fd265a78
+          url: https://api.workers.iii.dev/download/provider-xai/1.3.23/armv7-unknown-linux-gnueabihf
+        x86_64-apple-darwin:
+          sha256: 0060c3c30599f1205df1bec1794f7991ff2aa0502ccf1f467dbbfc5443cd3f47
+          url: https://api.workers.iii.dev/download/provider-xai/1.3.23/x86_64-apple-darwin
+        x86_64-pc-windows-msvc:
+          sha256: 3e7065e18da761190a8765fdc0a716835a6d4ce2b329a37049d0b708f908f38f
+          url: https://api.workers.iii.dev/download/provider-xai/1.3.23/x86_64-pc-windows-msvc
+        x86_64-unknown-linux-gnu:
+          sha256: 12755617bd534e943ca484e9f4d139e426a31b549c40502ee27477cbb592701c
+          url: https://api.workers.iii.dev/download/provider-xai/1.3.23/x86_64-unknown-linux-gnu
+        x86_64-unknown-linux-musl:
+          sha256: ef76b836a1a939ca70324741a721eaf96cfe0ca0acd6ec0eb93fb301e7db6b67
+          url: https://api.workers.iii.dev/download/provider-xai/1.3.23/x86_64-unknown-linux-musl
+  provider-zai:
+    worker: package://provider-zai
+    requested: 0.5.18
+    resolved:
+      name: provider-zai
+      version: 0.5.18
+      type: binary
+      artifacts:
+        aarch64-apple-darwin:
+          sha256: 4bdc24dfd450bab2200b22a76884450990737eb5ba869f4a5e436e0b2540d4a4
+          url: https://api.workers.iii.dev/download/provider-zai/0.5.18/aarch64-apple-darwin
+        aarch64-pc-windows-msvc:
+          sha256: 7fd36b0c0abcb2b5e6a4289f36b205c321c9e8aea24ed69c00d6e90a35e17177
+          url: https://api.workers.iii.dev/download/provider-zai/0.5.18/aarch64-pc-windows-msvc
+        aarch64-unknown-linux-gnu:
+          sha256: 1fd36bc930c6f5201b4cc38fd3b1363690de8944fafc54d435124d0e6beabff5
+          url: https://api.workers.iii.dev/download/provider-zai/0.5.18/aarch64-unknown-linux-gnu
+        armv7-unknown-linux-gnueabihf:
+          sha256: 1fadbcbc80549dfc8456e2747e2d82270acc9e145ffd86ba7b5f2ba9b9405b5f
+          url: https://api.workers.iii.dev/download/provider-zai/0.5.18/armv7-unknown-linux-gnueabihf
+        x86_64-apple-darwin:
+          sha256: 89dd59fbb56ffa63a2fe09e9becc19743e401ad864d27e905f6fc2fd86767356
+          url: https://api.workers.iii.dev/download/provider-zai/0.5.18/x86_64-apple-darwin
+        x86_64-pc-windows-msvc:
+          sha256: 4b6a2024f400173f88b4a17f8956d2735197733f90dbf2972ea6d50c6125f708
+          url: https://api.workers.iii.dev/download/provider-zai/0.5.18/x86_64-pc-windows-msvc
+        x86_64-unknown-linux-gnu:
+          sha256: b6b4f8031603b29ef277561df58245bd9accd3b6b41119132dcaebaceae768bd
+          url: https://api.workers.iii.dev/download/provider-zai/0.5.18/x86_64-unknown-linux-gnu
+        x86_64-unknown-linux-musl:
+          sha256: cdbc381abeed240f6e9ad222bd20b890218df88f77f0b9c2efffc4ea925bcbc8
+          url: https://api.workers.iii.dev/download/provider-zai/0.5.18/x86_64-unknown-linux-musl
   queue:
     worker: package://queue
     requested: 0.21.26

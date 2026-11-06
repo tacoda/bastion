@@ -91,6 +91,22 @@ containers:
   provider-openai:
     worker: package://provider-openai
     version: "1.2.29"
+  # Keys for these come from Settings, through the secrets vault (D34).
+  provider-deepseek:
+    worker: package://provider-deepseek
+    version: "0.1.24"
+  provider-xai:
+    worker: package://provider-xai
+    version: "1.3.23"
+  provider-zai:
+    worker: package://provider-zai
+    version: "0.5.18"
+  provider-kimi:
+    worker: package://provider-kimi
+    version: "1.1.19"
+  provider-openrouter:
+    worker: package://provider-openrouter
+    version: "0.1.16"
   session-manager:
     worker: package://session-manager
     version: "1.0.35"

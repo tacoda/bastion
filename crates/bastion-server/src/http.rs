@@ -82,6 +82,7 @@ fn routes() -> Router<App> {
         .merge(govern_routes())
         .merge(settings_routes())
         .merge(people_routes())
+        .merge(provider_routes())
 }
 
 fn people_routes() -> Router<App> {
@@ -91,6 +92,13 @@ fn people_routes() -> Router<App> {
         .route("/people/{name}/tokens", post(token_issue))
         .route("/tokens", get(tokens))
         .route("/tokens/{id}", delete(token_revoke))
+}
+
+fn provider_routes() -> Router<App> {
+    Router::new().route("/providers", get(providers)).route(
+        "/providers/{id}/key",
+        put(provider_key_set).delete(provider_key_remove),
+    )
 }
 
 fn factory_routes() -> Router<App> {
@@ -591,6 +599,38 @@ async fn tokens(State(app): State<App>) -> Response {
 
 async fn token_revoke(State(app): State<App>, Path(id): Path<String>) -> Response {
     answer(api::people::revoke(&app.server.factory, id).await)
+}
+
+async fn providers(State(app): State<App>) -> Response {
+    answer(api::providers::providers(&*app.server.engine).await)
+}
+
+#[derive(Deserialize)]
+struct Key {
+    key: String,
+}
+
+async fn provider_key_set(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    Json(b): Json<Key>,
+) -> Response {
+    let set = api::providers::key_set(&*app.server.engine, id, b.key).await;
+    read_again(&app, set)
+}
+
+async fn provider_key_remove(State(app): State<App>, Path(id): Path<String>) -> Response {
+    let removed = api::providers::key_remove(&*app.server.engine, id).await;
+    read_again(&app, removed)
+}
+
+/// After a key changes, every page reads again: the models offered follow
+/// which providers have a key.
+fn read_again(app: &App, done: Result<(), String>) -> Response {
+    if done.is_ok() {
+        app.server.events.publish(Change::Job { id: String::new() });
+    }
+    answer(done)
 }
 
 /// What the stream sends: a change with its number, or a request to read

@@ -68,12 +68,15 @@ pub fn route(cmd: &str) -> Option<(&'static str, &'static str, Body)> {
         command::TOKEN_ISSUE => ("POST", "/people/{name}/tokens", Rest),
         command::TOKENS => ("GET", "/tokens", Empty),
         command::TOKEN_REVOKE => ("DELETE", "/tokens/{id}", Empty),
+        command::PROVIDERS => ("GET", "/providers", Empty),
+        command::PROVIDER_KEY_SET => ("PUT", "/providers/{id}/key", Rest),
+        command::PROVIDER_KEY_REMOVE => ("DELETE", "/providers/{id}/key", Empty),
         _ => return None,
     })
 }
 
 /// Every command this table routes.
-pub const ROUTED: [&str; 50] = [
+pub const ROUTED: [&str; 53] = [
     command::ENGINE_STATUS,
     command::DOCTOR,
     command::STACK_STATUS,
@@ -124,6 +127,9 @@ pub const ROUTED: [&str; 50] = [
     command::TOKEN_ISSUE,
     command::TOKENS,
     command::TOKEN_REVOKE,
+    command::PROVIDERS,
+    command::PROVIDER_KEY_SET,
+    command::PROVIDER_KEY_REMOVE,
 ];
 
 #[cfg(test)]

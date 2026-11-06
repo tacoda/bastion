@@ -1,8 +1,10 @@
 //! The factory's settings on the Settings page (PLAN.md A7): an oversight
 //! preset, the model each agent stage runs, the forge and tracker, every
-//! version with Restore, and the owner's accounts.
+//! version with Restore, the model providers' keys, and the owner's accounts.
 
-use bastion_protocol::{AccountView, ModelOption, SettingsView, VersionView, command, event};
+use bastion_protocol::{
+    AccountView, ModelOption, ProviderView, SettingsView, VersionView, command, event,
+};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::Serialize;
@@ -229,5 +231,77 @@ pub fn Accounts() -> impl IntoView {
                 }).collect_view()}
             </ul>
         </section>
+    }
+}
+
+#[derive(Serialize)]
+struct KeySet {
+    id: String,
+    key: String,
+}
+
+#[derive(Serialize)]
+struct ProviderId {
+    id: String,
+}
+
+/// The model providers and where each one's key comes from (D34). A key is
+/// sent once, to the stack's vault, and never shown again.
+#[component]
+pub fn ModelProviders() -> impl IntoView {
+    let (providers, reload) = read::<Vec<ProviderView>>(command::PROVIDERS);
+    let (note, set_note) = signal(String::new());
+    view! {
+        <section class=SECTION>
+            <h2 class="m-0 text-sm font-semibold text-muted">"Model providers"</h2>
+            <ul class="m-0 grid list-none gap-2 p-0 text-sm">
+                {move || providers.get().unwrap_or_default().into_iter().map(|p| provider_row(p, set_note, reload)).collect_view()}
+            </ul>
+            <p class="m-0 text-bad" role="alert">{note}</p>
+        </section>
+    }
+}
+
+/// One provider: where its key comes from, a field to set one, and Remove
+/// for a key set here.
+fn provider_row(p: ProviderView, note: WriteSignal<String>, reload: Callback<()>) -> impl IntoView {
+    let (key, set_key) = signal(String::new());
+    let id = p.id.clone();
+    let save = move |_| {
+        let args = KeySet {
+            id: id.clone(),
+            key: key.get(),
+        };
+        send(command::PROVIDER_KEY_SET, args, note, reload);
+        set_key.set(String::new());
+    };
+    let ok = p.source != "none";
+    let status = match p.source.as_str() {
+        "secret" => "key set here",
+        "env" => "key from the stack's environment",
+        _ => "no key",
+    };
+    let remove = (p.source == "secret").then(|| {
+        let id = p.id.clone();
+        let remove = move |_| {
+            send(
+                command::PROVIDER_KEY_REMOVE,
+                ProviderId { id: id.clone() },
+                note,
+                reload,
+            )
+        };
+        view! { <button class="text-bad hover:underline" on:click=remove>"Remove"</button> }
+    });
+    view! {
+        <li class="flex flex-wrap items-center gap-2">
+            <span class={if ok { "text-ok" } else { "text-warn" }}>{if ok { "✓" } else { "!" }}</span>
+            <strong>{p.name}</strong>
+            <span class="text-muted">{status}</span>
+            <input type="password" autocomplete="off" aria-label="API key" placeholder="API key" class=INPUT
+                prop:value=key on:input=move |e| set_key.set(event_target_value(&e)) />
+            <button class="rounded-lg border border-line px-3 py-1 hover:bg-line" on:click=save>"Set"</button>
+            {remove}
+        </li>
     }
 }

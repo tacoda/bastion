@@ -145,7 +145,8 @@ pub async fn models(cell: &FactoryCell) -> Result<Vec<ModelOption>, String> {
         .collect())
 }
 
-/// Each account Bastion uses, and whether it answers.
+/// Each account Bastion uses, and whether it answers. Model providers have
+/// their own section (D34).
 pub async fn accounts(cell: &FactoryCell) -> Result<Vec<AccountView>, String> {
     let factory = factory(cell)?;
     let github = match forge::gh(&**factory.engine(), &["api", "user", "--jq", ".login"]).await {
@@ -160,31 +161,7 @@ pub async fn accounts(cell: &FactoryCell) -> Result<Vec<AccountView>, String> {
             status: e,
         },
     };
-    let mut all = vec![github];
-    let providers = factory
-        .engine()
-        .call("bastion", "router::provider::list", json!({}))
-        .await?;
-    for p in providers["providers"].as_array().into_iter().flatten() {
-        let ok = p["configured"] == true;
-        let status = if ok {
-            format!(
-                "key from {}",
-                p["credential_source"].as_str().unwrap_or("?")
-            )
-        } else {
-            format!(
-                "no key: set {}",
-                p["credential_env_var"].as_str().unwrap_or("its key")
-            )
-        };
-        all.push(AccountView {
-            name: p["display_name"].as_str().unwrap_or_default().into(),
-            ok,
-            status,
-        });
-    }
-    Ok(all)
+    Ok(vec![github])
 }
 
 /// The GitHub repository behind a workspace's checkout.

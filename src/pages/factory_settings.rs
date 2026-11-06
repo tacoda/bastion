@@ -162,7 +162,7 @@ pub fn FactorySettings() -> impl IntoView {
     let label = "grid gap-1 text-xs text-muted";
     view! {
         <section class=SECTION>
-            <h2 class="m-0 text-sm font-semibold text-muted">"Orchestrator"</h2>
+            <h2 class="m-0 text-sm font-semibold text-muted">"Factory"</h2>
             {presets(preset)}
             <div class="grid gap-3 sm:grid-cols-2">
                 <label class=label>"Plan model"

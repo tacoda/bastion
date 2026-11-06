@@ -19,7 +19,7 @@ use crate::store::{self, Record};
 pub type FactoryCell = Arc<OnceLock<Arc<Factory>>>;
 
 /// The answer while the factory waits for the engine.
-pub const NOT_STARTED: &str = "the orchestrator starts once the engine is up; start the stack";
+pub const NOT_STARTED: &str = "the factory starts once the engine is up; start the stack";
 
 pub(super) fn factory(cell: &FactoryCell) -> Result<Arc<Factory>, String> {
     cell.get().cloned().ok_or_else(|| NOT_STARTED.into())

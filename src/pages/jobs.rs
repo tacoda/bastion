@@ -25,8 +25,9 @@ struct ServerJob {
     job: JobSummary,
 }
 
-/// Every server's jobs, and why any server could not be read.
-async fn read_all_jobs() -> (Vec<ServerJob>, String) {
+/// Every server's jobs, and why any server's could not be read. A server
+/// that cannot be read keeps the jobs last read from it, so they stay listed.
+async fn read_all_jobs(before: &[ServerJob]) -> (Vec<ServerJob>, Vec<String>) {
     let (mut all, mut errors) = (Vec::new(), Vec::new());
     for s in ipc::servers().await {
         match ipc::call_on::<Vec<JobSummary>, String>(&s.name, command::JOBS, None {}).await {
@@ -34,33 +35,49 @@ async fn read_all_jobs() -> (Vec<ServerJob>, String) {
                 server: s.name.clone(),
                 job,
             })),
-            Err(e) => errors.push(e.text()),
+            Err(e) => {
+                errors.push(format!("{}: {}", s.name, e.text()));
+                all.extend(before.iter().filter(|j| j.server == s.name).cloned());
+            }
         }
     }
     all.sort_by_key(|j| std::cmp::Reverse(j.job.created_at));
-    (all, errors.join(" "))
+    (all, errors)
 }
 
-/// Every job on every server, kept current by `job-changed`. Only the
-/// latest read lands.
-fn jobs_signal() -> (ReadSignal<Vec<ServerJob>>, ReadSignal<String>) {
+/// The jobs page's state: every job, the servers that cannot be reached,
+/// and why any reachable server's jobs could not be read.
+struct Jobs {
+    jobs: ReadSignal<Vec<ServerJob>>,
+    down: ReadSignal<Vec<String>>,
+    errors: ReadSignal<Vec<String>>,
+}
+
+/// Every job on every server, kept current by `job-changed`, and the servers
+/// that cannot be reached now. Only the latest read lands.
+fn jobs_signal() -> Jobs {
     let (jobs, set_jobs) = signal(Vec::<ServerJob>::new());
-    let (error, set_error) = signal(String::new());
+    let (down, set_down) = signal(ipc::unreachable());
+    let (errors, set_errors) = signal(Vec::<String>::new());
     let latest = StoredValue::new(0u64);
     let reload = move || {
         let n = latest.get_value() + 1;
         latest.set_value(n);
         spawn_local(async move {
-            let (all, errors) = read_all_jobs().await;
+            let (all, failed) = read_all_jobs(&jobs.get_untracked()).await;
             if latest.get_value() == n {
-                set_error.set(errors);
                 set_jobs.set(all);
+                set_errors.set(failed);
             }
         });
     };
     ipc::listen(event::JOB_CHANGED, move |_: String| reload());
+    ipc::listen(ipc::REACH_CHANGED, move |_: String| {
+        set_down.set(ipc::unreachable());
+        reload();
+    });
     reload();
-    (jobs, error)
+    Jobs { jobs, down, errors }
 }
 
 pub fn workspaces_signal() -> ReadSignal<Vec<Workspace>> {
@@ -82,13 +99,15 @@ pub fn workspaces_signal() -> ReadSignal<Vec<Workspace>> {
     workspaces
 }
 
-fn row(sj: ServerJob) -> impl IntoView {
+fn row(sj: ServerJob, down: bool) -> impl IntoView {
     let go = nav();
     let ServerJob { server, job } = sj;
     let (symbol, color) = mark(&job.state);
+    let dim = if down { "opacity-60" } else { "" };
+    let unreachable = if down { " · unreachable" } else { "" };
     let (id, on) = (job.id.clone(), server.clone());
     view! {
-        <li class="border-t border-line first:border-t-0">
+        <li class={format!("border-t border-line first:border-t-0 {dim}")}>
             <button class="grid w-full grid-cols-[24px_1fr_auto] items-start gap-x-3 px-3 py-2.5 text-left hover:bg-line"
                 on:click=move |_| {
                     // The job's page talks to the server it runs on.
@@ -99,7 +118,7 @@ fn row(sj: ServerJob) -> impl IntoView {
                 <span class="grid min-w-0 gap-0.5">
                     <span class="truncate font-semibold">{job.request.clone()}</span>
                     <span class="text-xs text-muted">
-                        {format!("{server} · {} · {} · {} · {}", job.workspace, job.id, job.state.replace('_', " "), ago(job.created_at))}
+                        {format!("{server}{unreachable} · {} · {} · {} · {}", job.workspace, job.id, job.state.replace('_', " "), ago(job.created_at))}
                     </span>
                 </span>
                 <span class="rounded-full border border-line px-2 py-0.5 text-xs capitalize text-muted">{job.stage.clone()}</span>
@@ -108,7 +127,7 @@ fn row(sj: ServerJob) -> impl IntoView {
     }
 }
 
-fn group(title: String, jobs: Vec<ServerJob>, accent: bool) -> impl IntoView {
+fn group(title: String, jobs: Vec<ServerJob>, down: Vec<String>, accent: bool) -> impl IntoView {
     let border = if accent { "border-warn" } else { "border-line" };
     view! {
         <section class={format!("mb-4 rounded-xl border {border} bg-panel")}>
@@ -116,9 +135,39 @@ fn group(title: String, jobs: Vec<ServerJob>, accent: bool) -> impl IntoView {
             {if jobs.is_empty() {
                 view! { <p class="m-0 px-3 py-2.5 text-sm text-muted">"Nothing here."</p> }.into_any()
             } else {
-                view! { <ul class="m-0 list-none p-0">{jobs.into_iter().map(row).collect_view()}</ul> }.into_any()
+                let rows = jobs.into_iter().map(|j| {
+                    let gone = down.contains(&j.server);
+                    row(j, gone)
+                });
+                view! { <ul class="m-0 list-none p-0">{rows.collect_view()}</ul> }.into_any()
             }}
         </section>
+    }
+}
+
+/// What the page says about servers it cannot read: unreachable ones first,
+/// then why a reachable one's jobs did not read.
+fn page_note(down: &[String], errors: &[String]) -> String {
+    let failed = errors
+        .iter()
+        .filter(|e| !down.iter().any(|d| e.starts_with(&format!("{d}: "))));
+    let mut lines: Vec<String> = vec![unreachable_note(down)];
+    lines.extend(failed.cloned());
+    lines.retain(|l| !l.is_empty());
+    lines.join(" ")
+}
+
+/// What the page says while servers cannot be reached.
+fn unreachable_note(down: &[String]) -> String {
+    match down {
+        [] => String::new(),
+        [one] => {
+            format!("The Bastion server {one} cannot be reached. Its jobs show what was last read.")
+        }
+        many => format!(
+            "The Bastion servers {} cannot be reached. Their jobs show what was last read.",
+            many.join(", ")
+        ),
     }
 }
 
@@ -130,7 +179,7 @@ fn place(j: &ServerJob) -> String {
 #[component]
 pub fn JobsPage() -> impl IntoView {
     let go = nav();
-    let (jobs, error) = jobs_signal();
+    let Jobs { jobs, down, errors } = jobs_signal();
     // The filter's choices: each Bastion server and workspace that has jobs.
     let places = move || {
         let mut all: Vec<String> = jobs.get().iter().map(place).collect();
@@ -162,7 +211,7 @@ pub fn JobsPage() -> impl IntoView {
             <button class="rounded-lg bg-primary px-3 py-2 font-semibold text-white hover:bg-primary-hover"
                 on:click=move |_| go.set(Route::NewRequest)>"New request"</button>
         </div>
-        <p class="text-bad" role="alert">{error}</p>
+        <p class="text-bad" role="alert">{move || page_note(&down.get(), &errors.get())}</p>
         <div class="mb-4 flex flex-wrap gap-3 text-sm" role="search">
             <label class="grid gap-1 text-muted">"Workspace"
                 <select class=input on:change=move |e| set_workspace.set(event_target_value(&e))>
@@ -181,14 +230,14 @@ pub fn JobsPage() -> impl IntoView {
             let done: Vec<_> = all.iter().filter(|j| FINISHED.contains(&j.job.state.as_str())).cloned().collect();
             let done_count = done.len();
             view! {
-                {(!waiting.is_empty()).then(|| group(format!("Waiting for you ({})", waiting.len()), waiting, true))}
-                {group(format!("In progress ({})", active.len()), active, false)}
+                {(!waiting.is_empty()).then(|| group(format!("Waiting for you ({})", waiting.len()), waiting, down.get(), true))}
+                {group(format!("In progress ({})", active.len()), active, down.get(), false)}
                 <button class="mb-2 text-sm text-muted hover:text-ink" aria-expanded=move || show_finished.get().to_string()
                     on:click=move |_| set_show_finished.update(|s| *s = !*s)>
                     {move || format!("{} Finished ({done_count})", if show_finished.get() { "▾" } else { "▸" })}
                 </button>
                 <Show when=move || show_finished.get()>
-                    {group(format!("Finished ({done_count})"), done.clone(), false)}
+                    {group(format!("Finished ({done_count})"), done.clone(), down.get(), false)}
                 </Show>
             }
         }}
@@ -328,5 +377,33 @@ fn FromIssue(workspace: Signal<String>) -> impl IntoView {
             </ul>
             <p class="m-0 text-sm text-muted" role="status">{note}</p>
         </section>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_page_names_each_server_it_cannot_reach() {
+        assert_eq!(unreachable_note(&[]), "");
+        assert!(unreachable_note(&["Two".into()]).starts_with("The Bastion server Two cannot"));
+        let both = unreachable_note(&["Two".into(), "box".into()]);
+        assert!(
+            both.starts_with("The Bastion servers Two, box cannot"),
+            "{both}"
+        );
+    }
+
+    #[test]
+    fn a_reachable_server_that_fails_to_read_still_says_why() {
+        let errors = vec![
+            "local: no database".to_string(),
+            "Two: cannot be reached".to_string(),
+        ];
+        let note = page_note(&["Two".into()], &errors);
+        assert!(note.contains("Two cannot be reached"), "{note}");
+        assert!(note.contains("local: no database"), "{note}");
+        assert!(!note.contains("Two: cannot"), "{note}");
     }
 }

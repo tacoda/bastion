@@ -132,6 +132,34 @@ thread_local! {
     static CURRENT: RefCell<String> = RefCell::new(LOCAL.to_string());
     /// The servers whose events are followed.
     static FOLLOWED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// The servers whose event stream is down, so the pages cannot trust
+    /// what they last read from them.
+    static DOWN: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+/// A page-only event: a Bastion server became reachable, or stopped being.
+pub const REACH_CHANGED: &str = "reach-changed";
+
+/// The Bastion servers that cannot be reached now.
+pub fn unreachable() -> Vec<String> {
+    DOWN.with(|d| d.borrow().clone())
+}
+
+/// Record whether `name` answers, and tell the pages when that changes.
+fn reachable(name: &str, up: bool) {
+    let changed = DOWN.with(|d| {
+        let mut d = d.borrow_mut();
+        let was_down = d.iter().any(|n| n == name);
+        if up {
+            d.retain(|n| n != name);
+        } else if !was_down {
+            d.push(name.to_string());
+        }
+        was_down == up
+    });
+    if changed {
+        dispatch(REACH_CHANGED, Value::String(name.to_string()));
+    }
 }
 
 /// Every Bastion server the app knows, `local` first.
@@ -385,6 +413,7 @@ impl Feed {
                 response.status()
             )));
         }
+        reachable(&self.server, true);
         // A reconnect may have missed changes the server did not replay.
         if self.last.is_some() {
             self.resync();
@@ -421,6 +450,7 @@ async fn follow(name: String) {
         if let Err(e) = feed.stream(&s).await {
             web_sys::console::warn_1(&e);
         }
+        reachable(&feed.server, false);
         let down = EngineStatus {
             url: s.url.clone(),
             link: Link::Down,
@@ -453,6 +483,15 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn a_server_goes_down_and_comes_back_once_each() {
+        reachable("two", false);
+        reachable("two", false);
+        assert_eq!(unreachable(), ["two"]);
+        reachable("two", true);
+        assert!(unreachable().is_empty());
+    }
 
     #[test]
     fn path_arguments_fill_the_path_and_leave_the_body() {

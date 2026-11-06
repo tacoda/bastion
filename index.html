@@ -3,102 +3,96 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bastion · a software factory on your own machine</title>
-<meta name="description" content="Bastion is a software factory that runs on your own machine. A request goes in, agents work it through a pipeline of stages, and a reviewed change comes out. Nothing merges itself.">
+<title>Bastion · a software factory for agent work</title>
+<meta name="description" content="Bastion is a software factory for agent work. A request goes in, agents work it through a pipeline of stages, and a reviewed change comes out. Nothing merges itself.">
 <meta name="voice-register" content="informational">
 <meta name="voice-first-person" content="exempt: product page, every claim comes from PLAN.md and its recorded exits, not from a story of mine">
 <style>
 :root {
   --bg:#0f1117; --panel:#171a23; --panel2:#12141c; --sel:#1f2430;
-  --fg:#d7dce5; --dim:#7b8494; --line:#262b38;
+  --fg:#d7dce5; --dim:#8a93a3; --line:#262b38;
   --purple:#a78bfa; --lit:#fb923c; --ok:#4ade80; --bad:#f87171;
 }
 * { box-sizing: border-box; }
 html { color-scheme: dark; }
-body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.75 ui-monospace, SFMono-Regular, Menlo, monospace; }
 a { color: var(--purple); text-decoration: none; }
 a:hover { text-decoration: underline; }
-.app { max-width: 1080px; margin: 0 auto; padding: 16px; }
-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
-header nav { display: flex; gap: 16px; flex-wrap: wrap; }
+.app { max-width: 1080px; margin: 0 auto; padding: 24px; }
+header { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+header nav { display: flex; gap: 24px; flex-wrap: wrap; }
 .brand b { color: var(--purple); }
 .brand span { color: var(--dim); }
-section { padding: 32px 0; border-bottom: 1px solid var(--line); }
-h1 { font-size: 22px; line-height: 1.3; margin: 0 0 12px; font-weight: 600; }
-h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); margin: 0 0 12px; font-weight: 600; }
-h3 { font-size: 12px; color: var(--dim); margin: 0 0 8px; font-weight: 600; }
-p { margin: 0 0 12px; max-width: 72ch; }
-.lede { color: var(--fg); max-width: 68ch; }
-.facts { color: var(--dim); margin-top: 16px; }
-.cta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 20px; }
-.btn { display: inline-block; padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--fg); }
+section { padding: 72px 0; border-bottom: 1px solid var(--line); }
+h1 { font-size: 32px; line-height: 1.25; margin: 0 0 24px; font-weight: 600; max-width: 22ch; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .1em; color: var(--dim); margin: 0 0 16px; font-weight: 600; }
+.title { font-size: 22px; line-height: 1.35; margin: 0 0 24px; font-weight: 600; max-width: 34ch; }
+h3 { font-size: 15px; margin: 0 0 8px; font-weight: 600; }
+p { margin: 0 0 16px; max-width: 64ch; }
+.lede { font-size: 17px; max-width: 60ch; }
+.facts { color: var(--dim); font-size: 13px; margin-top: 24px; }
+.cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 32px; }
+.btn { display: inline-block; padding: 10px 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--fg); }
 .btn:hover { text-decoration: none; border-color: var(--lit); }
 .btn.primary { background: var(--purple); border-color: var(--purple); color: #0f1117; font-weight: 600; }
 code { color: #e2e8f0; }
-pre { margin: 0 0 12px; padding: 12px; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; }
-.caption { color: var(--dim); font-size: 11px; margin-top: 8px; }
-.split { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+pre { margin: 0 0 16px; padding: 20px; background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; font-size: 14px; }
+.caption { color: var(--dim); font-size: 13px; margin-top: 12px; }
 
 /* Jobs board illustration */
-.kanban { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 16px; }
-.col { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
-.col h3 { display: flex; justify-content: space-between; }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px; margin-bottom: 8px; }
+.kanban { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 56px; }
+.col { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.col h3 { display: flex; justify-content: space-between; color: var(--dim); font-size: 13px; margin-bottom: 12px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; margin-bottom: 12px; }
 .card:last-child { margin-bottom: 0; }
 .card.running { border-color: var(--lit); }
 .card.blocked { border-color: var(--bad); }
-.card .t { display: block; margin-bottom: 4px; }
-.card .m { color: var(--dim); font-size: 11px; }
-.badge { display: inline-block; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; padding: 1px 6px; border-radius: 9px; margin-right: 6px; }
+.card .t { display: block; margin-bottom: 6px; }
+.card .m { color: var(--dim); font-size: 12px; }
+.badge { display: inline-block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; padding: 1px 8px; border-radius: 9px; margin-right: 8px; }
 .b-needs { background: #78350f; color: #fde68a; }
 .b-run { background: #1e293b; color: var(--dim); }
 .b-done { background: #064e3b; color: #a7f3d0; }
 .b-fail { background: #7f1d1d; color: #fecaca; }
 
-/* Pipeline strip */
-.flow { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
-.step { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+/* Problem and solution panels */
+.grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-top: 32px; }
+.panel { background: var(--panel2); border: 1px solid var(--line); border-left: 3px solid var(--line); border-radius: 10px; padding: 24px; }
+.panel p { margin: 0; color: var(--dim); }
+.panel.bad { border-left-color: var(--bad); }
+.panel.ok { border-left-color: var(--ok); }
+
+/* Use cases */
+.cases { display: grid; gap: 20px; margin-top: 32px; }
+.case { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: center; background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 28px; }
+.case p { margin: 0; color: var(--dim); }
+.case pre { margin: 0; }
+.case .k { color: var(--lit); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8px; display: block; }
+.flow { display: flex; flex-wrap: wrap; gap: 8px; }
+.step { padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); font-size: 13px; }
 .step.done { border-color: var(--ok); color: var(--ok); }
 .step.lit { border-color: var(--lit); color: var(--lit); }
-.step.person::before { content: "◆ "; color: var(--dim); }
-
-/* Ladders */
-.ladder { border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); }
-.rung { display: flex; gap: 12px; padding: 8px 12px; border-left: 3px solid var(--line); border-bottom: 1px solid var(--line); }
-.rung:last-child { border-bottom: 0; }
-.rung b { min-width: 9ch; }
-.rung span { color: var(--dim); }
-.rung.lo { border-left-color: var(--dim); }
-.rung.mid { border-left-color: var(--lit); }
-.rung.hi { border-left-color: var(--bad); }
-.rung.ok { border-left-color: var(--ok); }
-
-/* Held call */
-.intr { border: 1px solid #7f1d1d; background: #1a0f0f; border-radius: 8px; padding: 12px; margin-top: 16px; }
-.intr .row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.intr .btns { display: flex; gap: 6px; margin-top: 8px; }
-.intr .btns span { padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); }
-.intr .btns .go { border-color: var(--ok); color: var(--ok); }
-.intr .btns .no { border-color: var(--bad); color: var(--bad); }
-
-/* Eval table */
-table { width: 100%; border-collapse: collapse; margin: 12px 0; }
-th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
-th { color: var(--dim); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
-td.num { font-variant-numeric: tabular-nums; }
-.dl { display: block; padding: 0 8px; }
+.dl { display: block; padding: 2px 10px; font-size: 13px; }
 .dl.add { background: #062e1f; color: #a7f3d0; }
 .dl.del { background: #2e0d0d; color: #fecaca; }
 .dl.hunk { color: #7dd3fc; }
+.note { border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; font-size: 13px; background: var(--panel); }
+.note b { color: var(--purple); font-weight: 600; }
+.note span { color: var(--dim); }
 
-ul.plain { list-style: none; padding: 0; margin: 0 0 12px; }
-ul.plain li { padding: 6px 0; border-bottom: 1px solid var(--line); }
+ul.plain { list-style: none; padding: 0; margin: 0 0 16px; max-width: 72ch; }
+ul.plain li { padding: 12px 0; border-bottom: 1px solid var(--line); }
 ul.plain li:last-child { border-bottom: 0; }
 ul.plain li b { color: var(--purple); font-weight: 600; }
-footer { padding: 24px 0; color: var(--dim); }
+footer { padding: 48px 0; color: var(--dim); }
 
 @media (max-width: 760px) {
-  .kanban, .split { grid-template-columns: 1fr; }
+  body { font-size: 14px; }
+  .app { padding: 16px; }
+  section { padding: 48px 0; }
+  h1 { font-size: 26px; }
+  .kanban, .grid, .case { grid-template-columns: 1fr; }
+  .case { gap: 20px; padding: 20px; }
   header { flex-direction: column; align-items: flex-start; }
 }
 </style>
@@ -109,21 +103,20 @@ footer { padding: 24px 0; color: var(--dim); }
 <header>
   <div class="brand"><b>bastion</b> <span>· software factory</span></div>
   <nav>
-    <a href="#how">how a job runs</a>
-    <a href="#governance">governance</a>
-    <a href="#try">try it</a>
+    <a href="#problem">problem</a>
+    <a href="#use-cases">use cases</a>
+    <a href="#start">get started</a>
     <a href="https://github.com/tacoda/bastion">github</a>
   </nav>
 </header>
 
 <section>
-  <h1>A software factory that runs on your own machine.</h1>
-  <p class="lede">A request goes in, agents work it through a pipeline of stages, and a reviewed change comes out. Nothing merges itself: a person decides every merge. Each constraint and capability is a hook decision you can promote, demote, and test with an eval. It's early, though. The factory runs today, and the full pipeline is the phase in progress.</p>
-  <p class="facts">Rust · Tauri 2 + Leptos · on <a href="https://iii.dev">iii</a> 0.25.0 · macOS and Linux · one owner, no sign-in · status: phase A8, the full pipeline</p>
+  <h1>A software factory where nothing merges itself.</h1>
+  <p class="lede">Give Bastion a request. Agents work it through a pipeline in a sandbox, and a change comes back for a person to judge and merge. It's early, and the full pipeline is still in progress.</p>
+  <p class="facts">Rust · Tauri 2 + Leptos · on <a href="https://iii.dev">iii</a> 0.25.0 · macOS and Linux</p>
   <div class="cta">
-    <a class="btn primary" href="#try">Try it</a>
+    <a class="btn primary" href="#start">Get started</a>
     <a class="btn" href="https://github.com/tacoda/bastion">Source</a>
-    <a class="btn" href="https://github.com/tacoda/bastion/blob/main/PLAN.md">Read the plan</a>
   </div>
 
   <div class="kanban" aria-label="Illustration of the Jobs page">
@@ -143,115 +136,75 @@ footer { padding: 24px 0; color: var(--dim); }
       <div class="card"><span class="t">subtract</span><span class="badge b-done">landed</span><span class="m">local · demo-a · 0e30e2f</span></div>
     </div>
   </div>
-  <p class="caption">An illustration of the Jobs page. Jobs that wait on you come first, and each one names its Bastion server.</p>
+  <p class="caption">An illustration of the Jobs page. The jobs that wait on you come first.</p>
 </section>
 
-<section id="how">
-  <h2>How a job runs</h2>
-  <p>A job is one request against one repository, like a ticket. It gets its own worktree, its own sandbox VM, and one pipeline run. The smallest pipeline has five stages:</p>
-  <div class="flow">
-    <span class="step done">plan</span>
-    <span class="step done person">approve</span>
-    <span class="step lit">build</span>
-    <span class="step person">review</span>
-    <span class="step person">land</span>
+<section id="problem">
+  <h2>The problem</h2>
+  <p class="title">Agents write code fast. Trusting what they wrote is the slow part.</p>
+  <div class="grid">
+    <div class="panel bad"><h3>The report isn't the work</h3><p>An agent can say it finished work that its commits don't hold. The gap shows up in the diff, if anyone reads it.</p></div>
+    <div class="panel bad"><h3>Rules in a prompt drift</h3><p>A prompt can say "keep the tests," but nothing measures whether the agent listened. So there's no way to tell if a stricter rule helps or only costs more.</p></div>
+    <div class="panel bad"><h3>The agent holds your keys</h3><p>An agent that can push and merge has your credentials in its run. And a run that has seen a credential can't be trusted again.</p></div>
+    <div class="panel bad"><h3>Sessions don't add up</h3><p>Five agents in five terminals is five things to watch, and nothing says which one is waiting.</p></div>
   </div>
-  <p>Agent stages run turns in the sandbox. Person stages, marked ◆, are checkpoints where you decide. Each checkpoint has a dial: <code>ask</code> waits for you, <code>hold</code> waits 30 minutes and then goes on, and <code>auto</code> goes on at once. Merge never goes below <code>hold</code>.</p>
-  <p>Every stage leaves an artifact you can judge, such as a plan, a test result, or a diff. If you comment on one, the comment goes to the agent word for word as its next brief. So a line comment on <code>calc.py:5</code> comes back answered in the next diff. These fix loops stop after a set count, or sooner when the same refusal repeats.</p>
-  <p>The full pipeline adds scope, discovery, acceptance tests that must fail before the change and pass after it, a refactor pass, and a code review turn. That work is phase A8, and it's still in progress.</p>
 </section>
 
-<section id="governance">
-  <h2>Governance you can measure</h2>
-  <p>A rule that lives only in a prompt can't be measured. So in Bastion every rule is a hook decision, and its position on a ladder is data. You move a rule one rung at a time, and the audit log records each move.</p>
-  <div class="split">
-    <div>
-      <h3>Constraint: what a turn must or must not do</h3>
-      <div class="ladder">
-        <div class="rung lo"><b>told</b><span>The rule is in the brief.</span></div>
-        <div class="rung mid"><b>checked</b><span>A hook records each breach.</span></div>
-        <div class="rung hi"><b>enforced</b><span>A hook refuses the call.</span></div>
-      </div>
+<section>
+  <h2>The solution</h2>
+  <p class="title">Treat each request as a job, and keep every decision that matters with you.</p>
+  <div class="grid">
+    <div class="panel ok"><h3>One board for every job</h3><p>Each request becomes a job with its own worktree and sandbox VM. The Jobs page shows them all, with the ones waiting on you first.</p></div>
+    <div class="panel ok"><h3>You judge artifacts, not claims</h3><p>Every stage leaves something you can check, such as a plan, a test result, or a diff. A comment on one goes to the agent as its next brief.</p></div>
+    <div class="panel ok"><h3>Rules you can measure</h3><p>Every rule is a hook decision with a level: told, checked, or enforced. Run an eval to see what a stricter level does before you commit to it.</p></div>
+    <div class="panel ok"><h3>Keys stay out of the sandbox</h3><p>Agents run in sandbox VMs that never see a credential. Pushes and pull requests happen on the host, and a tamper-evident log records every decision.</p></div>
+  </div>
+</section>
+
+<section id="use-cases">
+  <h2>Use cases</h2>
+  <p class="title">What you'd hand to Bastion this week.</p>
+  <div class="cases">
+    <div class="case">
+      <div><span class="k">Issue to pull request</span><h3>Clear small tickets from your backlog</h3><p>Start a job from a GitHub issue. Bastion opens the pull request and links it back. If CI fails, Bastion sends the agent one more turn with the failing log. When you approve the merge, the issue closes.</p></div>
+      <div class="flow"><span class="step done">issue #1</span><span class="step done">plan</span><span class="step done">build</span><span class="step done">PR #2</span><span class="step lit">CI fix</span><span class="step">merge</span></div>
     </div>
-    <div>
-      <h3>Capability: what a turn may call</h3>
-      <div class="ladder">
-        <div class="rung hi"><b>denied</b><span>The gate refuses the call.</span></div>
-        <div class="rung mid"><b>ask</b><span>The call waits for you.</span></div>
-        <div class="rung ok"><b>allowed</b><span>The call runs.</span></div>
-      </div>
+    <div class="case">
+      <div><span class="k">Review by diff</span><h3>Steer the work with line comments</h3><p>Read the proposed diff and leave a comment on a line. The agent gets it word for word, and the next diff answers it, with no chat window.</p></div>
+      <pre><span class="dl hunk">calc.py:5 · "raise on zero"</span><span class="dl del">-    return a / b</span><span class="dl add">+    if b == 0:</span><span class="dl add">+        raise ZeroDivisionError("b is zero")</span><span class="dl add">+    return a / b</span></pre>
+    </div>
+    <div class="case">
+      <div><span class="k">Your rules, enforced</span><h3>Hold agents to your repository's charter</h3><p>Bastion reads the rules and hooks your repository already has in <code>.claude/settings.json</code>. So a hook that refuses <code>rm</code> refuses it inside the sandbox too.</p></div>
+      <div class="note"><b>refused</b> · <code>rm -f /work/repo/notes.txt</code><br><span>PreToolUse hook · exit 2</span></div>
+    </div>
+    <div class="case">
+      <div><span class="k">Eval before you enforce</span><h3>Find out what a stricter rule costs</h3><p>Run the same requests with a rule told and with it enforced, then compare. In one small run of three requests, enforcing a rule cut tool calls from 33 to 17 at the same grade.</p></div>
+      <div class="note"><b>told → enforced</b><br><span>calls 33 → 17 · cost $0.0344 → $0.0207 · grade 7 → 7</span></div>
     </div>
   </div>
-  <div class="intr" aria-label="Illustration of a held call">
-    <div class="row"><span><span class="badge b-needs">held</span>plan turn wants to write <code>notes.md</code></span><span style="color:var(--dim)">capability: ask</span></div>
-    <div class="btns"><span class="go">Allow once</span><span class="no">Refuse</span></div>
-  </div>
-  <p class="caption">A held call. Allow once runs exactly that call. Refuse sends the refusal back to the agent.</p>
-  <p style="margin-top:16px">Rules come from three layers. The charter is the repository's own, read from its <code>.claude/settings.json</code> and hooks. Then the harness binds each call in a turn, and the factory binds review, land, pull requests, and merges. You edit the harness and factory rules on their pages while jobs run, and the gate reads them again before each turn.</p>
-</section>
-
-<section>
-  <h2>Evals that show what a change does</h2>
-  <p>An eval runs two harness configurations on the same requests and the same repository snapshot. Then it reports the difference, with the hook decisions behind it. Trial jobs stop at review, so nothing lands.</p>
-  <p>In one recorded run, three requests each asked for a <code>wc</code> count. Arm A had <code>no-wc</code> told, and arm B had it enforced. All six runs reached review.</p>
-  <table>
-    <thead><tr><th>Measure</th><th>A: told</th><th>B: enforced</th></tr></thead>
-    <tbody>
-      <tr><td>Refused calls</td><td class="num">0</td><td class="num">5</td></tr>
-      <tr><td>Review findings</td><td class="num">2</td><td class="num">0</td></tr>
-      <tr><td>Turns</td><td class="num">39</td><td class="num">28</td></tr>
-      <tr><td>Tool calls</td><td class="num">33</td><td class="num">17</td></tr>
-      <tr><td>Cost</td><td class="num">$0.0344</td><td class="num">$0.0207</td></tr>
-      <tr><td>Grade</td><td class="num">7</td><td class="num">7</td></tr>
-    </tbody>
-  </table>
-  <p>Each refused call links to its audit entry. Apply B then promoted the rule, and the audit log recorded the move with the eval behind it. Three requests is a small sample, so read this as one result, not a benchmark.</p>
-</section>
-
-<section>
-  <h2>An audit record that notices tampering</h2>
-  <p>The audit log is a hash chain with one writer. Each entry carries an HMAC-SHA256 of its fields and of the entry before it. The key lives in the macOS Keychain, not in the database, so whoever can edit the database can't recompute the chain.</p>
-<pre><span class="dl hunk">audit log · verify</span><span class="dl add">verified · 335 entries</span><span class="dl hunk">one byte of entry 20 changed · verify</span><span class="dl del">failed at entry 20</span></pre>
-  <p class="caption">An illustration of two checks from a recorded run. Verify runs on the Audit Log page.</p>
-  <p>The limits matter too. The chain detects a change, but it can't stop one, and it can't tell when someone cuts entries from the end. A remote append-only copy would close that gap, and that copy doesn't exist yet.</p>
-</section>
-
-<section>
-  <h2>Bastion servers</h2>
-  <p>The factory runs in <code>bastion-server</code>, one Rust binary. The app is a client that shows state and sends your decisions, so jobs keep moving with the window closed. The app starts a server on this machine, called <code>local</code>. You can add other Bastion servers, and each one holds its own repositories, each with its own setup, checks, and tests.</p>
-  <p>You pick the server when you start a job. The Jobs page lists the jobs of every server, and it says when one can't be reached.</p>
-  <p>Agent turns run in <code>iii-sandbox</code> VMs, and a credential never enters a VM. That is why pushes and pull requests happen on the host. And the engine listens on loopback only.</p>
+  <p class="caption">The diff is an illustration. The refused call and the eval numbers come from recorded runs.</p>
 </section>
 
 <section>
   <h2>What it is not</h2>
   <ul class="plain">
     <li><b>Not an editor.</b> The only code you see is the diff a job proposes. "Open in editor" hands the worktree to your own editor.</li>
-    <li><b>Not an agent chat.</b> You talk to a job through its artifacts and checkpoints, not a prompt box.</li>
-    <li><b>Not multi-user.</b> One owner, no sign-in. The actor on each record is your <code>git config user.name</code>.</li>
-    <li><b>Not hosted.</b> It runs on your machine, or on a box you own.</li>
+    <li><b>Not an agent chat.</b> You talk to a job through its artifacts and checkpoints.</li>
     <li><b>Not Windows.</b> Sandbox VMs need Apple Silicon or Linux with <code>/dev/kvm</code>.</li>
   </ul>
 </section>
 
-<section id="try">
-  <h2>Try it</h2>
-  <p>You need these first:</p>
-  <ul class="plain">
-    <li>Rust from <code>rust-toolchain.toml</code> (rustup picks it up), and the <code>wasm32-unknown-unknown</code> target.</li>
-    <li><code>cargo install tauri-cli trunk</code></li>
-    <li><code>iii</code> 0.25.0 on your <code>PATH</code>.</li>
-    <li>A model provider key, such as <code>ANTHROPIC_API_KEY</code> or <code>OPENAI_API_KEY</code>, in the environment you start Bastion from.</li>
-    <li><code>gh</code>, signed in, for pushes and pull requests. Landing locally works without it.</li>
-  </ul>
+<section id="start">
+  <h2>Get started</h2>
+  <p>You need Rust, <code>iii</code> 0.25.0, and a model provider key such as <code>ANTHROPIC_API_KEY</code>. The <a href="https://github.com/tacoda/bastion#what-you-need">README</a> lists the rest.</p>
 <pre>git clone https://github.com/tacoda/bastion
 cd bastion
 cargo tauri dev</pre>
-  <p>Then go to <b>Engine</b> and press <b>Start</b>. Bastion runs Doctor and brings up the stack. If something is missing, Doctor names it and says how to fix it, and a failed required check stops the start.</p>
+  <p>Then go to <b>Engine</b> and press <b>Start</b>. If something is missing, Doctor names it and says how to fix it.</p>
 </section>
 
 <footer>
-  <p>Start one job on a small repository this week, and comment on its plan before you approve it. <a href="https://github.com/tacoda/bastion/blob/main/PLAN.md">PLAN.md</a> has the phases and says which layer owns what.</p>
+  <p>Start one job on a small repository this week, and comment on its plan before you approve it.</p>
   <p>Bastion is by <a href="https://www.tacoda.dev">Ian Johnson</a> · <a href="https://github.com/tacoda/bastion">github.com/tacoda/bastion</a></p>
 </footer>
 

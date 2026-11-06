@@ -148,7 +148,7 @@ fn vm_commands(rig: &Rig) -> Vec<String> {
 #[test]
 fn a_full_request_prepares_and_its_read_only_turns_put_the_tree_back_to_a_tag() {
     let rig = rig();
-    tauri::async_runtime::block_on(async {
+    crate::rt::block_on(async {
         let id = rig
             .factory
             .submit_with(
@@ -187,7 +187,7 @@ fn a_full_request_prepares_and_its_read_only_turns_put_the_tree_back_to_a_tag() 
 #[test]
 fn checks_that_pass_before_the_build_go_to_falsify_and_one_that_stays_green_goes_back_to_specify() {
     let rig = rig();
-    tauri::async_runtime::block_on(async {
+    crate::rt::block_on(async {
         let mut job =
             Job::new("j1".into(), "w".into(), "Add a health check".into(), 1).on(Pipeline::Full);
         (job.stage, job.state) = (Stage::Baseline, State::Running);
@@ -232,7 +232,7 @@ fn checks_that_pass_before_the_build_go_to_falsify_and_one_that_stays_green_goes
 #[test]
 fn a_request_runs_the_short_pipeline_to_landed() {
     let rig = rig();
-    tauri::async_runtime::block_on(async {
+    crate::rt::block_on(async {
         let id = rig.factory.submit("w", "Add a health check").await.unwrap();
         until(&rig, &id, Stage::Plan, State::Running).await;
         let record = rig.store.load(&id).await.unwrap();
@@ -332,7 +332,7 @@ fn a_failed_provision_fails_the_job_with_its_reason() {
         engine,
         store,
     };
-    tauri::async_runtime::block_on(async {
+    crate::rt::block_on(async {
         let id = rig.factory.submit("w", "x").await.unwrap();
         until(&rig, &id, Stage::Plan, State::Failed).await;
         let job = rig.store.load(&id).await.unwrap().job;
@@ -348,7 +348,7 @@ fn an_auto_approve_dial_skips_the_owner_at_approve() {
         review: bastion_core::Dial::Ask,
         ..bastion_core::Dials::default()
     };
-    tauri::async_runtime::block_on(async {
+    crate::rt::block_on(async {
         let id = rig.factory.submit("w", "x").await.unwrap();
         until(&rig, &id, Stage::Plan, State::Running).await;
         finish_turn(&rig, &id).await;
@@ -374,7 +374,7 @@ fn a_trial_runs_from_its_eval_commit_under_its_arm_and_stops_at_review() {
         id: "keep-tests".into(),
         rung: Enforcement::Enforced,
     }];
-    tauri::async_runtime::block_on(async {
+    crate::rt::block_on(async {
         rig.store.add_eval(&e, &[], &b).await.unwrap();
         let run = crate::eval_store::EvalRun {
             eval: "e1".into(),
@@ -468,7 +468,7 @@ fn with_github_as_the_forge_a_reviewed_change_goes_up_as_a_pull_request_and_merg
 
     let pr = "https://github.com/o/r/pull/1";
     let rig = github_rig(pr);
-    tauri::async_runtime::block_on(async {
+    crate::rt::block_on(async {
         let github = Settings {
             forge: Forge::Github,
             ..Settings::default()

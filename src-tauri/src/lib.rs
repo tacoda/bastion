@@ -1,23 +1,14 @@
 //! Bastion's Rust core. The pages reach the engine only through these commands
 //! (PLAN.md D9), and the engine reaches the pages only as events (D10).
 
-mod audit_log;
-mod charter;
 mod commands;
-mod console;
-mod doctor;
-mod engine;
-mod eval_store;
-mod evals;
-mod factory;
-mod forge;
-mod gate;
-mod machine;
 mod profile;
-mod settings_store;
-mod spec;
-mod stack;
-mod store;
+
+// The server's modules, under the paths the commands already use (S1).
+use bastion_server::{
+    charter, console, doctor, engine, eval_store, evals, factory, forge, machine, settings_store,
+    stack, store,
+};
 
 use std::sync::Arc;
 
@@ -61,7 +52,7 @@ fn start_factory(
     // The first-run rules and grants are data the stack carries (D26).
     let seed = std::fs::read_to_string(format!("{CHECKOUT}/seed/governance.sql"))
         .map_err(|e| format!("seed/governance.sql: {e}"))?;
-    tauri::async_runtime::spawn(async move {
+    bastion_server::rt::spawn(async move {
         loop {
             if engine.link() == Link::Up {
                 match SqlStore::open(engine.clone(), &seed).await {

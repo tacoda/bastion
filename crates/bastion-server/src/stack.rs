@@ -159,7 +159,7 @@ mod tests {
 
     fn start(machine: &FakeMachine) -> Result<StackStatus, StartRefused> {
         let engine = FakeEngine::new(Link::Down);
-        tauri::async_runtime::block_on(stack().start(machine, &engine))
+        crate::rt::block_on(stack().start(machine, &engine))
     }
 
     #[test]
@@ -242,7 +242,7 @@ mod live {
         };
         println!("status: {:?}", stack.status(&ThisMachine));
         let engine = IiiEngine::connect("ws://127.0.0.1:49160");
-        let started = tauri::async_runtime::block_on(stack.start(&ThisMachine, &engine));
+        let started = crate::rt::block_on(stack.start(&ThisMachine, &engine));
         println!("start: {started:?}");
         assert_eq!(started.unwrap().state, StackState::Running);
     }

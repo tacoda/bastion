@@ -133,7 +133,7 @@ impl SettingsStore for SqlStore {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "fakes"))]
 pub mod fake {
     use std::sync::Mutex;
 
@@ -201,7 +201,7 @@ mod tests {
     #[test]
     fn a_change_is_a_version_and_restore_brings_an_old_one_back_as_the_newest() {
         let store = FakeStore::default();
-        tauri::async_runtime::block_on(async {
+        crate::rt::block_on(async {
             let first = Settings::default();
             assert_eq!(
                 change(&store, &first, 1).await,

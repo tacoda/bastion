@@ -316,7 +316,7 @@ impl Gate {
             // The repository's hooks run first, in the VM, so the call waits on them.
             Decision::Continue if !hooks.is_empty() => {
                 let (gate, held) = (self.clone(), held());
-                tauri::async_runtime::spawn(async move { gate.before(held, hooks).await });
+                crate::rt::spawn(async move { gate.before(held, hooks).await });
                 json!({ "decision": "hold", "reason": "The repository's hooks run first." })
             }
             Decision::Continue => {
@@ -335,7 +335,7 @@ impl Gate {
     /// Save a held call for the job page, off the hook's path.
     fn keep(&self, held: HeldCall) {
         let (store, on_change) = (self.store.clone(), self.on_change.clone());
-        tauri::async_runtime::spawn(async move {
+        crate::rt::spawn(async move {
             match store.hold(&held).await {
                 Ok(()) => on_change(&held.job),
                 Err(e) => eprintln!("job {}: the held call was not saved: {e}", held.job),
@@ -634,7 +634,7 @@ mod tests {
             Arc::new(|_: &str| {}),
             Ok(log),
         );
-        tauri::async_runtime::block_on(gate.reload()).unwrap();
+        crate::rt::block_on(gate.reload()).unwrap();
         Rig {
             gate,
             engine,
@@ -724,7 +724,7 @@ mod tests {
             Arc::new(|_: &str| {}),
             Err("no key".into()),
         );
-        tauri::async_runtime::block_on(unkeyed.reload()).unwrap();
+        crate::rt::block_on(unkeyed.reload()).unwrap();
         let answer = unkeyed.judge(&envelope(
             "build",
             "sandbox::exec",
@@ -743,7 +743,7 @@ mod tests {
         settle();
         assert_eq!(r.store.held.lock().unwrap().len(), 1);
 
-        tauri::async_runtime::block_on(r.gate.allow_once("j1", "fc1")).unwrap();
+        crate::rt::block_on(r.gate.allow_once("j1", "fc1")).unwrap();
         let calls = r.engine.calls.lock().unwrap().clone();
         let ran = calls.iter().find(|c| c.1 == "sandbox::fs::write").unwrap();
         assert_eq!(ran.2["sandbox_id"], "vm1");
@@ -769,8 +769,7 @@ mod tests {
         let r = rig();
         r.gate.judge(&write());
         settle();
-        tauri::async_runtime::block_on(r.gate.refuse("j1", "fc1", "write the plan, not the code"))
-            .unwrap();
+        crate::rt::block_on(r.gate.refuse("j1", "fc1", "write the plan, not the code")).unwrap();
         let calls = r.engine.calls.lock().unwrap().clone();
         assert!(!calls.iter().any(|c| c.1 == "sandbox::fs::write"));
         let resolved = calls
@@ -797,7 +796,7 @@ mod tests {
             )
         };
         assert_eq!(r.gate.judge(&rm())["decision"], "continue");
-        tauri::async_runtime::block_on(async {
+        crate::rt::block_on(async {
             r.gate.move_constraint("keep-tests", true).await.unwrap();
             r.gate.move_constraint("keep-tests", true).await.unwrap();
         });
@@ -933,7 +932,7 @@ mod tests {
             rung: govern::Enforcement::Enforced,
             source: govern::Source::Owner,
         };
-        tauri::async_runtime::block_on(async {
+        crate::rt::block_on(async {
             r.gate.add_constraint(rule.clone()).await.unwrap();
             assert!(r.gate.add_constraint(rule).await.is_err());
         });
@@ -988,7 +987,7 @@ mod tests {
             id: "keep-tests".into(),
             rung: govern::Enforcement::Enforced,
         }];
-        tauri::async_runtime::block_on(r.gate.apply_arm("e1", "b", &b)).unwrap();
+        crate::rt::block_on(r.gate.apply_arm("e1", "b", &b)).unwrap();
         let rm = envelope(
             "build",
             "sandbox::exec",

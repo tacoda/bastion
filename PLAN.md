@@ -128,12 +128,17 @@ code inside Bastion is the diff a job proposes.
 ```
 Cargo.toml  index.html  Trunk.toml  styles.css
 src/                  bastion-ui: the Leptos frontend (WASM)
-src-tauri/            bastion: Tauri, the Rust core
-  src/engine/         the engine adapter: every iii call, and effects run
-  src/commands/       one file per resource (D9)
-  src/stack.rs        iii compose as a child process
-  src/doctor.rs
+src-tauri/            bastion: Tauri, the window and its commands
+  src/commands/       one file per resource (D9, until S3)
+  src/profile.rs      profiles (D12, until S4)
 crates/
+  bastion-server/     the server (D27): the factory and what it runs on
+    src/engine/       the engine adapter: every iii call
+    src/factory/      effects run, turns, the acceptance steps
+    src/store.rs      records in `database`, with numbered migrations
+    src/stack.rs      iii compose as a child process
+    src/doctor.rs
+    src/rt.rs         the process-wide tokio runtime
   bastion-protocol/   the typed commands the view calls (D9)
   bastion-core/       the factory logic (D18): jobs, pipelines, stages,
                       checkpoints, the dial, fix loops, briefs
@@ -181,11 +186,11 @@ talks to the OS.
 | Browser | worker | `bastion-browser` | A11 |
 | Notifications and tray | app | — | A12 |
 
-The factory logic is the one exception to the worker rule above. The owner
-chose to keep it in the app (D18), and the cost is that jobs advance only while
-the app runs. A12 lets the app keep running in the tray with its window closed.
-Because the core does no I/O, moving it into a worker later means writing a
-second adapter, not changing the core.
+The factory logic is the one exception to the worker rule above. It lives in
+`bastion-server` (D27), which reaches the workers through the Engine seam. In
+this table, "app" now means the server for everything but the window,
+profiles and notifications: S1 moved the code, and S3 moves the app onto the
+server's API.
 
 `ade` is iii's own console, on `127.0.0.1:3114`. It stays in the stack until
 A2's console covers what the owner uses in it, and then it leaves.
@@ -242,16 +247,17 @@ dependencies enforce the seams, so code that crosses one does not compile
 | Seam | Shape | Owner | Fake in tests |
 |---|---|---|---|
 | **Event in, decision out** | `bastion_core::step(state, event) -> (state, Vec<Effect>)`. `Event` and `Effect` are enums. The time comes in on the event. | `bastion-core` | None needed: the core is pure, so tests call `step` directly. |
-| **Engine** | A trait in the adapter: `call`, `observe`, `register`. The only code that imports `iii-sdk`. | `src-tauri/src/engine/` | An in-memory engine that records calls and replays events. |
-| **Store** | A trait in the adapter: load a job, save a job with its `rev`, list active jobs. Backed by `database` through the Engine seam. | `src-tauri/src/engine/` | An in-memory store that refuses a stale `rev`. |
-| **Machine** | A trait in the app: run a program, read a file, test a path, name the platform. Doctor and the stack routine reach the OS only through it. | `src-tauri/src/machine.rs` | A machine with canned runs, files and platform. |
+| **Engine** | A trait in the adapter: `call`, `observe`, `register`. The only code that imports `iii-sdk`. | `crates/bastion-server/src/engine/` | An in-memory engine that records calls and replays events. |
+| **Store** | A trait in the adapter: load a job, save a job with its `rev`, list active jobs. Backed by `database` through the Engine seam. | `crates/bastion-server/src/store.rs` | An in-memory store that refuses a stale `rev`. |
+| **Machine** | A trait in the server: run a program, read a file, test a path, name the platform. Doctor and the stack routine reach the OS only through it. | `crates/bastion-server/src/machine.rs` | A machine with canned runs, files and platform. |
 | **Commands** | The typed Tauri commands and their request and response types, in `crates/bastion-protocol`. The view and the app both depend on it. | `bastion-protocol` | The view's tests use canned responses. |
 
 Allowed dependencies:
 
 ```
 bastion-ui (view)  ──>  bastion-protocol
-bastion (app)      ──>  bastion-protocol, bastion-core, iii-sdk, tauri
+bastion (app)      ──>  bastion-protocol, bastion-core, bastion-server, tauri
+bastion-server     ──>  bastion-protocol, bastion-core, iii-sdk, tokio (never tauri)
 bastion-core       ──>  serde, sha2 (the audit chain, D21)
 bastion-protocol   ──>  serde only
 ```
@@ -725,7 +731,7 @@ starts until the owner asks.
 | A6 | done | Spike N9: `judge::evaluate` has no provider worker in this stack, so a run is graded by a harness turn with no tools; `harness::metrics` meters each session (docs/levels.md). Build (38519c5): `Dials::trial` in the core (a trial approves its own plan and stops at review with its diff, so nothing lands), the core's `eval` module (arms, tally from the audit, totals, differences, grade), an arm's rungs applied per trial job in the gate, every turn of every job metered into `turns`, the eval tables, and the Evals page. 51 core tests, 58 app tests. Live exit (2026-10-31), eval `ee8eaaddd` on `demo-a` from `d6227b2`: three requests that each ask for a `wc` count, A with `no-wc` told and B with it enforced. All six runs reached review and were graded. In total B differs from A: refused 0 -> 5, review findings 2 -> 0, turns 39 -> 28, calls 33 -> 17, cost $0.0344 -> $0.0207; grades 7 and 7. Each request lists B's refused calls with their audit entries (#375, #405, #363, #452, ...) and links to the trial job, which shows it stopped at review with Land pending. Apply B set `no-wc` to enforced and the audit recorded `ee8eaaddd arm b: Told -> Enforced` (#487) and the eval the owner acted on (#488). Not varied yet: the model per stage and the pipeline, since there is one of each until A7 and A8. |
 | A7 | done | Built (3605253): the GitHub forge (push `bastion/<job>`, open or reuse the pull request, poll its checks, a bounded CI fix turn with the failing log, merge on Approve), issues as requests that link back and close on merge, versioned settings with Restore, oversight presets, a model per stage from `llm-router`, and the Accounts list; the governance pages split into Constraints, Capabilities and Audit Log with Lucide icons (dbe1cf7). 57 core tests, 66 app tests. Live exit (2026-10-31) on `ianparo/bastion` (private, CI runs pytest and needs a CHANGELOG.md entry): job `j7eb804a7` started from issue #1 and links to it; it opened pull request #2 (`bastion/j7eb804a7`, body `Closes #1`); CI failed on the changelog, Bastion sent the fix turn with the CI log (ci_fixes 1), the fixed change was pushed to the same pull request, and CI passed. Settings: forge set to GitHub (v1), the medium preset set both dials to hold (v2), Restore of v1 wrote v3 with the dials back at ask, and the next job (`ja0b04eb6`) waited at approve with no hold timer. Approve at land then merged pull request #2 into `main` (2beb204) and issue #1 closed. Not run live: a fix turn that fixes CI by itself (see below). |
 | A8 | in progress | Spike N11 (20a9b71): the `configuration` worker can carry config as YAML, but the owner chose the database (D26). The Constraints and Capabilities pages each show charter, harness and factory sections (D25, 062cd3e), checked in the window. A7's exit was checked again: pull request #2 merged (2beb204), issue #1 closed, the job's branch deleted, CI green on `main`. D26 (7e22bc3): the defaults moved into `seed/governance.sql`, and the gate reads the database again before each turn. 58 core tests, 67 app tests. Step 1, the graph in the core: every full-pipeline stage with its kind, the full pipeline with and without acceptance tests, a dial per checkpoint with wipp's presets and merge held at least, steps the factory runs (`RunStep`, `StepPassed`, `StepFailed`), the revise loop with wipp's limits and the stop on a repeated failure, and one implement turn per task. Checkpoints stay their own stages (the owner's choice, 2026-11-06), and the agent's review turn is `code_review`. 75 core tests, 67 app tests (2881686). Step 2, shape: scope and discover briefs; discovery's reply read into tasks and questions, and clarify passed when there are none; the clarify checkpoint shows discovery's report and takes the answers as a note; read-only turns tag the VM's `HEAD` first and are reset to it after, so a commit made in one goes too; prepare passes at once (no setup steps until A9); `job_submit` takes a pipeline. The store gained numbered migrations on `user_version`: migration 1 rebuilds `jobs`, `artifacts` and `capabilities` with a stage check from `Stage::ALL` and the new job columns, and adds `tasks` and `revisions` tables (D8). The rebuild keeps the table's name, because with foreign keys on (which the worker may set; not checked), renaming a new table into place fails at commit; both were tried on a copy of `data/bastion.db`, and the generated migration kept its 15 jobs and 83 artifacts. Not yet run through the `database` worker itself. Scope's split verdict is not read until step 6. 79 core tests, 69 app tests (0971e08). Step 3, acceptance tests: define, your checks (approve keeps every criterion, a note redefines, up to 3 times), specify, baseline, falsify, and verify and acceptance as steps the factory runs. The app reads specify's JSON (`src-tauri/src/spec.rs`, so the core stays on `serde` and `sha2`, D19); a reply that does not read is `Outcome::Unusable` and gets one more try. The baseline commits the spec's files, runs each check in the VM (exit 0 is green; 126 and 127 did not run), puts back tracked files the checks wrote, and passes only when every check fails. Checks that pass already go to falsify once per spec: the turn breaks the product code from a tag made before it, the checks run against it, the tree resets to the tag, and a check that stayed green, or a test the turn changed, sends the spec back. A passing baseline tags the tree `bastion-spec`; verify waits on the owner when a spec file differs from the tag, or a check cannot run, and sends an unmet criterion back to implement. Not ported from wipp: layers, Gherkin, lint on the tests, property tests, critical models and strength; they need repository settings Bastion does not have. The tag lives in the VM, so revive (step 5) needs another way. 86 core tests, 73 app tests (288c863). Paused for S; steps 4 to 7 land in the server. |
-| S | in progress | Added 2026-11-06 (D27 to D30). Runs before A8 step 4. S0, spike N12, passes (docs/levels.md): the page follows a server's events over `fetch` with the token, reconnects with `Last-Event-ID` after a server restart, and a second stack runs beside the first with its own data. The window's CSP gained `connect-src` for `127.0.0.1`. Next: S1, the split. |
+| S | in progress | Added 2026-11-06 (D27 to D30). Runs before A8 step 4. S0, spike N12, passes (docs/levels.md): the page follows a server's events over `fetch` with the token, reconnects with `Last-Event-ID` after a server restart, and a second stack runs beside the first with its own data. The window's CSP gained `connect-src` for `127.0.0.1`. S1, the split: `crates/bastion-server` holds the engine adapter, the store, the factory, the gate, the forge, evals, settings, the audit log, charter, spec, Doctor, the stack and the console; the app links it as a library and keeps its commands, profiles and the window. `tauri::async_runtime` became `bastion_server::rt`, one `tokio` runtime; the fakes sit behind a `fakes` feature. `scripts/check-seams.sh` now fails if the server depends on Tauri or the page on the server. 86 core, 64 server, 9 app tests. Next: S2, the API. |
 | A9 to A13 | — | — |
 | Later (§10) | on hold | — |
 

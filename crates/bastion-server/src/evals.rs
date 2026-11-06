@@ -217,7 +217,7 @@ mod tests {
         let store = FakeStore::default();
         let mut job = Job::new("j1".into(), "w".into(), "r".into(), 1);
         job.stage = Stage::Build;
-        tauri::async_runtime::block_on(meter(&engine, &store, &job, "s1"));
+        crate::rt::block_on(meter(&engine, &store, &job, "s1"));
         let turns = store.eval_rows.turns.lock().unwrap().clone();
         assert_eq!(
             turns[0].usage,
@@ -248,7 +248,7 @@ mod tests {
             grade: None,
         };
         store.eval_rows.runs.lock().unwrap().push(run.clone());
-        tauri::async_runtime::block_on(async {
+        crate::rt::block_on(async {
             assert!(grade(&engine, &store, &run).await.is_err(), "no diff yet");
             let diff = Artifact {
                 stage: Stage::Review,

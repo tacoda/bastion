@@ -286,7 +286,7 @@ mod tests {
     }
 
     fn report(machine: &FakeMachine, engine: &FakeEngine) -> DoctorReport {
-        tauri::async_runtime::block_on(run(machine, engine, Path::new("/repo")))
+        crate::rt::block_on(run(machine, engine, Path::new("/repo")))
     }
 
     #[test]
@@ -382,7 +382,7 @@ mod live {
     #[test]
     #[ignore = "needs this machine's stack"]
     fn live_doctor() {
-        tauri::async_runtime::block_on(async {
+        crate::rt::block_on(async {
             let engine = IiiEngine::connect("ws://127.0.0.1:49160");
             for _ in 0..50 {
                 if engine.link() == Link::Up {

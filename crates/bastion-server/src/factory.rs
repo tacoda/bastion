@@ -167,7 +167,7 @@ impl Factory {
             Arc::new(move |envelope: Value| gate.judge(&envelope)),
         )?;
         let factory = self.clone();
-        tauri::async_runtime::spawn(async move {
+        crate::rt::spawn(async move {
             if let Err(e) = factory.gate.reload().await {
                 eprintln!("the gate has no policy, so it refuses every call: {e}");
             }
@@ -275,7 +275,7 @@ impl Factory {
                         (self.on_change)(&id);
                         for effect in rest {
                             let (factory, record) = (self.clone(), record.clone());
-                            tauri::async_runtime::spawn(factory.run(record, effect));
+                            crate::rt::spawn(factory.run(record, effect));
                         }
                         self.pump();
                         return Ok(());
@@ -292,7 +292,7 @@ impl Factory {
     // ponytail: two pumps at once can each see a free slot; a per-app lock fixes it if the cap is ever overrun.
     fn pump(self: &Arc<Self>) {
         let factory = self.clone();
-        tauri::async_runtime::spawn(async move {
+        crate::rt::spawn(async move {
             let Ok(records) = factory.store.jobs().await else {
                 return;
             };
@@ -578,7 +578,7 @@ impl Factory {
             .await?;
         let factory = self.clone();
         let (id, turn) = (job.id.clone(), session.clone());
-        tauri::async_runtime::spawn(async move {
+        crate::rt::spawn(async move {
             tokio::time::sleep(Duration::from_secs(cap_secs)).await;
             factory.turn_done(&id, &turn, true).await;
         });
@@ -593,9 +593,7 @@ impl Factory {
             json!({ "session_id": session }),
             Arc::new(move |_| {
                 let (factory, id, turn) = (factory.clone(), id.clone(), turn.clone());
-                tauri::async_runtime::spawn(
-                    async move { factory.turn_done(&id, &turn, false).await },
-                );
+                crate::rt::spawn(async move { factory.turn_done(&id, &turn, false).await });
                 json!({})
             }),
         )?;
@@ -819,7 +817,7 @@ impl Factory {
                 json!({ "worktree_id": worktree }),
                 Arc::new(move |event: Value| {
                     let (factory, job) = (factory.clone(), job.clone());
-                    tauri::async_runtime::spawn(async move {
+                    crate::rt::spawn(async move {
                         factory.release(&job);
                         let event = if landed {
                             Event::Landed
@@ -869,7 +867,7 @@ impl Factory {
     /// the owner acted first.
     fn hold_checkpoint(self: &Arc<Self>, id: String, stage: Stage, secs: u64) {
         let factory = self.clone();
-        tauri::async_runtime::spawn(async move {
+        crate::rt::spawn(async move {
             tokio::time::sleep(Duration::from_secs(secs)).await;
             let _ = factory.apply(&id, Event::HoldExpired { stage }).await;
         });
@@ -896,7 +894,7 @@ impl Factory {
             f.rule, f.detail
         );
         let (factory, id) = (self.clone(), id.to_string());
-        tauri::async_runtime::spawn(async move {
+        crate::rt::spawn(async move {
             if let Err(e) = factory.apply(&id, Event::Commented { text }).await {
                 eprintln!("job {id}: the review could not send the work back: {e}");
             }
@@ -938,7 +936,7 @@ impl Factory {
     // ponytail: polls every 20 s for 30 min; the github worker's PR webhooks replace this once a tunnel is set up.
     fn watch_ci(self: &Arc<Self>, record: &Record) {
         let (factory, record) = (self.clone(), record.clone());
-        tauri::async_runtime::spawn(async move {
+        crate::rt::spawn(async move {
             let id = record.job.id.clone();
             let (Some(pr), Ok(slug)) = (record.job.pr.clone(), factory.slug(&record).await) else {
                 let error = "the pull request or its repository is unknown".into();
@@ -1019,7 +1017,7 @@ impl Factory {
             return;
         }
         let (factory, id) = (self.clone(), record.job.id.clone());
-        tauri::async_runtime::spawn(async move {
+        crate::rt::spawn(async move {
             let Ok(Some(run)) = factory.store.eval_run_of(&id).await else {
                 return;
             };
@@ -1074,7 +1072,7 @@ impl Factory {
                         Effect::Land
                     };
                     let factory = self.clone();
-                    tauri::async_runtime::spawn(async move { factory.run(record, effect).await });
+                    crate::rt::spawn(async move { factory.run(record, effect).await });
                 }
                 (State::NeedsYou, stage, _) => {
                     // A hold that was counting down when the app quit.

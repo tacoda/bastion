@@ -315,8 +315,7 @@ mod tests {
             engine: &engine,
             slug: "o/r".into(),
         };
-        let found =
-            tauri::async_runtime::block_on(hub.checks("https://github.com/o/r/pull/1")).unwrap();
+        let found = crate::rt::block_on(hub.checks("https://github.com/o/r/pull/1")).unwrap();
         let Checks::Failed(log) = found else {
             panic!("a failed check")
         };

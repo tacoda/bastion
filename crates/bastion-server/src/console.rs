@@ -184,7 +184,7 @@ mod tests {
 
     #[test]
     fn the_console_reads_every_part_in_one_call() {
-        let console = tauri::async_runtime::block_on(read(&engine())).unwrap();
+        let console = crate::rt::block_on(read(&engine())).unwrap();
         assert_eq!(
             console.containers[1].last_error.as_deref(),
             Some("port 3114 in use")
@@ -215,7 +215,7 @@ mod tests {
     #[test]
     fn a_failed_read_names_the_function() {
         let engine = FakeEngine::new(Link::Up);
-        let error = tauri::async_runtime::block_on(read(&engine)).unwrap_err();
+        let error = crate::rt::block_on(read(&engine)).unwrap_err();
         assert!(error.contains("compose::status"), "{error}");
     }
 
@@ -234,13 +234,13 @@ mod tests {
             container: "queue".into(),
             cursor: None,
         };
-        let page = tauri::async_runtime::block_on(logs(&engine, &first)).unwrap();
+        let page = crate::rt::block_on(logs(&engine, &first)).unwrap();
         assert_eq!(page.lines[0].message, "ready");
         let next = LogRequest {
             container: "queue".into(),
             cursor: page.cursor,
         };
-        tauri::async_runtime::block_on(logs(&engine, &next)).unwrap();
+        crate::rt::block_on(logs(&engine, &next)).unwrap();
         let calls = engine.calls.lock().unwrap();
         assert_eq!(calls[0].2["tail"], 200);
         assert_eq!(calls[1].2["wait_ms"], 5000);
@@ -252,8 +252,8 @@ mod tests {
         let engine = FakeEngine::new(Link::Up)
             .answer("compose::down", Ok(json!({})))
             .answer("compose::up", Ok(json!({})));
-        tauri::async_runtime::block_on(set_running(&engine, "ade", false)).unwrap();
-        tauri::async_runtime::block_on(set_running(&engine, "ade", true)).unwrap();
+        crate::rt::block_on(set_running(&engine, "ade", false)).unwrap();
+        crate::rt::block_on(set_running(&engine, "ade", true)).unwrap();
         let calls = engine.calls.lock().unwrap();
         assert_eq!(
             (calls[0].1.as_str(), &calls[0].2),

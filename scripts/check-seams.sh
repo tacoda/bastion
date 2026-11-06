@@ -15,13 +15,16 @@ for crate in bastion-protocol bastion-core; do
 done
 
 # The view reaches the app only through bastion-protocol.
-for banned in bastion-core iii-sdk tauri; do
+for banned in bastion-core bastion-server iii-sdk tauri; do
   if deps bastion-ui | grep -qx "$banned"; then echo "FAIL bastion-ui depends on $banned"; fail=1; fi
 done
 
+# The server runs with no window (D27).
+if deps bastion-server | grep -qx tauri; then echo "FAIL bastion-server depends on tauri"; fail=1; fi
+
 # Only the engine adapter imports iii-sdk.
-leaks=$(grep -rl 'iii_sdk' src-tauri/src src | grep -v '^src-tauri/src/engine/' || true)
-if [ -n "$leaks" ]; then echo "FAIL iii_sdk outside src-tauri/src/engine/: $leaks"; fail=1; fi
+leaks=$(grep -rl 'iii_sdk' crates/bastion-server/src src-tauri/src src | grep -v '^crates/bastion-server/src/engine/' || true)
+if [ -n "$leaks" ]; then echo "FAIL iii_sdk outside crates/bastion-server/src/engine/: $leaks"; fail=1; fi
 
 [ "$fail" -eq 0 ] && echo "seams ok"
 exit "$fail"

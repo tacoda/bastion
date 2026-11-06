@@ -1,7 +1,7 @@
 //! The Engine seam (PLAN.md §6.2). This module is the only code in the app that
 //! imports `iii-sdk` (D19). Everything else holds an `Arc<dyn Engine>`.
 
-#[cfg(test)]
+#[cfg(any(test, feature = "fakes"))]
 pub mod fake;
 mod iii;
 

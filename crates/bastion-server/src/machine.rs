@@ -99,7 +99,7 @@ impl Machine for ThisMachine {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "fakes"))]
 pub mod fake {
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};
@@ -115,6 +115,12 @@ pub mod fake {
         pub platform: (&'static str, &'static str),
         /// Every run and spawn, as `program arg arg`.
         pub calls: Mutex<Vec<String>>,
+    }
+
+    impl Default for FakeMachine {
+        fn default() -> Self {
+            Self::new()
+        }
     }
 
     impl FakeMachine {

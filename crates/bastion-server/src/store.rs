@@ -820,7 +820,7 @@ impl Store for SqlStore {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "fakes"))]
 pub mod fake {
     use std::collections::BTreeMap;
     use std::sync::Mutex;
@@ -984,7 +984,7 @@ pub mod fake {
 
 /// The seed file the stack carries, for the tests.
 #[cfg(test)]
-pub(crate) const SEED: &str = include_str!("../../seed/governance.sql");
+pub(crate) const SEED: &str = include_str!("../../../seed/governance.sql");
 
 #[cfg(test)]
 mod tests {
@@ -1007,7 +1007,7 @@ mod tests {
     fn a_stale_save_is_refused_and_a_current_one_bumps_the_rev() {
         let store = FakeStore::default();
         let r = record();
-        tauri::async_runtime::block_on(async {
+        crate::rt::block_on(async {
             store.insert(&r).await.unwrap();
             assert_eq!(store.save(&r).await, Ok(2));
             assert_eq!(
@@ -1029,7 +1029,7 @@ mod tests {
                 )
                 .answer("database::execute", Ok(json!({ "returned_rows": [] }))),
         );
-        tauri::async_runtime::block_on(async {
+        crate::rt::block_on(async {
             let store = SqlStore::open(engine.clone(), SEED).await.unwrap();
             assert_eq!(store.save(&record()).await, Err(STALE.into()));
             let calls = engine.calls.lock().unwrap();
@@ -1054,7 +1054,7 @@ mod tests {
             detail: "continue".into(),
         };
         let first = audit::append(None, 1, what, b"k");
-        tauri::async_runtime::block_on(async {
+        crate::rt::block_on(async {
             store.append_audit(&first).await.unwrap();
             assert!(store.append_audit(&first).await.is_err());
         });
@@ -1090,7 +1090,7 @@ mod tests {
                     Ok(json!({ "rows": [{ "user_version": version }] })),
                 ),
         );
-        tauri::async_runtime::block_on(async {
+        crate::rt::block_on(async {
             SqlStore::open(engine.clone(), SEED).await.unwrap();
         });
         let calls = engine.calls.lock().unwrap();
@@ -1134,7 +1134,7 @@ mod tests {
                     Ok(json!({ "rows": [{ "user_version": 1 }] })),
                 ),
         );
-        tauri::async_runtime::block_on(async {
+        crate::rt::block_on(async {
             SqlStore::open(engine.clone(), SEED).await.unwrap();
         });
         let calls = engine.calls.lock().unwrap();
@@ -1212,7 +1212,7 @@ mod live {
     #[test]
     #[ignore = "needs this machine's stack"]
     fn live_store() {
-        tauri::async_runtime::block_on(async {
+        crate::rt::block_on(async {
             let tag = format!("live-{}", std::process::id());
             let (store, mut r) = open_with_job(&tag).await;
             r.job.state = bastion_core::State::Running;
@@ -1268,7 +1268,7 @@ mod live {
     #[test]
     #[ignore = "needs this machine's stack"]
     fn live_governance() {
-        tauri::async_runtime::block_on(async {
+        crate::rt::block_on(async {
             let tag = format!("live-gov-{}", std::process::id());
             let (store, _) = open_with_job(&tag).await;
             let rules = store.constraints().await.unwrap();

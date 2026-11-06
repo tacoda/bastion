@@ -44,7 +44,7 @@ impl AuditLog {
             last_error: Arc::new(Mutex::new(None)),
         });
         let (pending, last_error) = (log.pending.clone(), log.last_error.clone());
-        tauri::async_runtime::spawn(async move {
+        crate::rt::spawn(async move {
             while let Some(what) = queue.recv().await {
                 let written = tokio::time::timeout(limit, append(&*store, &key, what)).await;
                 let error = match written {
@@ -164,7 +164,7 @@ mod tests {
         log.note(record("one"));
         log.note(record("two"));
         settle();
-        let read = tauri::async_runtime::block_on(log.read()).unwrap();
+        let read = crate::rt::block_on(log.read()).unwrap();
         assert_eq!(read.chain.len(), 2);
         assert_eq!(read.broken_at, None);
         assert_eq!(audit::verify(&read.chain, b"another key"), Err(1));

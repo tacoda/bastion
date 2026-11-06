@@ -1,0 +1,20 @@
+//! Bastion's server (PLAN.md D27): the factory and everything it runs on,
+//! reached through the Engine seam. S1 moved it out of the app unchanged;
+//! S2 puts the HTTP API in front of it.
+
+pub mod audit_log;
+pub mod charter;
+pub mod console;
+pub mod doctor;
+pub mod engine;
+pub mod eval_store;
+pub mod evals;
+pub mod factory;
+pub mod forge;
+pub mod gate;
+pub mod machine;
+pub mod rt;
+pub mod settings_store;
+pub mod spec;
+pub mod stack;
+pub mod store;

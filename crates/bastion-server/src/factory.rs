@@ -52,6 +52,8 @@ pub struct Submission {
     /// The tracker issue it came from, as its URL.
     pub issue: Option<String>,
     pub pipeline: Pipeline,
+    /// The person asking (D31).
+    pub requester: Option<String>,
 }
 /// The VM tag a read-only turn's tree is put back to.
 const BEFORE_TURN: &str = "bastion-before-turn";
@@ -199,6 +201,7 @@ impl Factory {
             job: Job::new(id.clone(), workspace.into(), request.into(), at).on(how.pipeline),
             runtime: Runtime {
                 issue: how.issue,
+                requester: how.requester,
                 ..Runtime::default()
             },
             rev: 1,

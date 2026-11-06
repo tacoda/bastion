@@ -2,6 +2,7 @@
 //! reached through the Engine seam. S1 moved it out of the app unchanged;
 //! S2 puts the HTTP API in front of it.
 
+pub mod access;
 pub mod api;
 pub mod audit_log;
 pub mod charter;
@@ -16,6 +17,7 @@ pub mod forge;
 pub mod gate;
 pub mod http;
 pub mod machine;
+pub mod people_store;
 pub mod rt;
 pub mod server;
 pub mod settings_store;

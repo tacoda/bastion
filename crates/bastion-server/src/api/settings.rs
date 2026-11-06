@@ -225,12 +225,23 @@ pub async fn issues(
 
 /// Start a job from a tracker issue: its title and body are the request,
 /// and the job links back to it.
+/// An issue to start a job from, and who asked.
+pub struct FromIssue {
+    pub workspace: String,
+    pub number: u64,
+    pub requester: Option<String>,
+}
+
 pub async fn job_from_issue(
     cell: &FactoryCell,
     machine: &std::sync::Arc<dyn crate::machine::Machine>,
-    workspace: String,
-    number: u64,
+    from: FromIssue,
 ) -> Result<String, String> {
+    let FromIssue {
+        workspace,
+        number,
+        requester,
+    } = from;
     let slug = workspace_slug(cell, machine.as_ref(), &workspace).await?;
     let factory = factory(cell)?;
     let issue = forge::GitHub {
@@ -246,6 +257,7 @@ pub async fn job_from_issue(
             request.trim(),
             Submission {
                 issue: Some(issue.url),
+                requester,
                 ..Submission::default()
             },
         )

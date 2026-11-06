@@ -17,6 +17,7 @@ bastion-core = { path = "../bastion-core" }
 tokio = { version = "1", features = ["time", "rt-multi-thread", "macros", "sync", "net"] }
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
+sha2 = "0.10"
 
 [features]
 # The in-memory engine, store and machine, for tests outside this crate.

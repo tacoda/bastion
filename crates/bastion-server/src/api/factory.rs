@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
-use bastion_core::{Dials, Event, Pipeline, actions, hold_until, steps};
+use bastion_core::{Dials, Event, actions, hold_until, steps};
 use bastion_protocol::{
     ArtifactView, CharterView, DialsView, HeldCallView, JobDetail, JobSummary, StepView,
     TranscriptLine, Workspace,
@@ -49,6 +49,7 @@ fn summary(r: &Record, dials: &Dials) -> JobSummary {
         actions: actions(j).into_iter().map(name).collect(),
         pr: j.pr.clone(),
         issue: r.runtime.issue.clone(),
+        requester: r.runtime.requester.clone(),
     }
 }
 
@@ -194,19 +195,16 @@ pub async fn job(cell: &FactoryCell, id: String) -> Result<JobDetail, String> {
     })
 }
 
+/// Submit a request. `how` names its pipeline and who asked.
 pub async fn job_submit(
     cell: &FactoryCell,
     workspace: String,
     request: String,
-    pipeline: Option<Pipeline>,
+    how: Submission,
 ) -> Result<String, String> {
     if request.trim().is_empty() {
         return Err("a request needs text".into());
     }
-    let how = Submission {
-        pipeline: pipeline.unwrap_or_default(),
-        ..Submission::default()
-    };
     factory(cell)?
         .submit_with(&workspace, request.trim(), how)
         .await

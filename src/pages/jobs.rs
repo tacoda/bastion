@@ -118,7 +118,7 @@ fn row(sj: ServerJob, down: bool) -> impl IntoView {
                 <span class="grid min-w-0 gap-0.5">
                     <span class="truncate font-semibold">{job.request.clone()}</span>
                     <span class="text-xs text-muted">
-                        {format!("{server}{unreachable} · {} · {} · {} · {}", job.workspace, job.id, job.state.replace('_', " "), ago(job.created_at))}
+                        {format!("{server}{unreachable} · {} · {} · {} · {}{}", job.workspace, job.id, job.state.replace('_', " "), ago(job.created_at), asked_by(&job))}
                     </span>
                 </span>
                 <span class="rounded-full border border-line px-2 py-0.5 text-xs capitalize text-muted">{job.stage.clone()}</span>
@@ -143,6 +143,13 @@ fn group(title: String, jobs: Vec<ServerJob>, down: Vec<String>, accent: bool) -
             }}
         </section>
     }
+}
+
+/// " · by ana", for a job someone asked for.
+fn asked_by(job: &JobSummary) -> String {
+    job.requester
+        .as_ref()
+        .map_or_else(String::new, |who| format!(" · by {who}"))
 }
 
 /// What the page says about servers it cannot read: unreachable ones first,

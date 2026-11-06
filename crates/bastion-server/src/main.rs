@@ -1,7 +1,7 @@
 //! `bastion-server`, headless (D27): starts or attaches to the stack in
 //! `--checkout`, runs the factory on it, and serves the API on loopback.
 //!
-//! `bastion-server [--checkout DIR] [--data DIR] [--port N] [--engine URL]`
+//! `bastion-server [--checkout DIR] [--data DIR] [--port N] [--engine URL] [--owner NAME]`
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -13,6 +13,8 @@ use bastion_server::stack::{self, Stack};
 use bastion_server::{api, http, rt};
 
 struct Args {
+    /// Who started the server: its admin (D31).
+    owner: Option<String>,
     checkout: PathBuf,
     data: PathBuf,
     port: u16,
@@ -32,6 +34,7 @@ fn args() -> Result<Args, String> {
     let checkout = flag("--checkout").map_or_else(std::env::current_dir, |d| Ok(d.into()));
     let checkout = checkout.map_err(|e| e.to_string())?;
     Ok(Args {
+        owner: flag("--owner"),
         data: flag("--data").map_or_else(|| checkout.join("data/server"), PathBuf::from),
         port: flag("--port").map_or(Ok(49190), |p| p.parse().map_err(|_| format!("--port {p}")))?,
         engine: flag("--engine").unwrap_or_else(|| "ws://127.0.0.1:49160".into()),
@@ -57,6 +60,15 @@ fn token(data: &Path) -> Result<String, String> {
     Ok(made)
 }
 
+/// The name in `git config user.name`, or `owner` when it is unset.
+fn git_user(machine: &dyn Machine) -> String {
+    machine
+        .run("git", &["config", "user.name"], None)
+        .ok()
+        .filter(|out| out.success && !out.text.trim().is_empty())
+        .map_or_else(|| "owner".into(), |out| out.text.trim().to_string())
+}
+
 fn main() -> Result<(), String> {
     let a = args()?;
     std::fs::create_dir_all(&a.data).map_err(|e| format!("{}: {e}", a.data.display()))?;
@@ -77,7 +89,11 @@ fn main() -> Result<(), String> {
             Ok(status) => println!("stack: {:?}", status.state),
             Err(refused) => eprintln!("stack did not start: {refused:?}"),
         }
-        server.start_factory(seed, a.data.join("bundles"));
+        let owner = a
+            .owner
+            .clone()
+            .unwrap_or_else(|| git_user(&*server.machine));
+        server.start_factory(seed, a.data.join("bundles"), owner.clone());
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", a.port))
             .await
             .map_err(|e| format!("port {}: {e}", a.port))?;
@@ -86,7 +102,7 @@ fn main() -> Result<(), String> {
             a.port,
             a.data.join("token").display()
         );
-        axum::serve(listener, http::router(server, &token))
+        axum::serve(listener, http::router(server, &token, &owner))
             .await
             .map_err(|e| e.to_string())
     })

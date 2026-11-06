@@ -15,6 +15,7 @@ use serde_json::{Value, json};
 
 use crate::engine::Engine;
 use crate::eval_store::{self, EvalStore};
+use crate::people_store::{self, PeopleStore};
 use crate::settings_store::{self, SettingsStore};
 
 pub type Answer<'a, T> = Pin<Box<dyn Future<Output = Result<T, String>> + Send + 'a>>;
@@ -37,6 +38,8 @@ pub struct Runtime {
     pub session: Option<String>,
     /// The tracker issue the request came from, as its URL.
     pub issue: Option<String>,
+    /// The person who asked for the job (D31).
+    pub requester: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -71,7 +74,7 @@ pub struct HeldCall {
 /// A save lost to another writer (D8). The caller reloads and steps again.
 pub const STALE: &str = "stale: the job changed since it was read";
 
-pub trait Store: EvalStore + SettingsStore + Send + Sync {
+pub trait Store: EvalStore + PeopleStore + SettingsStore + Send + Sync {
     fn add_workspace<'a>(&'a self, workspace: &'a Workspace) -> Answer<'a, ()>;
     fn workspaces(&self) -> Answer<'_, Vec<Workspace>>;
     fn insert<'a>(&'a self, record: &'a Record) -> Answer<'a, ()>;
@@ -148,7 +151,8 @@ fn staged_tables() -> [(&'static str, &'static str, String); 3] {
         last_refusal TEXT,
         done_tasks INTEGER NOT NULL DEFAULT 0 CHECK (done_tasks >= 0),
         criteria TEXT,
-        falsify_tried INTEGER NOT NULL DEFAULT 0 CHECK (falsify_tried IN (0, 1)))"
+        falsify_tried INTEGER NOT NULL DEFAULT 0 CHECK (falsify_tried IN (0, 1)),
+        requester TEXT)"
             ),
         ),
         (
@@ -268,18 +272,19 @@ pub fn seed_statements(sql: &str) -> Vec<Value> {
         .collect()
 }
 
-const JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue, pipeline, back_to, last_refusal, done_tasks, criteria, falsify_tried";
+const JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue, pipeline, back_to, last_refusal, done_tasks, criteria, falsify_tried, requester";
 /// The job columns before migration 1, which its rebuild copies.
 const LEGACY_JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue";
 
 /// Columns added after a table was first made. Each runs once; on a table
 /// that already has the column it fails, and that failure is expected.
 // They run before the numbered migrations, which need these columns to exist.
-const ALTERS: [&str; 4] = [
+const ALTERS: [&str; 5] = [
     "ALTER TABLE jobs ADD COLUMN pr TEXT",
     "ALTER TABLE jobs ADD COLUMN ci_fixes INTEGER NOT NULL DEFAULT 0 CHECK (ci_fixes >= 0)",
     "ALTER TABLE jobs ADD COLUMN issue TEXT",
     "ALTER TABLE workspaces ADD COLUMN checks TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE jobs ADD COLUMN requester TEXT",
 ];
 
 /// Numbered migrations, each run once in order; `PRAGMA user_version` is the
@@ -315,6 +320,7 @@ impl SqlStore {
             .iter()
             .map(String::as_str)
             .chain(eval_store::SCHEMA)
+            .chain(people_store::SCHEMA)
             .chain(settings_store::SCHEMA)
             .map(|sql| json!({ "sql": sql, "params": [] }))
             .chain(seed_statements(seed))
@@ -498,6 +504,7 @@ fn record(row: &Value) -> Result<Record, String> {
             sandbox: text(row, "sandbox"),
             session: text(row, "session"),
             issue: text(row, "issue"),
+            requester: text(row, "requester"),
         },
         rev: parse(row, "rev")?,
         created_at: parse(row, "created_at")?,
@@ -581,7 +588,8 @@ fn job_params(r: &Record) -> Value {
         j.last_refusal,
         j.done_tasks,
         j.criteria,
-        j.falsify_tried
+        j.falsify_tried,
+        r.runtime.requester
     ])
 }
 
@@ -857,6 +865,7 @@ pub mod fake {
         pub stall_audit: Mutex<bool>,
         pub eval_rows: crate::eval_store::fake::EvalRows,
         pub versions: crate::settings_store::fake::Versions,
+        pub people: crate::people_store::fake::People,
     }
 
     impl Store for FakeStore {

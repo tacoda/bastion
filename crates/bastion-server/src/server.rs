@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use bastion_core::people::{Person, Role};
 use bastion_protocol::{Change, Link};
 
 use crate::api::factory::FactoryCell;
@@ -12,6 +13,7 @@ use crate::engine::Engine;
 use crate::events::Bus;
 use crate::factory::Factory;
 use crate::machine::Machine;
+use crate::people_store::PeopleStore;
 use crate::stack::Stack;
 use crate::store::SqlStore;
 
@@ -53,13 +55,23 @@ impl Server {
     /// Once the engine is up: open the store, start the factory, and resume
     /// its jobs. `seed` is the first-run rules and grants (D26); `scratch` is
     /// where the factory keeps its bundles.
-    pub fn start_factory(self: &Arc<Self>, seed: String, scratch: PathBuf) {
+    /// `owner` is the person who started the server; they are its admin (D31).
+    pub fn start_factory(self: &Arc<Self>, seed: String, scratch: PathBuf, owner: String) {
         let server = self.clone();
         crate::rt::spawn(async move {
             loop {
                 if server.engine.link() == Link::Up {
                     match SqlStore::open(server.engine.clone(), &seed).await {
-                        Ok(store) => return server.run(store, scratch),
+                        Ok(store) => {
+                            let admin = Person {
+                                name: owner,
+                                role: Role::Admin,
+                            };
+                            if let Err(e) = store.add_person(&admin).await {
+                                eprintln!("the owner was not added: {e}");
+                            }
+                            return server.run(store, scratch);
+                        }
                         Err(e) => eprintln!("the store did not open: {e}"),
                     }
                 }

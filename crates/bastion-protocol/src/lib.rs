@@ -319,6 +319,9 @@ pub struct JobSummary {
     pub pr: Option<String>,
     /// The tracker issue the request came from.
     pub issue: Option<String>,
+    /// Who asked for the job (D31).
+    #[serde(default)]
+    pub requester: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

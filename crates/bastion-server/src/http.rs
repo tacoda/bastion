@@ -1,10 +1,11 @@
 //! The HTTP API (D28) and its event stream (D29). Each route calls one
-//! function in `api`, and every route needs the server's bearer token.
+//! function in `api`. Every request carries a person's token, and the
+//! person's role decides what they may do (D31, `access`).
 
 use std::convert::Infallible;
 use std::sync::Arc;
 
-use axum::extract::{Path, Request, State};
+use axum::extract::{Extension, MatchedPath, Path, Request, State};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -21,7 +22,12 @@ use serde_json::json;
 use tokio::sync::broadcast::error::RecvError;
 use tower_http::cors::CorsLayer;
 
+use bastion_core::people::{Act, Person, Role};
+
+use crate::access::{self, Refusal};
+use crate::api::settings::FromIssue;
 use crate::api::{self, factory::NOT_STARTED};
+use crate::factory::Submission;
 use crate::server::Server;
 
 /// The origins of the app's window: Trunk's in development, Tauri's built.
@@ -30,14 +36,20 @@ const ORIGINS: [&str; 2] = ["http://localhost:1420", "tauri://localhost"];
 #[derive(Clone)]
 struct App {
     server: Arc<Server>,
+    /// The token in `data/token`, which is the owner's.
     token: Arc<str>,
+    owner: Person,
 }
 
-/// The API for `server`, open to a request that carries `token`.
-pub fn router(server: Arc<Server>, token: &str) -> Router {
+/// The API for `server`. `token` is the owner's, and `owner` names them.
+pub fn router(server: Arc<Server>, token: &str, owner: &str) -> Router {
     let app = App {
         server,
         token: token.into(),
+        owner: Person {
+            name: owner.into(),
+            role: Role::Admin,
+        },
     };
     let cors = CorsLayer::new()
         .allow_origin(ORIGINS.map(HeaderValue::from_static))
@@ -56,6 +68,7 @@ pub fn router(server: Arc<Server>, token: &str) -> Router {
 fn routes() -> Router<App> {
     Router::new()
         .route("/events", get(events))
+        .route("/me", get(me))
         .route("/engine", get(engine))
         .route("/doctor", get(doctor))
         .route("/stack", get(stack_status))
@@ -110,15 +123,77 @@ fn settings_routes() -> Router<App> {
         .route("/issues/{workspace}/{number}/job", post(job_from_issue))
 }
 
-async fn authorized(State(app): State<App>, request: Request, next: Next) -> Response {
-    let expected = format!("Bearer {}", app.token);
-    match request.headers().get(header::AUTHORIZATION) {
-        Some(given) if given.as_bytes() == expected.as_bytes() => next.run(request).await,
-        _ => (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "error": "no valid token" })),
-        )
-            .into_response(),
+/// Find who is asking, check their role allows what the route does, and
+/// hand the person to the handler.
+async fn authorized(State(app): State<App>, mut request: Request, next: Next) -> Response {
+    let given = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .unwrap_or_default()
+        .to_string();
+    let path = request
+        .extensions()
+        .get::<MatchedPath>()
+        .map(|p| p.as_str().to_string())
+        .unwrap_or_default();
+    let act = access::act_for(request.method(), &path);
+    let found = access::person(&app.server, &app.owner, &app.token, &given).await;
+    let person = match found.and_then(|p| access::check(&p, act).map(|()| p)) {
+        Ok(person) => person,
+        Err(why) => return refused(why),
+    };
+    let did = format!("{} {}", request.method(), request.uri().path());
+    request.extensions_mut().insert(person.clone());
+    let response = next.run(request).await;
+    if act != Act::Read && response.status().is_success() {
+        note_act(&app, &person, &did);
+    }
+    response
+}
+
+/// Every change a person makes goes in the audit log with who made it (D31).
+fn note_act(app: &App, person: &Person, did: &str) {
+    let Some(factory) = app.server.factory.get() else {
+        return;
+    };
+    if let Ok(log) = factory.gate().audit() {
+        log.note(bastion_core::audit::Record {
+            kind: "act".into(),
+            subject: did.into(),
+            detail: format!("{} ({:?})", person.name, person.role),
+        });
+    }
+}
+
+fn refused(why: Refusal) -> Response {
+    let (status, error) = match why {
+        Refusal::Unknown => (StatusCode::UNAUTHORIZED, "no valid token".to_string()),
+        Refusal::NotReady => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "the server's people are not open yet; start the stack".to_string(),
+        ),
+        Refusal::Forbidden(why) => (StatusCode::FORBIDDEN, why),
+    };
+    (status, Json(json!({ "error": error }))).into_response()
+}
+
+/// Who the token belongs to, and their role.
+async fn me(Extension(person): Extension<Person>) -> Response {
+    Json(person).into_response()
+}
+
+/// Run `then` if `person` may act on job `id`.
+async fn on_job(
+    app: &App,
+    person: &Person,
+    id: &str,
+    then: impl std::future::Future<Output = Response>,
+) -> Response {
+    match access::on_job(&app.server, person, id).await {
+        Ok(()) => then.await,
+        Err(why) => refused(why),
     }
 }
 
@@ -211,17 +286,31 @@ struct Submit {
     pipeline: Option<Pipeline>,
 }
 
-async fn job_submit(State(app): State<App>, Json(b): Json<Submit>) -> Response {
+async fn job_submit(
+    State(app): State<App>,
+    Extension(person): Extension<Person>,
+    Json(b): Json<Submit>,
+) -> Response {
+    let how = Submission {
+        pipeline: b.pipeline.unwrap_or_default(),
+        requester: Some(person.name),
+        ..Submission::default()
+    };
     let f = &app.server.factory;
-    answer(api::factory::job_submit(f, b.workspace, b.request, b.pipeline).await)
+    answer(api::factory::job_submit(f, b.workspace, b.request, how).await)
 }
 
 async fn job(State(app): State<App>, Path(id): Path<String>) -> Response {
     answer(api::factory::job(&app.server.factory, id).await)
 }
 
-async fn job_approve(State(app): State<App>, Path(id): Path<String>) -> Response {
-    answer(api::factory::job_approve(&app.server.factory, id).await)
+async fn job_approve(
+    State(app): State<App>,
+    Extension(person): Extension<Person>,
+    Path(id): Path<String>,
+) -> Response {
+    let approve = api::factory::job_approve(&app.server.factory, id.clone());
+    on_job(&app, &person, &id, async { answer(approve.await) }).await
 }
 
 #[derive(Deserialize)]
@@ -231,14 +320,21 @@ struct Text {
 
 async fn job_comment(
     State(app): State<App>,
+    Extension(person): Extension<Person>,
     Path(id): Path<String>,
     Json(b): Json<Text>,
 ) -> Response {
-    answer(api::factory::job_comment(&app.server.factory, id, b.text).await)
+    let comment = api::factory::job_comment(&app.server.factory, id.clone(), b.text);
+    on_job(&app, &person, &id, async { answer(comment.await) }).await
 }
 
-async fn job_stop(State(app): State<App>, Path(id): Path<String>) -> Response {
-    answer(api::factory::job_stop(&app.server.factory, id).await)
+async fn job_stop(
+    State(app): State<App>,
+    Extension(person): Extension<Person>,
+    Path(id): Path<String>,
+) -> Response {
+    let stop = api::factory::job_stop(&app.server.factory, id.clone());
+    on_job(&app, &person, &id, async { answer(stop.await) }).await
 }
 
 async fn dials(State(app): State<App>) -> Response {
@@ -275,18 +371,30 @@ async fn eval_apply(
     answer(api::evals::eval_apply(&app.server.factory, id, b.arm).await)
 }
 
-async fn held_allow(State(app): State<App>, Json(h): Json<HeldCallRef>) -> Response {
-    answer(api::govern::held_allow(&app.server.factory, h).await)
+async fn held_allow(
+    State(app): State<App>,
+    Extension(person): Extension<Person>,
+    Json(h): Json<HeldCallRef>,
+) -> Response {
+    let job = h.job.clone();
+    let allow = api::govern::held_allow(&app.server.factory, h);
+    on_job(&app, &person, &job, async { answer(allow.await) }).await
 }
 
 #[derive(Deserialize)]
-struct Refusal {
+struct RefuseCall {
     held: HeldCallRef,
     feedback: String,
 }
 
-async fn held_refuse(State(app): State<App>, Json(b): Json<Refusal>) -> Response {
-    answer(api::govern::held_refuse(&app.server.factory, b.held, b.feedback).await)
+async fn held_refuse(
+    State(app): State<App>,
+    Extension(person): Extension<Person>,
+    Json(b): Json<RefuseCall>,
+) -> Response {
+    let job = b.held.job.clone();
+    let refuse = api::govern::held_refuse(&app.server.factory, b.held, b.feedback);
+    on_job(&app, &person, &job, async { answer(refuse.await) }).await
 }
 
 async fn constraints(State(app): State<App>) -> Response {
@@ -391,10 +499,16 @@ async fn issues(State(app): State<App>, Path(workspace): Path<String>) -> Respon
 
 async fn job_from_issue(
     State(app): State<App>,
+    Extension(person): Extension<Person>,
     Path((workspace, number)): Path<(String, u64)>,
 ) -> Response {
     let s = &app.server;
-    answer(api::settings::job_from_issue(&s.factory, &s.machine, workspace, number).await)
+    let from = FromIssue {
+        workspace,
+        number,
+        requester: Some(person.name),
+    };
+    answer(api::settings::job_from_issue(&s.factory, &s.machine, from).await)
 }
 
 /// What the stream sends: a change with its number, or a request to read
@@ -493,7 +607,10 @@ mod tests {
     }
 
     async fn call(server: Arc<Server>, request: Request<Body>) -> (StatusCode, String) {
-        let response = router(server, TOKEN).oneshot(request).await.unwrap();
+        let response = router(server, TOKEN, "owner")
+            .oneshot(request)
+            .await
+            .unwrap();
         let status = response.status();
         let body = axum::body::to_bytes(response.into_body(), 1 << 20)
             .await
@@ -520,7 +637,7 @@ mod tests {
                     .header(header::CONTENT_TYPE, "application/json")
                     .body(body)
                     .unwrap();
-                let status = router(server(), TOKEN)
+                let status = router(server(), TOKEN, "owner")
                     .oneshot(request)
                     .await
                     .unwrap()
@@ -533,13 +650,112 @@ mod tests {
         });
     }
 
+    /// A server whose factory runs on a fake store holding a viewer, a member
+    /// with one job, and their tokens.
+    async fn staffed() -> Arc<Server> {
+        use crate::people_store::{NewToken, PeopleStore, hash};
+        use crate::store::fake::FakeStore;
+        use crate::store::{Record, Runtime, Store};
+        let s = server();
+        let store = Arc::new(FakeStore::default());
+        let factory = crate::factory::Factory::new(
+            s.engine.clone(),
+            store.clone(),
+            s.machine.clone(),
+            Arc::new(|_| {}),
+            "/scratch".into(),
+        );
+        let _ = s.factory.set(factory);
+        {
+            for (name, role) in [("vic", Role::Viewer), ("mia", Role::Member)] {
+                let p = Person {
+                    name: name.into(),
+                    role,
+                };
+                store.add_person(&p).await.unwrap();
+                store
+                    .add_token(NewToken {
+                        person: name,
+                        hash: &hash(&format!("{name}-token")),
+                        label: "",
+                        at: 1,
+                    })
+                    .await
+                    .unwrap();
+            }
+            let record = Record {
+                job: bastion_core::Job::new("j1".into(), "w".into(), "r".into(), 1),
+                runtime: Runtime {
+                    requester: Some("ana".into()),
+                    ..Runtime::default()
+                },
+                rev: 1,
+                created_at: 1,
+            };
+            store.insert(&record).await.unwrap();
+        }
+        s
+    }
+
+    fn post(path: &str, token: &str, body: &str) -> Request<Body> {
+        Request::post(path)
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    }
+
+    #[test]
+    fn each_role_may_do_only_what_it_is_for() {
+        crate::rt::block_on(async {
+            let s = staffed().await;
+            let (status, body) = call(s.clone(), get("/me", Some(TOKEN))).await;
+            assert_eq!(status, StatusCode::OK);
+            assert!(
+                body.contains("\"admin\""),
+                "the owner's token is the admin: {body}"
+            );
+
+            let (status, _) = call(s.clone(), get("/jobs", Some("vic-token"))).await;
+            assert_eq!(status, StatusCode::OK, "a viewer reads");
+            let (status, body) = call(
+                s.clone(),
+                post("/jobs", "vic-token", r#"{"workspace":"w","request":"r"}"#),
+            )
+            .await;
+            assert_eq!(status, StatusCode::FORBIDDEN);
+            assert!(
+                body.contains("vic is a Viewer, which may not submit a request"),
+                "{body}"
+            );
+
+            let (status, _) = call(
+                s.clone(),
+                post("/settings/preset", "mia-token", r#"{"preset":"low"}"#),
+            )
+            .await;
+            assert_eq!(
+                status,
+                StatusCode::FORBIDDEN,
+                "a member does not manage the server"
+            );
+            let (status, body) = call(s.clone(), post("/jobs/j1/approve", "mia-token", "")).await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "j1 is ana's");
+            assert!(body.contains("only ana or an admin"), "{body}");
+
+            let (status, _) = call(s, get("/jobs", Some("nobody"))).await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED);
+        });
+    }
+
     #[test]
     fn a_request_without_the_token_is_refused() {
         crate::rt::block_on(async {
             let (status, _) = call(server(), get("/jobs", None)).await;
             assert_eq!(status, StatusCode::UNAUTHORIZED);
+            // Before the database opens, only the owner's token can be checked.
             let (status, _) = call(server(), get("/jobs", Some("wrong"))).await;
-            assert_eq!(status, StatusCode::UNAUTHORIZED);
+            assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
         });
     }
 
@@ -564,7 +780,10 @@ mod tests {
                 .header(header::ACCESS_CONTROL_REQUEST_HEADERS, "authorization")
                 .body(Body::empty())
                 .unwrap();
-            let response = router(server(), TOKEN).oneshot(preflight).await.unwrap();
+            let response = router(server(), TOKEN, "owner")
+                .oneshot(preflight)
+                .await
+                .unwrap();
             assert_eq!(
                 response.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN],
                 "tauri://localhost"
@@ -580,7 +799,10 @@ mod tests {
                 .headers_mut()
                 .insert("last-event-id", id.parse().unwrap());
         }
-        let response = router(server, TOKEN).oneshot(request).await.unwrap();
+        let response = router(server, TOKEN, "owner")
+            .oneshot(request)
+            .await
+            .unwrap();
         let mut body = response.into_body().into_data_stream();
         let mut text = String::new();
         for _ in 0..count {
@@ -626,7 +848,7 @@ mod tests {
                 publisher.events.publish(Change::Console);
             });
             // The engine watcher may publish its status first, so read on.
-            let response = router(s, TOKEN)
+            let response = router(s, TOKEN, "owner")
                 .oneshot(get("/events", Some(TOKEN)))
                 .await
                 .unwrap();

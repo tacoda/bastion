@@ -8,6 +8,7 @@ mod brief;
 pub mod charter;
 pub mod eval;
 pub mod govern;
+pub mod people;
 mod pipeline;
 pub mod review;
 pub mod settings;

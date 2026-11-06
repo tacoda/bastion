@@ -91,7 +91,7 @@ impl Server {
             scratch,
         );
         if let Err(e) = factory.start() {
-            eprintln!("the factory did not start: {e}");
+            eprintln!("the orchestrator did not start: {e}");
         }
         let _ = self.factory.set(factory);
         // Clients that read before the factory started read again.

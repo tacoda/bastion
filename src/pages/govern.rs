@@ -124,7 +124,7 @@ pub fn ConstraintsPage() -> impl IntoView {
     view! {
         {heading("Constraints", g)}
         <p class="m-0 mb-4 max-w-3xl text-sm text-muted">
-            "Each rule climbs told, then checked (recorded), then enforced (refused). The charter's rules come from each repository; the harness binds an agent's turn; the factory binds the pipeline."
+            "Each rule climbs told, then checked (recorded), then enforced (refused). The charter's rules come from each repository; the harness binds an agent's turn; the orchestrator binds the workflow."
         </p>
         <CharterRules />
         <ConstraintsList layer="harness" constraints=g.constraints audit=g.audit step=step />
@@ -372,7 +372,7 @@ fn AuditList(audit: ReadSignal<Option<AuditView>>) -> impl IntoView {
 /// A layer's section title on the Constraints page.
 fn layer_title(layer: &str) -> &'static str {
     if layer == "factory" {
-        "Factory: rules on the pipeline, checked at review"
+        "Orchestrator: rules on the workflow, checked at review"
     } else {
         "Harness: rules on an agent's calls"
     }
@@ -456,7 +456,7 @@ fn FactoryCapabilities() -> impl IntoView {
     let all = listed::<FactoryCapabilityView>(command::FACTORY_CAPABILITIES);
     view! {
         <section class=SECTION>
-            <h2 class=SECTION_TITLE>"Factory: what the factory may do, as Settings set it"</h2>
+            <h2 class=SECTION_TITLE>"Orchestrator: what the orchestrator may do, as Settings set it"</h2>
             <ul class="m-0 list-none p-0">
                 {move || all.get().into_iter().map(|f| view! {
                     <li class="flex flex-wrap items-center gap-3 border-t border-line px-3 py-2 first:border-t-0">

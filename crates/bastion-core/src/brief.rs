@@ -56,6 +56,31 @@ could be, so that those tests fail. One break may serve several tests. Do not
 touch any test, fixture or check file, do not commit, and do not undo your
 change. Reply with what you broke and which criteria it should fail.";
 
+/// The VM tag on the code a job started from, so a turn can see its change.
+pub const BASE_TAG: &str = "bastion-base";
+
+const REFACTOR: &str = "\
+The change below is built and its tests pass, in the repository in /work/repo.
+Do not change any file. Run `git diff bastion-base` to see the change, and
+propose refactorings that would make it easier to read or change, without
+changing what it does. Reply in exactly this shape, with nothing before it:
+
+REFACTORS:
+1. One refactoring: where, what, and why it helps.
+
+Leave REFACTORS empty when the change needs none.";
+
+const CODE_REVIEW: &str = "\
+Review the change in the repository in /work/repo. Do not change any file.
+Run `git diff bastion-base` to see it. Look for bugs, missing tests, unclear
+code, and anything the request asked for that the change does not do. Reply in
+exactly this shape, with nothing before it:
+
+FINDINGS:
+1. One finding: the file and line, what is wrong, and what to do.
+
+Leave FINDINGS empty when you find nothing worth fixing.";
+
 const BUILD: &str = "\
 You are carrying out the approved plan below in the repository in /work/repo.
 Write the tests first, then the code. Commit your work with git on the current
@@ -75,6 +100,8 @@ fn intro(stage: Stage) -> &'static str {
         Stage::Define => DEFINE,
         Stage::Specify => SPECIFY,
         Stage::Falsify => FALSIFY,
+        Stage::Refactor => REFACTOR,
+        Stage::CodeReview => CODE_REVIEW,
         Stage::Build | Stage::Implement | Stage::CiFix => BUILD,
         _ => PLAN,
     }
@@ -161,6 +188,23 @@ pub fn discovery(report: &str) -> Discovery {
         }
     }
     found
+}
+
+/// The items listed under `header` in a report, as `discovery` reads them.
+pub fn listed(report: &str, header: &str) -> Vec<String> {
+    let mut items = Vec::new();
+    let mut under = false;
+    for line in report.lines().map(str::trim) {
+        if line.eq_ignore_ascii_case(header) {
+            under = true;
+        } else if let Some(text) = item(line).filter(|_| under) {
+            items.push(text.to_string());
+        } else if line.ends_with(':') {
+            // Another header ends this list.
+            under = false;
+        }
+    }
+    items
 }
 
 /// The text of a list item: `1. text`, `1) text` or `- text`.

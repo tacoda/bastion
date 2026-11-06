@@ -60,6 +60,7 @@ pub async fn workspaces(cell: &FactoryCell) -> Result<Vec<Workspace>, String> {
             name: w.name,
             path: w.path,
             branch: w.branch,
+            checks: w.checks,
         })
         .collect())
 }
@@ -93,6 +94,7 @@ pub async fn workspace_add(
         name: name.into(),
         path: path.into(),
         branch: branch.into(),
+        checks: workspace.checks.trim().into(),
     };
     factory(cell)?.store().add_workspace(&row).await
 }

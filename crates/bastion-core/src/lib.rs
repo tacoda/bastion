@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-pub use brief::{Discovery, QUESTION_MARKER, brief, discovery, outcome};
+pub use brief::{BASE_TAG, Discovery, QUESTION_MARKER, brief, discovery, listed, outcome};
 pub use pipeline::{Kind, Pipeline};
 
 /// How many failed turns in a row a stage gets before the job fails (D16).
@@ -696,13 +696,20 @@ fn turn_finished(job: &mut Job, outcome: &Outcome, dials: &Dials) -> Vec<Effect>
                 stage: job.stage,
                 body: report.clone(),
             }];
-            if job.stage == Stage::Build {
+            if matches!(job.stage, Stage::Build | Stage::CodeReview) {
                 effects.push(Effect::CaptureDiff);
             }
             job.feedback = None;
             match job.stage {
                 Stage::Discover => discovered(job, report),
                 Stage::Define => job.criteria = Some(report.clone()),
+                // Nothing proposed or found: there is nothing to pick.
+                Stage::Refactor if listed(report, "REFACTORS:").is_empty() => {
+                    job.stage = Stage::PickRefactors
+                }
+                Stage::CodeReview if listed(report, "FINDINGS:").is_empty() => {
+                    job.stage = Stage::PickFindings
+                }
                 Stage::Specify => job.falsify_tried = false,
                 _ => {}
             }

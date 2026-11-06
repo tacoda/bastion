@@ -141,6 +141,9 @@ fn judged(d: &JobDetail) -> (Option<String>, Option<String>) {
         "review" => (latest("build"), latest("review")),
         "approve" => (latest("plan"), None),
         "clarify" => (latest("discover"), None),
+        "your_checks" => (latest("define"), None),
+        "pick_refactors" => (latest("refactor"), None),
+        "pick_findings" => (latest("code_review"), latest("review")),
         _ => (None, None),
     }
 }
@@ -154,6 +157,11 @@ fn what_approve_does(d: &JobDetail) -> &'static str {
         "land" => "Approve retries the land, or stop the job.",
         "review" => "Approve the build artifact to move on, or send it back with a note.",
         "clarify" => "Answer discovery's questions in a note, or approve to plan without answers.",
+        "your_checks" => {
+            "Approve these criteria to write their tests, or send them back with a note."
+        }
+        "pick_refactors" => "Name the refactorings to make in a note, or approve to make none.",
+        "pick_findings" => "Name the findings to fix in a note, or approve to fix none.",
         _ => "Approve the plan artifact to move on, or send it back with a note.",
     }
 }

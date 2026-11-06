@@ -291,6 +291,10 @@ pub struct Workspace {
     pub name: String,
     pub path: String,
     pub branch: String,
+    /// The command that runs this workspace's tests, such as `pytest -q`.
+    /// Empty runs nothing.
+    #[serde(default)]
+    pub checks: String,
 }
 
 /// One job as the floor and the inbox show it.

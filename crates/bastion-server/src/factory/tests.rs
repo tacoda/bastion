@@ -55,6 +55,7 @@ fn rig() -> Rig {
         name: "w".into(),
         path: "/repo".into(),
         branch: "main".into(),
+        checks: String::new(),
     });
     let machine = Arc::new(FakeMachine::new().run_ok("git", ""));
     let factory = Factory::new(
@@ -166,6 +167,7 @@ fn a_full_request_prepares_and_its_read_only_turns_put_the_tree_back_to_a_tag() 
         until(&rig, &id, Stage::Discover, State::Running).await;
         let commands = vm_commands(&rig);
         assert!(commands.contains(&"git -C /work/repo tag -f bastion-before-turn".to_string()));
+        assert!(commands.contains(&"git -C /work/repo tag -f bastion-base".to_string()));
         assert!(
             commands.contains(&"git -C /work/repo reset -q --hard bastion-before-turn".to_string())
         );
@@ -226,6 +228,30 @@ fn checks_that_pass_before_the_build_go_to_falsify_and_one_that_stays_green_goes
         ] {
             assert!(commands.iter().any(|c| c == expected), "{expected}");
         }
+    });
+}
+
+#[test]
+fn the_checks_step_runs_the_workspaces_command_and_passes_on_exit_0() {
+    let rig = rig();
+    rig.store.workspaces.lock().unwrap()[0].checks = "pytest -q".into();
+    crate::rt::block_on(async {
+        let mut job = Job::new("j1".into(), "w".into(), "r".into(), 1).on(Pipeline::Full);
+        (job.stage, job.state) = (Stage::Checks, State::Running);
+        let record = Record {
+            job,
+            runtime: Runtime {
+                sandbox: Some("vm1".into()),
+                ..Runtime::default()
+            },
+            rev: 1,
+            created_at: 1,
+        };
+        rig.store.insert(&record).await.unwrap();
+        rig.factory.run_step(&record, Stage::Checks).await;
+        let job = rig.store.load("j1").await.unwrap().job;
+        assert_eq!(job.stage, Stage::Verify);
+        assert!(vm_commands(&rig).contains(&"sh -c cd /work/repo && pytest -q".to_string()));
     });
 }
 
@@ -319,6 +345,7 @@ fn a_failed_provision_fails_the_job_with_its_reason() {
         name: "w".into(),
         path: "/repo".into(),
         branch: "main".into(),
+        checks: String::new(),
     });
     let factory = Factory::new(
         engine.clone() as Arc<dyn Engine>,
@@ -445,6 +472,7 @@ fn github_rig(pr: &str) -> Rig {
         name: "w".into(),
         path: "/repo".into(),
         branch: "main".into(),
+        checks: String::new(),
     });
     let machine = Arc::new(FakeMachine::new().run_ok("git", "git@github.com:o/r.git\n"));
     let factory = Factory::new(

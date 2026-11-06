@@ -416,3 +416,42 @@ fn a_changed_test_at_verify_waits_on_the_owner_without_a_fix_turn() {
     );
     assert!(effects.is_empty());
 }
+
+#[test]
+fn a_refactor_with_nothing_proposed_goes_to_acceptance_and_one_with_proposals_waits_for_a_pick() {
+    let (j, effects) = go(&at(Stage::Refactor, State::Running), &reply("REFACTORS:\n"));
+    assert_eq!(j.stage, Stage::Acceptance);
+    assert!(effects.contains(&Effect::RunStep {
+        stage: Stage::Acceptance
+    }));
+    let (j, _) = go(
+        &at(Stage::Refactor, State::Running),
+        &reply("REFACTORS:\n1. Extract the parser"),
+    );
+    assert_eq!((j.stage, j.state), (Stage::PickRefactors, State::NeedsYou));
+}
+
+#[test]
+fn a_review_captures_the_diff_and_waits_for_a_pick_only_when_it_found_something() {
+    let (j, effects) = go(
+        &at(Stage::CodeReview, State::Running),
+        &reply("FINDINGS:\n"),
+    );
+    assert_eq!(j.stage, Stage::Ship);
+    assert!(effects.contains(&Effect::CaptureDiff));
+    let (j, _) = go(
+        &at(Stage::CodeReview, State::Running),
+        &reply("FINDINGS:\n1. calc.py:3 divides by zero"),
+    );
+    assert_eq!((j.stage, j.state), (Stage::PickFindings, State::NeedsYou));
+}
+
+#[test]
+fn a_list_reads_only_under_its_header() {
+    let report = "TASKS:\n1. a\nREFACTORS:\n- Extract it\n2) Rename it\nNOTES:\n- not a refactor\n";
+    assert_eq!(listed(report, "REFACTORS:"), ["Extract it", "Rename it"]);
+    assert!(listed("nothing", "FINDINGS:").is_empty());
+    let mut j = at(Stage::CodeReview, State::Running);
+    j.request = "r".into();
+    assert!(brief(&j).contains(&format!("git diff {BASE_TAG}")));
+}

@@ -122,6 +122,24 @@ pub fn verified(runs: &[Ran], changed: &[String]) -> Event {
     }
 }
 
+/// The checks step: the workspace's own test command, run once in the VM.
+/// A failure goes back to implement with its output; a command that cannot
+/// run waits on the owner, because no fix to the code will help.
+pub fn suite(ran: &Ran) -> Event {
+    match ran.code {
+        0 => Event::StepPassed,
+        126 | 127 => Event::StepStuck {
+            detail: format!(
+                "The checks command could not run (exit {}). Fix it in the workspace's settings.\n{}",
+                ran.code, ran.output
+            ),
+        },
+        code => Event::StepFailed {
+            detail: format!("The checks failed (exit {code}):\n{}", ran.output),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -132,6 +150,18 @@ mod tests {
             code,
             output: "out".into(),
         }
+    }
+
+    #[test]
+    fn the_suite_passes_fails_or_cannot_run() {
+        assert_eq!(suite(&ran("checks", 0)), Event::StepPassed);
+        assert!(
+            matches!(suite(&ran("checks", 1)), Event::StepFailed { detail } if detail.contains("exit 1"))
+        );
+        assert!(matches!(
+            suite(&ran("checks", 127)),
+            Event::StepStuck { .. }
+        ));
     }
 
     #[test]

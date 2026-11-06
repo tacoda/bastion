@@ -25,6 +25,8 @@ pub struct Workspace {
     pub name: String,
     pub path: String,
     pub branch: String,
+    /// The command that runs its tests at the checks step; empty runs nothing.
+    pub checks: String,
 }
 
 /// What the adapter holds for a job besides the core's state: where it runs.
@@ -186,7 +188,8 @@ const SCHEMA: [&str; 7] = [
         name TEXT PRIMARY KEY CHECK (length(name) > 0),
         path TEXT NOT NULL UNIQUE,
         branch TEXT NOT NULL CHECK (length(branch) > 0),
-        created_at INTEGER NOT NULL)",
+        created_at INTEGER NOT NULL,
+        checks TEXT NOT NULL DEFAULT '')",
     // Discovery's tasks for implement, in order.
     "CREATE TABLE IF NOT EXISTS tasks (
         job TEXT NOT NULL REFERENCES jobs(id),
@@ -272,10 +275,11 @@ const LEGACY_JOB_COLUMNS: &str = "id, workspace, request, stage, state, question
 /// Columns added after a table was first made. Each runs once; on a table
 /// that already has the column it fails, and that failure is expected.
 // They run before the numbered migrations, which need these columns to exist.
-const ALTERS: [&str; 3] = [
+const ALTERS: [&str; 4] = [
     "ALTER TABLE jobs ADD COLUMN pr TEXT",
     "ALTER TABLE jobs ADD COLUMN ci_fixes INTEGER NOT NULL DEFAULT 0 CHECK (ci_fixes >= 0)",
     "ALTER TABLE jobs ADD COLUMN issue TEXT",
+    "ALTER TABLE workspaces ADD COLUMN checks TEXT NOT NULL DEFAULT ''",
 ];
 
 /// Numbered migrations, each run once in order; `PRAGMA user_version` is the
@@ -610,8 +614,8 @@ impl Store for SqlStore {
     fn add_workspace<'a>(&'a self, w: &'a Workspace) -> Answer<'a, ()> {
         Box::pin(async move {
             self.execute(
-                "INSERT INTO workspaces (name, path, branch, created_at) VALUES (?, ?, ?, unixepoch())",
-                json!([w.name, w.path, w.branch]),
+                "INSERT INTO workspaces (name, path, branch, checks, created_at) VALUES (?, ?, ?, ?, unixepoch())",
+                json!([w.name, w.path, w.branch, w.checks]),
             )
             .await
             .map(|_| ())
@@ -621,7 +625,7 @@ impl Store for SqlStore {
     fn workspaces(&self) -> Answer<'_, Vec<Workspace>> {
         Box::pin(async move {
             self.query(
-                "SELECT name, path, branch FROM workspaces ORDER BY name",
+                "SELECT name, path, branch, checks FROM workspaces ORDER BY name",
                 json!([]),
             )
             .await?
@@ -631,6 +635,7 @@ impl Store for SqlStore {
                     name: parse(r, "name")?,
                     path: parse(r, "path")?,
                     branch: parse(r, "branch")?,
+                    checks: parse(r, "checks")?,
                 })
             })
             .collect()
@@ -1197,6 +1202,7 @@ mod live {
             name: tag.into(),
             path: format!("/tmp/{tag}"),
             branch: "main".into(),
+            checks: String::new(),
         };
         store.add_workspace(&w).await.unwrap();
         let r = Record {

@@ -12,8 +12,8 @@ use bastion_core::govern::Enforcement;
 use bastion_core::review;
 use bastion_core::settings::Forge;
 use bastion_core::{
-    Dial, Dials, Effect, Event, HOLD_SECS, Job, Outcome, Pipeline, Stage, State, admit, outcome,
-    step,
+    BASE_TAG, Dial, Dials, Effect, Event, HOLD_SECS, Job, Outcome, Pipeline, Stage, State, admit,
+    outcome, step,
 };
 use serde_json::{Value, json};
 
@@ -497,6 +497,9 @@ impl Factory {
             ],
         )
         .await?;
+        // What a review or refactor turn diffs against.
+        self.vm_exec(&sandbox, &["git", "-C", REPO, "tag", "-f", BASE_TAG])
+            .await?;
         Ok(())
     }
 
@@ -662,13 +665,14 @@ impl Factory {
 
     /// Run a step the factory runs itself, and report how it went.
     // ponytail: a workspace has no setup steps until A9, so prepare passes at
-    // once; checks, ship and deploy run from A8 steps 4 and 5, and until then each fails.
+    // once; ship and deploy run from A8 step 5, and until then each fails.
     async fn run_step(self: &Arc<Self>, record: &Record, stage: Stage) -> Option<String> {
         let event = match stage {
             Stage::Prepare => Event::StepPassed,
             Stage::Baseline | Stage::Verify | Stage::Acceptance => {
                 self.acceptance_step(record, stage).await
             }
+            Stage::Checks => self.checks_step(record).await,
             _ => Event::StepFailed {
                 detail: format!("Bastion does not run the {stage:?} step yet."),
             },

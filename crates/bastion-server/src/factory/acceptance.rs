@@ -40,6 +40,30 @@ impl Factory {
             .unwrap_or_else(|detail: String| Event::StepStuck { detail })
     }
 
+    /// The checks step: the workspace's own test command, in the VM. A
+    /// workspace with no command has nothing to run.
+    pub(super) async fn checks_step(&self, record: &Record) -> Event {
+        let ran = async {
+            let workspaces = self.store.workspaces().await?;
+            let command = workspaces
+                .into_iter()
+                .find(|w| w.name == record.job.workspace)
+                .map(|w| w.checks)
+                .unwrap_or_default();
+            if command.trim().is_empty() {
+                return Ok(Event::StepPassed);
+            }
+            let vm = Vm {
+                engine: &*self.engine,
+                sandbox: record.runtime.sandbox.as_deref().ok_or("no VM")?,
+                spec: Spec { checks: Vec::new() },
+            };
+            Ok(acceptance::suite(&vm.run("checks", &command).await?))
+        };
+        ran.await
+            .unwrap_or_else(|detail: String| Event::StepStuck { detail })
+    }
+
     /// The spec the latest specify turn wrote.
     async fn latest_spec(&self, job: &str) -> Result<Spec, String> {
         let artifacts = self.store.artifacts(job).await?;
@@ -146,18 +170,23 @@ impl Vm<'_> {
     async fn run_checks(&self) -> Result<Vec<Ran>, String> {
         let mut runs = Vec::new();
         for check in &self.spec.checks {
-            let out = self.exec(&check.run, CHECK_SECS).await?;
-            runs.push(Ran {
-                criterion: check.criterion.clone(),
-                code: out["exit_code"].as_i64().unwrap_or(-1),
-                output: tail(&format!(
-                    "{}{}",
-                    out["stdout"].as_str().unwrap_or_default(),
-                    out["stderr"].as_str().unwrap_or_default()
-                )),
-            });
+            runs.push(self.run(&check.criterion, &check.run).await?);
         }
         Ok(runs)
+    }
+
+    /// Run one command, whatever it exits with, and keep the end of its output.
+    async fn run(&self, name: &str, command: &str) -> Result<Ran, String> {
+        let out = self.exec(command, CHECK_SECS).await?;
+        Ok(Ran {
+            criterion: name.to_string(),
+            code: out["exit_code"].as_i64().unwrap_or(-1),
+            output: tail(&format!(
+                "{}{}",
+                out["stdout"].as_str().unwrap_or_default(),
+                out["stderr"].as_str().unwrap_or_default()
+            )),
+        })
     }
 
     /// The spec's files as shell words.

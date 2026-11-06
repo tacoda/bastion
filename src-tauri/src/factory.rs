@@ -26,6 +26,7 @@ use crate::forge;
 use crate::gate::Gate;
 use crate::machine::Machine;
 use crate::settings_store;
+use crate::spec;
 use crate::store::{Artifact, Record, Runtime, STALE, Store};
 
 const NS: &str = "bastion";
@@ -345,7 +346,7 @@ impl Factory {
                     self.apply(&id, Event::TurnFinished { outcome }).await.err()
                 }
             },
-            Effect::RunStep { stage } => self.run_step(&id, stage).await,
+            Effect::RunStep { stage } => self.run_step(&record, stage).await,
             Effect::RecordArtifact { stage, body } => {
                 let artifact = Artifact {
                     stage,
@@ -550,8 +551,9 @@ impl Factory {
                 }
             }
         }
-        if stage.read_only() {
-            // Where the tree goes back to after the turn, commits included.
+        if stage.read_only() || stage == Stage::Falsify {
+            // Where the tree goes back to after the turn, commits included:
+            // by `put_back` for a read-only turn, by the baseline after falsify.
             self.vm_exec(&sandbox, &["git", "-C", REPO, "tag", "-f", BEFORE_TURN])
                 .await?;
         }
@@ -629,7 +631,7 @@ impl Factory {
                         error: error.into(),
                     },
                     None => match self.final_reply(session).await {
-                        Ok(reply) => outcome(&reply),
+                        Ok(reply) => usable(record.job.stage, outcome(&reply)),
                         Err(error) => Outcome::Failed { error },
                     },
                 },
@@ -662,15 +664,18 @@ impl Factory {
 
     /// Run a step the factory runs itself, and report how it went.
     // ponytail: a workspace has no setup steps until A9, so prepare passes at
-    // once; the other steps run from A8 steps 3 to 5, and until then each fails.
-    async fn run_step(self: &Arc<Self>, id: &str, stage: Stage) -> Option<String> {
+    // once; checks, ship and deploy run from A8 steps 4 and 5, and until then each fails.
+    async fn run_step(self: &Arc<Self>, record: &Record, stage: Stage) -> Option<String> {
         let event = match stage {
             Stage::Prepare => Event::StepPassed,
+            Stage::Baseline | Stage::Verify | Stage::Acceptance => {
+                self.acceptance_step(record, stage).await
+            }
             _ => Event::StepFailed {
                 detail: format!("Bastion does not run the {stage:?} step yet."),
             },
         };
-        self.apply(id, event).await.err()
+        self.apply(&record.job.id, event).await.err()
     }
 
     /// The build's commits against the branch it started from, from the VM.
@@ -1091,6 +1096,19 @@ impl Factory {
             }
         }
         self.pump();
+    }
+}
+
+mod acceptance;
+/// A specify reply the app cannot read as a spec goes back to the core as
+/// unusable, so the turn gets one more try with the reason.
+fn usable(stage: Stage, outcome: Outcome) -> Outcome {
+    match outcome {
+        Outcome::Done { report } if stage == Stage::Specify => match spec::read(&report) {
+            Ok(_) => Outcome::Done { report },
+            Err(problem) => Outcome::Unusable { report, problem },
+        },
+        other => other,
     }
 }
 

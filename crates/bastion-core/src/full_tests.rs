@@ -312,3 +312,107 @@ fn discovery_without_questions_goes_straight_to_the_plan() {
     );
     assert_eq!((j.stage, j.state), (Stage::Plan, State::Running));
 }
+
+fn reply(report: &str) -> Event {
+    Event::TurnFinished {
+        outcome: Outcome::Done {
+            report: report.into(),
+        },
+    }
+}
+
+const SPEC: &str =
+    r#"{"checks": [{"criterion": "C1", "run": "pytest -k c1", "files": ["tests/test_c1.py"]}]}"#;
+
+#[test]
+fn defines_criteria_reach_specify_and_the_owner_may_redefine_three_times() {
+    let (j, _) = go(&at(Stage::Define, State::Running), &reply("C1: it answers"));
+    assert_eq!(
+        (j.stage, j.criteria.as_deref()),
+        (Stage::YourChecks, Some("C1: it answers"))
+    );
+    let mut j = j;
+    for _ in 0..MAX_REDEFINES {
+        assert!(actions(&j).contains(&Action::Comment));
+        (j, _) = go(
+            &j,
+            &Event::Commented {
+                text: "fewer".into(),
+            },
+        );
+        assert_eq!(j.stage, Stage::Define);
+        (j, _) = go(&j, &reply("C1: it answers"));
+    }
+    assert_eq!(actions(&j), vec![Action::Approve, Action::Stop]);
+    let (_, effects) = go(&j, &Event::Approved);
+    let brief = match effects.as_slice() {
+        [
+            Effect::StartTurn {
+                stage: Stage::Specify,
+                brief,
+                ..
+            },
+        ] => brief.clone(),
+        other => panic!("{other:?}"),
+    };
+    assert!(brief.contains("C1: it answers"));
+}
+
+#[test]
+fn a_spec_that_does_not_read_gets_one_retry_then_waits_on_the_owner() {
+    let unusable = |report: &str| Event::TurnFinished {
+        outcome: Outcome::Unusable {
+            report: report.into(),
+            problem: "not JSON".into(),
+        },
+    };
+    let (j, effects) = go(&at(Stage::Specify, State::Running), &unusable("no json"));
+    assert_eq!((j.stage, j.state), (Stage::Specify, State::Running));
+    assert!(starts_turn(&effects, Stage::Specify));
+    let (j, _) = go(&j, &unusable("still no json"));
+    assert_eq!((j.stage, j.state), (Stage::Specify, State::NeedsYou));
+
+    let (j, effects) = go(&at(Stage::Specify, State::Running), &reply(SPEC));
+    assert_eq!(j.stage, Stage::Baseline);
+    assert!(effects.contains(&Effect::RunStep {
+        stage: Stage::Baseline
+    }));
+}
+
+#[test]
+fn green_checks_at_the_baseline_go_to_falsify_once_per_spec() {
+    let (j, effects) = go(&at(Stage::Baseline, State::Running), &Event::ChecksGreen);
+    assert_eq!(
+        (j.stage, j.back_to, j.falsify_tried),
+        (Stage::Falsify, Some(Stage::Baseline), true)
+    );
+    assert!(starts_turn(&effects, Stage::Falsify));
+    let (j, effects) = go(&j, &done());
+    assert_eq!(j.stage, Stage::Baseline);
+    assert!(effects.contains(&Effect::RunStep {
+        stage: Stage::Baseline
+    }));
+    let (j, _) = go(&j, &Event::ChecksGreen);
+    assert_eq!(
+        j.stage,
+        Stage::Specify,
+        "a second green baseline is the spec's problem"
+    );
+    let (j, _) = go(&j, &reply(SPEC));
+    assert!(!j.falsify_tried, "a new spec may be falsified again");
+}
+
+#[test]
+fn a_changed_test_at_verify_waits_on_the_owner_without_a_fix_turn() {
+    let (j, effects) = go(
+        &at(Stage::Verify, State::Running),
+        &Event::StepStuck {
+            detail: "changed".into(),
+        },
+    );
+    assert_eq!(
+        (j.stage, j.state, j.error.as_deref()),
+        (Stage::Verify, State::NeedsYou, Some("changed"))
+    );
+    assert!(effects.is_empty());
+}

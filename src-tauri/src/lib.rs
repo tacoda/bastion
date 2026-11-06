@@ -15,6 +15,7 @@ mod gate;
 mod machine;
 mod profile;
 mod settings_store;
+mod spec;
 mod stack;
 mod store;
 

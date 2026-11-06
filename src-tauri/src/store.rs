@@ -144,7 +144,9 @@ fn staged_tables() -> [(&'static str, &'static str, String); 3] {
         pipeline TEXT NOT NULL DEFAULT 'short' CHECK (pipeline IN ('short','full','full_no_acceptance')),
         back_to TEXT {back_to},
         last_refusal TEXT,
-        done_tasks INTEGER NOT NULL DEFAULT 0 CHECK (done_tasks >= 0))"
+        done_tasks INTEGER NOT NULL DEFAULT 0 CHECK (done_tasks >= 0),
+        criteria TEXT,
+        falsify_tried INTEGER NOT NULL DEFAULT 0 CHECK (falsify_tried IN (0, 1)))"
             ),
         ),
         (
@@ -263,7 +265,7 @@ pub fn seed_statements(sql: &str) -> Vec<Value> {
         .collect()
 }
 
-const JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue, pipeline, back_to, last_refusal, done_tasks";
+const JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue, pipeline, back_to, last_refusal, done_tasks, criteria, falsify_tried";
 /// The job columns before migration 1, which its rebuild copies.
 const LEGACY_JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue";
 
@@ -483,6 +485,9 @@ fn record(row: &Value) -> Result<Record, String> {
             last_refusal: text(row, "last_refusal"),
             tasks: Vec::new(),
             done_tasks: parse(row, "done_tasks")?,
+            criteria: text(row, "criteria"),
+            falsify_tried: row["falsify_tried"].as_i64() == Some(1)
+                || row["falsify_tried"].as_bool() == Some(true),
         },
         runtime: Runtime {
             worktree: text(row, "worktree"),
@@ -570,7 +575,9 @@ fn job_params(r: &Record) -> Value {
         name(j.pipeline),
         j.back_to.map(name),
         j.last_refusal,
-        j.done_tasks
+        j.done_tasks,
+        j.criteria,
+        j.falsify_tried
     ])
 }
 
@@ -669,12 +676,12 @@ impl Store for SqlStore {
             let rows = self
                 .execute(
                     "UPDATE jobs SET stage = ?, state = ?, question = ?, feedback = ?, plan = ?, failures = ?, error = ?, worktree = ?, sandbox = ?, session = ?, updated_at = ?, pr = ?, ci_fixes = ?, issue = ?,
-                     pipeline = ?, back_to = ?, last_refusal = ?, done_tasks = ?, rev = rev + 1
+                     pipeline = ?, back_to = ?, last_refusal = ?, done_tasks = ?, criteria = ?, falsify_tried = ?, rev = rev + 1
                      WHERE id = ? AND rev = ? RETURNING rev",
                     json!([
                         name(j.stage), name(j.state), j.question, j.feedback, j.plan, j.failures, j.error,
                         r.runtime.worktree, r.runtime.sandbox, r.runtime.session, j.updated_at, j.pr, j.ci_fixes, r.runtime.issue,
-                        name(j.pipeline), j.back_to.map(name), j.last_refusal, j.done_tasks, j.id, r.rev
+                        name(j.pipeline), j.back_to.map(name), j.last_refusal, j.done_tasks, j.criteria, j.falsify_tried, j.id, r.rev
                     ]),
                 )
                 .await?;
@@ -1033,8 +1040,8 @@ mod tests {
                     .unwrap()
                     .contains("WHERE id = ? AND rev = ?")
             );
-            assert_eq!(update["params"][18], "j1");
-            assert_eq!(update["params"][19], 1);
+            assert_eq!(update["params"][20], "j1");
+            assert_eq!(update["params"][21], 1);
         });
     }
 

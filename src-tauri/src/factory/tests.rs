@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use bastion_core::{Event, Pipeline, Stage, State};
+use bastion_core::{Event, Job, Pipeline, Stage, State};
 use bastion_protocol::Link;
 use serde_json::json;
 
@@ -12,7 +12,7 @@ use crate::engine::Engine;
 use crate::engine::fake::FakeEngine;
 use crate::machine::fake::FakeMachine;
 use crate::store::fake::FakeStore;
-use crate::store::{Store, Workspace};
+use crate::store::{Artifact, Record, Runtime, Store, Workspace};
 
 fn engine() -> FakeEngine {
     FakeEngine::new(Link::Up)
@@ -181,6 +181,51 @@ fn a_full_request_prepares_and_its_read_only_turns_put_the_tree_back_to_a_tag() 
             .map(|a| a.stage)
             .collect();
         assert_eq!(stages, [Stage::Scope, Stage::Discover]);
+    });
+}
+
+#[test]
+fn checks_that_pass_before_the_build_go_to_falsify_and_one_that_stays_green_goes_back_to_specify() {
+    let rig = rig();
+    tauri::async_runtime::block_on(async {
+        let mut job =
+            Job::new("j1".into(), "w".into(), "Add a health check".into(), 1).on(Pipeline::Full);
+        (job.stage, job.state) = (Stage::Baseline, State::Running);
+        let record = Record {
+            job,
+            runtime: Runtime {
+                worktree: Some("wt1".into()),
+                sandbox: Some("vm1".into()),
+                ..Runtime::default()
+            },
+            rev: 1,
+            created_at: 1,
+        };
+        rig.store.insert(&record).await.unwrap();
+        let spec = r#"{"checks": [{"criterion": "C1", "run": "pytest -k c1", "files": ["tests/test_c1.py"]}]}"#;
+        let artifact = Artifact {
+            stage: Stage::Specify,
+            body: spec.into(),
+            created_at: 1,
+        };
+        rig.store.add_artifact("j1", &artifact).await.unwrap();
+
+        // The fake VM exits 0 for every command, so C1 passes before the build.
+        rig.factory.run_step(&record, Stage::Baseline).await;
+        until(&rig, "j1", Stage::Falsify, State::Running).await;
+        finish_turn(&rig, "j1").await;
+        // And it passes against the broken code too, so it checks nothing.
+        until(&rig, "j1", Stage::Specify, State::Running).await;
+        let job = rig.store.load("j1").await.unwrap().job;
+        assert!(job.feedback.unwrap().contains("C1 stayed green"));
+        let commands = vm_commands(&rig);
+        for expected in [
+            "sh -c cd /work/repo && pytest -k c1",
+            "git -C /work/repo tag -f bastion-before-turn",
+            "sh -c cd /work/repo && git reset -q --hard bastion-before-turn && git clean -qfd",
+        ] {
+            assert!(commands.iter().any(|c| c == expected), "{expected}");
+        }
     });
 }
 
@@ -475,4 +520,17 @@ fn with_github_as_the_forge_a_reviewed_change_goes_up_as_a_pull_request_and_merg
             .any(|c| c.1 == "github::exec" && c.2["args"][1] == "merge");
         assert!(merged, "approve at land merges the pull request");
     });
+}
+
+#[test]
+fn a_specify_reply_that_is_not_a_spec_is_unusable_and_other_replies_pass_through() {
+    use bastion_core::Outcome;
+    let done = |r: &str| Outcome::Done { report: r.into() };
+    assert!(matches!(
+        super::usable(Stage::Specify, done("no json")),
+        Outcome::Unusable { .. }
+    ));
+    let spec = r#"{"checks": [{"criterion": "C1", "run": "x", "files": ["t.py"]}]}"#;
+    assert_eq!(super::usable(Stage::Specify, done(spec)), done(spec));
+    assert_eq!(super::usable(Stage::Plan, done("no json")), done("no json"));
 }

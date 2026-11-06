@@ -2,6 +2,7 @@
 //! function: an event and the current job go in, the next job and the effects
 //! to run come out. No I/O, no clock, no engine.
 
+pub mod acceptance;
 pub mod audit;
 mod brief;
 pub mod charter;
@@ -89,11 +90,14 @@ pub enum Stage {
     Deploy,
     /// An agent proposes what the factory should learn from the job.
     Learn,
+    /// An agent breaks the product code on purpose, so the baseline can see
+    /// each check that passed already fail.
+    Falsify,
 }
 
 impl Stage {
     /// Every stage, for the store's checks. A new stage goes here too.
-    pub const ALL: [Stage; 30] = {
+    pub const ALL: [Stage; 31] = {
         use Stage::*;
         [
             Plan,
@@ -126,6 +130,7 @@ impl Stage {
             Merge,
             Deploy,
             Learn,
+            Falsify,
         ]
     };
 
@@ -138,7 +143,7 @@ impl Stage {
                 Kind::Factory
             }
             Plan | Build | Scope | Discover | Define | Specify | Implement | Refactor
-            | CodeReview | CiFix | Prove | Comprehend | Learn => Kind::Turn,
+            | CodeReview | CiFix | Prove | Comprehend | Learn | Falsify => Kind::Turn,
         }
     }
 
@@ -218,6 +223,10 @@ pub struct Job {
     /// Discovery's tasks. Implement runs one turn per task.
     pub tasks: Vec<String>,
     pub done_tasks: u32,
+    /// The acceptance criteria define wrote, carried into later briefs.
+    pub criteria: Option<String>,
+    /// A falsify turn ran for the current spec; the next baseline judges it.
+    pub falsify_tried: bool,
 }
 
 /// Something that happened to a job.
@@ -263,6 +272,12 @@ pub enum Event {
     StepFailed {
         detail: String,
     },
+    /// A step found what only the owner can settle; no fix turn is sent.
+    StepStuck {
+        detail: String,
+    },
+    /// The baseline found checks that pass before anything was built.
+    ChecksGreen,
 }
 
 /// How a checkpoint is decided (D15): the owner decides, the default lands
@@ -333,6 +348,9 @@ pub enum Outcome {
     Asked { question: String },
     /// The turn failed, or ran past the cap.
     Failed { error: String },
+    /// The turn replied, but the adapter could not read what it asked for,
+    /// such as a spec that is not the JSON the brief gave.
+    Unusable { report: String, problem: String },
 }
 
 /// What the adapter must do after a step. Effects are data; the core never
@@ -389,6 +407,8 @@ impl Job {
             last_refusal: None,
             tasks: Vec::new(),
             done_tasks: 0,
+            criteria: None,
+            falsify_tried: false,
         }
     }
 
@@ -562,8 +582,21 @@ fn factory(job: &mut Job, event: &Event, dials: &Dials) -> Option<Vec<Effect>> {
         (Stage::Merge, Event::LandFailed { error }) => stuck(job, error),
         (_, Event::StepPassed) if runs => advance(job, dials),
         (_, Event::StepFailed { detail }) if runs => step_failed(job, detail, dials),
+        (_, Event::StepStuck { detail }) if runs => stuck(job, detail),
+        (Stage::Baseline, Event::ChecksGreen) => checks_green(job, dials),
         _ => return None,
     })
+}
+
+/// Checks that pass before the build go to falsify, once per spec. After
+/// it, the baseline reports how falsify went (`acceptance::falsified`).
+fn checks_green(job: &mut Job, dials: &Dials) -> Vec<Effect> {
+    if job.falsify_tried {
+        let detail = "A check passed before anything was built, after falsify too.";
+        return step_failed(job, detail, dials);
+    }
+    job.falsify_tried = true;
+    rework(job, Stage::Falsify, Some(Stage::Baseline), dials)
 }
 
 /// A failing step sends the work back to be fixed, with what failed as the
@@ -666,11 +699,23 @@ fn turn_finished(job: &mut Job, outcome: &Outcome, dials: &Dials) -> Vec<Effect>
             if job.stage == Stage::Build {
                 effects.push(Effect::CaptureDiff);
             }
-            if job.stage == Stage::Discover {
-                discovered(job, report);
-            }
             job.feedback = None;
+            match job.stage {
+                Stage::Discover => discovered(job, report),
+                Stage::Define => job.criteria = Some(report.clone()),
+                Stage::Specify => job.falsify_tried = false,
+                _ => {}
+            }
             effects.extend(after_turn(job, dials));
+            effects
+        }
+        Outcome::Unusable { report, problem } => {
+            job.failures = 0;
+            let mut effects = vec![Effect::RecordArtifact {
+                stage: job.stage,
+                body: report.clone(),
+            }];
+            effects.extend(bad_reply(job, problem, dials));
             effects
         }
         Outcome::Asked { question } => {
@@ -700,6 +745,21 @@ fn discovered(job: &mut Job, report: &str) {
     }
 }
 
+/// A reply the factory cannot read gets one more try with the reason, then
+/// the job waits on the owner, as in wipp.
+fn bad_reply(job: &mut Job, problem: &str, dials: &Dials) -> Vec<Effect> {
+    let tries = job.revisions.entry(job.stage).or_default();
+    if *tries >= 1 {
+        return stuck(job, problem);
+    }
+    *tries += 1;
+    job.feedback = Some(format!("Your last reply could not be used. {problem}"));
+    enter(job, dials)
+}
+
+/// How many times the owner may send the criteria back to define (wipp's limit).
+pub const MAX_REDEFINES: u32 = 3;
+
 /// A comment at a checkpoint sends the work back to the agent stage before
 /// it. An answer to a question goes to the stage that asked.
 fn commented(job: &mut Job, text: &str, dials: &Dials) -> Vec<Effect> {
@@ -708,8 +768,10 @@ fn commented(job: &mut Job, text: &str, dials: &Dials) -> Vec<Effect> {
     } else {
         job.feedback = Some(text.into());
         job.error = None;
-        if job.stage == Stage::Uat {
-            job.revisions.clear();
+        match job.stage {
+            Stage::Uat => job.revisions.clear(),
+            Stage::YourChecks => *job.revisions.entry(Stage::YourChecks).or_default() += 1,
+            _ => {}
         }
         let (stage, back_to) = pipeline::sent_back(job.stage);
         return rework(job, stage, back_to, dials);
@@ -785,13 +847,21 @@ pub fn actions(job: &Job) -> Vec<Action> {
         if job.question.is_some() {
             allowed.push(Action::Answer);
         } else {
-            allowed.extend([Action::Approve, Action::Comment]);
+            allowed.push(Action::Approve);
+            if !redefined_enough(job) {
+                allowed.push(Action::Comment);
+            }
         }
     }
     if !job.state.finished() {
         allowed.push(Action::Stop);
     }
     allowed
+}
+
+fn redefined_enough(job: &Job) -> bool {
+    job.stage == Stage::YourChecks
+        && job.revisions.get(&Stage::YourChecks).copied().unwrap_or(0) >= MAX_REDEFINES
 }
 
 /// The queued jobs to admit, oldest first, so that at most `limit` jobs hold

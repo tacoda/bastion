@@ -36,7 +36,7 @@ pub fn route(cmd: &str) -> Option<(&'static str, &'static str, Body)> {
         command::JOB_COMMENT => ("POST", "/jobs/{id}/comment", Rest),
         command::JOB_STOP => ("POST", "/jobs/{id}/stop", Empty),
         command::DIALS => ("GET", "/dials", Empty),
-        command::DIALS_SET => ("PUT", "/dials", Field("dials")),
+        command::DIALS_SET => ("PUT", "/dials/{stage}", Rest),
         command::HELD_ALLOW => ("POST", "/held/allow", Field("held")),
         command::HELD_REFUSE => ("POST", "/held/refuse", Rest),
         command::CONSTRAINTS => ("GET", "/constraints", Empty),

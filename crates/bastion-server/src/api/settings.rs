@@ -5,11 +5,10 @@
 use std::path::Path;
 
 use bastion_core::settings::{Forge, Model, Oversight, Settings, Tracker};
-use bastion_core::{Dial, Stage};
 use bastion_protocol::{AccountView, IssueView, ModelOption, SettingsView, VersionView};
 use serde_json::json;
 
-use super::factory::{FactoryCell, factory, name, plan_and_change};
+use super::factory::{FactoryCell, factory, name};
 use crate::events::Bus;
 use crate::factory::{Submission, now};
 use crate::{forge, settings_store};
@@ -26,8 +25,6 @@ fn word<T: for<'de> serde::Deserialize<'de>>(text: &str, what: &str) -> Result<T
 
 fn view_of(s: &Settings) -> SettingsView {
     SettingsView {
-        approve: name(s.dials.at(Stage::Plan)),
-        review: name(s.dials.at(Stage::Build)),
         plan_provider: s.plan_model.provider.clone(),
         plan_model: s.plan_model.model.clone(),
         build_provider: s.build_model.provider.clone(),
@@ -37,20 +34,14 @@ fn view_of(s: &Settings) -> SettingsView {
     }
 }
 
-/// The settings the page sent, over `was` for the dials it does not show.
+/// The settings the page sent, with `was`'s dials, which it sets apart.
 fn settings_of(v: &SettingsView, was: Settings) -> Result<Settings, String> {
     let model = |provider: &str, model: &str| Model {
         provider: provider.trim().into(),
         model: model.trim().into(),
     };
-    let mut dials = was.dials;
-    plan_and_change(
-        &mut dials,
-        word::<Dial>(&v.approve, "dial")?,
-        word::<Dial>(&v.review, "dial")?,
-    );
     Ok(Settings {
-        dials,
+        dials: was.dials,
         plan_model: model(&v.plan_provider, &v.plan_model),
         build_model: model(&v.build_provider, &v.build_model),
         forge: word::<Forge>(&v.forge, "forge")?,
@@ -243,6 +234,7 @@ pub async fn job_from_issue(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bastion_core::{Dial, Stage};
 
     #[test]
     fn a_settings_view_reads_back_keeps_the_dials_it_hides_and_refuses_a_bad_word() {

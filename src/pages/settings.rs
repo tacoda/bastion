@@ -2,84 +2,66 @@
 //! adds the rest.
 
 use bastion_protocol::{
-    DialsView, LOCAL, PersonView, Server, TokenView, Workspace, command, event,
+    DialsView, LOCAL, PersonView, PipelineDials, Server, TokenView, Workspace, command, event,
 };
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::Serialize;
 
 use crate::ipc::{self, None};
-use crate::pages::factory_settings::{Accounts, FactorySettings, ModelProviders, SettingsHistory};
+use crate::pages::factory_settings::{
+    Accounts, BUTTON, FactorySettings, ModelProviders, SettingsHistory, read, send,
+};
 
 #[derive(Serialize)]
 struct AddWorkspace {
     workspace: Workspace,
 }
 
-#[derive(Serialize)]
-struct SetDials {
-    dials: DialsView,
+#[derive(Clone, Serialize)]
+struct SetDial {
+    stage: String,
+    dial: String,
 }
 
-/// How each checkpoint is decided (PLAN.md D15).
+/// Each step's dial, by pipeline, and the level each pipeline runs at
+/// (PLAN.md D33). A step's button switches it between lights-on and dark.
 #[component]
-fn Checkpoints() -> impl IntoView {
-    let (dials, set_dials) = signal(None::<DialsView>);
+fn Oversight() -> impl IntoView {
+    let (dials, reload) = read::<DialsView>(command::DIALS);
     let (note, set_note) = signal(String::new());
-    spawn_local(async move {
-        match ipc::call::<DialsView, String>(command::DIALS, None {}).await {
-            Ok(d) => set_dials.set(Some(d)),
-            Err(e) => set_note.set(e.text()),
-        }
-    });
-    let save = move |change: DialsView| {
-        spawn_local(async move {
-            match ipc::call::<(), String>(
-                command::DIALS_SET,
-                SetDials {
-                    dials: change.clone(),
-                },
-            )
-            .await
-            {
-                Ok(()) => {
-                    set_note
-                        .set("Saved. It applies the next time a job reaches a checkpoint.".into());
-                    set_dials.set(Some(change));
-                }
-                Err(e) => set_note.set(e.text()),
+    let pipeline = move |title: &'static str, p: PipelineDials| {
+        let steps = p.steps.into_iter().map(move |s| {
+            let on = s.dial == "lights_on";
+            let args = SetDial {
+                stage: s.stage.clone(),
+                dial: if on { "dark" } else { "lights_on" }.into(),
+            };
+            let look = if on { "text-ink" } else { "text-muted" };
+            view! {
+                <button class=format!("{BUTTON} {look}") aria-pressed=on.to_string()
+                    on:click=move |_| send(command::DIALS_SET, args.clone(), set_note, reload)>
+                    {format!("{} · {}", s.stage.replace('_', " "), if on { "lights-on" } else { "dark" })}
+                </button>
             }
         });
-    };
-    let choice = move |label: &'static str, is_review: bool| {
         view! {
-            <label class="grid gap-1 text-sm text-muted">{label}
-                <select class="rounded border border-line bg-bg px-2 py-1 text-ink"
-                    on:change=move |e| {
-                        if let Some(mut d) = dials.get_untracked() {
-                            let value = event_target_value(&e);
-                            if is_review { d.review = value } else { d.approve = value }
-                            save(d);
-                        }
-                    }>
-                    {[("lights_on", "lights-on"), ("dark", "dark")].map(|(option, shown)| {
-                        let selected = move || dials.get().is_some_and(|d| (if is_review { d.review } else { d.approve }) == option);
-                        view! { <option value=option selected=selected>{shown}</option> }
-                    })}
-                </select>
-            </label>
+            <div class="grid gap-2">
+                <p class="m-0 text-sm text-ink">{format!("{title}: {}", p.level.replace('_', "-"))}</p>
+                <div class="flex flex-wrap gap-2">{steps.collect_view()}</div>
+            </div>
         }
     };
     view! {
-        <section class="mt-4 grid gap-2 rounded-xl border border-line bg-panel p-4">
+        <section class="mt-4 grid gap-3 rounded-xl border border-line bg-panel p-4">
             <h2 class="m-0 text-sm font-semibold text-muted">"Oversight"</h2>
             <p class="m-0 text-sm text-muted">
-                "Lights-on waits for you to approve or send the work back. Dark goes on at once. The change's dial covers the build and the code review."
+                "A lights-on step waits for you to approve its result or send it back. A dark step goes on at once. A pipeline is lights-on when every step is, dim when a step up to the merge is, and dark when none is."
             </p>
-            <div class="flex flex-wrap gap-4">
-                {choice("Approve the plan", false)}
-                {choice("Review the change", true)}
-            </div>
+            {move || dials.get().map(|d| view! {
+                {pipeline("Short pipeline", d.short)}
+                {pipeline("Full pipeline", d.full)}
+            })}
             <p class="m-0 text-sm text-muted" role="status">{note}</p>
         </section>
     }
@@ -424,7 +406,7 @@ pub fn SettingsPage() -> impl IntoView {
         <People />
         <ModelProviders />
         <FactorySettings />
-        <Checkpoints />
+        <Oversight />
         <SettingsHistory />
         <Workspaces />
         <Accounts />

@@ -56,7 +56,7 @@ pub mod command {
     pub const JOB_COMMENT: &str = "job_comment";
     pub const JOB_STOP: &str = "job_stop";
     pub const DIALS: &str = "dials";
-    /// Takes `{ dials: DialsView }`.
+    /// Takes `{ stage, dial }`: one step's dial, `lights_on` or `dark`.
     pub const DIALS_SET: &str = "dials_set";
     /// Takes `{ held: HeldCallRef }`: run that call once.
     pub const HELD_ALLOW: &str = "held_allow";
@@ -490,12 +490,25 @@ pub struct AuditView {
     pub last_error: Option<String>,
 }
 
-/// How each checkpoint is decided (PLAN.md D15): `ask`, `hold` or `auto`.
-/// Review never runs below `hold`, whatever it is set to.
+/// Each step's dial (PLAN.md D33), by pipeline.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DialsView {
-    pub approve: String,
-    pub review: String,
+    pub short: PipelineDials,
+    pub full: PipelineDials,
+}
+
+/// A pipeline's steps in order, each `lights_on` or `dark`, and the level
+/// they make: `lights_on`, `dim` or `dark`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PipelineDials {
+    pub level: String,
+    pub steps: Vec<StepDial>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StepDial {
+    pub stage: String,
+    pub dial: String,
 }
 
 /// An eval to run (PLAN.md A6): its requests, and the one rung its two arms
@@ -570,8 +583,6 @@ pub struct EvalView {
 /// The owner's settings (PLAN.md A7), each value as its word.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SettingsView {
-    pub approve: String,
-    pub review: String,
     pub plan_provider: String,
     pub plan_model: String,
     pub build_provider: String,

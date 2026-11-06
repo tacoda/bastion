@@ -14,7 +14,7 @@ use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use bastion_core::Pipeline;
 use bastion_protocol::{
-    Change, ConstraintView, DialsView, HeldCallRef, LogRequest, NewEval, SettingsView, Workspace,
+    Change, ConstraintView, HeldCallRef, LogRequest, NewEval, SettingsView, Workspace,
 };
 use futures_util::{Stream, stream};
 use serde::{Deserialize, Serialize};
@@ -117,7 +117,8 @@ fn factory_routes() -> Router<App> {
         .route("/jobs/{id}/approve", post(job_approve))
         .route("/jobs/{id}/comment", post(job_comment))
         .route("/jobs/{id}/stop", post(job_stop))
-        .route("/dials", get(dials).put(dials_set))
+        .route("/dials", get(dials))
+        .route("/dials/{stage}", put(dials_set))
         .route("/evals", get(evals).post(eval_create))
         .route("/evals/{id}", get(eval))
         .route("/evals/{id}/apply", post(eval_apply))
@@ -398,8 +399,22 @@ async fn dials(State(app): State<App>) -> Response {
     answer(api::factory::dials(&app.server.factory).await)
 }
 
-async fn dials_set(State(app): State<App>, Json(d): Json<DialsView>) -> Response {
-    answer(api::factory::dials_set(&app.server.factory, d).await)
+#[derive(Deserialize)]
+struct SetDial {
+    dial: bastion_core::Dial,
+}
+
+/// A word that is not a stage, or a dial that is not `lights_on` or
+/// `dark`, is refused here as a bad request.
+async fn dials_set(
+    State(app): State<App>,
+    Path(stage): Path<bastion_core::Stage>,
+    Json(b): Json<SetDial>,
+) -> Response {
+    read_again(
+        &app,
+        api::factory::dials_set(&app.server.factory, stage, b.dial).await,
+    )
 }
 
 async fn evals(State(app): State<App>) -> Response {

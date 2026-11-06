@@ -28,11 +28,11 @@ struct Restore {
 }
 
 const INPUT: &str = "rounded border border-line bg-bg px-2 py-1 text-sm text-ink";
-const BUTTON: &str = "rounded-lg border border-line px-3 py-1 text-sm hover:bg-line";
+pub(crate) const BUTTON: &str = "rounded-lg border border-line px-3 py-1 text-sm hover:bg-line";
 const SECTION: &str = "mt-4 grid gap-2 rounded-xl border border-line bg-panel p-4";
 
 /// Read `cmd` now and on every push.
-fn read<T: serde::de::DeserializeOwned + Send + Sync + 'static>(
+pub(crate) fn read<T: serde::de::DeserializeOwned + Send + Sync + 'static>(
     cmd: &'static str,
 ) -> (ReadSignal<Option<T>>, Callback<()>) {
     let (value, set_value) = signal(None::<T>);
@@ -49,7 +49,7 @@ fn read<T: serde::de::DeserializeOwned + Send + Sync + 'static>(
 }
 
 /// Send a change, then read everything again or say why it failed.
-fn send<A: Serialize + 'static>(
+pub(crate) fn send<A: Serialize + 'static>(
     cmd: &'static str,
     args: A,
     note: WriteSignal<String>,

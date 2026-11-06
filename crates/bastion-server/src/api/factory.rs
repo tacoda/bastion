@@ -3,10 +3,10 @@
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
-use bastion_core::{Dial, Dials, Event, Stage, actions, steps};
+use bastion_core::{Dial, Dials, Event, Pipeline, Stage, actions, steps};
 use bastion_protocol::{
-    ArtifactView, CharterView, DialsView, HeldCallView, JobDetail, JobSummary, StepView,
-    TranscriptLine, Workspace,
+    ArtifactView, CharterView, DialsView, HeldCallView, JobDetail, JobSummary, PipelineDials,
+    StepDial, StepView, TranscriptLine, Workspace,
 };
 use serde::Serialize;
 use serde_json::json;
@@ -226,13 +226,19 @@ pub async fn job_stop(cell: &FactoryCell, id: String) -> Result<(), String> {
     factory(cell)?.apply(&id, Event::Stopped).await
 }
 
-/// Set the plan's dial and the change's (build and code review), keeping
-/// every other step's.
-// ponytail: the page sets two dials until O3 gives it one per step.
-pub(super) fn plan_and_change(d: &mut Dials, plan: Dial, change: Dial) {
-    d.set(Stage::Plan, plan);
-    d.set(Stage::Build, change);
-    d.set(Stage::CodeReview, change);
+/// The dials of `pipeline`'s steps, in order, and the level they make.
+fn pipeline_dials(d: &Dials, pipeline: Pipeline) -> PipelineDials {
+    PipelineDials {
+        level: name(d.level(pipeline)),
+        steps: pipeline
+            .stages()
+            .into_iter()
+            .map(|s| StepDial {
+                stage: name(s),
+                dial: name(d.at(s)),
+            })
+            .collect(),
+    }
 }
 
 pub async fn dials(cell: &FactoryCell) -> Result<DialsView, String> {
@@ -240,23 +246,20 @@ pub async fn dials(cell: &FactoryCell) -> Result<DialsView, String> {
         .await?
         .dials;
     Ok(DialsView {
-        approve: name(d.at(Stage::Plan)),
-        review: name(d.at(Stage::Build)),
+        short: pipeline_dials(&d, Pipeline::Short),
+        full: pipeline_dials(&d, Pipeline::Full),
     })
 }
 
-pub async fn dials_set(cell: &FactoryCell, dials: DialsView) -> Result<(), String> {
-    let parse = |text: &str| {
-        serde_json::from_value(json!(text))
-            .map_err(|_| format!("{text:?} is not lights_on, dim or dark"))
-    };
+/// Set one step's dial, as a new settings version.
+/// A stage no pipeline runs, such as an old checkpoint, is not a step.
+pub async fn dials_set(cell: &FactoryCell, stage: Stage, dial: Dial) -> Result<(), String> {
+    if !stage.dialed() {
+        return Err(format!("{} is not a step", name(stage)));
+    }
     let factory = factory(cell)?;
     let mut next = crate::settings_store::current(&**factory.store()).await?;
-    plan_and_change(
-        &mut next.dials,
-        parse(&dials.approve)?,
-        parse(&dials.review)?,
-    );
+    next.dials.set(stage, dial);
     crate::settings_store::change(&**factory.store(), &next, crate::factory::now())
         .await
         .map(|_| ())

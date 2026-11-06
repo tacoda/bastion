@@ -111,11 +111,6 @@ pre { margin: 0 0 16px; padding: 20px; background: var(--panel2); border: 1px so
 .flecks { position: fixed; inset: 0; pointer-events: none; z-index: 2; }
 .flecks i { position: absolute; left: 0; top: 0; width: 56px; height: 2px; margin: -1px 0 0 -28px; border-radius: 1px; opacity: 0;
   background: linear-gradient(90deg, transparent, rgba(255, 248, 238, .95), transparent); box-shadow: 0 0 12px 1px rgba(255, 248, 238, .3); }
-.flecks i::before, .flecks i::after { content: ""; position: absolute; left: 50%; top: 50%; animation: twinkle 1.4s ease-in-out infinite; }
-.flecks i::before { width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: #fff8ee;
-  box-shadow: 0 0 6px 2px rgba(255, 248, 238, .8), 0 0 16px 4px rgba(167, 139, 250, .4); }
-.flecks i::after { width: 1px; height: 12px; margin: -6px 0 0 -.5px; background: linear-gradient(transparent, #fff8ee, transparent); }
-@keyframes twinkle { 0%, 100% { opacity: .7; transform: scale(.85); } 50% { opacity: 1; transform: scale(1.25); } }
 @media (hover: none), (prefers-reduced-motion: reduce) { .spot, .flecks { display: none; } }
 
 ul.plain { list-style: none; padding: 0; margin: 0 0 16px; max-width: 72ch; }

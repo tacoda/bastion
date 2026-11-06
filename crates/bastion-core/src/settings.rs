@@ -79,10 +79,17 @@ pub struct Settings {
     pub tracker: Tracker,
 }
 
-/// The key a version keeps a step's dial by, such as `step.code_review`.
+/// The key a version keeps a step's dial by, such as `step.code_review`:
+/// the stage's name in snake case, as serde writes it.
 fn step_key(stage: Stage) -> String {
-    let name = serde_json::to_value(stage).expect("a stage is a word");
-    format!("step.{}", name.as_str().unwrap_or_default())
+    let mut key = String::from("step.");
+    for (i, c) in format!("{stage:?}").chars().enumerate() {
+        if c.is_uppercase() && i > 0 {
+            key.push('_');
+        }
+        key.push(c.to_ascii_lowercase());
+    }
+    key
 }
 
 /// The checkpoint dials a version kept before D33, and the steps each
@@ -227,6 +234,12 @@ mod tests {
             tracker: Tracker::GithubIssues,
         };
         assert_eq!(Settings::from_pairs(&s.to_pairs()), s);
+    }
+
+    #[test]
+    fn a_steps_key_is_its_name_in_snake_case() {
+        assert_eq!(step_key(Stage::CodeReview), "step.code_review");
+        assert_eq!(step_key(Stage::Plan), "step.plan");
     }
 
     #[test]

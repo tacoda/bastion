@@ -114,7 +114,11 @@ async fn serve(a: &Args, app: axum::Router) -> Result<(), String> {
     let tcp = tokio::net::TcpListener::bind(at)
         .await
         .map_err(|e| format!("{}:{}: {e}", at.0, at.1))?;
-    let scheme = if a.serving.tls.is_some() { "https" } else { "http" };
+    let scheme = if a.serving.tls.is_some() {
+        "https"
+    } else {
+        "http"
+    };
     println!(
         "bastion-server: serving {scheme} on {}:{}, token in {}",
         at.0,

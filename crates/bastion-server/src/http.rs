@@ -834,7 +834,10 @@ mod tests {
     fn the_audit_keeps_changes_and_refusals_but_not_reads() {
         let on_job = Act::OnJob { own: true };
         assert_eq!(audit_kind(on_job, StatusCode::OK), Some("act"));
-        assert_eq!(audit_kind(Act::Read, StatusCode::FORBIDDEN), Some("refused"));
+        assert_eq!(
+            audit_kind(Act::Read, StatusCode::FORBIDDEN),
+            Some("refused")
+        );
         assert_eq!(audit_kind(on_job, StatusCode::FORBIDDEN), Some("refused"));
         assert_eq!(audit_kind(Act::Read, StatusCode::OK), None);
         assert_eq!(audit_kind(Act::Manage, StatusCode::BAD_REQUEST), None);

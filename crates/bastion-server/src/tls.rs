@@ -113,8 +113,10 @@ mod tests {
 
     #[test]
     fn a_missing_certificate_is_named() {
-        let Err(e) = acceptor(Path::new("/nonexistent/c.pem"), Path::new("/nonexistent/k.pem"))
-        else {
+        let Err(e) = acceptor(
+            Path::new("/nonexistent/c.pem"),
+            Path::new("/nonexistent/k.pem"),
+        ) else {
             panic!("no certificate, no acceptor");
         };
         assert!(e.contains("/nonexistent/c.pem"), "{e}");

@@ -6,6 +6,7 @@
 <title>Bastion · a software factory for agent work</title>
 <meta name="description" content="Bastion is a software factory for agent work. A request goes in, agents work it through a pipeline of stages, and a reviewed change comes out. Nothing merges itself.">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-512.png">
 <meta name="voice-register" content="informational">
 <meta name="voice-first-person" content="exempt: product page, every claim comes from PLAN.md and its recorded exits, not from a story of mine">
 <style>
@@ -83,6 +84,19 @@ pre { margin: 0 0 16px; padding: 20px; background: var(--panel2); border: 1px so
 .note b { color: var(--purple); font-weight: 600; }
 .note span { color: var(--dim); }
 
+/* Oversight dial */
+.dials { margin-top: 32px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel2); }
+.dial { display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--line); }
+.dial:last-child { border-bottom: 0; }
+.dial .who span { display: block; color: var(--dim); font-size: 13px; }
+.lvl { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.lvl span { padding: 6px 14px; font-size: 13px; color: var(--dim); border-right: 1px solid var(--line); }
+.lvl span:last-child { border-right: 0; }
+.lvl .on.ask { background: #fde68a; color: #0f1117; }
+.lvl .on.hold { background: #78350f; color: #fde68a; }
+.lvl .on.auto { background: #0b0d12; color: var(--fg); box-shadow: inset 0 0 0 1px var(--purple); }
+.scale { display: flex; justify-content: space-between; color: var(--dim); font-size: 12px; padding: 12px 24px 0; }
+
 ul.plain { list-style: none; padding: 0; margin: 0 0 16px; max-width: 72ch; }
 ul.plain li { padding: 12px 0; border-bottom: 1px solid var(--line); }
 ul.plain li:last-child { border-bottom: 0; }
@@ -95,6 +109,7 @@ footer { padding: 48px 0; color: var(--dim); }
   section { padding: 48px 0; }
   h1 { font-size: 26px; }
   .kanban, .grid, .case { grid-template-columns: 1fr; }
+  .dial { grid-template-columns: 1fr; padding: 16px; }
   .case { gap: 20px; padding: 20px; }
   header { flex-direction: column; align-items: flex-start; }
 }
@@ -107,6 +122,7 @@ footer { padding: 48px 0; color: var(--dim); }
   <div class="brand"><img src="icon.svg" width="28" height="28" alt=""><b>bastion</b> <span>· software factory</span></div>
   <nav>
     <a href="#problem">problem</a>
+    <a href="#oversight">oversight</a>
     <a href="#use-cases">use cases</a>
     <a href="#start">get started</a>
     <a href="https://github.com/tacoda/bastion">github</a>
@@ -162,6 +178,20 @@ footer { padding: 48px 0; color: var(--dim); }
     <div class="panel ok"><h3>Rules you can measure</h3><p>Every rule is a hook decision with a level: told, checked, or enforced. Run an eval to see what a stricter level does before you commit to it.</p></div>
     <div class="panel ok"><h3>Keys stay out of the sandbox</h3><p>Agents run in sandbox VMs that never see a credential. Pushes and pull requests happen on the host, and a tamper-evident log records every decision.</p></div>
   </div>
+</section>
+
+<section id="oversight">
+  <h2>The oversight dial</h2>
+  <p class="title">Start with the lights on. Dim them one checkpoint at a time.</p>
+  <p>A new factory stops at every checkpoint and asks you. Each checkpoint has its own dial, so as you verify a stage and trust it more, you turn that one darker and leave the rest alone. <code>ask</code> waits for you, <code>hold</code> waits 30 minutes and then goes on, and <code>auto</code> goes on at once.</p>
+  <div class="dials" aria-label="Illustration of checkpoint dials">
+    <div class="scale"><span>lights on</span><span>dark</span></div>
+    <div class="dial"><div class="who">approve plan<span>trusted after many plans</span></div><div class="lvl"><span>ask</span><span>hold</span><span class="on auto">auto</span></div></div>
+    <div class="dial"><div class="who">your checks<span>getting there</span></div><div class="lvl"><span>ask</span><span class="on hold">hold</span><span>auto</span></div></div>
+    <div class="dial"><div class="who">review<span>still reading every diff</span></div><div class="lvl"><span class="on ask">ask</span><span>hold</span><span>auto</span></div></div>
+    <div class="dial"><div class="who">land<span>still deciding every merge</span></div><div class="lvl"><span class="on ask">ask</span><span>hold</span><span>auto</span></div></div>
+  </div>
+  <p class="caption">An illustration. Presets set every dial at once, and you can still move one by hand.</p>
 </section>
 
 <section id="use-cases">

@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bkjdlhah4</task-id>
+<tool-use-id>toolu_01W4EnYxgUxW5MYdv2tdzPW9</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/bkjdlhah4.output</output-file>
+<status>failed</status>
+<summary>Background command "Run the new server with the window's data" failed with exit code 144</summary>
+</task-notification>

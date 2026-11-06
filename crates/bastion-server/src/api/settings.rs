@@ -108,19 +108,14 @@ pub async fn settings_restore(
     Ok(())
 }
 
-/// The chat models with tools on providers that have a key.
+/// The chat models with tools on providers that have a key or a sign-in.
 pub async fn models(cell: &FactoryCell) -> Result<Vec<ModelOption>, String> {
     let factory = factory(cell)?;
-    let providers = factory
-        .engine()
-        .call("bastion", "router::provider::list", json!({}))
-        .await?;
-    let keyed: Vec<&str> = providers["providers"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter(|p| p["configured"] == true)
-        .filter_map(|p| p["id"].as_str())
+    let providers = super::providers::providers(&**factory.engine()).await?;
+    let keyed: Vec<&str> = providers
+        .iter()
+        .filter(|p| p.source != "none")
+        .map(|p| p.id.as_str())
         .collect();
     let models = factory
         .engine()

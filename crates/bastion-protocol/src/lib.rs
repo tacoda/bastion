@@ -32,6 +32,11 @@ pub mod command {
     /// Takes `{ id, key }`.
     pub const PROVIDER_KEY_SET: &str = "provider_key_set";
     pub const PROVIDER_KEY_REMOVE: &str = "provider_key_remove";
+    /// OpenAI Codex signs in with a ChatGPT plan by a device code.
+    pub const CODEX_SIGN_IN: &str = "codex_sign_in";
+    /// Takes `{ login_id }`; answers `pending`, `ok`, `expired` or `canceled`.
+    pub const CODEX_SIGN_IN_POLL: &str = "codex_sign_in_poll";
+    pub const CODEX_SIGN_OUT: &str = "codex_sign_out";
     pub const CONSOLE: &str = "console";
     /// Takes `{ request: LogRequest }`.
     pub const CONTAINER_LOGS: &str = "container_logs";
@@ -150,13 +155,26 @@ pub struct TokenView {
     pub last_used: Option<u64>,
 }
 
-/// A model provider and where its key comes from: `secret` (set in
-/// Settings), `env`, or `none`. Never the key (D34).
+/// A model provider and where its credential comes from: `secret` (a key
+/// set in Settings), `env`, `signed_in` (a subscription), or `none`. Never
+/// the credential (D34).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderView {
     pub id: String,
     pub name: String,
     pub source: String,
+}
+
+/// A device-code sign-in under way: open `verification_uri`, enter
+/// `user_code` before `expires_at` (Unix seconds), and poll every
+/// `interval` seconds.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignIn {
+    pub login_id: String,
+    pub verification_uri: String,
+    pub user_code: String,
+    pub expires_at: u64,
+    pub interval: u64,
 }
 
 /// The name of the Bastion server the app starts on this machine.

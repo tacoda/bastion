@@ -3,7 +3,7 @@
 //! version with Restore, the model providers' keys, and the owner's accounts.
 
 use bastion_protocol::{
-    AccountView, ModelOption, ProviderView, SettingsView, VersionView, command, event,
+    AccountView, ModelOption, ProviderView, SettingsView, SignIn, VersionView, command, event,
 };
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -262,9 +262,104 @@ pub fn ModelProviders() -> impl IntoView {
     }
 }
 
-/// One provider: where its key comes from, a field to set one, and Remove
-/// for a key set here.
-fn provider_row(p: ProviderView, note: WriteSignal<String>, reload: Callback<()>) -> impl IntoView {
+/// One provider and how it gets its credential: a sign-in for a
+/// subscription, else a key.
+fn provider_row(p: ProviderView, note: WriteSignal<String>, reload: Callback<()>) -> AnyView {
+    match p.id.as_str() {
+        "openai-codex" => codex_row(p, note, reload).into_any(),
+        "claude-code" => claude_code_row(p).into_any(),
+        _ => key_row(p, note, reload).into_any(),
+    }
+}
+
+/// A provider's name with a mark for whether it has a credential.
+fn provider_name(p: &ProviderView) -> impl IntoView + use<> {
+    let ok = p.source != "none";
+    view! {
+        <span class={if ok { "text-ok" } else { "text-warn" }}>{if ok { "✓" } else { "!" }}</span>
+        <strong>{p.name.clone()}</strong>
+    }
+}
+
+/// Claude Code reads the sign-in of `claude` on the stack's machine.
+fn claude_code_row(p: ProviderView) -> impl IntoView {
+    let status = if p.source == "signed_in" {
+        "signed in on the stack's machine"
+    } else {
+        "not signed in: run `claude` and /login on the machine that runs the stack"
+    };
+    view! {
+        <li class="flex flex-wrap items-center gap-2">
+            {provider_name(&p)}
+            <span class="text-muted">{status}</span>
+        </li>
+    }
+}
+
+/// OpenAI Codex signs in with a ChatGPT plan: a link and a code, then the
+/// page polls until the sign-in ends.
+fn codex_row(p: ProviderView, note: WriteSignal<String>, reload: Callback<()>) -> impl IntoView {
+    let (pending, set_pending) = signal(None::<SignIn>);
+    let sign_in = move |_| {
+        spawn_local(async move {
+            match ipc::call::<SignIn, String>(command::CODEX_SIGN_IN, None {}).await {
+                Ok(started) => {
+                    set_pending.set(Some(started.clone()));
+                    let ended = poll_codex(started).await;
+                    set_pending.set(Option::None);
+                    note.set(ended);
+                    reload.run(());
+                }
+                Err(e) => note.set(e.text()),
+            }
+        });
+    };
+    let sign_out = move |_| send(command::CODEX_SIGN_OUT, None {}, note, reload);
+    let signed_in = p.source == "signed_in";
+    view! {
+        <li class="grid gap-1">
+            <div class="flex flex-wrap items-center gap-2">
+                {provider_name(&p)}
+                <span class="text-muted">{if signed_in { "signed in with ChatGPT" } else { "uses a ChatGPT plan, no key" }}</span>
+                {if signed_in {
+                    view! { <button class="text-bad hover:underline" on:click=sign_out>"Sign out"</button> }.into_any()
+                } else {
+                    view! { <button class="rounded-lg border border-line px-3 py-1 hover:bg-line" on:click=sign_in>"Sign in with ChatGPT"</button> }.into_any()
+                }}
+            </div>
+            {move || pending.get().map(|s| view! {
+                <p class="m-0" role="status">
+                    "Open "<a class="text-link hover:underline" href=s.verification_uri.clone() target="_blank" rel="noopener noreferrer">{s.verification_uri.clone()}</a>
+                    " and enter "<code>{s.user_code}</code>". Waiting for approval..."
+                </p>
+            })}
+        </li>
+    }
+}
+
+/// Poll a Codex sign-in until it ends, and say how it ended.
+async fn poll_codex(started: SignIn) -> String {
+    #[derive(Serialize)]
+    struct Poll {
+        login_id: String,
+    }
+    loop {
+        crate::ipc::sleep(started.interval.max(1) as i32 * 1000).await;
+        let args = Poll {
+            login_id: started.login_id.clone(),
+        };
+        match ipc::call::<String, String>(command::CODEX_SIGN_IN_POLL, args).await {
+            Ok(s) if s == "pending" => continue,
+            Ok(s) if s == "ok" => return String::new(),
+            Ok(s) => return format!("The ChatGPT sign-in ended: {s}. Try again."),
+            Err(e) => return e.text(),
+        }
+    }
+}
+
+/// A provider that takes a key: where it comes from, a field to set one,
+/// and Remove for a key set here.
+fn key_row(p: ProviderView, note: WriteSignal<String>, reload: Callback<()>) -> impl IntoView {
     let (key, set_key) = signal(String::new());
     let id = p.id.clone();
     let save = move |_| {
@@ -275,7 +370,6 @@ fn provider_row(p: ProviderView, note: WriteSignal<String>, reload: Callback<()>
         send(command::PROVIDER_KEY_SET, args, note, reload);
         set_key.set(String::new());
     };
-    let ok = p.source != "none";
     let status = match p.source.as_str() {
         "secret" => "key set here",
         "env" => "key from the stack's environment",
@@ -295,8 +389,7 @@ fn provider_row(p: ProviderView, note: WriteSignal<String>, reload: Callback<()>
     });
     view! {
         <li class="flex flex-wrap items-center gap-2">
-            <span class={if ok { "text-ok" } else { "text-warn" }}>{if ok { "✓" } else { "!" }}</span>
-            <strong>{p.name}</strong>
+            {provider_name(&p)}
             <span class="text-muted">{status}</span>
             <input type="password" autocomplete="off" aria-label="API key" placeholder="API key" class=INPUT
                 prop:value=key on:input=move |e| set_key.set(event_target_value(&e)) />

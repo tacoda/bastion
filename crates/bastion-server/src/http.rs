@@ -95,10 +95,18 @@ fn people_routes() -> Router<App> {
 }
 
 fn provider_routes() -> Router<App> {
-    Router::new().route("/providers", get(providers)).route(
-        "/providers/{id}/key",
-        put(provider_key_set).delete(provider_key_remove),
-    )
+    Router::new()
+        .route("/providers", get(providers))
+        .route(
+            "/providers/{id}/key",
+            put(provider_key_set).delete(provider_key_remove),
+        )
+        .route("/providers/openai-codex/sign-in", post(codex_sign_in))
+        .route(
+            "/providers/openai-codex/sign-in/poll",
+            post(codex_sign_in_poll),
+        )
+        .route("/providers/openai-codex/sign-out", post(codex_sign_out))
 }
 
 fn factory_routes() -> Router<App> {
@@ -622,6 +630,28 @@ async fn provider_key_set(
 async fn provider_key_remove(State(app): State<App>, Path(id): Path<String>) -> Response {
     let removed = api::providers::key_remove(&*app.server.engine, id).await;
     read_again(&app, removed)
+}
+
+async fn codex_sign_in(State(app): State<App>) -> Response {
+    answer(api::sign_in::codex_sign_in(&*app.server.engine).await)
+}
+
+#[derive(Deserialize)]
+struct LoginId {
+    login_id: String,
+}
+
+async fn codex_sign_in_poll(State(app): State<App>, Json(b): Json<LoginId>) -> Response {
+    let polled = api::sign_in::codex_sign_in_poll(&*app.server.engine, b.login_id).await;
+    if polled.as_deref() == Ok("ok") {
+        app.server.events.publish(Change::Job { id: String::new() });
+    }
+    answer(polled)
+}
+
+async fn codex_sign_out(State(app): State<App>) -> Response {
+    let out = api::sign_in::codex_sign_out(&*app.server.engine).await;
+    read_again(&app, out)
 }
 
 /// After a key changes, every page reads again: the models offered follow

@@ -107,6 +107,13 @@ containers:
   provider-openrouter:
     worker: package://provider-openrouter
     version: "0.1.16"
+  # These sign in with a ChatGPT or Claude subscription, not a key.
+  provider-openai-codex:
+    worker: package://provider-openai-codex
+    version: "0.4.30"
+  provider-claude-code:
+    worker: package://provider-claude-code
+    version: "0.1.25"
   session-manager:
     worker: package://session-manager
     version: "1.0.35"

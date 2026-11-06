@@ -71,12 +71,15 @@ pub fn route(cmd: &str) -> Option<(&'static str, &'static str, Body)> {
         command::PROVIDERS => ("GET", "/providers", Empty),
         command::PROVIDER_KEY_SET => ("PUT", "/providers/{id}/key", Rest),
         command::PROVIDER_KEY_REMOVE => ("DELETE", "/providers/{id}/key", Empty),
+        command::CODEX_SIGN_IN => ("POST", "/providers/openai-codex/sign-in", Empty),
+        command::CODEX_SIGN_IN_POLL => ("POST", "/providers/openai-codex/sign-in/poll", Rest),
+        command::CODEX_SIGN_OUT => ("POST", "/providers/openai-codex/sign-out", Empty),
         _ => return None,
     })
 }
 
 /// Every command this table routes.
-pub const ROUTED: [&str; 53] = [
+pub const ROUTED: [&str; 56] = [
     command::ENGINE_STATUS,
     command::DOCTOR,
     command::STACK_STATUS,
@@ -130,6 +133,9 @@ pub const ROUTED: [&str; 53] = [
     command::PROVIDERS,
     command::PROVIDER_KEY_SET,
     command::PROVIDER_KEY_REMOVE,
+    command::CODEX_SIGN_IN,
+    command::CODEX_SIGN_IN_POLL,
+    command::CODEX_SIGN_OUT,
 ];
 
 #[cfg(test)]

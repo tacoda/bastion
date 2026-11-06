@@ -10,4 +10,5 @@ pub mod govern;
 pub mod people;
 pub mod providers;
 pub mod settings;
+pub mod sign_in;
 pub mod stack;

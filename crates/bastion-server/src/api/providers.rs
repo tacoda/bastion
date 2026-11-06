@@ -6,6 +6,7 @@
 use bastion_protocol::ProviderView;
 use serde_json::{Map, Value, json};
 
+use super::sign_in::with_sign_in;
 use crate::engine::Engine;
 
 /// The router's configuration entry, named for the stack's project.
@@ -19,7 +20,7 @@ pub async fn providers(engine: &dyn Engine) -> Result<Vec<ProviderView>, String>
     let out = engine
         .call("bastion", "router::provider::list", json!({}))
         .await?;
-    Ok(out["providers"]
+    let listed = out["providers"]
         .as_array()
         .into_iter()
         .flatten()
@@ -29,8 +30,12 @@ pub async fn providers(engine: &dyn Engine) -> Result<Vec<ProviderView>, String>
                 .as_str()
                 .map_or_else(|| text(&p["id"]), Into::into),
             source: p["credential_source"].as_str().unwrap_or("none").into(),
-        })
-        .collect())
+        });
+    let mut all = Vec::new();
+    for p in listed {
+        all.push(with_sign_in(engine, p).await);
+    }
+    Ok(all)
 }
 
 /// Keep `key` for provider `id` in the vault, and point the router at it.
@@ -101,8 +106,15 @@ async fn point(engine: &dyn Engine, id: &str, reference: Option<String>) -> Resu
 /// `DEEPSEEK_API_KEY`), or a refusal for a provider the router does not
 /// know, so a typo makes no secret.
 async fn known(engine: &dyn Engine, id: &str) -> Result<String, String> {
-    if !providers(engine).await?.iter().any(|p| p.id == id) {
+    let all = providers(engine).await?;
+    let Some(p) = all.iter().find(|p| p.id == id) else {
         return Err(format!("no model provider {id}"));
+    };
+    if p.source == "signed_in" || matches!(id, "openai-codex" | "claude-code") {
+        return Err(format!(
+            "{} signs in with a subscription, not a key",
+            p.name
+        ));
     }
     Ok(format!("{}_API_KEY", id.to_uppercase().replace('-', "_")))
 }

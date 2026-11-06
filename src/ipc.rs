@@ -465,7 +465,7 @@ async fn follow(name: String) {
     FOLLOWED.with(|f| f.borrow_mut().retain(|n| *n != feed.server));
 }
 
-async fn sleep(ms: i32) {
+pub async fn sleep(ms: i32) {
     let wait = Promise::new(&mut |resolve, _| {
         if let Some(w) = web_sys::window() {
             let _ = w.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, ms);

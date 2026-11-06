@@ -1,0 +1,13 @@
+I want to update the gh-pages site. I want to feature the promotion and demotion ladder, evals for A/B testing, and custom workflows.
+
+---
+
+Since bastion is a harness and factory now, I am not sure that I can offer signing in with claude or codex accounts under the license. Check for me.
+
+---
+
+Do I have to use api keys?
+
+---
+
+remove the Claude Code subscription sign-in

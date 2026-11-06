@@ -12,6 +12,7 @@ use serde::Serialize;
 
 use crate::ipc;
 use crate::pages::diff::DiffView;
+use crate::pages::workflows::drawing;
 use crate::route::{Route, ago, mark, nav};
 
 #[derive(Serialize)]
@@ -331,22 +332,67 @@ pub fn JobPage(id: String) -> impl IntoView {
         <Governed detail=detail error=set_error />
         <p class="text-bad" role="alert">{error}</p>
 
-        <section class="rounded-xl border border-line bg-panel">
-            <h2 class="m-0 border-b border-line px-3 py-2 text-sm font-semibold text-muted">"Steps"</h2>
-            <ol class="m-0 list-none p-0">
-                {move || detail.get().map(|d| {
-                    // The latest turn belongs to the last agent step that ran.
-                    let turn_step = d.steps.iter().rev()
-                        .find(|s| matches!(s.stage.as_str(), "plan" | "build") && s.state != "pending")
-                        .map(|s| s.stage.clone());
-                    d.steps.clone().into_iter().map(|step| {
-                        let artifacts: Vec<ArtifactView> = d.artifacts.iter().filter(|a| a.stage == step.stage).cloned().collect();
-                        let transcript = (turn_step.as_deref() == Some(step.stage.as_str())).then(|| d.transcript.clone());
-                        step_row(step, artifacts, transcript)
-                    }).collect_view()
-                })}
-            </ol>
+        {flow(detail)}
+        {steps(detail)}
+    }
+}
+
+/// The job's steps, each opening to its artifacts and, for the last agent
+/// step that ran, its latest turn.
+fn steps(detail: ReadSignal<Option<JobDetail>>) -> impl IntoView {
+    view! {
+    <section class="rounded-xl border border-line bg-panel">
+        <h2 class="m-0 border-b border-line px-3 py-2 text-sm font-semibold text-muted">"Steps"</h2>
+        <ol class="m-0 list-none p-0">
+            {move || detail.get().map(|d| {
+                // The latest turn belongs to the last agent step that ran.
+                let turn_step = d.steps.iter().rev()
+                    .find(|s| matches!(s.stage.as_str(), "plan" | "build") && s.state != "pending")
+                    .map(|s| s.stage.clone());
+                d.steps.clone().into_iter().map(|step| {
+                    let artifacts: Vec<ArtifactView> = d.artifacts.iter().filter(|a| a.stage == step.stage).cloned().collect();
+                    let transcript = (turn_step.as_deref() == Some(step.stage.as_str())).then(|| d.transcript.clone());
+                    step_row(step, artifacts, transcript)
+                }).collect_view()
+            })}
+        </ol>
+    </section>
+    }
+}
+
+/// The job's workflow, each step marked with its state (PLAN.md D35), and
+/// each result its steps gave, as a document.
+fn flow(detail: ReadSignal<Option<JobDetail>>) -> impl IntoView {
+    let workflow = Signal::derive(move || detail.with(|d| d.as_ref().map(|d| d.workflow.clone())));
+    let marks = Signal::derive(move || {
+        detail.with(|d| {
+            d.iter()
+                .flat_map(|d| &d.steps)
+                .map(|s| (s.id.clone(), s.state.clone()))
+                .collect()
+        })
+    });
+    let results =
+        move || detail.with(|d| d.as_ref().map(|d| d.results.clone()).unwrap_or_default());
+    view! {
+        <section class="mb-4 grid gap-2">
+            <h2 class="m-0 text-sm font-semibold text-muted">"Workflow"</h2>
+            {drawing(workflow, marks)}
+            {move || results().into_iter().map(|(name, body)| view! {
+                <article class="grid gap-1 rounded-xl border border-line bg-panel p-3">
+                    <h3 class="m-0 text-xs font-semibold text-muted">{format!("Result · {name}")}</h3>
+                    <pre class="m-0 max-h-96 overflow-auto whitespace-pre-wrap wrap-anywhere rounded bg-bg p-3 text-sm">{body}</pre>
+                </article>
+            }).collect_view()}
         </section>
+    }
+}
+
+/// A step's name: a skill's, prompt's or command's node id, else its stage.
+fn step_name(step: &StepView) -> String {
+    match step.stage.as_str() {
+        "skill" | "prompt" | "command" => format!("{} · {}", step.stage, step.id),
+        _ => step.stage.clone(),
     }
 }
 
@@ -363,7 +409,7 @@ fn step_row(
             <details open=open>
                 <summary class="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-line">
                     <span class={format!("w-4 text-center {color}")} aria-hidden="true">{symbol}</span>
-                    <span class="font-semibold capitalize">{step.stage.clone()}</span>
+                    <span class="font-semibold capitalize">{step_name(&step)}</span>
                     <span class="text-xs text-muted">{step.state.clone()}</span>
                 </summary>
                 {has_detail.then(|| view! {

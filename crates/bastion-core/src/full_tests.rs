@@ -693,3 +693,27 @@ fn a_failing_command_waits_on_a_person() {
         (Stage::Command, State::NeedsYou, Some("3 problems"))
     );
 }
+
+#[test]
+fn a_workflow_job_is_at_its_node_when_a_stage_is_there_twice() {
+    use crate::workflow::{Graph, Node};
+    let skill = |id: &str, x| Node {
+        id: id.into(),
+        stage: Stage::Skill,
+        run: id.into(),
+        dial: Dial::Dark,
+        note: String::new(),
+        results: Vec::new(),
+        x,
+        y: 0,
+    };
+    let g = Graph {
+        nodes: vec![skill("tidy", 0), skill("docs", 100)],
+        links: Vec::new(),
+    };
+    let mut j = job(Pipeline::Short).running(g.steps().unwrap());
+    j.state = State::Running;
+    j.node = Some("docs".into());
+    let states: Vec<StepState> = crate::steps(&j).into_iter().map(|s| s.1).collect();
+    assert_eq!(states, [StepState::Done, StepState::Running]);
+}

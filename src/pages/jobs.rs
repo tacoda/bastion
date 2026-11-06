@@ -1,12 +1,13 @@
 //! The Jobs page and New request (PLAN.md A3): every job, the ones waiting on
 //! the owner first, after wipp's Jobs page and GitHub Actions' runs list.
 
-use bastion_protocol::{IssueView, JobSummary, LOCAL, Workspace, command, event};
+use bastion_protocol::{IssueView, JobSummary, LOCAL, WorkflowView, Workspace, command, event};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::Serialize;
 
 use crate::ipc::{self, None};
+use crate::pages::factory_settings::read;
 use crate::route::{Route, ago, mark, nav};
 
 const IN_PROGRESS: [&str; 3] = ["queued", "provisioning", "running"];
@@ -16,6 +17,9 @@ const FINISHED: [&str; 3] = ["landed", "failed", "stopped"];
 struct Submit {
     workspace: String,
     request: String,
+    /// The workflow to run (D35); none runs the server's default.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    workflow: Option<String>,
 }
 
 /// A job, and the Bastion server it runs on (D30).
@@ -251,6 +255,19 @@ pub fn JobsPage() -> impl IntoView {
     }
 }
 
+/// The workflow a request runs (D35), the server's default first.
+fn workflow_picker(set_workflow: WriteSignal<String>) -> impl IntoView {
+    let (workflows, _) = read::<Vec<WorkflowView>>(command::WORKFLOWS);
+    view! {
+        <label class="grid gap-1 text-sm text-muted">"Workflow"
+            <select class="rounded border border-line bg-bg px-2 py-1 text-ink" on:change=move |e| set_workflow.set(event_target_value(&e))>
+                <option value="">"The server's default"</option>
+                {move || workflows.get().unwrap_or_default().into_iter().map(|w| view! { <option value=w.id>{w.name}</option> }).collect_view()}
+            </select>
+        </label>
+    }
+}
+
 #[component]
 pub fn NewRequestPage() -> impl IntoView {
     let go = nav();
@@ -261,6 +278,7 @@ pub fn NewRequestPage() -> impl IntoView {
     let (picked, set_picked) = signal(String::new());
     let (request, set_request) = signal(String::new());
     let (error, set_error) = signal(String::new());
+    let (workflow, set_workflow) = signal(String::new());
     let chosen = move || {
         let t = picked.get();
         if t.is_empty() {
@@ -277,6 +295,7 @@ pub fn NewRequestPage() -> impl IntoView {
         let body = Submit {
             workspace: chosen(),
             request: request.get(),
+            workflow: Some(workflow.get()).filter(|w| !w.is_empty()),
         };
         spawn_local(async move {
             match ipc::call::<String, String>(command::JOB_SUBMIT, body).await {
@@ -303,6 +322,7 @@ pub fn NewRequestPage() -> impl IntoView {
                     {move || workspaces.get().into_iter().map(|w| view! { <option value=w.name.clone()>{w.name.clone()}</option> }).collect_view()}
                 </select>
             </label>
+            {workflow_picker(set_workflow)}
             <label class="grid gap-1 text-sm text-muted">"What should change?"
                 <textarea class={format!("{input} min-h-32")} prop:value=request on:input=move |e| set_request.set(event_target_value(&e))></textarea>
             </label>

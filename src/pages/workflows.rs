@@ -4,6 +4,8 @@
 //! runs, its dial, its note and its results, and saves a new version. A
 //! built-in workflow can only be copied, and nobody but an admin edits.
 
+use std::collections::BTreeMap;
+
 use bastion_protocol::{LinkView, NodeView, PersonView, WorkflowView, command};
 use leptos::ev::PointerEvent;
 use leptos::prelude::*;
@@ -12,6 +14,7 @@ use serde::Serialize;
 
 use crate::ipc::{self, None};
 use crate::pages::factory_settings::{BUTTON, read};
+use crate::route::mark;
 
 /// A step's box on the canvas, and the margin around the drawing.
 const W: i32 = 168;
@@ -77,12 +80,14 @@ impl Drag {
     }
 }
 
-/// The canvas's state: the workflow drawn, what is picked, and any drag.
+/// The canvas's state: the workflow drawn, what is picked, any drag, and
+/// each step's state by node id when a job runs it.
 #[derive(Clone, Copy)]
 struct Board {
     draft: RwSignal<Option<WorkflowView>>,
     picked: RwSignal<Pick>,
     drag: RwSignal<Option<Drag>>,
+    marks: Signal<BTreeMap<String, String>>,
 }
 
 fn at(e: &PointerEvent) -> (i32, i32) {
@@ -222,8 +227,10 @@ fn step_box(n: &NodeView, board: Board, editable: bool) -> impl IntoView + use<>
         draft,
         picked,
         drag,
+        marks,
     } = board;
     let (x, y, id) = (n.x, n.y, n.id.clone());
+    let state = marks.with(|m| m.get(&id).map(|s| mark(s)));
     let look = match picked.get() == Pick::Step(id.clone()) {
         true => "fill-bg stroke-primary",
         false => "fill-bg stroke-line",
@@ -248,7 +255,10 @@ fn step_box(n: &NodeView, board: Board, editable: bool) -> impl IntoView + use<>
     view! {
         <g transform=format!("translate({x},{y})") class="cursor-grab" on:pointerdown=down on:pointerup=up>
             <rect width=W height=H rx="8" class=look stroke-width="2" />
-            <text x="10" y="23" class="fill-ink text-sm font-semibold">{title(n)}</text>
+            <text x="10" y="23" class="fill-ink text-sm font-semibold">
+                {state.map(|(symbol, color)| view! { <tspan class=color style="fill: currentColor">{format!("{symbol} ")}</tspan> })}
+                {title(n)}
+            </text>
             <text x="10" y="43" class="fill-muted text-xs">{subtitle(n)}</text>
             {editable.then(|| view! {
                 <circle cx=W cy=H / 2 r="7" class="cursor-crosshair fill-primary" on:pointerdown=port>
@@ -277,6 +287,7 @@ fn canvas(
     draft: RwSignal<Option<WorkflowView>>,
     picked: RwSignal<Pick>,
     editable: Signal<bool>,
+    marks: Signal<BTreeMap<String, String>>,
 ) -> impl IntoView {
     let drag = RwSignal::new(None::<Drag>);
     let follow = move |e: PointerEvent| follow(draft, drag, &e);
@@ -304,6 +315,7 @@ fn canvas(
                                 draft,
                                 picked,
                                 drag,
+                                marks,
                             },
                             on,
                         )
@@ -332,6 +344,21 @@ fn canvas(
             </svg>
         </div>
     }
+}
+
+/// A workflow drawn read-only, each step marked with its state by node id.
+pub(crate) fn drawing(
+    workflow: Signal<Option<WorkflowView>>,
+    marks: Signal<BTreeMap<String, String>>,
+) -> impl IntoView {
+    let draft = RwSignal::new(None);
+    Effect::new(move || draft.set(workflow.get()));
+    canvas(
+        draft,
+        RwSignal::new(Pick::Nothing),
+        Signal::stored(false),
+        marks,
+    )
 }
 
 /// A labelled text box for one of a step's fields, kept on change.
@@ -577,7 +604,7 @@ pub fn WorkflowsPage() -> impl IntoView {
         </div>
         <Show when=move || admin.get()>{manage(draft, chosen, answer)}</Show>
         <Show when=move || editable.get()>{palette(draft, known)}</Show>
-        {canvas(draft, picked, editable)}
+        {canvas(draft, picked, editable, Signal::stored(BTreeMap::new()))}
         {picked_detail(draft, picked, editable)}
         <Show when=move || editable.get()>
             <button class="mt-4 rounded-lg bg-primary px-3 py-2 font-semibold text-white hover:bg-primary-hover" on:click=save>"Save a new version"</button>

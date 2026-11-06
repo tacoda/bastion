@@ -437,6 +437,8 @@ pub struct TranscriptLine {
 /// One step of a job's pipeline, as a run of steps shows it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StepView {
+    /// The workflow node the step is (D35).
+    pub id: String,
     pub stage: String,
     /// `done`, `queued`, `running`, `waiting`, `failed`, `stopped` or `pending`.
     pub state: String,
@@ -453,6 +455,10 @@ pub struct JobDetail {
     pub held: Vec<HeldCallView>,
     /// The repository's charter as the job's last turn read it.
     pub charter: Option<CharterView>,
+    /// The workflow the job runs, as the version it started on (D35).
+    pub workflow: WorkflowView,
+    /// Each result its steps gave, by name.
+    pub results: std::collections::BTreeMap<String, String>,
 }
 
 /// A workspace's charter for one job (PLAN.md A5). No files means the job

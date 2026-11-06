@@ -153,9 +153,13 @@ pub async fn job(cell: &FactoryCell, id: String) -> Result<JobDetail, String> {
         })
         .collect();
     let transcript = transcript(&factory, record.runtime.session.as_deref()).await;
-    let steps = steps(&record.job)
+    let steps = record
+        .job
+        .step_ids()
         .into_iter()
-        .map(|(stage, state)| StepView {
+        .zip(steps(&record.job))
+        .map(|(id, (stage, state))| StepView {
+            id,
             stage: name(stage),
             state: name(state),
         })
@@ -184,6 +188,8 @@ pub async fn job(cell: &FactoryCell, id: String) -> Result<JobDetail, String> {
             hook_runs: factory.gate().hook_runs(&id),
             findings: factory.gate().findings(&id),
         }),
+        workflow: super::workflows::of_job(&**factory.store(), &record).await?,
+        results: record.job.results.clone(),
     })
 }
 

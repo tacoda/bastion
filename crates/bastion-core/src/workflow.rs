@@ -55,6 +55,11 @@ pub struct Step {
     pub gives: Vec<String>,
 }
 
+/// The id a chained stage's node has.
+pub fn chain_id(stage: Stage) -> String {
+    format!("{stage:?}").to_lowercase()
+}
+
 /// The level of steps in this order with these dials (D33): lights-on when
 /// every step is, dim when at least one up to the merge is, and dark when
 /// none up to the merge is. Land is the short pipeline's merge.
@@ -136,7 +141,7 @@ impl Graph {
     /// `stages` linked one after another, with each stage's dial: a
     /// built-in workflow.
     pub fn chain(stages: &[Stage], dial: impl Fn(Stage) -> Dial) -> Graph {
-        let id = |s: &Stage| format!("{s:?}").to_lowercase();
+        let id = |s: &Stage| chain_id(*s);
         let nodes = stages.iter().enumerate().map(|(i, s)| Node {
             id: id(s),
             stage: *s,

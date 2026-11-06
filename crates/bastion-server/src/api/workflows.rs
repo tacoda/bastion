@@ -8,7 +8,7 @@ use serde_json::json;
 use super::factory::{FactoryCell, factory, name};
 use crate::factory::now;
 use crate::settings_store;
-use crate::store::Store;
+use crate::store::{Record, Store};
 use crate::workflow_store::{self, Workflow};
 
 fn view_of(w: &Workflow) -> WorkflowView {
@@ -49,6 +49,32 @@ fn view_of(w: &Workflow) -> WorkflowView {
 fn graph_of(v: &WorkflowView) -> Result<Graph, String> {
     let value = json!({ "nodes": v.nodes, "links": v.links });
     serde_json::from_value(value).map_err(|e| format!("the workflow does not read: {e}"))
+}
+
+/// The workflow job `r` runs: the version it started on, or its
+/// pipeline's stages as a chain under the settings' dials.
+pub(super) async fn of_job(store: &dyn Store, r: &Record) -> Result<WorkflowView, String> {
+    let id = r.runtime.workflow.clone().unwrap_or_default();
+    if let Some(version) = r.runtime.workflow_version
+        && let Some(graph) = store.graph_at(&id, version).await?
+    {
+        let name = id.clone();
+        return Ok(view_of(&Workflow {
+            id,
+            name,
+            version,
+            graph,
+        }));
+    }
+    let dials = settings_store::current(store).await?.dials;
+    let graph = Graph::chain(&r.job.stages(), |s| dials.at(s));
+    let name = id.clone();
+    Ok(view_of(&Workflow {
+        id,
+        name,
+        version: 0,
+        graph,
+    }))
 }
 
 async fn every(store: &dyn Store) -> Result<Vec<Workflow>, String> {

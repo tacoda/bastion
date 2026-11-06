@@ -473,6 +473,15 @@ impl Job {
         }
     }
 
+    /// Each step's node id, in the order of `stages()`.
+    pub fn step_ids(&self) -> Vec<String> {
+        if self.flow.is_empty() {
+            self.stages().into_iter().map(workflow::chain_id).collect()
+        } else {
+            self.flow.iter().map(|s| s.id.clone()).collect()
+        }
+    }
+
     /// The workflow step the job is at. None while a fix loop runs another
     /// stage for it, or on a pipeline.
     pub fn step(&self) -> Option<&workflow::Step> {
@@ -1002,10 +1011,17 @@ pub enum StepState {
     Pending,
 }
 
-/// Every stage of the job's pipeline, in order, with its state.
+/// Every stage of the job's pipeline, in order, with its state. On a
+/// workflow the job is at its node, so a stage it holds twice is told apart.
 pub fn steps(job: &Job) -> Vec<(Stage, StepState)> {
     let stages = job.stages();
-    let current = stages.iter().position(|s| *s == job.stage).unwrap_or(0);
+    let at_node = job
+        .node
+        .as_ref()
+        .and_then(|n| job.flow.iter().position(|s| &s.id == n));
+    let current = at_node
+        .or_else(|| stages.iter().position(|s| *s == job.stage))
+        .unwrap_or(0);
     stages
         .iter()
         .enumerate()

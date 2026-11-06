@@ -97,10 +97,17 @@ pre { margin: 0 0 16px; padding: 20px; background: var(--panel2); border: 1px so
 .lvl .on.auto { background: #0b0d12; color: var(--fg); box-shadow: inset 0 0 0 1px var(--purple); }
 .scale { display: flex; justify-content: space-between; color: var(--dim); font-size: 12px; padding: 12px 24px 0; }
 
-/* Spotlight that follows the pointer */
-.spot { position: fixed; inset: 0; pointer-events: none; z-index: 10; mix-blend-mode: screen; opacity: 0; transition: opacity .4s;
-  background: radial-gradient(circle 340px at var(--x, 50%) var(--y, 30%), rgba(255, 244, 228, .11), rgba(167, 139, 250, .05) 45%, transparent 75%); }
+/* Spotlight: a light behind the page, and a lit edge on each entity near the pointer */
+.app { position: relative; z-index: 1; }
+.spot { position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: 0; transition: opacity .4s;
+  background: radial-gradient(circle 380px at var(--x, 50%) var(--y, 30%), rgba(255, 244, 228, .16), rgba(167, 139, 250, .07) 45%, transparent 75%); }
 .spot.on { opacity: 1; }
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .lit { position: relative; background-image: radial-gradient(260px circle at var(--mx, -999px) var(--my, -999px), rgba(255, 244, 228, .10), transparent 70%); }
+  .lit::after { content: ""; position: absolute; inset: -1px; padding: 1.5px; border-radius: inherit; pointer-events: none;
+    background: radial-gradient(240px circle at var(--mx, -999px) var(--my, -999px), rgba(255, 248, 238, .95), rgba(255, 248, 238, .25) 45%, transparent 70%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+}
 @media (hover: none), (prefers-reduced-motion: reduce) { .spot { display: none; } }
 
 ul.plain { list-style: none; padding: 0; margin: 0 0 16px; max-width: 72ch; }
@@ -253,19 +260,23 @@ cargo tauri dev</pre>
 <script>
 (() => {
   const spot = document.querySelector('.spot');
-  let x = 0, y = 0, queued = false;
-  addEventListener('pointermove', e => {
-    x = e.clientX; y = e.clientY;
-    spot.classList.add('on');
-    if (queued) return;
-    queued = true;
-    requestAnimationFrame(() => {
-      spot.style.setProperty('--x', x + 'px');
-      spot.style.setProperty('--y', y + 'px');
-      queued = false;
+  const lit = [...document.querySelectorAll('.card, .col, .panel, .case, .dials, .note, .step, .btn, pre')];
+  lit.forEach(el => el.classList.add('lit'));
+  let x = -9999, y = -9999, queued = false;
+  const paint = () => {
+    queued = false;
+    const rects = lit.map(el => el.getBoundingClientRect());
+    spot.style.setProperty('--x', x + 'px');
+    spot.style.setProperty('--y', y + 'px');
+    lit.forEach((el, i) => {
+      el.style.setProperty('--mx', x - rects[i].left + 'px');
+      el.style.setProperty('--my', y - rects[i].top + 'px');
     });
-  });
-  document.addEventListener('pointerleave', () => spot.classList.remove('on'));
+  };
+  const queue = () => { if (!queued) { queued = true; requestAnimationFrame(paint); } };
+  addEventListener('pointermove', e => { x = e.clientX; y = e.clientY; spot.classList.add('on'); queue(); });
+  addEventListener('scroll', queue, { passive: true });
+  document.addEventListener('pointerleave', () => { spot.classList.remove('on'); x = y = -9999; queue(); });
 })();
 </script>
 </body>

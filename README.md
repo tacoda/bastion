@@ -1,6 +1,6 @@
 # Bastion
 
-Bastion is an agent orchestration control plane that runs on your own machine.
+Bastion is an agent orchestrator that runs on your own machine.
 A workflow is a graph of steps (skills, prompts, commands, and Bastion's own
 stages) that you can see and govern. A request goes in, agents work each step in
 a sandbox, and a reviewed change comes out. Nothing merges itself. It's a native

@@ -1,0 +1,9 @@
+Each workflows should have a canvas and each node is a step and should be able to expand for more details on the step, link them to other steps, declare results (like documents, which probably go in the database), and use conditionals that are not dependent on an LLM - just a deterministic code check
+
+---
+
+Actually, drop the conditions
+
+---
+
+The results are enough - because there are entry and exit criteria

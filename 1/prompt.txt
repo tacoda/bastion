@@ -1,0 +1,7 @@
+Create a gh-pages branch for this project
+Create a product page for bastion
+Reference my other project pages for different designs: tacoda.dev/keystone,gauge,ghola,sigma,open-refinery
+
+---
+
+Push the branch, but don't enable the pages - I'll do that - it's a different github account

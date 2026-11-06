@@ -276,23 +276,32 @@ cargo tauri dev</pre>
   document.body.append(flecks);
   const glints = Array.from({ length: 6 }, () => flecks.appendChild(document.createElement('i')));
   const reach = 140;
-  // Where the light reflects off an entity: the point on its edge nearest the pointer.
+  // One light source, above and to the left of the pointer. An entity reflects it only on the
+  // edge that faces it most directly, at the point on that edge nearest the pointer.
+  const source = { dx: -120, dy: -220 };
   const reflection = r => {
-    const inside = x > r.left && x < r.right && y > r.top && y < r.bottom;
-    if (inside) {
-      const gaps = [x - r.left, r.right - x, y - r.top, r.bottom - y], side = gaps.indexOf(Math.min(...gaps));
-      return side < 2
-        ? { px: side ? r.right : r.left, py: y, d: gaps[side], vertical: true }
-        : { px: x, py: side === 2 ? r.top : r.bottom, d: gaps[side], vertical: false };
+    const sx = x + source.dx, sy = y + source.dy;
+    const cx = Math.min(Math.max(x, r.left), r.right), cy = Math.min(Math.max(y, r.top), r.bottom);
+    const edges = [
+      sy < r.top && { px: cx, py: r.top, nx: 0, ny: -1 },
+      sy > r.bottom && { px: cx, py: r.bottom, nx: 0, ny: 1 },
+      sx < r.left && { px: r.left, py: cy, nx: -1, ny: 0 },
+      sx > r.right && { px: r.right, py: cy, nx: 1, ny: 0 },
+    ].filter(Boolean);
+    let best = null;
+    for (const e of edges) {
+      const lx = sx - e.px, ly = sy - e.py, facing = (lx * e.nx + ly * e.ny) / Math.hypot(lx, ly);
+      const d = Math.hypot(x - e.px, y - e.py);
+      const strength = d < reach ? facing * (1 - d / reach) ** 1.5 : 0;
+      if (strength > (best ? best.strength : 0)) best = { ...e, strength, vertical: e.nx !== 0 };
     }
-    const px = Math.min(Math.max(x, r.left), r.right), py = Math.min(Math.max(y, r.top), r.bottom);
-    return { px, py, d: Math.hypot(x - px, y - py), vertical: py > r.top && py < r.bottom };
+    return best;
   };
   const reflect = rects => {
-    const hits = rects.map(reflection).filter(h => h.d < reach).sort((a, b) => a.d - b.d);
+    const hits = rects.map(reflection).filter(Boolean).sort((a, b) => b.strength - a.strength);
     glints.forEach((g, i) => {
       const h = hits[i];
-      g.style.opacity = h ? ((1 - h.d / reach) ** 1.5).toFixed(3) : 0;
+      g.style.opacity = h ? h.strength.toFixed(3) : 0;
       if (h) g.style.transform = `translate(${h.px}px, ${h.py}px)${h.vertical ? ' rotate(90deg)' : ''}`;
     });
   };

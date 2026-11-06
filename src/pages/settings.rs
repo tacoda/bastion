@@ -253,11 +253,17 @@ const ROLES: [&str; 3] = ["admin", "member", "viewer"];
 const INPUT: &str = "rounded border border-line bg-bg px-2 py-1 text-ink";
 
 /// Who you are here, and, for an admin, the people and their tokens.
+/// Whether `me` manages people here: an admin, on a remote Bastion server.
+/// `local` listens only on this machine, so nobody else can sign in to it.
+fn manages_people(me: Option<&PersonView>) -> bool {
+    ipc::current() != LOCAL && me.is_some_and(|p| p.role == "admin")
+}
+
 async fn read_people() -> (Option<PersonView>, Vec<PersonView>, Vec<TokenView>) {
     let who = ipc::call::<PersonView, String>(command::ME, None {})
         .await
         .ok();
-    if !who.as_ref().is_some_and(|p| p.role == "admin") {
+    if !manages_people(who.as_ref()) {
         return (who, Vec::new(), Vec::new());
     }
     let all = ipc::call::<Vec<PersonView>, String>(command::PEOPLE, None {}).await;
@@ -394,7 +400,7 @@ fn People() -> impl IntoView {
         <section class="mb-4 grid gap-3 rounded-xl border border-line bg-panel p-4">
             <h2 class="m-0 text-sm font-semibold text-muted">"People"</h2>
             <p class="m-0 text-sm text-muted">{move || me.get().map(|p| format!("You are {}, a {} on this Bastion server.", p.name, p.role))}</p>
-            <Show when=move || me.get().is_some_and(|p| p.role == "admin")>
+            <Show when=move || manages_people(me.get().as_ref())>
                 <ul class="m-0 grid list-none gap-1 p-0 text-sm">
                     {move || people.get().into_iter().map(|p| person_row(p, change, issue)).collect_view()}
                 </ul>

@@ -10,7 +10,7 @@ use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use bastion_core::Pipeline;
 use bastion_protocol::{
@@ -53,7 +53,7 @@ pub fn router(server: Arc<Server>, token: &str, owner: &str) -> Router {
     };
     let cors = CorsLayer::new()
         .allow_origin(ORIGINS.map(HeaderValue::from_static))
-        .allow_methods([Method::GET, Method::POST, Method::PUT])
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
         .allow_headers([
             header::AUTHORIZATION,
             header::CONTENT_TYPE,
@@ -81,6 +81,16 @@ fn routes() -> Router<App> {
         .merge(factory_routes())
         .merge(govern_routes())
         .merge(settings_routes())
+        .merge(people_routes())
+}
+
+fn people_routes() -> Router<App> {
+    Router::new()
+        .route("/people", get(people).post(person_add))
+        .route("/people/{name}/role", put(person_role))
+        .route("/people/{name}/tokens", post(token_issue))
+        .route("/tokens", get(tokens))
+        .route("/tokens/{id}", delete(token_revoke))
 }
 
 fn factory_routes() -> Router<App> {
@@ -275,8 +285,13 @@ async fn workspace_add(State(app): State<App>, Json(w): Json<Workspace>) -> Resp
     answer(api::factory::workspace_add(&s.factory, &s.machine, w).await)
 }
 
-async fn jobs(State(app): State<App>) -> Response {
-    answer(api::factory::jobs(&app.server.factory).await)
+async fn jobs(State(app): State<App>, Extension(person): Extension<Person>) -> Response {
+    let jobs = api::factory::jobs(&app.server.factory).await;
+    answer(jobs.map(|all| {
+        all.into_iter()
+            .map(|j| access::as_seen_by(&person, j))
+            .collect::<Vec<_>>()
+    }))
 }
 
 #[derive(Deserialize)]
@@ -300,8 +315,16 @@ async fn job_submit(
     answer(api::factory::job_submit(f, b.workspace, b.request, how).await)
 }
 
-async fn job(State(app): State<App>, Path(id): Path<String>) -> Response {
-    answer(api::factory::job(&app.server.factory, id).await)
+async fn job(
+    State(app): State<App>,
+    Extension(person): Extension<Person>,
+    Path(id): Path<String>,
+) -> Response {
+    let detail = api::factory::job(&app.server.factory, id).await;
+    answer(detail.map(|mut d| {
+        d.job = access::as_seen_by(&person, d.job);
+        d
+    }))
 }
 
 async fn job_approve(
@@ -509,6 +532,49 @@ async fn job_from_issue(
         requester: Some(person.name),
     };
     answer(api::settings::job_from_issue(&s.factory, &s.machine, from).await)
+}
+
+async fn people(State(app): State<App>) -> Response {
+    answer(api::people::people(&app.server.factory).await)
+}
+
+async fn person_add(State(app): State<App>, Json(p): Json<Person>) -> Response {
+    answer(api::people::add(&app.server.factory, p).await)
+}
+
+#[derive(Deserialize)]
+struct NewRole {
+    role: Role,
+}
+
+async fn person_role(
+    State(app): State<App>,
+    Path(name): Path<String>,
+    Json(b): Json<NewRole>,
+) -> Response {
+    answer(api::people::set_role(&app.server.factory, name, b.role).await)
+}
+
+#[derive(Deserialize)]
+struct Label {
+    #[serde(default)]
+    label: String,
+}
+
+async fn token_issue(
+    State(app): State<App>,
+    Path(name): Path<String>,
+    Json(b): Json<Label>,
+) -> Response {
+    answer(api::people::issue(&app.server.factory, name, b.label).await)
+}
+
+async fn tokens(State(app): State<App>) -> Response {
+    answer(api::people::tokens(&app.server.factory).await)
+}
+
+async fn token_revoke(State(app): State<App>, Path(id): Path<String>) -> Response {
+    answer(api::people::revoke(&app.server.factory, id).await)
 }
 
 /// What the stream sends: a change with its number, or a request to read

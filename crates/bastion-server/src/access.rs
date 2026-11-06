@@ -45,6 +45,10 @@ pub async fn person(
 /// What a route does, by its method and matched path. Acting on a job is
 /// counted as on one's own here; the handler checks whose job it is.
 pub fn act_for(method: &Method, path: &str) -> Act {
+    // Token ids are an admin's business, even to read.
+    if path == "/tokens" {
+        return Act::Manage;
+    }
     if method == Method::GET {
         return Act::Read;
     }
@@ -71,6 +75,23 @@ pub fn check(person: &Person, act: Act) -> Result<(), Refusal> {
         "{} is a {:?}, which may not {what}",
         person.name, person.role
     )))
+}
+
+/// Whether `person` may act on a job `requester` asked for.
+pub fn may_act_on(person: &Person, requester: Option<&str>) -> bool {
+    let own = requester == Some(person.name.as_str());
+    person.role.may(Act::OnJob { own })
+}
+
+/// A job as `person` should see it: no actions they may not take.
+pub fn as_seen_by(
+    person: &Person,
+    mut job: bastion_protocol::JobSummary,
+) -> bastion_protocol::JobSummary {
+    if !may_act_on(person, job.requester.as_deref()) {
+        job.actions.clear();
+    }
+    job
 }
 
 /// Whether `person` may act on job `id`: an admin on any, a member only on
@@ -112,7 +133,30 @@ mod tests {
             Act::OnJob { own: true }
         );
         assert_eq!(act_for(&Method::PUT, "/settings"), Act::Manage);
+        assert_eq!(act_for(&Method::GET, "/tokens"), Act::Manage);
+        assert_eq!(act_for(&Method::GET, "/people"), Act::Read);
         assert_eq!(act_for(&Method::POST, "/stack/stop"), Act::Manage);
+    }
+
+    #[test]
+    fn only_those_who_may_act_on_a_job_see_its_actions() {
+        let mia = Person {
+            name: "mia".into(),
+            role: Role::Member,
+        };
+        let vic = Person {
+            name: "vic".into(),
+            role: Role::Viewer,
+        };
+        let boss = Person {
+            name: "ana".into(),
+            role: Role::Admin,
+        };
+        assert!(may_act_on(&mia, Some("mia")));
+        assert!(!may_act_on(&mia, Some("ana")));
+        assert!(!may_act_on(&vic, Some("vic")));
+        assert!(may_act_on(&boss, Some("mia")));
+        assert!(may_act_on(&boss, None));
     }
 
     #[test]

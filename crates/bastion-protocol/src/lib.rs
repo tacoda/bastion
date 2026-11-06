@@ -19,6 +19,14 @@ pub mod command {
     pub const SERVERS: &str = "servers";
     pub const SERVER_ADD: &str = "server_add";
     pub const SERVER_REMOVE: &str = "server_remove";
+    /// Who you are on a Bastion server, and the people an admin manages (D31).
+    pub const ME: &str = "me";
+    pub const PEOPLE: &str = "people";
+    pub const PERSON_ADD: &str = "person_add";
+    pub const PERSON_ROLE: &str = "person_role";
+    pub const TOKEN_ISSUE: &str = "token_issue";
+    pub const TOKENS: &str = "tokens";
+    pub const TOKEN_REVOKE: &str = "token_revoke";
     pub const CONSOLE: &str = "console";
     /// Takes `{ request: LogRequest }`.
     pub const CONTAINER_LOGS: &str = "container_logs";
@@ -118,6 +126,23 @@ pub struct Server {
     pub name: String,
     pub url: String,
     pub token: String,
+}
+
+/// A person on a Bastion server and their role: `admin`, `member` or `viewer` (D31).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PersonView {
+    pub name: String,
+    pub role: String,
+}
+
+/// A token as the server lists it: never the token itself.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TokenView {
+    pub id: String,
+    pub person: String,
+    pub label: String,
+    pub created_at: u64,
+    pub last_used: Option<u64>,
 }
 
 /// The name of the Bastion server the app starts on this machine.

@@ -7,5 +7,6 @@ pub mod engine;
 pub mod evals;
 pub mod factory;
 pub mod govern;
+pub mod people;
 pub mod settings;
 pub mod stack;

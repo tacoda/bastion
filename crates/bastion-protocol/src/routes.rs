@@ -61,12 +61,19 @@ pub fn route(cmd: &str) -> Option<(&'static str, &'static str, Body)> {
         command::ACCOUNTS => ("GET", "/accounts", Empty),
         command::ISSUES => ("GET", "/issues/{workspace}", Empty),
         command::JOB_FROM_ISSUE => ("POST", "/issues/{workspace}/{number}/job", Empty),
+        command::ME => ("GET", "/me", Empty),
+        command::PEOPLE => ("GET", "/people", Empty),
+        command::PERSON_ADD => ("POST", "/people", Field("person")),
+        command::PERSON_ROLE => ("PUT", "/people/{name}/role", Rest),
+        command::TOKEN_ISSUE => ("POST", "/people/{name}/tokens", Rest),
+        command::TOKENS => ("GET", "/tokens", Empty),
+        command::TOKEN_REVOKE => ("DELETE", "/tokens/{id}", Empty),
         _ => return None,
     })
 }
 
 /// Every command this table routes.
-pub const ROUTED: [&str; 43] = [
+pub const ROUTED: [&str; 50] = [
     command::ENGINE_STATUS,
     command::DOCTOR,
     command::STACK_STATUS,
@@ -110,6 +117,13 @@ pub const ROUTED: [&str; 43] = [
     command::ACCOUNTS,
     command::ISSUES,
     command::JOB_FROM_ISSUE,
+    command::ME,
+    command::PEOPLE,
+    command::PERSON_ADD,
+    command::PERSON_ROLE,
+    command::TOKEN_ISSUE,
+    command::TOKENS,
+    command::TOKEN_REVOKE,
 ];
 
 #[cfg(test)]

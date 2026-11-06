@@ -149,28 +149,44 @@ async fn authorized(State(app): State<App>, mut request: Request, next: Next) ->
         .map(|p| p.as_str().to_string())
         .unwrap_or_default();
     let act = access::act_for(request.method(), &path);
-    let found = access::person(&app.server, &app.owner, &app.token, &given).await;
-    let person = match found.and_then(|p| access::check(&p, act).map(|()| p)) {
+    let person = match access::person(&app.server, &app.owner, &app.token, &given).await {
         Ok(person) => person,
         Err(why) => return refused(why),
     };
     let did = format!("{} {}", request.method(), request.uri().path());
-    request.extensions_mut().insert(person.clone());
-    let response = next.run(request).await;
-    if act != Act::Read && response.status().is_success() {
-        note_act(&app, &person, &did);
+    let response = match access::check(&person, act) {
+        Ok(()) => {
+            request.extensions_mut().insert(person.clone());
+            next.run(request).await
+        }
+        Err(why) => refused(why),
+    };
+    if let Some(kind) = audit_kind(act, response.status()) {
+        note_act(&app, kind, &person, &did);
     }
     response
 }
 
-/// Every change a person makes goes in the audit log with who made it (D31).
-fn note_act(app: &App, person: &Person, did: &str) {
+/// What the audit log keeps of a request: every change a person makes, and
+/// every attempt their role refused (D31, D33). Reads are not kept.
+fn audit_kind(act: Act, status: StatusCode) -> Option<&'static str> {
+    if status == StatusCode::FORBIDDEN {
+        Some("refused")
+    } else if act != Act::Read && status.is_success() {
+        Some("act")
+    } else {
+        None
+    }
+}
+
+/// Note what `person` did, or tried to do, in the audit log.
+fn note_act(app: &App, kind: &str, person: &Person, did: &str) {
     let Some(factory) = app.server.factory.get() else {
         return;
     };
     if let Ok(log) = factory.gate().audit() {
         log.note(bastion_core::audit::Record {
-            kind: "act".into(),
+            kind: kind.into(),
             subject: did.into(),
             detail: format!("{} ({:?})", person.name, person.role),
         });
@@ -812,6 +828,16 @@ mod tests {
             let (status, _) = call(s, get("/jobs", Some("nobody"))).await;
             assert_eq!(status, StatusCode::UNAUTHORIZED);
         });
+    }
+
+    #[test]
+    fn the_audit_keeps_changes_and_refusals_but_not_reads() {
+        let on_job = Act::OnJob { own: true };
+        assert_eq!(audit_kind(on_job, StatusCode::OK), Some("act"));
+        assert_eq!(audit_kind(Act::Read, StatusCode::FORBIDDEN), Some("refused"));
+        assert_eq!(audit_kind(on_job, StatusCode::FORBIDDEN), Some("refused"));
+        assert_eq!(audit_kind(Act::Read, StatusCode::OK), None);
+        assert_eq!(audit_kind(Act::Manage, StatusCode::BAD_REQUEST), None);
     }
 
     #[test]

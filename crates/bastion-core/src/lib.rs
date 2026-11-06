@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-pub use brief::{QUESTION_MARKER, brief, outcome};
+pub use brief::{Discovery, QUESTION_MARKER, brief, discovery, outcome};
 pub use pipeline::{Kind, Pipeline};
 
 /// How many failed turns in a row a stage gets before the job fails (D16).
@@ -92,6 +92,43 @@ pub enum Stage {
 }
 
 impl Stage {
+    /// Every stage, for the store's checks. A new stage goes here too.
+    pub const ALL: [Stage; 30] = {
+        use Stage::*;
+        [
+            Plan,
+            Approve,
+            Build,
+            Review,
+            Land,
+            Prepare,
+            Scope,
+            Discover,
+            Clarify,
+            Define,
+            YourChecks,
+            Specify,
+            Baseline,
+            Implement,
+            Checks,
+            Verify,
+            Refactor,
+            PickRefactors,
+            Acceptance,
+            CodeReview,
+            PickFindings,
+            Ship,
+            Ci,
+            CiFix,
+            Prove,
+            Comprehend,
+            Uat,
+            Merge,
+            Deploy,
+            Learn,
+        ]
+    };
+
     pub fn kind(self) -> Kind {
         use Stage::*;
         match self {
@@ -629,6 +666,9 @@ fn turn_finished(job: &mut Job, outcome: &Outcome, dials: &Dials) -> Vec<Effect>
             if job.stage == Stage::Build {
                 effects.push(Effect::CaptureDiff);
             }
+            if job.stage == Stage::Discover {
+                discovered(job, report);
+            }
             job.feedback = None;
             effects.extend(after_turn(job, dials));
             effects
@@ -645,6 +685,18 @@ fn turn_finished(job: &mut Job, outcome: &Outcome, dials: &Dials) -> Vec<Effect>
             }
             enter(job, dials)
         }
+    }
+}
+
+/// Keep discovery's tasks for implement. With no questions there is nothing
+/// to clarify, so the job moves past clarify as it leaves discover.
+// ponytail: scope's verdict is not read; every request is one change until split (A8 step 6).
+fn discovered(job: &mut Job, report: &str) {
+    let found = discovery(report);
+    job.tasks = found.tasks;
+    job.done_tasks = 0;
+    if found.questions.is_empty() {
+        job.stage = Stage::Clarify;
     }
 }
 

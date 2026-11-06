@@ -127,6 +127,24 @@ fn charter(c: Option<CharterView>) -> impl IntoView + use<> {
     })
 }
 
+/// What the checkpoint judges: the plan at approve, discovery's questions
+/// at clarify, and the build's report and its diff at review.
+fn judged(d: &JobDetail) -> (Option<String>, Option<String>) {
+    let latest = |stage: &str| {
+        d.artifacts
+            .iter()
+            .rev()
+            .find(|a| a.stage == stage)
+            .map(|a| a.body.clone())
+    };
+    match d.job.stage.as_str() {
+        "review" => (latest("build"), latest("review")),
+        "approve" => (latest("plan"), None),
+        "clarify" => (latest("discover"), None),
+        _ => (None, None),
+    }
+}
+
 /// What Approve does at the checkpoint the job waits at.
 fn what_approve_does(d: &JobDetail) -> &'static str {
     match d.job.stage.as_str() {
@@ -135,6 +153,7 @@ fn what_approve_does(d: &JobDetail) -> &'static str {
         }
         "land" => "Approve retries the land, or stop the job.",
         "review" => "Approve the build artifact to move on, or send it back with a note.",
+        "clarify" => "Answer discovery's questions in a note, or approve to plan without answers.",
         _ => "Approve the plan artifact to move on, or send it back with a note.",
     }
 }
@@ -265,15 +284,7 @@ pub fn JobPage(id: String) -> impl IntoView {
                     <p class="m-0 text-sm text-muted">{move || detail.get().map(|d| what_approve_does(&d))}</p>
                 </Show>
                 {move || detail.get().filter(|_| allows("approve")).map(|d| {
-                    // What the checkpoint judges: the plan at approve; the build's report and its diff at review.
-                    let latest = |stage: &str| d.artifacts.iter().rev().find(|a| a.stage == stage).map(|a| a.body.clone());
-                    let reviewing = d.job.stage == "review";
-                    let report = match d.job.stage.as_str() {
-                        "review" => latest("build"),
-                        "approve" => latest("plan"),
-                        _ => None,
-                    };
-                    let diff = if reviewing { latest("review") } else { None };
+                    let (report, diff) = judged(&d);
                     view! {
                         {report.map(|body| view! {
                             <pre class="m-0 max-h-96 overflow-auto whitespace-pre-wrap wrap-anywhere rounded bg-bg p-3 text-sm">{body}</pre>

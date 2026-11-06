@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
-use bastion_core::{Dials, Event, actions, hold_until, steps};
+use bastion_core::{Dials, Event, Pipeline, actions, hold_until, steps};
 use bastion_protocol::{
     ArtifactView, CharterView, DialsView, HeldCallView, JobDetail, JobSummary, StepView,
     TranscriptLine, Workspace,
@@ -12,7 +12,7 @@ use serde::Serialize;
 use serde_json::json;
 use tauri::State;
 
-use crate::factory::Factory;
+use crate::factory::{Factory, Submission};
 use crate::machine::Machine;
 use crate::store::{self, Record};
 
@@ -201,11 +201,18 @@ pub async fn job_submit(
     cell: State<'_, FactoryCell>,
     workspace: String,
     request: String,
+    pipeline: Option<Pipeline>,
 ) -> Result<String, String> {
     if request.trim().is_empty() {
         return Err("a request needs text".into());
     }
-    factory(&cell)?.submit(&workspace, request.trim()).await
+    let how = Submission {
+        pipeline: pipeline.unwrap_or_default(),
+        ..Submission::default()
+    };
+    factory(&cell)?
+        .submit_with(&workspace, request.trim(), how)
+        .await
 }
 
 #[tauri::command]

@@ -128,6 +128,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn every_stage_of_every_pipeline_is_in_all_once() {
+        let mut all = Stage::ALL.to_vec();
+        all.sort();
+        all.dedup();
+        assert_eq!(all.len(), Stage::ALL.len());
+        for stage in FULL.iter().chain(&SHORT).chain([&Stage::CiFix]) {
+            assert!(Stage::ALL.contains(stage), "{stage:?}");
+        }
+    }
+
+    #[test]
     fn the_short_pipeline_is_unchanged() {
         assert_eq!(Pipeline::Short.stages(), SHORT.to_vec());
     }

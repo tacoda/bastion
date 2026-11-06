@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use bastion_core::{Event, Stage, State};
+use bastion_core::{Event, Pipeline, Stage, State};
 use bastion_protocol::Link;
 use serde_json::json;
 
@@ -125,6 +125,63 @@ async fn to_review(rig: &Rig, id: &str) {
     until(rig, id, Stage::Build, State::Running).await;
     finish_turn(rig, id).await;
     until(rig, id, Stage::Review, State::NeedsYou).await;
+}
+
+/// The `argv` of each command the factory ran in the VM.
+fn vm_commands(rig: &Rig) -> Vec<String> {
+    let calls = rig.engine.calls.lock().unwrap();
+    calls
+        .iter()
+        .filter(|c| c.1 == "sandbox::exec")
+        .map(|c| {
+            let argv: Vec<&str> = c.2["argv"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|a| a.as_str().unwrap())
+                .collect();
+            argv.join(" ")
+        })
+        .collect()
+}
+
+#[test]
+fn a_full_request_prepares_and_its_read_only_turns_put_the_tree_back_to_a_tag() {
+    let rig = rig();
+    tauri::async_runtime::block_on(async {
+        let id = rig
+            .factory
+            .submit_with(
+                "w",
+                "Add a health check",
+                super::Submission {
+                    pipeline: Pipeline::Full,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        until(&rig, &id, Stage::Scope, State::Running).await;
+        finish_turn(&rig, &id).await;
+        until(&rig, &id, Stage::Discover, State::Running).await;
+        let commands = vm_commands(&rig);
+        assert!(commands.contains(&"git -C /work/repo tag -f bastion-before-turn".to_string()));
+        assert!(
+            commands.contains(&"git -C /work/repo reset -q --hard bastion-before-turn".to_string())
+        );
+        // The fake's reply has no TASKS: or QUESTIONS:, so there is nothing to clarify.
+        finish_turn(&rig, &id).await;
+        until(&rig, &id, Stage::Plan, State::Running).await;
+        let stages: Vec<Stage> = rig
+            .store
+            .artifacts(&id)
+            .await
+            .unwrap()
+            .iter()
+            .map(|a| a.stage)
+            .collect();
+        assert_eq!(stages, [Stage::Scope, Stage::Discover]);
+    });
 }
 
 #[test]

@@ -12,7 +12,8 @@ use bastion_core::govern::Enforcement;
 use bastion_core::review;
 use bastion_core::settings::Forge;
 use bastion_core::{
-    Dial, Dials, Effect, Event, HOLD_SECS, Job, Outcome, Stage, State, admit, outcome, step,
+    Dial, Dials, Effect, Event, HOLD_SECS, Job, Outcome, Pipeline, Stage, State, admit, outcome,
+    step,
 };
 use serde_json::{Value, json};
 
@@ -43,6 +44,16 @@ const TOOLS: [&str; 4] = [
     "sandbox::fs::ls",
 ];
 const REPO: &str = "/work/repo";
+
+/// Where a request came from, and the pipeline it runs.
+#[derive(Default)]
+pub struct Submission {
+    /// The tracker issue it came from, as its URL.
+    pub issue: Option<String>,
+    pub pipeline: Pipeline,
+}
+/// The VM tag a read-only turn's tree is put back to.
+const BEFORE_TURN: &str = "bastion-before-turn";
 const SLOW_MS: u64 = 180_000;
 /// How a turn reaches its VM. The pre-trigger hook replaces `sandbox_id`, so
 /// the turn passes any value; without one some calls fail their schema.
@@ -164,12 +175,14 @@ impl Factory {
         Ok(())
     }
 
+    #[cfg(test)]
     pub async fn submit(
         self: &Arc<Self>,
         workspace: &str,
         request: &str,
     ) -> Result<String, String> {
-        self.submit_with(workspace, request, None).await
+        self.submit_with(workspace, request, Submission::default())
+            .await
     }
 
     /// Submit a request, with the tracker issue it came from if any.
@@ -177,14 +190,14 @@ impl Factory {
         self: &Arc<Self>,
         workspace: &str,
         request: &str,
-        issue: Option<String>,
+        how: Submission,
     ) -> Result<String, String> {
         let id = format!("j{}", short_id());
         let at = now();
         let record = Record {
-            job: Job::new(id.clone(), workspace.into(), request.into(), at),
+            job: Job::new(id.clone(), workspace.into(), request.into(), at).on(how.pipeline),
             runtime: Runtime {
-                issue,
+                issue: how.issue,
                 ..Runtime::default()
             },
             rev: 1,
@@ -332,11 +345,7 @@ impl Factory {
                     self.apply(&id, Event::TurnFinished { outcome }).await.err()
                 }
             },
-            // ponytail: no job runs the full pipeline until A8's later steps run each step.
-            Effect::RunStep { stage } => {
-                let detail = format!("Bastion does not run the {stage:?} step yet.");
-                self.apply(&id, Event::StepFailed { detail }).await.err()
-            }
+            Effect::RunStep { stage } => self.run_step(&id, stage).await,
             Effect::RecordArtifact { stage, body } => {
                 let artifact = Artifact {
                     stage,
@@ -541,6 +550,11 @@ impl Factory {
                 }
             }
         }
+        if stage.read_only() {
+            // Where the tree goes back to after the turn, commits included.
+            self.vm_exec(&sandbox, &["git", "-C", REPO, "tag", "-f", BEFORE_TURN])
+                .await?;
+        }
         message.push_str(TOOL_GUIDE);
         message.push_str("\n\n");
         message.push_str(&self.gate.rules(&job.id));
@@ -627,17 +641,36 @@ impl Factory {
         if record.job.stage.read_only()
             && let Some(sandbox) = &record.runtime.sandbox
         {
-            // A read-only stage leaves no change behind.
-            let _ = self
-                .vm_exec(sandbox, &["git", "-C", REPO, "reset", "-q", "--hard"])
-                .await;
-            let _ = self
-                .vm_exec(sandbox, &["git", "-C", REPO, "clean", "-q", "-fd"])
-                .await;
+            self.put_back(sandbox).await;
         }
         let _ = self
             .apply(id, Event::TurnFinished { outcome: result })
             .await;
+    }
+
+    /// A read-only stage leaves no change behind, not even a commit: the tree
+    /// goes back to the tag made before the turn, or to `HEAD` without one.
+    async fn put_back(&self, sandbox: &str) {
+        let to_tag = ["git", "-C", REPO, "reset", "-q", "--hard", BEFORE_TURN];
+        if self.vm_exec(sandbox, &to_tag).await.is_err() {
+            let _ = self.vm_exec(sandbox, &to_tag[..6]).await;
+        }
+        let _ = self
+            .vm_exec(sandbox, &["git", "-C", REPO, "clean", "-q", "-fd"])
+            .await;
+    }
+
+    /// Run a step the factory runs itself, and report how it went.
+    // ponytail: a workspace has no setup steps until A9, so prepare passes at
+    // once; the other steps run from A8 steps 3 to 5, and until then each fails.
+    async fn run_step(self: &Arc<Self>, id: &str, stage: Stage) -> Option<String> {
+        let event = match stage {
+            Stage::Prepare => Event::StepPassed,
+            _ => Event::StepFailed {
+                detail: format!("Bastion does not run the {stage:?} step yet."),
+            },
+        };
+        self.apply(id, event).await.err()
     }
 
     /// The build's commits against the branch it started from, from the VM.

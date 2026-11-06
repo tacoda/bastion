@@ -101,19 +101,31 @@ pub trait Store: EvalStore + SettingsStore + Send + Sync {
 
 const NAMESPACE: &str = "bastion";
 
-/// The schema (D8): typed columns with constraints, no JSON in a text column.
-// ponytail: idempotent CREATEs; add numbered migrations when a column changes.
-const SCHEMA: [&str; 8] = [
-    "CREATE TABLE IF NOT EXISTS workspaces (
-        name TEXT PRIMARY KEY CHECK (length(name) > 0),
-        path TEXT NOT NULL UNIQUE,
-        branch TEXT NOT NULL CHECK (length(branch) > 0),
-        created_at INTEGER NOT NULL)",
-    "CREATE TABLE IF NOT EXISTS jobs (
+/// `CHECK (column IN (...))` over every stage the core has.
+fn stage_check(column: &str) -> String {
+    let names: Vec<String> = Stage::ALL
+        .iter()
+        .map(|s| format!("'{}'", name(s)))
+        .collect();
+    format!("CHECK ({column} IN ({}))", names.join(","))
+}
+
+/// The tables whose rows name a stage, with the columns a rebuild keeps.
+/// SQLite cannot change a `CHECK` in place, so a new stage in the core means
+/// a new migration that rebuilds these (`migrations`).
+fn staged_tables() -> [(&'static str, &'static str, String); 3] {
+    let stage = stage_check("stage");
+    let back_to = stage_check("back_to");
+    [
+        (
+            "jobs",
+            LEGACY_JOB_COLUMNS,
+            format!(
+                "CREATE TABLE IF NOT EXISTS jobs (
         id TEXT PRIMARY KEY,
         workspace TEXT NOT NULL REFERENCES workspaces(name),
         request TEXT NOT NULL CHECK (length(request) > 0),
-        stage TEXT NOT NULL CHECK (stage IN ('plan','approve','build','review','land')),
+        stage TEXT NOT NULL {stage},
         state TEXT NOT NULL CHECK (state IN ('queued','provisioning','running','needs_you','landed','failed','stopped')),
         question TEXT,
         feedback TEXT,
@@ -128,13 +140,63 @@ const SCHEMA: [&str; 8] = [
         updated_at INTEGER NOT NULL,
         pr TEXT,
         ci_fixes INTEGER NOT NULL DEFAULT 0 CHECK (ci_fixes >= 0),
-        issue TEXT)",
-    "CREATE TABLE IF NOT EXISTS artifacts (
+        issue TEXT,
+        pipeline TEXT NOT NULL DEFAULT 'short' CHECK (pipeline IN ('short','full','full_no_acceptance')),
+        back_to TEXT {back_to},
+        last_refusal TEXT,
+        done_tasks INTEGER NOT NULL DEFAULT 0 CHECK (done_tasks >= 0))"
+            ),
+        ),
+        (
+            "artifacts",
+            "id, job, stage, body, created_at",
+            format!(
+                "CREATE TABLE IF NOT EXISTS artifacts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         job TEXT NOT NULL REFERENCES jobs(id),
-        stage TEXT NOT NULL CHECK (stage IN ('plan','approve','build','review','land')),
+        stage TEXT NOT NULL {stage},
         body TEXT NOT NULL,
+        created_at INTEGER NOT NULL)"
+            ),
+        ),
+        (
+            "capabilities",
+            "stage, function, rung",
+            format!(
+                "CREATE TABLE IF NOT EXISTS capabilities (
+        stage TEXT NOT NULL {stage},
+        function TEXT NOT NULL CHECK (length(function) > 0),
+        rung TEXT NOT NULL CHECK (rung IN ('denied','ask','allowed')),
+        PRIMARY KEY (stage, function))"
+            ),
+        ),
+    ]
+}
+
+/// The schema (D8): typed columns with constraints, no JSON in a text column.
+fn schema() -> Vec<String> {
+    let staged = staged_tables().map(|(_, _, sql)| sql);
+    SCHEMA.map(String::from).into_iter().chain(staged).collect()
+}
+
+const SCHEMA: [&str; 7] = [
+    "CREATE TABLE IF NOT EXISTS workspaces (
+        name TEXT PRIMARY KEY CHECK (length(name) > 0),
+        path TEXT NOT NULL UNIQUE,
+        branch TEXT NOT NULL CHECK (length(branch) > 0),
         created_at INTEGER NOT NULL)",
+    // Discovery's tasks for implement, in order.
+    "CREATE TABLE IF NOT EXISTS tasks (
+        job TEXT NOT NULL REFERENCES jobs(id),
+        n INTEGER NOT NULL CHECK (n >= 0),
+        text TEXT NOT NULL CHECK (length(text) > 0),
+        PRIMARY KEY (job, n))",
+    // How many times each step sent a job's work back.
+    "CREATE TABLE IF NOT EXISTS revisions (
+        job TEXT NOT NULL REFERENCES jobs(id),
+        stage TEXT NOT NULL CHECK (length(stage) > 0),
+        count INTEGER NOT NULL CHECK (count >= 1),
+        PRIMARY KEY (job, stage))",
     "CREATE TABLE IF NOT EXISTS dials (
         checkpoint TEXT PRIMARY KEY CHECK (checkpoint IN ('approve','review')),
         dial TEXT NOT NULL CHECK (dial IN ('ask','hold','auto')))",
@@ -145,11 +207,6 @@ const SCHEMA: [&str; 8] = [
         contains TEXT NOT NULL,
         rung TEXT NOT NULL CHECK (rung IN ('told','checked','enforced')),
         source TEXT NOT NULL CHECK (source IN ('charter','owner')))",
-    "CREATE TABLE IF NOT EXISTS capabilities (
-        stage TEXT NOT NULL CHECK (stage IN ('plan','approve','build','review','land')),
-        function TEXT NOT NULL CHECK (length(function) > 0),
-        rung TEXT NOT NULL CHECK (rung IN ('denied','ask','allowed')),
-        PRIMARY KEY (stage, function))",
     // `arguments` is the engine's JSON, kept opaque to run the call later.
     "CREATE TABLE IF NOT EXISTS held_calls (
         id TEXT PRIMARY KEY,
@@ -206,16 +263,39 @@ pub fn seed_statements(sql: &str) -> Vec<Value> {
         .collect()
 }
 
-const JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue";
+const JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue, pipeline, back_to, last_refusal, done_tasks";
+/// The job columns before migration 1, which its rebuild copies.
+const LEGACY_JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue";
 
 /// Columns added after a table was first made. Each runs once; on a table
 /// that already has the column it fails, and that failure is expected.
-// ponytail: try-and-ignore ALTERs; a numbered user_version replaces this once a migration is more than a new column.
-const MIGRATIONS: [&str; 3] = [
+// They run before the numbered migrations, which need these columns to exist.
+const ALTERS: [&str; 3] = [
     "ALTER TABLE jobs ADD COLUMN pr TEXT",
     "ALTER TABLE jobs ADD COLUMN ci_fixes INTEGER NOT NULL DEFAULT 0 CHECK (ci_fixes >= 0)",
     "ALTER TABLE jobs ADD COLUMN issue TEXT",
 ];
+
+/// Numbered migrations, each run once in order; `PRAGMA user_version` is the
+/// last one applied. Migration 1 rebuilds the tables that name a stage, for
+/// the full pipeline (A8).
+fn migrations() -> Vec<Vec<String>> {
+    vec![staged_tables().iter().flat_map(rebuild).collect()]
+}
+
+/// Rebuild a table under its new schema, keeping its rows. The rows go back
+/// under the same name, so with deferred foreign keys the rows that reference
+/// it still resolve at commit. Renaming a new table into place does not:
+/// both were tried on a copy of `data/bastion.db` with foreign keys on.
+fn rebuild((table, columns, create): &(&str, &str, String)) -> Vec<String> {
+    vec![
+        format!("CREATE TEMP TABLE {table}_copy AS SELECT * FROM {table}"),
+        format!("DROP TABLE {table}"),
+        create.clone(),
+        format!("INSERT INTO {table} ({columns}) SELECT {columns} FROM {table}_copy"),
+        format!("DROP TABLE {table}_copy"),
+    ]
+}
 
 pub struct SqlStore {
     engine: Arc<dyn Engine>,
@@ -224,10 +304,12 @@ pub struct SqlStore {
 impl SqlStore {
     /// Make the tables if they are missing, then run the seed file's statements.
     pub async fn open(engine: Arc<dyn Engine>, seed: &str) -> Result<Self, String> {
-        let statements: Vec<Value> = SCHEMA
+        let schema = schema();
+        let statements: Vec<Value> = schema
             .iter()
-            .chain(eval_store::SCHEMA.iter())
-            .chain(settings_store::SCHEMA.iter())
+            .map(String::as_str)
+            .chain(eval_store::SCHEMA)
+            .chain(settings_store::SCHEMA)
             .map(|sql| json!({ "sql": sql, "params": [] }))
             .chain(seed_statements(seed))
             .collect();
@@ -238,7 +320,7 @@ impl SqlStore {
                 json!({ "statements": statements }),
             )
             .await?;
-        for sql in MIGRATIONS {
+        for sql in ALTERS {
             let applied = engine
                 .call(
                     NAMESPACE,
@@ -254,7 +336,30 @@ impl SqlStore {
                 return Err(format!("{sql}: {e}"));
             }
         }
-        Ok(Self { engine })
+        let store = Self { engine };
+        store.migrate().await?;
+        Ok(store)
+    }
+
+    /// Run each migration past the database's `user_version`, each in one
+    /// transaction that also records its number.
+    async fn migrate(&self) -> Result<(), String> {
+        let rows = self.query("PRAGMA user_version", json!([])).await?;
+        let applied = rows
+            .first()
+            .and_then(|r| r["user_version"].as_u64())
+            .unwrap_or(0) as usize;
+        for (i, migration) in migrations().into_iter().enumerate().skip(applied) {
+            let statements = std::iter::once("PRAGMA defer_foreign_keys = ON".to_string())
+                .chain(migration)
+                .chain([format!("PRAGMA user_version = {}", i + 1)])
+                .map(|sql| json!({ "sql": sql, "params": [] }))
+                .collect();
+            self.transaction(statements)
+                .await
+                .map_err(|e| format!("migration {}: {e}", i + 1))?;
+        }
+        Ok(())
     }
 
     /// Run statements in one transaction.
@@ -289,6 +394,41 @@ impl SqlStore {
         row: fn(&Value) -> Result<T, String>,
     ) -> Result<Vec<T>, String> {
         self.query(sql, params).await?.iter().map(row).collect()
+    }
+
+    /// Fill each job's tasks and revision counts from their tables. `filter`
+    /// narrows both reads, with `params` for its marks.
+    async fn with_lists(
+        &self,
+        mut records: Vec<Record>,
+        filter: &str,
+        params: Value,
+    ) -> Result<Vec<Record>, String> {
+        let tasks = self
+            .query(
+                &format!("SELECT job, text FROM tasks {filter} ORDER BY job, n"),
+                params.clone(),
+            )
+            .await?;
+        let revisions = self
+            .query(
+                &format!("SELECT job, stage, count FROM revisions {filter}"),
+                params,
+            )
+            .await?;
+        for r in &mut records {
+            let id = r.job.id.as_str();
+            let mine = |row: &&Value| row["job"].as_str() == Some(id);
+            for row in tasks.iter().filter(mine) {
+                r.job.tasks.push(parse(row, "text")?);
+            }
+            for row in revisions.iter().filter(mine) {
+                r.job
+                    .revisions
+                    .insert(parse(row, "stage")?, parse(row, "count")?);
+            }
+        }
+        Ok(records)
     }
 
     pub(crate) async fn execute(&self, sql: &str, params: Value) -> Result<Vec<Value>, String> {
@@ -336,13 +476,13 @@ fn record(row: &Value) -> Result<Record, String> {
             pr: text(row, "pr"),
             ci_fixes: row["ci_fixes"].as_u64().unwrap_or(0) as u32,
             updated_at: parse(row, "updated_at")?,
-            // ponytail: the full pipeline's fields get columns when A8 step 2 runs it.
-            pipeline: Default::default(),
-            back_to: None,
+            pipeline: parse(row, "pipeline")?,
+            back_to: parse(row, "back_to")?,
+            // Filled from their own tables (`with_lists`).
             revisions: Default::default(),
-            last_refusal: None,
+            last_refusal: text(row, "last_refusal"),
             tasks: Vec::new(),
-            done_tasks: 0,
+            done_tasks: parse(row, "done_tasks")?,
         },
         runtime: Runtime {
             worktree: text(row, "worktree"),
@@ -426,8 +566,37 @@ fn job_params(r: &Record) -> Value {
         j.updated_at,
         j.pr,
         j.ci_fixes,
-        r.runtime.issue
+        r.runtime.issue,
+        name(j.pipeline),
+        j.back_to.map(name),
+        j.last_refusal,
+        j.done_tasks
     ])
+}
+
+/// A job's tasks and revision counts, written whole over what was there.
+fn list_statements(j: &Job) -> Vec<Value> {
+    let statement = |sql: &str, params: Value| json!({ "sql": sql, "params": params });
+    let tasks = j.tasks.iter().enumerate().map(|(n, text)| {
+        statement(
+            "INSERT INTO tasks (job, n, text) VALUES (?, ?, ?)",
+            json!([j.id, n, text]),
+        )
+    });
+    let revisions = j.revisions.iter().map(|(stage, count)| {
+        statement(
+            "INSERT INTO revisions (job, stage, count) VALUES (?, ?, ?)",
+            json!([j.id, name(stage), count]),
+        )
+    });
+    [
+        statement("DELETE FROM tasks WHERE job = ?", json!([j.id])),
+        statement("DELETE FROM revisions WHERE job = ?", json!([j.id])),
+    ]
+    .into_iter()
+    .chain(tasks)
+    .chain(revisions)
+    .collect()
 }
 
 impl Store for SqlStore {
@@ -463,10 +632,10 @@ impl Store for SqlStore {
 
     fn insert<'a>(&'a self, r: &'a Record) -> Answer<'a, ()> {
         Box::pin(async move {
-            let sql = format!(
-                "INSERT INTO jobs ({JOB_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-            );
-            self.execute(&sql, job_params(r)).await.map(|_| ())
+            let marks = vec!["?"; JOB_COLUMNS.split(", ").count()].join(", ");
+            let sql = format!("INSERT INTO jobs ({JOB_COLUMNS}) VALUES ({marks})");
+            self.execute(&sql, job_params(r)).await?;
+            self.transaction(list_statements(&r.job)).await
         })
     }
 
@@ -478,14 +647,19 @@ impl Store for SqlStore {
                     json!([id]),
                 )
                 .await?;
-            record(rows.first().ok_or_else(|| format!("no job {id}"))?)
+            let found = record(rows.first().ok_or_else(|| format!("no job {id}"))?)?;
+            let mut one = self
+                .with_lists(vec![found], "WHERE job = ?", json!([id]))
+                .await?;
+            Ok(one.remove(0))
         })
     }
 
     fn jobs(&self) -> Answer<'_, Vec<Record>> {
         Box::pin(async move {
             let sql = format!("SELECT {JOB_COLUMNS} FROM jobs ORDER BY created_at DESC, id");
-            self.rows(&sql, json!([]), record).await
+            let all = self.rows(&sql, json!([]), record).await?;
+            self.with_lists(all, "", json!([])).await
         })
     }
 
@@ -494,17 +668,23 @@ impl Store for SqlStore {
             let j = &r.job;
             let rows = self
                 .execute(
-                    "UPDATE jobs SET stage = ?, state = ?, question = ?, feedback = ?, plan = ?, failures = ?, error = ?, worktree = ?, sandbox = ?, session = ?, updated_at = ?, pr = ?, ci_fixes = ?, issue = ?, rev = rev + 1
+                    "UPDATE jobs SET stage = ?, state = ?, question = ?, feedback = ?, plan = ?, failures = ?, error = ?, worktree = ?, sandbox = ?, session = ?, updated_at = ?, pr = ?, ci_fixes = ?, issue = ?,
+                     pipeline = ?, back_to = ?, last_refusal = ?, done_tasks = ?, rev = rev + 1
                      WHERE id = ? AND rev = ? RETURNING rev",
                     json!([
                         name(j.stage), name(j.state), j.question, j.feedback, j.plan, j.failures, j.error,
-                        r.runtime.worktree, r.runtime.sandbox, r.runtime.session, j.updated_at, j.pr, j.ci_fixes, r.runtime.issue, j.id, r.rev
+                        r.runtime.worktree, r.runtime.sandbox, r.runtime.session, j.updated_at, j.pr, j.ci_fixes, r.runtime.issue,
+                        name(j.pipeline), j.back_to.map(name), j.last_refusal, j.done_tasks, j.id, r.rev
                     ]),
                 )
                 .await?;
-            rows.first()
+            let rev = rows
+                .first()
                 .map(|row| parse(row, "rev"))
-                .unwrap_or_else(|| Err(STALE.into()))
+                .unwrap_or_else(|| Err(STALE.into()))?;
+            // ponytail: the lists are written after the row, not in its transaction; a crash between them loses a count.
+            self.transaction(list_statements(j)).await?;
+            Ok(rev)
         })
     }
 
@@ -836,6 +1016,10 @@ mod tests {
         let engine = Arc::new(
             FakeEngine::new(Link::Up)
                 .answer("database::transaction", Ok(json!({ "committed": true })))
+                .answer(
+                    "database::query",
+                    Ok(json!({ "rows": [{ "user_version": 1 }] })),
+                )
                 .answer("database::execute", Ok(json!({ "returned_rows": [] }))),
         );
         tauri::async_runtime::block_on(async {
@@ -849,8 +1033,8 @@ mod tests {
                     .unwrap()
                     .contains("WHERE id = ? AND rev = ?")
             );
-            assert_eq!(update["params"][14], "j1");
-            assert_eq!(update["params"][15], 1);
+            assert_eq!(update["params"][18], "j1");
+            assert_eq!(update["params"][19], 1);
         });
     }
 
@@ -888,13 +1072,60 @@ mod tests {
         assert_eq!(held_call(&row).unwrap(), h);
     }
 
+    /// The transactions `open` sends on a database at `version`.
+    fn transactions_at(version: u64) -> Vec<Vec<String>> {
+        let engine = Arc::new(
+            FakeEngine::new(Link::Up)
+                .answer("database::transaction", Ok(json!({ "committed": true })))
+                .answer("database::execute", Ok(json!({ "returned_rows": [] })))
+                .answer(
+                    "database::query",
+                    Ok(json!({ "rows": [{ "user_version": version }] })),
+                ),
+        );
+        tauri::async_runtime::block_on(async {
+            SqlStore::open(engine.clone(), SEED).await.unwrap();
+        });
+        let calls = engine.calls.lock().unwrap();
+        calls
+            .iter()
+            .filter(|c| c.1 == "database::transaction")
+            .map(|c| {
+                c.2["statements"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|s| s["sql"].as_str().unwrap().to_string())
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn migration_1_rebuilds_the_staged_tables_once_with_deferred_keys() {
+        let fresh = transactions_at(0);
+        assert_eq!(fresh.len(), 2, "the schema, then migration 1");
+        let m1 = &fresh[1];
+        assert_eq!(m1.first().unwrap(), "PRAGMA defer_foreign_keys = ON");
+        assert_eq!(m1.last().unwrap(), "PRAGMA user_version = 1");
+        for table in ["jobs", "artifacts", "capabilities"] {
+            assert!(m1.contains(&format!("DROP TABLE {table}")));
+        }
+        assert!(m1.iter().any(|s| s.contains("'code_review'")));
+        assert_eq!(transactions_at(1).len(), 1, "nothing left to migrate");
+    }
+
     #[test]
     fn open_seeds_the_owner_defaults_without_overwriting() {
         let engine = Arc::new(
             FakeEngine::new(Link::Up)
                 .answer("database::transaction", Ok(json!({ "committed": true })))
                 // An older database already has the column; that error is expected.
-                .answer("database::execute", Err("duplicate column name: pr".into())),
+                .answer("database::execute", Err("duplicate column name: pr".into()))
+                .answer(
+                    "database::query",
+                    Ok(json!({ "rows": [{ "user_version": 1 }] })),
+                ),
         );
         tauri::async_runtime::block_on(async {
             SqlStore::open(engine.clone(), SEED).await.unwrap();
@@ -925,6 +1156,9 @@ mod tests {
         r.job.state = State::NeedsYou;
         r.job.stage = Stage::Approve;
         r.job.plan = Some("1. x".into());
+        r.job.pipeline = bastion_core::Pipeline::Full;
+        r.job.back_to = Some(Stage::Checks);
+        r.job.done_tasks = 2;
         r.runtime.sandbox = Some("vm-1".into());
         let columns: Vec<&str> = JOB_COLUMNS.split(", ").collect();
         let values = job_params(&r);

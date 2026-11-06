@@ -12,7 +12,7 @@ use serde_json::json;
 use tauri::{AppHandle, Emitter, State};
 
 use super::factory::{FactoryCell, factory, name};
-use crate::factory::now;
+use crate::factory::{Submission, now};
 use crate::{forge, settings_store};
 
 /// Tell every page the settings changed, so each section reads them again.
@@ -250,7 +250,14 @@ pub async fn job_from_issue(
     .await?;
     let request = format!("{}\n\n{}", issue.title, issue.body.trim());
     factory
-        .submit_with(&workspace, request.trim(), Some(issue.url))
+        .submit_with(
+            &workspace,
+            request.trim(),
+            Submission {
+                issue: Some(issue.url),
+                ..Submission::default()
+            },
+        )
         .await
 }
 

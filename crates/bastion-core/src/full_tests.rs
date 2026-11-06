@@ -251,3 +251,64 @@ fn steps_show_the_whole_full_pipeline() {
     assert_eq!(steps[1], (Stage::Scope, StepState::Running));
     assert_eq!(steps[2], (Stage::Discover, StepState::Pending));
 }
+
+const DISCOVERY: &str =
+    "TASKS:\n1. Add the /health route\n2) Add its test\nQUESTIONS:\n- Which port?\n";
+
+#[test]
+fn discovery_reads_tasks_and_questions() {
+    assert_eq!(
+        discovery(DISCOVERY),
+        Discovery {
+            tasks: vec!["Add the /health route".into(), "Add its test".into()],
+            questions: vec!["Which port?".into()],
+        }
+    );
+    assert_eq!(discovery("I looked around."), Discovery::default());
+}
+
+#[test]
+fn discovery_with_questions_waits_at_clarify_and_the_answers_reach_the_plan() {
+    let (j, effects) = go(
+        &at(Stage::Discover, State::Running),
+        &Event::TurnFinished {
+            outcome: Outcome::Done {
+                report: DISCOVERY.into(),
+            },
+        },
+    );
+    assert_eq!((j.stage, j.state), (Stage::Clarify, State::NeedsYou));
+    assert_eq!(j.tasks.len(), 2);
+    assert!(effects.iter().any(|e| matches!(
+        e,
+        Effect::RecordArtifact {
+            stage: Stage::Discover,
+            ..
+        }
+    )));
+    let (j, effects) = go(
+        &j,
+        &Event::Commented {
+            text: "8080".into(),
+        },
+    );
+    assert_eq!(j.stage, Stage::Plan);
+    let brief = match effects.as_slice() {
+        [Effect::StartTurn { brief, .. }] => brief.clone(),
+        other => panic!("{other:?}"),
+    };
+    assert!(brief.contains("8080") && brief.contains("- Add its test"));
+}
+
+#[test]
+fn discovery_without_questions_goes_straight_to_the_plan() {
+    let (j, _) = go(
+        &at(Stage::Discover, State::Running),
+        &Event::TurnFinished {
+            outcome: Outcome::Done {
+                report: "TASKS:\n1. Add the route\nQUESTIONS:\n".into(),
+            },
+        },
+    );
+    assert_eq!((j.stage, j.state), (Stage::Plan, State::Running));
+}

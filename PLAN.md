@@ -126,7 +126,7 @@ code inside Bastion is the diff a job proposes.
 | D30 | The app keeps a list of Bastion servers the owner added, each a name, a base URL and a token kept in the Keychain. The server the app starts on this machine is `local`. A Bastion server holds its own workspaces, one per repository, each with its own setup, checks and tests. Each job runs on one Bastion server: New request picks the server, `local` by default, then one of its workspaces, and the job page names the server. Every server stays connected, and the Jobs page lists the jobs of all of them. A page about one server (Engine, Settings, Constraints, Capabilities, Audit Log, Evals) has a server picker at its top, `local` by default; the sidebar names no server. "Bastion server" is the one word for it: not target, not profile. Replaces D12's profiles. | The owner's choice (2026-11-06): use several backends at once, chosen job by job. |
 | D31 | A Bastion server has people, each a name and a role. An admin manages the server: its settings, workspaces, constraints, capabilities, stack and people. A member submits requests and acts on their own jobs. A viewer reads everything and changes nothing. A person signs in with a token the server issued them, shown once and kept only as its hash. Every record names its actor: who requested a job, who decided each checkpoint, who wrote each audit entry. A local server's first start makes the person who started it its admin, so one person on one machine sees nothing new. Replaces D11. | The owner's choice (2026-11-06): local by default, with shared Bastion servers that several people sign in to. Tokens need no outside service, and revoking one is deleting it. |
 | D32 | A Bastion server listens on loopback unless its admin gives it an address and a TLS certificate and key; it refuses a non-loopback address without them. | A token sent over plain HTTP can be read by anyone on the network. |
-| D33 | Every step of a pipeline has an oversight dial: lights-on (the step waits for a person to approve its result or send it back with feedback), hold (it waits a set time, then goes on unless a person acts) or dark (it goes on at once). Every dial starts at lights-on, and each can be lowered on its own, down to dark, merge included. The checkpoint stages fold into the steps they judge, and merge is a step that merges. Oversight decides only human approval and feedback: every step's result is kept, and every decision is logged, whatever the dial. A person's decisions are in the audit log with their name, and a dial's decision is there too, named as the dial's. Replaces D15. | The owner's choice (2026-11-06): the factory runs the whole pipeline, and the amount of oversight is the variable. |
+| D33 | Every step of a pipeline has an oversight dial: lights-on (the step waits for a person to approve its result or send it back with feedback), dim (it waits a set time, then goes on unless a person acts) or dark (it goes on at once). Every dial starts at lights-on, and each can be lowered on its own, down to dark, merge included. The checkpoint stages fold into the steps they judge, and merge is a step that merges. Oversight decides only human approval and feedback: every step's result is kept, and every decision is logged, whatever the dial. A person's decisions are in the audit log with their name, and a dial's decision is there too, named as the dial's. Replaces D15. | The owner's choice (2026-11-06): the factory runs the whole pipeline, and the amount of oversight is the variable. |
 | D34 | Model provider keys are configuration, not environment. Bastion stores each key in the stack's `secrets` worker (store `vault`, readable only by `llm-router`) and points the router's provider entry at it as `secret://NAME`; the router resolves it at each request and reports whether a provider has a key without returning it. Providers with their own worker (Anthropic, OpenAI, DeepSeek, xAI, Z.AI for GLM, Kimi, OpenRouter) take their key that way; other OpenAI-compatible hosts (Together, Fireworks, Qwen through DashScope, a local Ollama) go through a Bastion provider worker that serves any number of them. | The owner's choice (2026-11-06): a key for any provider, with a spread wide enough that most people can use it, and no dependency on `ANTHROPIC_API_KEY` in the environment. |
 | D35 | A pipeline is a workflow: a flow chart of steps that a person edits on a canvas. Bastion ships a few workflows, and people make their own for themselves and others to use. For now only an admin makes or changes a workflow; members and viewers use them. | The owner's choice (2026-11-06). |
 
@@ -295,7 +295,7 @@ this table names the difference.
 | Diff | The diff artifact | A4 |
 | Every stage in `stages.py` (shape, acceptance tests, build, ship, side paths) | The full pipeline | A8 |
 | Split jobs into dependent parts | Split | A8 |
-| Oversight dial: `ask`, `hold`, `auto` | The dial (D15) | A4 |
+| Oversight dial: `lights_on`, `dim`, `dark` | The dial (D33) | O1 |
 | Oversight presets: high, medium, low, off | Presets in Settings | A7 |
 | The gate, refusals, retry with feedback, allow once | The gate in `bastion-core`, bound as a `pre-trigger` hook | A5 |
 | Constraints: board, detail, forms, three tiers | Constraints pages, each constraint on a ladder | A5 |
@@ -613,11 +613,11 @@ how much a person oversees it (D33).
 
 **Steps:**
 
-- **O1, the core.** `Oversight` is `lights_on`, `hold` or `dark` (stored
-  `ask` reads as `lights_on`, `auto` as `dark`). `Dials` holds one per stage,
+- **O1, the core.** `Oversight` is `lights_on`, `dim` or `dark` (stored
+  `ask` reads as `lights_on`, `hold` as `dim`, `auto` as `dark`). `Dials` holds one per stage,
   each `lights_on` until set. When a step ends and its dial is not dark, the
   job waits on its result: approve goes on, a note sends the step back with
-  it, and hold goes on by itself after `HOLD_SECS`. The checkpoint stages
+  it, and dim goes on by itself after `HOLD_SECS`. The checkpoint stages
   leave the pipelines and fold into the step each judged: approve into plan,
   clarify into discover, your checks into define, review into build (short)
   and pick findings into code review (full), pick refactors into refactor,

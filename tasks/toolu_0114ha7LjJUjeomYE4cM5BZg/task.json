@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_0114ha7LjJUjeomYE4cM5BZg",
+  "agent_id": "a83d2a78c0024d515",
+  "subagent_type": "Explore",
+  "task_description": "Map wipp stage graph",
+  "token_usage": {
+    "input_tokens": 28,
+    "cache_creation_tokens": 98058,
+    "cache_read_tokens": 909278,
+    "output_tokens": 708,
+    "api_call_count": 14
+  },
+  "started_at": "2026-11-06T09:32:29.350253-06:00",
+  "completed_at": "2026-11-06T09:34:06.364787-06:00"
+}

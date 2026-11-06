@@ -92,9 +92,22 @@ pre { margin: 0 0 16px; padding: 20px; background: var(--panel2); border: 1px so
 .lvl { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .lvl span { padding: 6px 14px; font-size: 13px; color: var(--dim); border-right: 1px solid var(--line); }
 .lvl span:last-child { border-right: 0; }
-.lvl .on.ask { background: #fde68a; color: #0f1117; }
-.lvl .on.hold { background: #78350f; color: #fde68a; }
-.lvl .on.auto { background: #0b0d12; color: var(--fg); box-shadow: inset 0 0 0 1px var(--purple); }
+.lvl .on { background: #0b0d12; color: var(--fg); box-shadow: inset 0 0 0 1px var(--purple); }
+.lvl .on.light { background: #fde68a; color: #0f1117; box-shadow: none; }
+.level { padding: 12px 24px; color: var(--dim); font-size: 13px; border-top: 1px solid var(--line); }
+.level b { color: var(--fg); font-weight: 600; }
+
+/* Eval table */
+table { width: 100%; max-width: 640px; border-collapse: collapse; margin-top: 32px; background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; font-size: 14px; }
+th, td { text-align: left; padding: 10px 20px; border-bottom: 1px solid var(--line); }
+th { color: var(--dim); font-weight: 600; font-size: 13px; }
+td.b { color: var(--ok); }
+
+/* Workflow graph */
+.wf { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 32px; }
+.wf .step span { display: block; color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+.wf .link { color: var(--dim); font-size: 12px; }
+.wf .link.res { color: var(--lit); }
 .scale { display: flex; justify-content: space-between; color: var(--dim); font-size: 12px; padding: 12px 24px 0; }
 
 /* Spotlight: a light behind the page, and a lit edge on each entity near the pointer */
@@ -137,6 +150,9 @@ footer { padding: 48px 0; color: var(--dim); }
   <nav>
     <a href="#problem">problem</a>
     <a href="#oversight">oversight</a>
+    <a href="#ladder">ladder</a>
+    <a href="#evals">evals</a>
+    <a href="#workflows">workflows</a>
     <a href="#use-cases">use cases</a>
     <a href="#start">get started</a>
     <a href="https://github.com/tacoda/bastion">github</a>
@@ -155,7 +171,7 @@ footer { padding: 48px 0; color: var(--dim); }
   <div class="kanban" aria-label="Illustration of the Jobs page">
     <div class="col">
       <h3><span>Waiting for you</span><span>2</span></h3>
-      <div class="card blocked"><span class="t">divide: guard against zero</span><span class="badge b-needs">approve</span><span class="m">local · demo-a · plan ready</span></div>
+      <div class="card blocked"><span class="t">divide: guard against zero</span><span class="badge b-needs">plan</span><span class="m">local · demo-a · plan ready</span></div>
       <div class="card blocked"><span class="t">close issue #1</span><span class="badge b-needs">land</span><span class="m">local · ianparo/bastion · CI green</span></div>
     </div>
     <div class="col">
@@ -196,17 +212,59 @@ footer { padding: 48px 0; color: var(--dim); }
 
 <section id="oversight">
   <h2>The oversight dial</h2>
-  <p class="title">Start with the lights on. Dim them one checkpoint at a time.</p>
-  <p>A new factory stops at every checkpoint and asks you. Each checkpoint has its own dial, so as you verify a stage and trust it more, you turn that one darker and leave the rest alone. <code>ask</code> waits for you, <code>hold</code> waits 30 minutes and then goes on, and <code>auto</code> goes on at once.</p>
-  <div class="dials" aria-label="Illustration of checkpoint dials">
-    <div class="scale"><span>lights on</span><span>dark</span></div>
-    <div class="dial"><div class="who">approve plan<span>trusted after many plans</span></div><div class="lvl"><span>ask</span><span>hold</span><span class="on auto">auto</span></div></div>
-    <div class="dial"><div class="who">your checks<span>mostly trusted</span></div><div class="lvl"><span>ask</span><span class="on hold">hold</span><span>auto</span></div></div>
-    <div class="dial"><div class="who">review<span>still reading every diff</span></div><div class="lvl"><span class="on ask">ask</span><span>hold</span><span>auto</span></div></div>
-    <div class="dial"><div class="who">land<span>getting there</span></div><div class="lvl"><span>ask</span><span class="on hold">hold</span><span>auto</span></div></div>
-    <div class="dial"><div class="who">merge<span>still deciding every merge</span></div><div class="lvl"><span class="on ask">ask</span><span>hold</span><span>auto</span></div></div>
+  <p class="title">Start with the lights on. Turn them off one step at a time.</p>
+  <p>A new factory waits after every step for you to approve its result or send it back with a note. Each step has its own dial, so as you trust a step more, you turn that one dark and leave the rest alone. A dark step goes on at once. Nothing waits on a timer, and every result and decision goes in the log whatever the dial says.</p>
+  <div class="dials" aria-label="Illustration of step dials">
+    <div class="dial"><div class="who">plan<span>trusted after many plans</span></div><div class="lvl"><span>lights-on</span><span class="on">dark</span></div></div>
+    <div class="dial"><div class="who">define<span>your checks, mostly trusted</span></div><div class="lvl"><span>lights-on</span><span class="on">dark</span></div></div>
+    <div class="dial"><div class="who">build<span>still reading every diff</span></div><div class="lvl"><span class="on light">lights-on</span><span>dark</span></div></div>
+    <div class="dial"><div class="who">merge<span>still deciding every merge</span></div><div class="lvl"><span class="on light">lights-on</span><span>dark</span></div></div>
+    <div class="level">workflow level: <b>dim</b> · at least one step up to the merge waits for a person</div>
   </div>
-  <p class="caption">An illustration. Presets set every dial at once, and you can still move one by hand.</p>
+  <p class="caption">An illustration. Three presets set every dial at once: lights-on (every step), dim (only the steps that act outside the job), and dark (no step).</p>
+</section>
+
+<section id="ladder">
+  <h2>The ladder</h2>
+  <p class="title">Tighten a rule one rung at a time, and keep the record.</p>
+  <p>Every rule sits on a ladder. A constraint says what a turn must or must not do. A capability says which function a turn may call. Promote one and a hook holds the agent to more; demote it and the hook holds less. Each move is one rung, and the audit log records it, along with the eval you acted on.</p>
+  <div class="dials" aria-label="Illustration of a constraint and a capability on their ladders">
+    <div class="dial"><div class="who">constraint · tests-kept<span>told: in the brief · checked: a hook records the breach · enforced: a hook refuses</span></div><div class="lvl"><span>told</span><span>checked</span><span class="on">enforced</span></div></div>
+    <div class="dial"><div class="who">capability · write at plan<span>ask: the call waits for you to allow it once, send feedback, or stop the job</span></div><div class="lvl"><span>denied</span><span class="on light">ask</span><span>allowed</span></div></div>
+  </div>
+  <p class="caption">From a recorded run: with <code>tests-kept</code> enforced, a build that dropped <code>test_add</code> went back to build with the rule. At checked, the same finding waited for a person.</p>
+</section>
+
+<section id="evals">
+  <h2>A/B evals</h2>
+  <p class="title">Try a stricter rule on real requests before you keep it.</p>
+  <p>An eval runs the same requests twice against the same workspace snapshot: arm A with your current rules and arm B with one change. Each trial stops at review with its diff, so nothing lands. A judge grades every result, and the Evals page shows the difference per request, with a link to each hook decision behind it.</p>
+  <p>If B wins, Apply B moves the rule to B's rung. The audit log records the move and the eval you acted on.</p>
+  <table aria-label="A recorded eval">
+    <tr><th></th><th>A · no-wc told</th><th>B · no-wc enforced</th></tr>
+    <tr><td>refused calls</td><td>0</td><td class="b">5</td></tr>
+    <tr><td>review findings</td><td>2</td><td class="b">0</td></tr>
+    <tr><td>turns</td><td>39</td><td class="b">28</td></tr>
+    <tr><td>tool calls</td><td>33</td><td class="b">17</td></tr>
+    <tr><td>cost</td><td>$0.0344</td><td class="b">$0.0207</td></tr>
+    <tr><td>grade</td><td>7</td><td>7</td></tr>
+  </table>
+  <p class="caption">A recorded eval of three requests that each ask for a <code>wc</code> count. Three requests is a small run, so read it as one result, not a benchmark. Today an arm changes rule rungs. Changing the model per step or the workflow is planned.</p>
+</section>
+
+<section id="workflows">
+  <h2>Custom workflows</h2>
+  <p class="title">Run the pipeline your team already uses.</p>
+  <p>A workflow is a graph of steps. Each step is a skill, a prompt, a command, or a built-in Bastion stage. Skills come first: a skill step is an agent turn that follows <code>.claude/skills/&lt;name&gt;/SKILL.md</code> from your repository. A command step runs one shell line in the job's VM, such as <code>make test</code>, with no agent, and exit 0 passes.</p>
+  <p>Links carry results, not conditions. A step declares what it gives, such as <code>design-notes</code>, and the next step gets it in its brief. If a result is missing, a code check holds the step: the agent gets one more try with the reason, then the job waits for a person. Every step keeps its own dial.</p>
+  <div class="wf" aria-label="Illustration of a custom workflow">
+    <div class="step"><span>skill</span>plan</div><span class="link res">design-notes →</span>
+    <div class="step"><span>skill</span>build</div><span class="link">→</span>
+    <div class="step"><span>command</span>make test</div><span class="link">→</span>
+    <div class="step"><span>stage</span>code review</div><span class="link">→</span>
+    <div class="step"><span>stage</span>merge</div>
+  </div>
+  <p class="caption">An illustration. Bastion ships three workflows (short, full, and full without acceptance tests). Copy one to make your own, and each job keeps the version it started on. An admin edits workflows, and everyone else picks one per request. The workflow model and its API are built; the canvas for editing them is in progress.</p>
 </section>
 
 <section id="use-cases">
@@ -225,12 +283,8 @@ footer { padding: 48px 0; color: var(--dim); }
       <div><span class="k">Your rules, enforced</span><h3>Hold agents to your repository's charter</h3><p>Bastion reads the rules and hooks your repository already has in <code>.claude/settings.json</code>. So a hook that refuses <code>rm</code> refuses it inside the sandbox too.</p></div>
       <div class="note"><b>refused</b> · <code>rm -f /work/repo/notes.txt</code><br><span>PreToolUse hook · exit 2</span></div>
     </div>
-    <div class="case">
-      <div><span class="k">Eval before you enforce</span><h3>Find out what a stricter rule costs</h3><p>Run the same requests with a rule told and with it enforced, then compare. In one small run of three requests, enforcing a rule cut tool calls from 33 to 17 at the same grade.</p></div>
-      <div class="note"><b>told → enforced</b><br><span>calls 33 → 17 · cost $0.0344 → $0.0207 · grade 7 → 7</span></div>
-    </div>
   </div>
-  <p class="caption">The diff is an illustration. The refused call and the eval numbers come from recorded runs.</p>
+  <p class="caption">The diff is an illustration. The refused call comes from a recorded run.</p>
 </section>
 
 <section>
@@ -261,7 +315,7 @@ cargo tauri dev</pre>
 <script>
 (() => {
   const spot = document.querySelector('.spot');
-  const lit = [...document.querySelectorAll('.card, .col, .panel, .case, .dials, .note, .step, .btn, pre')];
+  const lit = [...document.querySelectorAll('.card, .col, .panel, .case, .dials, .note, .step, .btn, pre, table')];
   lit.forEach(el => el.classList.add('lit'));
   let x = -9999, y = -9999, queued = false;
   const reach = 140;

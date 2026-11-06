@@ -18,8 +18,8 @@ INSERT OR IGNORE INTO capabilities (stage, function, rung) VALUES
   ('plan', 'sandbox::fs::write', 'ask'),
   ('build', 'sandbox::*', 'allowed');
 
--- Workflows (D35): starting points for engineers, managers and platform
--- teams. Each lands a reviewed change, a document under docs/ or code, and
+-- Workflows (D35): starting points for engineers, managers, and platform
+-- and SRE teams. Each lands a reviewed change, a document under docs/ or code, and
 -- waits for a person at land. A workflow's row is written only while none of
 -- its steps are stored, so one the owner deleted stays deleted, and the
 -- owner's later versions are kept.
@@ -32,12 +32,17 @@ SELECT column1, column2, 1, 0 FROM (VALUES
   ('weekly-status', 'Weekly status'),
   ('decision-record', 'Decision record'),
   ('onboarding-guide', 'Onboarding guide'),
+  ('incident-response', 'Incident response'),
   ('incident-postmortem', 'Incident postmortem'),
   ('runbook', 'Runbook'),
   ('infrastructure-change', 'Infrastructure change'))
 WHERE NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow = column1);
 
 INSERT OR IGNORE INTO workflow_nodes (workflow, version, id, stage, run, dial, note, x, y) VALUES
+  ('incident-response', 1, 'recent-changes', 'command', 'git log --since="3 days ago" --no-merges --stat --date=iso --pretty=format:"%h %an %ad %s"', 'dark', 'The changes that could have caused the incident.', 0, 0),
+  ('incident-response', 1, 'plan', 'plan', '', 'dark', 'Triage the incident in the request: its symptoms, when it started and what it hits. Match it against the recent changes, the code and the config. Name the most likely cause with its evidence, and plan the smallest change that stops the impact.', 220, 0),
+  ('incident-response', 1, 'build', 'build', '', 'dark', 'Make the smallest change that stops the impact: a revert, a feature flag turned off, or a config rollback. Write what you changed, why, and how to check that the impact stopped into docs/incidents/, named for the date and the incident.', 440, 0),
+  ('incident-response', 1, 'land', 'land', '', 'lights_on', '', 660, 0),
   ('research', 1, 'plan', 'plan', '', 'dark', 'Research the question in the request. Read the code, docs, tests and git history that bear on it. Cite files and lines, and say what you could not find out. Plan one task: write the report.', 0, 0),
   ('research', 1, 'build', 'build', '', 'dark', 'Write the findings as a report in docs/research/, named for the question. Change no other file.', 220, 0),
   ('research', 1, 'land', 'land', '', 'lights_on', '', 440, 0),
@@ -73,6 +78,8 @@ INSERT OR IGNORE INTO workflow_nodes (workflow, version, id, stage, run, dial, n
   ('infrastructure-change', 1, 'land', 'land', '', 'lights_on', '', 440, 0);
 
 INSERT OR IGNORE INTO workflow_results (workflow, version, node, n, name) VALUES
+  ('incident-response', 1, 'recent-changes', 0, 'recent-changes'),
+  ('incident-response', 1, 'plan', 0, 'triage'),
   ('research', 1, 'plan', 0, 'findings'),
   ('bug-fix', 1, 'plan', 0, 'root-cause'),
   ('dependency-upgrade', 1, 'plan', 0, 'upgrade-notes'),
@@ -88,6 +95,9 @@ INSERT OR IGNORE INTO workflow_results (workflow, version, node, n, name) VALUES
   ('infrastructure-change', 1, 'plan', 0, 'change-plan');
 
 INSERT OR IGNORE INTO workflow_links (workflow, version, source, target) VALUES
+  ('incident-response', 1, 'recent-changes', 'plan'),
+  ('incident-response', 1, 'plan', 'build'),
+  ('incident-response', 1, 'build', 'land'),
   ('research', 1, 'plan', 'build'),
   ('research', 1, 'build', 'land'),
   ('bug-fix', 1, 'plan', 'build'),

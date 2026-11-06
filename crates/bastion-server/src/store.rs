@@ -1280,7 +1280,17 @@ mod tests {
                     .unwrap()
             })
             .collect();
-        assert_eq!(tables, ["constraints", "capabilities"]);
+        assert_eq!(
+            tables,
+            [
+                "constraints",
+                "capabilities",
+                "workflows",
+                "workflow_nodes",
+                "workflow_results",
+                "workflow_links"
+            ]
+        );
     }
 
     #[test]

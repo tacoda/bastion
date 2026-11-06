@@ -689,6 +689,15 @@ workflows as an interactive flow chart on a canvas (D35).
   first. The job page draws the job's workflow with each step's state, and
   each result as its document.
 
+- **W4, seeded workflows.** The seed (D26) carries ten workflows to start
+  from, each a copy an admin can change: research, bug fix, dependency
+  upgrade and test coverage for engineers; weekly status, decision record and
+  onboarding guide for managers; incident postmortem, runbook and
+  infrastructure change for platform and SRE teams. Each reads with plan, a
+  command or a prompt, writes with build, and waits for a person at land, so
+  each runs dim. A document lands under `docs/`. A seeded workflow the owner
+  deletes is not seeded again.
+
 **Exit, live:** an admin copies a default workflow, removes a step, gives
 plan a `design-notes` result linked into build, and saves; a member runs a
 request on the copy; the job skips the removed step, the design notes are

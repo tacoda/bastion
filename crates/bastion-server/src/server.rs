@@ -12,6 +12,7 @@ use crate::engine::Engine;
 use crate::events::Bus;
 use crate::factory::Factory;
 use crate::machine::Machine;
+use crate::stack::Stack;
 use crate::store::SqlStore;
 
 pub struct Server {
@@ -19,12 +20,22 @@ pub struct Server {
     pub machine: Arc<dyn Machine>,
     pub events: Arc<Bus>,
     pub factory: FactoryCell,
+    /// The stack this server runs on, and the checkout that holds it.
+    pub stack: Stack,
+    /// Where the server writes what it keeps outside the database, such as
+    /// an audit export.
+    pub data: PathBuf,
 }
 
 impl Server {
     /// A server on `engine`. Its link and its workers' comings and goings
     /// are published as they change.
-    pub fn new(engine: Arc<dyn Engine>, machine: Arc<dyn Machine>) -> Result<Arc<Self>, String> {
+    pub fn new(
+        engine: Arc<dyn Engine>,
+        machine: Arc<dyn Machine>,
+        stack: Stack,
+        data: PathBuf,
+    ) -> Result<Arc<Self>, String> {
         let events = Arc::new(Bus::default());
         crate::api::engine::watch(events.clone(), engine.clone());
         let bus = events.clone();
@@ -34,6 +45,8 @@ impl Server {
             machine,
             events,
             factory: FactoryCell::default(),
+            stack,
+            data,
         }))
     }
 

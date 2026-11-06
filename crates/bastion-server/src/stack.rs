@@ -16,6 +16,7 @@ const START_WAIT: Duration = Duration::from_secs(10);
 const START_POLL: Duration = Duration::from_millis(250);
 
 /// Where this profile's stack lives.
+#[derive(Clone, Debug)]
 pub struct Stack {
     pub checkout: PathBuf,
     /// The engine port the profile points at.

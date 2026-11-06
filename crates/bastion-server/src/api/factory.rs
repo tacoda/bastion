@@ -18,10 +18,11 @@ use crate::store::{self, Record};
 /// Set once the engine is up and the store has its tables.
 pub type FactoryCell = Arc<OnceLock<Arc<Factory>>>;
 
+/// The answer while the factory waits for the engine.
+pub const NOT_STARTED: &str = "the factory starts once the engine is up; start the stack";
+
 pub(super) fn factory(cell: &FactoryCell) -> Result<Arc<Factory>, String> {
-    cell.get()
-        .cloned()
-        .ok_or_else(|| "the factory starts once the engine is up; start the stack".into())
+    cell.get().cloned().ok_or_else(|| NOT_STARTED.into())
 }
 
 /// An enum as its snake_case name.

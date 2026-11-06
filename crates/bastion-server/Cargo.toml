@@ -7,11 +7,14 @@ description = "Bastion's server (PLAN.md D27): the factory, the store, the gate 
 
 [dependencies]
 iii-sdk = "=0.25.0"
+axum = "0.8"
+futures-util = "0.3"
+tower-http = { version = "0.6", features = ["cors"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 bastion-protocol = { path = "../bastion-protocol" }
 bastion-core = { path = "../bastion-core" }
-tokio = { version = "1", features = ["time", "rt-multi-thread", "macros"] }
+tokio = { version = "1", features = ["time", "rt-multi-thread", "macros", "sync", "net"] }
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
 
@@ -20,4 +23,5 @@ base64 = "0.22"
 fakes = []
 
 [dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
 bastion-core = { path = "../bastion-core", features = ["fixtures"] }

@@ -60,7 +60,8 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     };
     let engine: Arc<dyn Engine> = Arc::new(IiiEngine::connect(&active.engine_url));
     let machine: Arc<dyn Machine> = Arc::new(ThisMachine);
-    let server = Server::new(engine.clone(), machine.clone())?;
+    let data = app.path().app_data_dir()?;
+    let server = Server::new(engine.clone(), machine.clone(), stack.clone(), data)?;
     bridge(app.handle().clone(), server.events.clone());
     let (seed, scratch) = factory_inputs(app.handle())?;
     server.start_factory(seed, scratch);

@@ -14,6 +14,7 @@ pub mod events;
 pub mod factory;
 pub mod forge;
 pub mod gate;
+pub mod http;
 pub mod machine;
 pub mod rt;
 pub mod server;

@@ -10,6 +10,7 @@ leptos = { version = "0.8", features = ["csr"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
+web-sys = { version = "0.3", features = ["Window", "Headers", "Request", "RequestInit", "Response", "ReadableStream", "ReadableStreamDefaultReader"] }
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"
 bastion-protocol = { path = "crates/bastion-protocol" }

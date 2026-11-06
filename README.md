@@ -1,11 +1,12 @@
 # Bastion
 
 Bastion is a software factory that runs on your own machine. A request goes in,
-agents work it through a pipeline of stages, and a reviewed change comes out.
-Nothing merges itself. It's a native app (Tauri 2, Leptos, Rust) on the
-[iii](https://iii.dev) engine, and it's early: the app shell, Doctor and the
-stack controls work, and the factory itself starts in phase A3 of
-[PLAN.md](PLAN.md).
+agents work it through a workflow, and a reviewed change comes out. Nothing
+merges itself. A workflow is a graph of steps (skills, prompts, commands, and
+Bastion's own stages) that you can see and govern, and you can build your own.
+It's a native app (Tauri 2, Leptos, Rust) on the [iii](https://iii.dev) engine,
+and it's early: the app shell, Doctor and the stack controls work, and the
+factory itself starts in phase A3 of [PLAN.md](PLAN.md).
 
 ```sh
 cargo tauri dev

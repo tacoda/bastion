@@ -256,6 +256,34 @@ fn the_checks_step_runs_the_workspaces_command_and_passes_on_exit_0() {
 }
 
 #[test]
+fn with_the_local_forge_ship_brings_the_commits_back_and_prove_starts() {
+    let rig = rig();
+    crate::rt::block_on(async {
+        let mut job = Job::new("j1".into(), "w".into(), "r".into(), 1).on(Pipeline::Full);
+        (job.stage, job.state) = (Stage::Ship, State::Running);
+        let record = Record {
+            job,
+            runtime: Runtime {
+                worktree: Some("wt1".into()),
+                sandbox: Some("vm1".into()),
+                ..Runtime::default()
+            },
+            rev: 1,
+            created_at: 1,
+        };
+        rig.store.insert(&record).await.unwrap();
+        rig.factory.run_step(&record, Stage::Ship).await;
+        until(&rig, "j1", Stage::Prove, State::Running).await;
+        assert!(
+            vm_commands(&rig)
+                .iter()
+                .any(|c| c.contains("bundle create /work/out.bundle"))
+        );
+        assert_eq!(rig.store.load("j1").await.unwrap().job.pr, None);
+    });
+}
+
+#[test]
 fn a_request_runs_the_short_pipeline_to_landed() {
     let rig = rig();
     crate::rt::block_on(async {

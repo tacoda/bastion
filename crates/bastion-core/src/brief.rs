@@ -81,6 +81,24 @@ FINDINGS:
 
 Leave FINDINGS empty when you find nothing worth fixing.";
 
+const PROVE: &str = "\
+Prove that the change in the repository in /work/repo meets the request and
+its criteria. Do not change any file. Run the tests and anything else that shows
+it works, and quote what they print. Then end your reply with one line:
+VERDICT: yes, VERDICT: partial, or VERDICT: no.";
+
+const COMPREHEND: &str = "\
+Write the briefing a person reads before trying this change. Do not change any
+file. Run `git diff bastion-base` to see it. Say in plain words what changed and
+why, what to try and what they should see, and any risk worth knowing. Keep it
+short enough to read in two minutes.";
+
+const LEARN: &str = "\
+The job below is done. Do not change any file. Say what surprised you in this
+repository: a rule the factory should have told you, a check that was missing,
+or a step that took longer than it should. Propose each as one change to the
+repository's rules, with why. Say NOTHING TO LEARN if there is nothing.";
+
 const BUILD: &str = "\
 You are carrying out the approved plan below in the repository in /work/repo.
 Write the tests first, then the code. Commit your work with git on the current
@@ -102,6 +120,9 @@ fn intro(stage: Stage) -> &'static str {
         Stage::Falsify => FALSIFY,
         Stage::Refactor => REFACTOR,
         Stage::CodeReview => CODE_REVIEW,
+        Stage::Prove => PROVE,
+        Stage::Comprehend => COMPREHEND,
+        Stage::Learn => LEARN,
         Stage::Build | Stage::Implement | Stage::CiFix => BUILD,
         _ => PLAN,
     }
@@ -137,7 +158,7 @@ fn earlier_work(job: &Job) -> Vec<String> {
     }
     let testing = matches!(
         job.stage,
-        Stage::Specify | Stage::Falsify | Stage::Implement
+        Stage::Specify | Stage::Falsify | Stage::Implement | Stage::Prove
     );
     if let (true, Some(criteria)) = (testing, &job.criteria) {
         parts.push(format!(

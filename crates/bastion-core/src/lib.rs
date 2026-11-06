@@ -482,6 +482,8 @@ fn enter(job: &mut Job, dials: &Dials) -> Vec<Effect> {
     job.state = State::Running;
     match job.stage {
         Stage::Land => return vec![Effect::Land],
+        // With no pull request (a local forge) there is no CI to watch.
+        Stage::Ci if job.pr.is_none() => return advance(job, dials),
         Stage::Ci => return vec![Effect::WatchCi],
         stage if stage.kind() == Kind::Factory => return vec![Effect::RunStep { stage }],
         _ => {}
@@ -700,20 +702,7 @@ fn turn_finished(job: &mut Job, outcome: &Outcome, dials: &Dials) -> Vec<Effect>
                 effects.push(Effect::CaptureDiff);
             }
             job.feedback = None;
-            match job.stage {
-                Stage::Discover => discovered(job, report),
-                Stage::Define => job.criteria = Some(report.clone()),
-                // Nothing proposed or found: there is nothing to pick.
-                Stage::Refactor if listed(report, "REFACTORS:").is_empty() => {
-                    job.stage = Stage::PickRefactors
-                }
-                Stage::CodeReview if listed(report, "FINDINGS:").is_empty() => {
-                    job.stage = Stage::PickFindings
-                }
-                Stage::Specify => job.falsify_tried = false,
-                _ => {}
-            }
-            effects.extend(after_turn(job, dials));
+            effects.extend(after_report(job, report, dials));
             effects
         }
         Outcome::Unusable { report, problem } => {
@@ -737,6 +726,44 @@ fn turn_finished(job: &mut Job, outcome: &Outcome, dials: &Dials) -> Vec<Effect>
             }
             enter(job, dials)
         }
+    }
+}
+
+/// What a finished turn's report decides, then where the job goes.
+fn after_report(job: &mut Job, report: &str, dials: &Dials) -> Vec<Effect> {
+    match job.stage {
+        Stage::Discover => discovered(job, report),
+        Stage::Define => job.criteria = Some(report.into()),
+        // Nothing proposed or found: there is nothing to pick.
+        Stage::Refactor if listed(report, "REFACTORS:").is_empty() => {
+            job.stage = Stage::PickRefactors
+        }
+        Stage::CodeReview if listed(report, "FINDINGS:").is_empty() => {
+            job.stage = Stage::PickFindings
+        }
+        Stage::Specify => job.falsify_tried = false,
+        Stage::Prove => return proved(job, report, dials),
+        _ => {}
+    }
+    after_turn(job, dials)
+}
+
+/// Prove's verdict, its report's last `VERDICT:` line. Yes goes on; no sends
+/// the work back to implement; anything else waits on the owner, who reads
+/// the evidence and approves or sends it back.
+fn proved(job: &mut Job, report: &str, dials: &Dials) -> Vec<Effect> {
+    let verdict = report
+        .lines()
+        .rev()
+        .find_map(|l| l.trim().strip_prefix("VERDICT:"))
+        .map(|v| v.trim().to_ascii_lowercase());
+    match verdict.as_deref() {
+        Some("yes") => after_turn(job, dials),
+        Some("no") => step_failed(job, report, dials),
+        _ => stuck(
+            job,
+            "The proof is partial. Read it, then approve to go on, or send it back with a note.",
+        ),
     }
 }
 

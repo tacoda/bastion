@@ -144,6 +144,9 @@ fn judged(d: &JobDetail) -> (Option<String>, Option<String>) {
         "your_checks" => (latest("define"), None),
         "pick_refactors" => (latest("refactor"), None),
         "pick_findings" => (latest("code_review"), latest("review")),
+        "prove" => (latest("prove"), None),
+        "uat" => (latest("comprehend"), None),
+        "merge" => (latest("comprehend"), latest("review")),
         _ => (None, None),
     }
 }
@@ -162,6 +165,12 @@ fn what_approve_does(d: &JobDetail) -> &'static str {
         }
         "pick_refactors" => "Name the refactorings to make in a note, or approve to make none.",
         "pick_findings" => "Name the findings to fix in a note, or approve to fix none.",
+        "prove" => "The proof is partial. Approve to go on, or send it back with a note.",
+        "uat" => {
+            "Try the change as the briefing says, then approve, or say what is wrong in a note."
+        }
+        "merge" if d.job.pr.is_some() => "Approve merges the pull request.",
+        "merge" => "Approve lands the change on the workspace's branch.",
         _ => "Approve the plan artifact to move on, or send it back with a note.",
     }
 }

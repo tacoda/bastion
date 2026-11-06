@@ -455,3 +455,42 @@ fn a_list_reads_only_under_its_header() {
     j.request = "r".into();
     assert!(brief(&j).contains(&format!("git diff {BASE_TAG}")));
 }
+
+#[test]
+fn prove_goes_on_on_yes_waits_on_partial_and_sends_no_back_once() {
+    let (j, effects) = go(
+        &at(Stage::Prove, State::Running),
+        &reply("tests pass\nVERDICT: yes"),
+    );
+    assert_eq!(j.stage, Stage::Comprehend);
+    assert!(starts_turn(&effects, Stage::Comprehend));
+
+    let (j, _) = go(
+        &at(Stage::Prove, State::Running),
+        &reply("VERDICT: partial"),
+    );
+    assert_eq!((j.stage, j.state), (Stage::Prove, State::NeedsYou));
+    let (j, _) = go(&j, &Event::Approved);
+    assert_eq!(j.stage, Stage::Comprehend, "the owner may go on anyway");
+
+    let (j, _) = go(
+        &at(Stage::Prove, State::Running),
+        &reply("1 failed\nVERDICT: no"),
+    );
+    assert_eq!(
+        (j.stage, j.back_to),
+        (Stage::Implement, Some(Stage::Checks))
+    );
+    let mut again = j;
+    again.stage = Stage::Prove;
+    again.state = State::Running;
+    let (j, _) = go(&again, &reply("still failing\nVERDICT: no"));
+    assert_eq!(j.state, State::NeedsYou, "prove sends the work back once");
+}
+
+#[test]
+fn with_no_pull_request_ship_passes_straight_through_ci() {
+    let (j, effects) = go(&at(Stage::Ship, State::Running), &Event::StepPassed);
+    assert_eq!(j.stage, Stage::Prove);
+    assert!(starts_turn(&effects, Stage::Prove));
+}

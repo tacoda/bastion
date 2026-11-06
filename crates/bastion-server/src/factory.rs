@@ -665,7 +665,7 @@ impl Factory {
 
     /// Run a step the factory runs itself, and report how it went.
     // ponytail: a workspace has no setup steps until A9, so prepare passes at
-    // once; ship and deploy run from A8 step 5, and until then each fails.
+    // once; any other step fails until it has a runner.
     async fn run_step(self: &Arc<Self>, record: &Record, stage: Stage) -> Option<String> {
         let event = match stage {
             Stage::Prepare => Event::StepPassed,
@@ -673,6 +673,12 @@ impl Factory {
                 self.acceptance_step(record, stage).await
             }
             Stage::Checks => self.checks_step(record).await,
+            Stage::Ship => self
+                .ship(record)
+                .await
+                .unwrap_or_else(|detail| Event::StepStuck { detail }),
+            // ponytail: nothing watches CD yet, so a deploy passes; watching the merge commit's checks comes with a workspace that deploys.
+            Stage::Deploy => Event::StepPassed,
             _ => Event::StepFailed {
                 detail: format!("Bastion does not run the {stage:?} step yet."),
             },
@@ -723,6 +729,32 @@ impl Factory {
     /// The VM's commits come back to the worktree (N7), then `worktree::land`
     /// merges them, and its trigger reports the outcome.
     async fn land(self: &Arc<Self>, record: &Record) -> Result<(), String> {
+        let (path, target) = self.bring_back(record).await?;
+        let worktree = record.runtime.worktree.clone().ok_or("no worktree")?;
+        match settings_store::current(&*self.store).await?.forge {
+            Forge::Github => {
+                let url = self.pull_request(record, &path, &target).await?;
+                self.apply(&record.job.id, Event::PrOpened { url }).await
+            }
+            Forge::Local => self.land_here(record, &worktree, &target).await,
+        }
+    }
+
+    /// Ship (A8 step 5): bring the commits back, then push them and open the
+    /// pull request, or, with the local forge, go on with them in the worktree.
+    async fn ship(&self, record: &Record) -> Result<Event, String> {
+        let (path, target) = self.bring_back(record).await?;
+        Ok(match settings_store::current(&*self.store).await?.forge {
+            Forge::Github => Event::PrOpened {
+                url: self.pull_request(record, &path, &target).await?,
+            },
+            Forge::Local => Event::StepPassed,
+        })
+    }
+
+    /// Bring the VM's commits back to the job's worktree. Returns the
+    /// worktree's path and the workspace branch the change goes into.
+    async fn bring_back(&self, record: &Record) -> Result<(PathBuf, String), String> {
         let id = &record.job.id;
         let sandbox = record.runtime.sandbox.clone().ok_or("no VM")?;
         let worktree = record.runtime.worktree.clone().ok_or("no worktree")?;
@@ -763,28 +795,17 @@ impl Factory {
                 &branch,
             ],
         )?;
-        let target = self
-            .store
-            .workspaces()
-            .await?
-            .into_iter()
-            .find(|w| w.name == record.job.workspace)
-            .map(|w| w.branch)
-            .ok_or(format!("no workspace {}", record.job.workspace))?;
-        match settings_store::current(&*self.store).await?.forge {
-            Forge::Github => self.open_pr(record, &path, &target).await,
-            Forge::Local => self.land_here(record, &worktree, &target).await,
-        }
+        Ok((path, self.workspace_branch(record).await?))
     }
 
     /// Push the job's branch and open its pull request, or reuse the one a
-    /// fix turn pushes to.
-    async fn open_pr(
-        self: &Arc<Self>,
+    /// fix turn pushes to. Returns the pull request's URL.
+    async fn pull_request(
+        &self,
         record: &Record,
         path: &Path,
         base: &str,
-    ) -> Result<(), String> {
+    ) -> Result<String, String> {
         let job = &record.job;
         let slug = forge::slug(&*self.machine, path)?;
         forge::push(&*self.machine, path, &job.id)?;
@@ -800,7 +821,7 @@ impl Factory {
                 .await?
             }
         };
-        self.apply(&job.id, Event::PrOpened { url }).await
+        Ok(url)
     }
 
     /// Merge the worktree into the workspace's branch here, with `worktree::land`.
@@ -973,11 +994,33 @@ impl Factory {
             self.watch_ci(record);
             return None;
         }
+        // With the local forge there is no pull request: the merge lands here.
+        if record.job.pr.is_none() {
+            return self.merge_here(record).await.err();
+        }
         let event = match self.merge(record).await {
             Ok(()) => Event::Landed,
             Err(error) => Event::LandFailed { error },
         };
         self.apply(&record.job.id, event).await.err()
+    }
+
+    /// Land the worktree into the workspace's branch, as the short pipeline does.
+    async fn merge_here(self: &Arc<Self>, record: &Record) -> Result<(), String> {
+        let worktree = record.runtime.worktree.clone().ok_or("no worktree")?;
+        let target = self.workspace_branch(record).await?;
+        self.land_here(record, &worktree, &target).await
+    }
+
+    /// The branch of the job's workspace, which its change goes into.
+    async fn workspace_branch(&self, record: &Record) -> Result<String, String> {
+        self.store
+            .workspaces()
+            .await?
+            .into_iter()
+            .find(|w| w.name == record.job.workspace)
+            .map(|w| w.branch)
+            .ok_or(format!("no workspace {}", record.job.workspace))
     }
 
     /// Merge the pull request, then bring the workspace's branch up to date.

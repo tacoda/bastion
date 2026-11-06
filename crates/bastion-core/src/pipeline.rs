@@ -105,6 +105,7 @@ pub fn revise(stage: Stage) -> Option<(Stage, Option<Stage>, u32)> {
         Stage::Acceptance => (Stage::Implement, Some(Stage::Acceptance), 2),
         Stage::Ship => (Stage::Implement, Some(Stage::Acceptance), 3),
         Stage::Ci => (Stage::CiFix, Some(Stage::Ship), 3),
+        Stage::Prove => (Stage::Implement, Some(Stage::Checks), 1),
         _ => return None,
     })
 }

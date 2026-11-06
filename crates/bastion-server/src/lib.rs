@@ -25,3 +25,4 @@ pub mod spec;
 pub mod stack;
 pub mod store;
 pub mod tls;
+pub mod workflow_store;

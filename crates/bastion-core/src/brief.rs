@@ -1,6 +1,8 @@
 //! What each agent turn is told, and how its report is read. The request is
 //! quoted as data, and the owner's comment goes in verbatim (D16).
 
+use std::collections::BTreeMap;
+
 use crate::{Job, Outcome, Stage};
 
 /// A report that starts with this line asks the owner a question (wipp's marker).
@@ -140,6 +142,7 @@ pub fn brief(job: &Job) -> String {
         ),
     ];
     parts.extend(earlier_work(job));
+    parts.extend(workflow_step(job));
     if let Some(task) = task(job) {
         parts.push(format!("Do only this task now:\n<task>\n{task}\n</task>"));
     }
@@ -210,6 +213,62 @@ pub fn discovery(report: &str) -> Discovery {
             }
         }
     }
+    found
+}
+
+/// What the job's workflow says about this step (D35): its note, the
+/// results linked into it, and the results it must give.
+fn workflow_step(job: &Job) -> Vec<String> {
+    let Some(step) = job.step() else {
+        return Vec::new();
+    };
+    let mut parts = Vec::new();
+    if !step.note.trim().is_empty() {
+        parts.push(format!(
+            "The workflow says about this step:\n{}",
+            step.note.trim()
+        ));
+    }
+    for name in &step.needs {
+        if let Some(text) = job.results.get(name) {
+            parts.push(format!(
+                "The result {name}:\n<result name=\"{name}\">\n{text}\n</result>"
+            ));
+        }
+    }
+    if !step.gives.is_empty() {
+        let lines: Vec<String> = step.gives.iter().map(|n| format!("RESULT {n}:")).collect();
+        parts.push(format!(
+            "End your reply with each of these results, each under its own line, as:\n{}",
+            lines.join("\n...\n")
+        ));
+    }
+    parts
+}
+
+/// The results a report gives: the text under each `RESULT <name>:` line,
+/// up to the next one.
+pub fn results(report: &str) -> BTreeMap<String, String> {
+    let mut found = BTreeMap::new();
+    let mut current: Option<(String, Vec<&str>)> = None;
+    for line in report.lines() {
+        let header = line
+            .trim()
+            .strip_prefix("RESULT ")
+            .and_then(|r| r.strip_suffix(':'));
+        if let Some(name) = header {
+            if let Some((n, text)) = current.take() {
+                found.insert(n, text.join("\n").trim().to_string());
+            }
+            current = Some((name.trim().to_string(), Vec::new()));
+        } else if let Some((_, text)) = &mut current {
+            text.push(line);
+        }
+    }
+    if let Some((n, text)) = current {
+        found.insert(n, text.join("\n").trim().to_string());
+    }
+    found.retain(|_, text| !text.is_empty());
     found
 }
 

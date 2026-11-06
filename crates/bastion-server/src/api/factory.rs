@@ -229,7 +229,7 @@ pub async fn job_stop(cell: &FactoryCell, id: String) -> Result<(), String> {
 /// The dials of `pipeline`'s steps, in order, and the level they make.
 fn pipeline_dials(d: &Dials, pipeline: Pipeline) -> PipelineDials {
     PipelineDials {
-        level: name(d.level(pipeline)),
+        level: name(d.level(&pipeline.stages())),
         steps: pipeline
             .stages()
             .into_iter()

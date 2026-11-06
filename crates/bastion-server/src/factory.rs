@@ -27,6 +27,7 @@ use crate::machine::Machine;
 use crate::settings_store;
 use crate::spec;
 use crate::store::{Artifact, Record, Runtime, STALE, Store};
+use crate::workflow_store;
 
 const NS: &str = "bastion";
 /// At most this many jobs hold a VM (iii-sandbox's `max_concurrent_sandboxes`).
@@ -53,6 +54,8 @@ pub struct Submission {
     pub pipeline: Pipeline,
     /// The person asking (D31).
     pub requester: Option<String>,
+    /// The workflow to run, by id (D35); none runs `pipeline`.
+    pub workflow: Option<String>,
 }
 /// The VM tag a read-only turn's tree is put back to.
 const BEFORE_TURN: &str = "bastion-before-turn";
@@ -196,11 +199,20 @@ impl Factory {
     ) -> Result<String, String> {
         let id = format!("j{}", short_id());
         let at = now();
+        let mut job = Job::new(id.clone(), workspace.into(), request.into(), at).on(how.pipeline);
+        let mut workflow_version = None;
+        if let Some(w) = &how.workflow {
+            let dials = settings_store::current(&*self.store).await?.dials;
+            (job, workflow_version) =
+                workflow_store::start_on(&*self.store, &dials, w, job).await?;
+        }
         let record = Record {
-            job: Job::new(id.clone(), workspace.into(), request.into(), at).on(how.pipeline),
+            job,
             runtime: Runtime {
                 issue: how.issue,
                 requester: how.requester,
+                workflow: how.workflow,
+                workflow_version,
                 ..Runtime::default()
             },
             rev: 1,
@@ -235,15 +247,20 @@ impl Factory {
         Ok(id)
     }
 
-    /// The dials a job runs under: a trial's own, or the owner's.
+    /// The dials a job runs under: a trial's own, its kept workflow's, or
+    /// the owner's.
     async fn dials_for(&self, id: &str) -> Result<Dials, String> {
-        Ok(match self.store.eval_run_of(id).await? {
-            Some(_) => Dials {
+        if self.store.eval_run_of(id).await?.is_some() {
+            return Ok(Dials {
                 trial: true,
                 ..Dials::default()
-            },
-            None => settings_store::current(&*self.store).await?.dials,
-        })
+            });
+        }
+        let record = self.store.load(id).await?;
+        match workflow_store::dials_of(&*self.store, &record).await? {
+            Some(dials) => Ok(dials),
+            None => Ok(settings_store::current(&*self.store).await?.dials),
+        }
     }
 
     /// Step one job with one event, save it, and run its effects.

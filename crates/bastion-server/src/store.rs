@@ -17,6 +17,7 @@ use crate::engine::Engine;
 use crate::eval_store::{self, EvalStore};
 use crate::people_store::{self, PeopleStore};
 use crate::settings_store::{self, SettingsStore};
+use crate::workflow_store::{self, WorkflowStore};
 
 pub type Answer<'a, T> = Pin<Box<dyn Future<Output = Result<T, String>> + Send + 'a>>;
 
@@ -40,6 +41,9 @@ pub struct Runtime {
     pub issue: Option<String>,
     /// The person who asked for the job (D31).
     pub requester: Option<String>,
+    /// The workflow the job runs (D35), and the version it started on.
+    pub workflow: Option<String>,
+    pub workflow_version: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -74,7 +78,7 @@ pub struct HeldCall {
 /// A save lost to another writer (D8). The caller reloads and steps again.
 pub const STALE: &str = "stale: the job changed since it was read";
 
-pub trait Store: EvalStore + PeopleStore + SettingsStore + Send + Sync {
+pub trait Store: EvalStore + PeopleStore + SettingsStore + WorkflowStore + Send + Sync {
     fn add_workspace<'a>(&'a self, workspace: &'a Workspace) -> Answer<'a, ()>;
     fn workspaces(&self) -> Answer<'_, Vec<Workspace>>;
     fn insert<'a>(&'a self, record: &'a Record) -> Answer<'a, ()>;
@@ -152,7 +156,9 @@ fn staged_tables() -> [(&'static str, &'static str, String); 4] {
         done_tasks INTEGER NOT NULL DEFAULT 0 CHECK (done_tasks >= 0),
         criteria TEXT,
         falsify_tried INTEGER NOT NULL DEFAULT 0 CHECK (falsify_tried IN (0, 1)),
-        requester TEXT)"
+        requester TEXT,
+        workflow TEXT,
+        workflow_version INTEGER)"
             ),
         ),
         (
@@ -211,7 +217,7 @@ fn schema() -> Vec<String> {
     SCHEMA.map(String::from).into_iter().chain(staged).collect()
 }
 
-const SCHEMA: [&str; 7] = [
+const SCHEMA: [&str; 8] = [
     "CREATE TABLE IF NOT EXISTS workspaces (
         name TEXT PRIMARY KEY CHECK (length(name) > 0),
         path TEXT NOT NULL UNIQUE,
@@ -224,6 +230,12 @@ const SCHEMA: [&str; 7] = [
         n INTEGER NOT NULL CHECK (n >= 0),
         text TEXT NOT NULL CHECK (length(text) > 0),
         PRIMARY KEY (job, n))",
+    // The results a job's steps gave (D35), each kept as its document.
+    "CREATE TABLE IF NOT EXISTS job_results (
+        job TEXT NOT NULL REFERENCES jobs(id),
+        name TEXT NOT NULL CHECK (length(name) > 0),
+        body TEXT NOT NULL,
+        PRIMARY KEY (job, name))",
     // How many times each step sent a job's work back.
     "CREATE TABLE IF NOT EXISTS revisions (
         job TEXT NOT NULL REFERENCES jobs(id),
@@ -296,19 +308,21 @@ pub fn seed_statements(sql: &str) -> Vec<Value> {
         .collect()
 }
 
-const JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue, pipeline, back_to, last_refusal, done_tasks, criteria, falsify_tried, requester";
+const JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue, pipeline, back_to, last_refusal, done_tasks, criteria, falsify_tried, requester, workflow, workflow_version";
 /// The job columns before migration 1, which its rebuild copies.
 const LEGACY_JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue";
 
 /// Columns added after a table was first made. Each runs once; on a table
 /// that already has the column it fails, and that failure is expected.
 // They run before the numbered migrations, which need these columns to exist.
-const ALTERS: [&str; 5] = [
+const ALTERS: [&str; 7] = [
     "ALTER TABLE jobs ADD COLUMN pr TEXT",
     "ALTER TABLE jobs ADD COLUMN ci_fixes INTEGER NOT NULL DEFAULT 0 CHECK (ci_fixes >= 0)",
     "ALTER TABLE jobs ADD COLUMN issue TEXT",
     "ALTER TABLE workspaces ADD COLUMN checks TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE jobs ADD COLUMN requester TEXT",
+    "ALTER TABLE jobs ADD COLUMN workflow TEXT",
+    "ALTER TABLE jobs ADD COLUMN workflow_version INTEGER",
 ];
 
 /// Numbered migrations, each run once in order; `PRAGMA user_version` is the
@@ -354,6 +368,7 @@ impl SqlStore {
             .chain(eval_store::SCHEMA)
             .chain(people_store::SCHEMA)
             .chain(settings_store::SCHEMA)
+            .chain(workflow_store::SCHEMA)
             .map(|sql| json!({ "sql": sql, "params": [] }))
             .chain(seed_statements(seed))
             .collect();
@@ -440,7 +455,7 @@ impl SqlStore {
         self.query(sql, params).await?.iter().map(row).collect()
     }
 
-    /// Fill each job's tasks and revision counts from their tables. `filter`
+    /// Fill each job's tasks, results and revision counts from their tables. `filter`
     /// narrows both reads, with `params` for its marks.
     async fn with_lists(
         &self,
@@ -451,6 +466,12 @@ impl SqlStore {
         let tasks = self
             .query(
                 &format!("SELECT job, text FROM tasks {filter} ORDER BY job, n"),
+                params.clone(),
+            )
+            .await?;
+        let results = self
+            .query(
+                &format!("SELECT job, name, body FROM job_results {filter}"),
                 params.clone(),
             )
             .await?;
@@ -466,13 +487,18 @@ impl SqlStore {
             for row in tasks.iter().filter(mine) {
                 r.job.tasks.push(parse(row, "text")?);
             }
+            for row in results.iter().filter(mine) {
+                r.job
+                    .results
+                    .insert(parse(row, "name")?, parse(row, "body")?);
+            }
             for row in revisions.iter().filter(mine) {
                 r.job
                     .revisions
                     .insert(parse(row, "stage")?, parse(row, "count")?);
             }
         }
-        Ok(records)
+        workflow_store::with_flows(self, records).await
     }
 
     pub(crate) async fn execute(&self, sql: &str, params: Value) -> Result<Vec<Value>, String> {
@@ -533,6 +559,8 @@ fn record(row: &Value) -> Result<Record, String> {
             revisions: Default::default(),
             last_refusal: text(row, "last_refusal"),
             tasks: Vec::new(),
+            flow: Vec::new(),
+            results: Default::default(),
             done_tasks: parse(row, "done_tasks")?,
             criteria: text(row, "criteria"),
             falsify_tried: row["falsify_tried"].as_i64() == Some(1)
@@ -544,6 +572,8 @@ fn record(row: &Value) -> Result<Record, String> {
             session: text(row, "session"),
             issue: text(row, "issue"),
             requester: text(row, "requester"),
+            workflow: text(row, "workflow"),
+            workflow_version: row["workflow_version"].as_u64(),
         },
         rev: parse(row, "rev")?,
         created_at: parse(row, "created_at")?,
@@ -628,17 +658,25 @@ fn job_params(r: &Record) -> Value {
         j.done_tasks,
         j.criteria,
         j.falsify_tried,
-        r.runtime.requester
+        r.runtime.requester,
+        r.runtime.workflow,
+        r.runtime.workflow_version
     ])
 }
 
-/// A job's tasks and revision counts, written whole over what was there.
+/// A job's tasks, results and revision counts, written whole over what was there.
 fn list_statements(j: &Job) -> Vec<Value> {
     let statement = |sql: &str, params: Value| json!({ "sql": sql, "params": params });
     let tasks = j.tasks.iter().enumerate().map(|(n, text)| {
         statement(
             "INSERT INTO tasks (job, n, text) VALUES (?, ?, ?)",
             json!([j.id, n, text]),
+        )
+    });
+    let results = j.results.iter().map(|(name, body)| {
+        statement(
+            "INSERT INTO job_results (job, name, body) VALUES (?, ?, ?)",
+            json!([j.id, name, body]),
         )
     });
     let revisions = j.revisions.iter().map(|(stage, count)| {
@@ -649,10 +687,12 @@ fn list_statements(j: &Job) -> Vec<Value> {
     });
     [
         statement("DELETE FROM tasks WHERE job = ?", json!([j.id])),
+        statement("DELETE FROM job_results WHERE job = ?", json!([j.id])),
         statement("DELETE FROM revisions WHERE job = ?", json!([j.id])),
     ]
     .into_iter()
     .chain(tasks)
+    .chain(results)
     .chain(revisions)
     .collect()
 }
@@ -908,6 +948,7 @@ pub mod fake {
         pub eval_rows: crate::eval_store::fake::EvalRows,
         pub versions: crate::settings_store::fake::Versions,
         pub people: crate::people_store::fake::People,
+        pub workflows: crate::workflow_store::fake::Workflows,
     }
 
     impl Store for FakeStore {

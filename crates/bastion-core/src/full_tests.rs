@@ -570,3 +570,88 @@ fn a_dark_step_notes_its_decision_and_keeps_its_result() {
     let (j, effects) = judge(&checks, &Event::StepPassed);
     assert_eq!((j.state, effects), (State::NeedsYou, vec![passed]));
 }
+
+/// Plan gives `design-notes` into build; review is left out.
+fn notes_flow() -> Job {
+    use crate::workflow::{Graph, Link, Node};
+    let node = |stage, results: &[&str]| Node {
+        stage,
+        dial: Dial::Dark,
+        note: if stage == Stage::Build {
+            "Keep the change small.".into()
+        } else {
+            String::new()
+        },
+        results: results.iter().map(|r| r.to_string()).collect(),
+        x: 0,
+        y: 0,
+    };
+    let g = Graph {
+        nodes: vec![
+            node(Stage::Plan, &["design-notes"]),
+            node(Stage::Build, &[]),
+            node(Stage::Land, &[]),
+        ],
+        links: vec![
+            Link {
+                from: Stage::Plan,
+                to: Stage::Build,
+            },
+            Link {
+                from: Stage::Build,
+                to: Stage::Land,
+            },
+        ],
+    };
+    let mut j = job(Pipeline::Short).running(g.steps().unwrap());
+    j.state = State::Running;
+    j
+}
+
+#[test]
+fn a_steps_results_are_kept_and_reach_the_step_linked_to_it() {
+    let (j, effects) = go(
+        &notes_flow(),
+        &reply("1. Add it\nRESULT design-notes:\nUse a dict."),
+    );
+    assert_eq!(j.results["design-notes"], "Use a dict.");
+    let brief = match effects.last() {
+        Some(Effect::StartTurn {
+            stage: Stage::Build,
+            brief,
+            ..
+        }) => brief.clone(),
+        other => panic!("{other:?}"),
+    };
+    assert!(
+        brief.contains("<result name=\"design-notes\">\nUse a dict."),
+        "{brief}"
+    );
+    assert!(brief.contains("Keep the change small."), "{brief}");
+}
+
+#[test]
+fn a_step_missing_its_result_tries_once_more_then_waits() {
+    let (j, effects) = go(&notes_flow(), &reply("1. Add it"));
+    assert_eq!((j.stage, j.state), (Stage::Plan, State::Running));
+    let Some(Effect::StartTurn { brief, .. }) = effects.last() else {
+        panic!("{effects:?}")
+    };
+    assert!(brief.contains("RESULT design-notes:"), "{brief}");
+    let (j, _) = go(&j, &reply("still none"));
+    assert_eq!((j.stage, j.state), (Stage::Plan, State::NeedsYou));
+}
+
+#[test]
+fn a_step_whose_linked_result_is_missing_waits_before_it_runs() {
+    let mut j = notes_flow();
+    j.stage = Stage::Build;
+    j.state = State::NeedsYou;
+    j.error = Some("x".into());
+    let mut at_plan = j.clone();
+    at_plan.stage = Stage::Plan;
+    let (j, effects) = go(&at_plan, &Event::Approved);
+    assert_eq!((j.stage, j.state), (Stage::Build, State::NeedsYou));
+    assert!(j.error.unwrap().contains("design-notes"));
+    assert!(effects.is_empty());
+}

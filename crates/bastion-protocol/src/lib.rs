@@ -37,6 +37,13 @@ pub mod command {
     /// Takes `{ login_id }`; answers `pending`, `ok`, `expired` or `canceled`.
     pub const CODEX_SIGN_IN_POLL: &str = "codex_sign_in_poll";
     pub const CODEX_SIGN_OUT: &str = "codex_sign_out";
+    /// Every workflow (D35), built-in first.
+    pub const WORKFLOWS: &str = "workflows";
+    /// Takes `{ from, name }`; answers the copy's id.
+    pub const WORKFLOW_COPY: &str = "workflow_copy";
+    /// Takes `{ id, workflow: WorkflowView }`; keeps it as a new version.
+    pub const WORKFLOW_SAVE: &str = "workflow_save";
+    pub const WORKFLOW_DELETE: &str = "workflow_delete";
     pub const CONSOLE: &str = "console";
     /// Takes `{ request: LogRequest }`.
     pub const CONTAINER_LOGS: &str = "container_logs";
@@ -156,6 +163,36 @@ pub struct TokenView {
 }
 
 /// A model provider and where its credential comes from: `secret` (a key
+/// A workflow (PLAN.md D35): its steps on the canvas and the links between
+/// them. Each node's `stage` and `dial` are their words, and `level` is
+/// `lights_on`, `dim` or `dark`. A built-in workflow can only be copied.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkflowView {
+    pub id: String,
+    pub name: String,
+    pub built_in: bool,
+    pub version: u64,
+    pub level: String,
+    pub nodes: Vec<NodeView>,
+    pub links: Vec<LinkView>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NodeView {
+    pub stage: String,
+    pub dial: String,
+    pub note: String,
+    pub results: Vec<String>,
+    pub x: i32,
+    pub y: i32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinkView {
+    pub from: String,
+    pub to: String,
+}
+
 /// set in Settings), `env`, `signed_in` (a subscription), or `none`. Never
 /// the credential (D34).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

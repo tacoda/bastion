@@ -83,6 +83,7 @@ fn routes() -> Router<App> {
         .merge(settings_routes())
         .merge(people_routes())
         .merge(provider_routes())
+        .merge(workflow_routes())
 }
 
 fn people_routes() -> Router<App> {
@@ -107,6 +108,53 @@ fn provider_routes() -> Router<App> {
             post(codex_sign_in_poll),
         )
         .route("/providers/openai-codex/sign-out", post(codex_sign_out))
+}
+
+/// Workflows (D35). Copying, saving and deleting are an admin's (D31).
+fn workflow_routes() -> Router<App> {
+    Router::new()
+        .route("/workflows", get(workflows).post(workflow_copy))
+        .route(
+            "/workflows/{id}",
+            put(workflow_save).delete(workflow_delete),
+        )
+}
+
+async fn workflows(State(app): State<App>) -> Response {
+    answer(api::workflows::workflows(&app.server.factory).await)
+}
+
+#[derive(Deserialize)]
+struct CopyWorkflow {
+    from: String,
+    name: String,
+}
+
+async fn workflow_copy(State(app): State<App>, Json(b): Json<CopyWorkflow>) -> Response {
+    let copied = api::workflows::workflow_copy(&app.server.factory, b.from, b.name).await;
+    if copied.is_ok() {
+        app.server.events.publish(Change::Job { id: String::new() });
+    }
+    answer(copied)
+}
+
+async fn workflow_save(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    Json(w): Json<bastion_protocol::WorkflowView>,
+) -> Response {
+    let saved = api::workflows::workflow_save(&app.server.factory, id, w).await;
+    if saved.is_ok() {
+        app.server.events.publish(Change::Job { id: String::new() });
+    }
+    answer(saved)
+}
+
+async fn workflow_delete(State(app): State<App>, Path(id): Path<String>) -> Response {
+    read_again(
+        &app,
+        api::workflows::workflow_delete(&app.server.factory, id).await,
+    )
 }
 
 fn factory_routes() -> Router<App> {
@@ -332,6 +380,8 @@ struct Submit {
     workspace: String,
     request: String,
     pipeline: Option<Pipeline>,
+    /// A workflow's id (D35), which takes the place of `pipeline`.
+    workflow: Option<String>,
 }
 
 async fn job_submit(
@@ -341,6 +391,7 @@ async fn job_submit(
 ) -> Response {
     let how = Submission {
         pipeline: b.pipeline.unwrap_or_default(),
+        workflow: b.workflow,
         requester: Some(person.name),
         ..Submission::default()
     };

@@ -45,6 +45,66 @@ const FULL: [Stage; 20] = [
     Stage::Learn,
 ];
 
+/// Every step in the order work flows through them, short and full
+/// pipelines merged. It places a step a workflow left out (`next_listed`).
+const ORDER: [Stage; 22] = [
+    Stage::Prepare,
+    Stage::Scope,
+    Stage::Discover,
+    Stage::Plan,
+    Stage::Define,
+    Stage::Specify,
+    Stage::Baseline,
+    Stage::Build,
+    Stage::Implement,
+    Stage::Checks,
+    Stage::Verify,
+    Stage::Refactor,
+    Stage::Acceptance,
+    Stage::CodeReview,
+    Stage::Ship,
+    Stage::Ci,
+    Stage::Prove,
+    Stage::Comprehend,
+    Stage::Land,
+    Stage::Merge,
+    Stage::Deploy,
+    Stage::Learn,
+];
+
+fn rank(stage: Stage) -> usize {
+    ORDER
+        .iter()
+        .position(|s| *s == stage)
+        .unwrap_or(ORDER.len())
+}
+
+/// The step after `at` in `stages`. A stage the list does not have, as a
+/// fix loop's return to a step the workflow left out, goes on to the first
+/// listed step that comes after it in `ORDER`.
+pub fn next_listed(stages: &[Stage], at: Stage) -> Option<Stage> {
+    match stages.iter().position(|s| *s == at) {
+        Some(i) => stages.get(i + 1).copied(),
+        None => stages.iter().copied().find(|s| rank(*s) > rank(at)),
+    }
+}
+
+/// Whether steps in this order land the change once (land or merge), with
+/// only deploy and learn after it.
+pub fn check_landing(order: &[Stage]) -> Result<(), String> {
+    let lands = order
+        .iter()
+        .position(|s| matches!(s, Stage::Land | Stage::Merge))
+        .ok_or("a workflow needs land or merge, or nothing lands")?;
+    match order[lands + 1..]
+        .iter()
+        .find(|s| !matches!(s, Stage::Deploy | Stage::Learn))
+    {
+        Some(s) => Err(format!("{s:?} comes after the change lands")),
+        None => Ok(()),
+    }
+}
+
 /// The stages that exist only to write and prove acceptance tests.
 const ACCEPTANCE: [Stage; 5] = [
     Stage::Define,
@@ -155,6 +215,25 @@ mod tests {
         assert_eq!(stages[plan + 1], Stage::Implement);
         assert!(!stages.contains(&Stage::Verify));
         assert_eq!(stages.len(), FULL.len() - ACCEPTANCE.len());
+    }
+
+    #[test]
+    fn every_step_has_a_place_in_the_order_and_every_pipeline_lands() {
+        for stage in Stage::ALL.into_iter().filter(|s| s.dialed()) {
+            assert!(ORDER.contains(&stage), "{stage:?}");
+        }
+        for p in [Pipeline::Short, Pipeline::Full, Pipeline::FullNoAcceptance] {
+            assert_eq!(check_landing(&p.stages()), Ok(()), "{p:?}");
+        }
+        assert!(check_landing(&[Stage::Plan, Stage::Land, Stage::Build]).is_err());
+    }
+
+    #[test]
+    fn a_step_the_workflow_left_out_goes_on_to_the_next_listed_one() {
+        let steps = [Stage::Plan, Stage::Implement, Stage::Checks, Stage::Land];
+        assert_eq!(next_listed(&steps, Stage::Plan), Some(Stage::Implement));
+        assert_eq!(next_listed(&steps, Stage::Acceptance), Some(Stage::Land));
+        assert_eq!(next_listed(&steps, Stage::Land), None);
     }
 
     #[test]

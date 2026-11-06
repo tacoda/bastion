@@ -266,7 +266,7 @@ mod tests {
                 (Oversight::Dark, Level::Dark),
             ] {
                 assert_eq!(
-                    preset.dials().level(pipeline),
+                    preset.dials().level(&pipeline.stages()),
                     level,
                     "{preset:?} {pipeline:?}"
                 );
@@ -279,9 +279,9 @@ mod tests {
         use crate::{Level, Pipeline};
         let mut d = Dials::all(Dial::Dark);
         d.set(Stage::Learn, Dial::LightsOn);
-        assert_eq!(d.level(Pipeline::Full), Level::Dark);
+        assert_eq!(d.level(&Pipeline::Full.stages()), Level::Dark);
         d.set(Stage::Plan, Dial::LightsOn);
-        assert_eq!(d.level(Pipeline::Full), Level::Dim);
+        assert_eq!(d.level(&Pipeline::Full.stages()), Level::Dim);
     }
 
     #[test]

@@ -12,12 +12,13 @@ pub mod people;
 mod pipeline;
 pub mod review;
 pub mod settings;
+pub mod workflow;
 
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-pub use brief::{BASE_TAG, Discovery, QUESTION_MARKER, brief, discovery, listed, outcome};
+pub use brief::{BASE_TAG, Discovery, QUESTION_MARKER, brief, discovery, listed, outcome, results};
 pub use pipeline::{Kind, Pipeline, folded};
 
 /// How many failed turns in a row a stage gets before the job fails (D16).
@@ -236,6 +237,11 @@ pub struct Job {
     pub criteria: Option<String>,
     /// A falsify turn ran for the current spec; the next baseline judges it.
     pub falsify_tried: bool,
+    /// The steps of the workflow the job runs (D35), in order. Empty: the
+    /// steps of its pipeline.
+    pub flow: Vec<workflow::Step>,
+    /// The results its steps gave, by name.
+    pub results: BTreeMap<String, String>,
 }
 
 /// Something that happened to a job.
@@ -343,11 +349,10 @@ impl Dials {
         self.steps.get(&stage).copied().unwrap_or_default()
     }
 
-    /// The level of a workflow on `pipeline` (D33): lights-on when every
+    /// The level of a workflow of `stages` (D33): lights-on when every
     /// step is, dim when at least one step up to the merge is, and dark when
     /// no step up to the merge is. The short pipeline's land is its merge.
-    pub fn level(&self, pipeline: Pipeline) -> Level {
-        let stages = pipeline.stages();
+    pub fn level(&self, stages: &[Stage]) -> Level {
         let on = |s: &Stage| self.at(*s) == Dial::LightsOn;
         let merge = stages
             .iter()
@@ -444,7 +449,32 @@ impl Job {
             done_tasks: 0,
             criteria: None,
             falsify_tried: false,
+            flow: Vec::new(),
+            results: BTreeMap::new(),
         }
+    }
+
+    /// The stages this job runs, in order.
+    pub fn stages(&self) -> Vec<Stage> {
+        if self.flow.is_empty() {
+            self.pipeline.stages()
+        } else {
+            self.flow.iter().map(|s| s.stage).collect()
+        }
+    }
+
+    /// The workflow step the job is at, if it runs a workflow's steps.
+    pub fn step(&self) -> Option<&workflow::Step> {
+        self.flow.iter().find(|s| s.stage == self.stage)
+    }
+
+    /// The job on a workflow's steps, at its first step.
+    pub fn running(mut self, flow: Vec<workflow::Step>) -> Self {
+        if let Some(first) = flow.first() {
+            self.stage = first.stage;
+        }
+        self.flow = flow;
+        self
     }
 
     /// The job on another pipeline, at that pipeline's first stage.
@@ -547,8 +577,16 @@ fn enter(job: &mut Job, dials: &Dials) -> Vec<Effect> {
     start(job, dials)
 }
 
-/// Run the current stage.
+/// Run the current stage, once its entry criteria hold: every result
+/// linked into it exists (D35).
 fn start(job: &mut Job, dials: &Dials) -> Vec<Effect> {
+    let needs = job.step().map(|s| s.needs.clone()).unwrap_or_default();
+    if let Some(missing) = needs.iter().find(|n| !job.results.contains_key(*n)) {
+        return stuck(
+            job,
+            &format!("This step needs the result {missing}, which no step gave."),
+        );
+    }
     job.state = State::Running;
     match job.stage {
         Stage::Land => return vec![Effect::Land],
@@ -724,14 +762,12 @@ fn approved(job: &mut Job, dials: &Dials) -> Vec<Effect> {
     }
 }
 
-/// Move to the pipeline's next stage. Past the last one, the job has landed.
+/// Move to the job's next step. Past the last one, the job has landed.
 fn advance(job: &mut Job, dials: &Dials) -> Vec<Effect> {
-    let stages = job.pipeline.stages();
-    let at = stages.iter().position(|s| *s == job.stage);
     job.last_refusal = None;
-    match at.and_then(|i| stages.get(i + 1)) {
+    match pipeline::next_listed(&job.stages(), job.stage) {
         Some(stage) => {
-            job.stage = *stage;
+            job.stage = stage;
             job.failures = 0;
             enter(job, dials)
         }
@@ -763,8 +799,39 @@ fn fail(job: &mut Job, error: &str) -> Vec<Effect> {
     vec![Effect::Teardown]
 }
 
+/// The results a step must give that `report` lacks (its exit criteria).
+fn missing_results(job: &Job, report: &str) -> Option<String> {
+    let given = results(report);
+    let gives = job.step().map(|s| s.gives.clone()).unwrap_or_default();
+    let missing: Vec<&String> = gives.iter().filter(|n| !given.contains_key(*n)).collect();
+    (!missing.is_empty()).then(|| {
+        let names: Vec<String> = missing.iter().map(|n| format!("RESULT {n}:")).collect();
+        format!("End the reply with these results: {}", names.join(", "))
+    })
+}
+
+/// Keep each result the step gives on the job; the store keeps it as its
+/// document.
+fn keep_results(job: &mut Job, report: &str) {
+    let gives = job.step().map(|s| s.gives.clone()).unwrap_or_default();
+    let mut given = results(report);
+    for name in gives {
+        if let Some(body) = given.remove(&name) {
+            job.results.insert(name, body);
+        }
+    }
+}
+
 fn turn_finished(job: &mut Job, outcome: &Outcome, dials: &Dials) -> Vec<Effect> {
     match outcome {
+        Outcome::Done { report } if missing_results(job, report).is_some() => {
+            let problem = missing_results(job, report).unwrap_or_default();
+            let unusable = Outcome::Unusable {
+                report: report.clone(),
+                problem,
+            };
+            turn_finished(job, &unusable, dials)
+        }
         Outcome::Done { report } => {
             job.failures = 0;
             if job.stage == Stage::Plan {
@@ -777,6 +844,7 @@ fn turn_finished(job: &mut Job, outcome: &Outcome, dials: &Dials) -> Vec<Effect>
             if matches!(job.stage, Stage::Build | Stage::CodeReview) {
                 effects.push(Effect::CaptureDiff);
             }
+            keep_results(job, report);
             job.feedback = None;
             effects.extend(after_report(job, report, dials));
             effects
@@ -897,7 +965,7 @@ pub enum StepState {
 
 /// Every stage of the job's pipeline, in order, with its state.
 pub fn steps(job: &Job) -> Vec<(Stage, StepState)> {
-    let stages = job.pipeline.stages();
+    let stages = job.stages();
     let current = stages.iter().position(|s| *s == job.stage).unwrap_or(0);
     stages
         .iter()

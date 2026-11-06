@@ -109,12 +109,13 @@ pre { margin: 0 0 16px; padding: 20px; background: var(--panel2); border: 1px so
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
 }
 .flecks { position: fixed; inset: 0; pointer-events: none; z-index: 2; }
-.flecks i { position: absolute; width: 3px; height: 3px; margin: -1.5px 0 0 -1.5px; border-radius: 50%; background: #fff8ee;
-  box-shadow: 0 0 6px 2px rgba(255, 248, 238, .7), 0 0 14px 4px rgba(167, 139, 250, .35); animation: glint .7s ease-out forwards; }
-.flecks i::before, .flecks i::after { content: ""; position: absolute; left: 50%; top: 50%; width: 12px; height: 1px; margin: -.5px 0 0 -6px;
-  background: linear-gradient(90deg, transparent, #fff8ee, transparent); }
-.flecks i::after { transform: rotate(90deg); }
-@keyframes glint { 0% { opacity: 0; transform: scale(.3); } 25% { opacity: 1; transform: scale(1.2); } 100% { opacity: 0; transform: scale(.6); } }
+.flecks i { position: absolute; left: 0; top: 0; width: 56px; height: 2px; margin: -1px 0 0 -28px; border-radius: 1px; opacity: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 248, 238, .95), transparent); box-shadow: 0 0 12px 1px rgba(255, 248, 238, .3); }
+.flecks i::before, .flecks i::after { content: ""; position: absolute; left: 50%; top: 50%; animation: twinkle 1.4s ease-in-out infinite; }
+.flecks i::before { width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: #fff8ee;
+  box-shadow: 0 0 6px 2px rgba(255, 248, 238, .8), 0 0 16px 4px rgba(167, 139, 250, .4); }
+.flecks i::after { width: 1px; height: 12px; margin: -6px 0 0 -.5px; background: linear-gradient(transparent, #fff8ee, transparent); }
+@keyframes twinkle { 0%, 100% { opacity: .7; transform: scale(.85); } 50% { opacity: 1; transform: scale(1.25); } }
 @media (hover: none), (prefers-reduced-motion: reduce) { .spot, .flecks { display: none; } }
 
 ul.plain { list-style: none; padding: 0; margin: 0 0 16px; max-width: 72ch; }
@@ -269,34 +270,31 @@ cargo tauri dev</pre>
   const spot = document.querySelector('.spot');
   const lit = [...document.querySelectorAll('.card, .col, .panel, .case, .dials, .note, .step, .btn, pre')];
   lit.forEach(el => el.classList.add('lit'));
-  let x = -9999, y = -9999, queued = false, lastGlint = 0;
+  let x = -9999, y = -9999, queued = false;
   const flecks = document.createElement('div');
   flecks.className = 'flecks';
   document.body.append(flecks);
-  const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
-  // A glint lands on the edge of an entity within reach of the light, near the pointer.
-  const glint = rects => {
-    const now = performance.now();
-    if (now - lastGlint < 70) return;
-    const near = rects.filter(r => {
-      const inside = x > r.left && x < r.right && y > r.top && y < r.bottom;
-      const edge = inside ? Math.min(x - r.left, r.right - x, y - r.top, r.bottom - y)
-        : Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom));
-      return edge < 140;
+  const glints = Array.from({ length: 6 }, () => flecks.appendChild(document.createElement('i')));
+  const reach = 140;
+  // Where the light reflects off an entity: the point on its edge nearest the pointer.
+  const reflection = r => {
+    const inside = x > r.left && x < r.right && y > r.top && y < r.bottom;
+    if (inside) {
+      const gaps = [x - r.left, r.right - x, y - r.top, r.bottom - y], side = gaps.indexOf(Math.min(...gaps));
+      return side < 2
+        ? { px: side ? r.right : r.left, py: y, d: gaps[side], vertical: true }
+        : { px: x, py: side === 2 ? r.top : r.bottom, d: gaps[side], vertical: false };
+    }
+    const px = Math.min(Math.max(x, r.left), r.right), py = Math.min(Math.max(y, r.top), r.bottom);
+    return { px, py, d: Math.hypot(x - px, y - py), vertical: py > r.top && py < r.bottom };
+  };
+  const reflect = rects => {
+    const hits = rects.map(reflection).filter(h => h.d < reach).sort((a, b) => a.d - b.d);
+    glints.forEach((g, i) => {
+      const h = hits[i];
+      g.style.opacity = h ? ((1 - h.d / reach) ** 1.5).toFixed(3) : 0;
+      if (h) g.style.transform = `translate(${h.px}px, ${h.py}px)${h.vertical ? ' rotate(90deg)' : ''}`;
     });
-    if (!near.length) return;
-    lastGlint = now;
-    const r = near[Math.random() * near.length | 0];
-    let px = clamp(x, r.left, r.right), py = clamp(y, r.top, r.bottom);
-    const gaps = [px - r.left, r.right - px, py - r.top, r.bottom - py], side = gaps.indexOf(Math.min(...gaps));
-    const jitter = (Math.random() - .5) * 120;
-    if (side < 2) { px = side ? r.right : r.left; py = clamp(py + jitter, r.top, r.bottom); }
-    else { py = side === 2 ? r.top : r.bottom; px = clamp(px + jitter, r.left, r.right); }
-    const f = document.createElement('i');
-    f.style.left = px + 'px';
-    f.style.top = py + 'px';
-    f.addEventListener('animationend', () => f.remove());
-    flecks.append(f);
   };
   const paint = () => {
     queued = false;
@@ -307,7 +305,7 @@ cargo tauri dev</pre>
       el.style.setProperty('--mx', x - rects[i].left + 'px');
       el.style.setProperty('--my', y - rects[i].top + 'px');
     });
-    glint(rects);
+    reflect(rects);
   };
   const queue = () => { if (!queued) { queued = true; requestAnimationFrame(paint); } };
   addEventListener('pointermove', e => { x = e.clientX; y = e.clientY; spot.classList.add('on'); queue(); });

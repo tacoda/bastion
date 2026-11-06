@@ -47,7 +47,9 @@ pub async fn key_set(engine: &dyn Engine, id: String, key: String) -> Result<(),
     }
     let stored = json!({ "name": name, "value": key, "store": "vault", "consumers": [READER] });
     engine.call("bastion", "secrets::set", stored).await?;
-    point(engine, &id, Some(format!("secret://{name}"))).await
+    point(engine, &id, Some(format!("secret://{name}"))).await?;
+    refresh(engine, &id).await;
+    Ok(())
 }
 
 /// Forget provider `id`'s key: the router stops naming it, then the vault
@@ -57,8 +59,18 @@ pub async fn key_remove(engine: &dyn Engine, id: String) -> Result<(), String> {
     point(engine, &id, None).await?;
     engine
         .call("bastion", "secrets::delete", json!({ "name": name }))
-        .await
-        .map(|_| ())
+        .await?;
+    refresh(engine, &id).await;
+    Ok(())
+}
+
+/// Ask the provider to read its models again, as it reads them only at
+/// start. Best effort: the key is already in place either way.
+async fn refresh(engine: &dyn Engine, id: &str) {
+    let function = format!("provider::{id}::refresh_models");
+    if let Err(e) = engine.call("bastion", &function, json!({})).await {
+        eprintln!("{function}: {e}");
+    }
 }
 
 /// The router's entry with provider `id`'s key set to `reference`, or
@@ -169,6 +181,7 @@ mod tests {
             providers["anthropic"]["api_key"],
             "secret://ANTHROPIC_API_KEY"
         );
+        assert!(engine.called("provider::deepseek::refresh_models"));
     }
 
     #[test]

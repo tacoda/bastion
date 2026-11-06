@@ -613,12 +613,24 @@ how much a person oversees it (D33).
 
 **Steps:**
 
-- **O1, the core.** A dial per stage, every one starting at lights-on. When
-  a step ends and its dial is not dark, the job waits on its result:
-  approve goes on, a note sends the step back with it, and hold goes on by
-  itself after its time. The checkpoint stages fold into the steps they
-  judge, and merge becomes a step. A stored job waiting at an old checkpoint
-  waits on the step before it.
+- **O1, the core.** `Oversight` is `lights_on`, `hold` or `dark` (stored
+  `ask` reads as `lights_on`, `auto` as `dark`). `Dials` holds one per stage,
+  each `lights_on` until set. When a step ends and its dial is not dark, the
+  job waits on its result: approve goes on, a note sends the step back with
+  it, and hold goes on by itself after `HOLD_SECS`. The checkpoint stages
+  leave the pipelines and fold into the step each judged: approve into plan,
+  clarify into discover, your checks into define, review into build (short)
+  and pick findings into code review (full), pick refactors into refactor,
+  and UAT into comprehend. Their picks (findings, refactors, answers) stay
+  what a person sends at that step. Merge becomes a step that merges, and
+  the short pipeline's land is its merge. Assumptions, the owner's to
+  overturn: a step that acts outside the job (ship, land, merge, deploy)
+  waits before it acts, not after; a failing step's automatic fix loop
+  (`revise`) stays automatic, and the dial judges only the finished result;
+  under dark, discover goes on with its stated assumptions instead of
+  waiting for answers. A stored job waiting at an old checkpoint waits on
+  the step that checkpoint judged, and stored settings map each old dial to
+  the steps it covered.
 - **O2, everything logged.** Every step's result stays as its artifact
   whatever the dial, and every decision goes in the audit log: a person's
   with their name, a dial's as the dial's.

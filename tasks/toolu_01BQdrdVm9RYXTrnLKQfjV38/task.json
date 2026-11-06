@@ -1,0 +1,18 @@
+{
+  "tool_use_id": "toolu_01BQdrdVm9RYXTrnLKQfjV38",
+  "agent_id": "aa03d98ffee86b095",
+  "subagent_type": "general-purpose",
+  "task_description": "Research iii provider credentials",
+  "files": [
+    "crates/bastion-server/src/api/people.rs"
+  ],
+  "token_usage": {
+    "input_tokens": 52,
+    "cache_creation_tokens": 129466,
+    "cache_read_tokens": 2604281,
+    "output_tokens": 2693,
+    "api_call_count": 25
+  },
+  "started_at": "2026-11-06T14:18:00.356522-06:00",
+  "completed_at": "2026-11-06T14:20:33.321193-06:00"
+}

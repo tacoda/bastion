@@ -3,7 +3,7 @@
   "checkpoint_id": "01M6SHXFKHQNEMCRR247S5B5JG",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 1,
+  "checkpoints_count": 2,
   "files_touched": [
     "crates/bastion-core/src/acceptance.rs",
     "crates/bastion-core/src/brief.rs",
@@ -25,24 +25,31 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": "/0/prompt.txt"
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": "/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 60,
-    "cache_creation_tokens": 115326,
-    "cache_read_tokens": 3260868,
-    "output_tokens": 16698,
-    "api_call_count": 29
+    "input_tokens": 128,
+    "cache_creation_tokens": 169984,
+    "cache_read_tokens": 19752383,
+    "output_tokens": 53810,
+    "api_call_count": 63
   },
   "redaction": {
-    "replacements": 2,
+    "replacements": 561,
     "layers": {
-      "betterleaks": 0,
+      "betterleaks": 23,
       "connection_string": 0,
-      "credential_key": 0,
-      "credential_value": 2,
+      "credential_key": 511,
+      "credential_value": 24,
       "credentialed_uri": 0,
-      "entropy": 0,
+      "entropy": 8,
       "key_context": 0,
       "provider_token": 0,
       "shell_stdin": 0

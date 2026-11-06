@@ -18,7 +18,9 @@ the app attaches to it instead of starting a second one.
 ## What it is not
 
 Not an editor: the only code you see in Bastion is the diff a job proposes. Not
-a web app, and it serves no HTTP. Not multi-user: one owner, no sign-in. Not
+a web app yet: the page runs in the native window and talks to its Bastion
+servers over HTTP. It runs locally by default; a shared Bastion server can take
+several people, each signing in with a token the server issued them. Not
 Windows, because sandbox VMs need Apple Silicon or Linux with `/dev/kvm`.
 
 ## What you need

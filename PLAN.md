@@ -1,9 +1,8 @@
 # Bastion plan
 
-Bastion is an agent orchestration control plane on the iii engine: a harness
-for each agent turn, and a factory that runs workflows, graphs of steps a person
-can see and govern (D35, D37). A request goes in, a reviewed change comes out,
-and nothing merges itself. What Bastion adds is governance you can measure: constraints and capabilities built
+Bastion is a harness and a factory for agent work, on the iii engine. A
+request goes in, a reviewed change comes out, and nothing merges itself. What
+Bastion adds is governance you can measure: constraints and capabilities built
 into the harness's hooks, a way to promote and demote each one, a
 tamper-evident audit record, and A/B evals that show what a change to the
 harness does. It is one app: a Tauri 2 window with a Leptos frontend and a Rust
@@ -131,7 +130,6 @@ code inside Bastion is the diff a job proposes.
 | D34 | Model provider keys are configuration, not environment. Bastion stores each key in the stack's `secrets` worker (store `vault`, readable only by `llm-router`) and points the router's provider entry at it as `secret://NAME`; the router resolves it at each request and reports whether a provider has a key without returning it. Providers with their own worker (Anthropic, OpenAI, DeepSeek, xAI, Z.AI for GLM, Kimi, OpenRouter) take their key that way; other OpenAI-compatible hosts (Together, Fireworks, Qwen through DashScope, a local Ollama) go through a Bastion provider worker that serves any number of them. | The owner's choice (2026-11-06): a key for any provider, with a spread wide enough that most people can use it, and no dependency on `ANTHROPIC_API_KEY` in the environment. |
 | D35 | A pipeline is a workflow: a graph of steps that a person edits on a canvas. Each node is a step: what runs (a skill, the preferred building block; a prompt; a command such as a bash command, a script or a task runner; or a Bastion stage), its oversight dial (D33), a note that the node expands to show and that the step's agent reads, and the results it declares, such as documents, kept in the database. A link sends one step's results to another. Links carry no conditions: a step's entry criteria are the results of the steps linked into it, and its exit criteria are the results it declares, and a code check, not a model, holds a step that lacks either. Bastion ships a few workflows, and people make their own for themselves and others to use. For now only an admin makes or changes a workflow; members and viewers use them. | The owner's choice (2026-11-06). |
 | D36 | Claude takes a key only: an Anthropic API key, or a cloud provider's credentials. Bastion offers no sign-in with a Claude subscription and does not run the `provider-claude-code` worker. | Anthropic's terms (code.claude.com, Legal and compliance) keep Claude subscription sign-in for Claude Code and Anthropic's own apps, and do not permit a third-party product to route requests through a Free, Pro, Max or Ultra plan. Checked 2026-11-06. |
-| D37 | Bastion is described as an agent orchestration control plane: agent workflows as graphs you can see and govern. The name stays Bastion. Charter, harness and factory keep their meanings; the factory is the layer that runs a workflow. Code names (`factory.rs`, `/api/factory`) are unchanged. | The owner's choice (2026-11-06). Any workflow can run on Bastion (D35), so "software factory" undersold it. |
 
 ## 4. The repository
 

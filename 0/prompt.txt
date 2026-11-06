@@ -1,0 +1,23 @@
+I want to update the gh-pages site. The top is too long and so it overflows. Fix the sizing so it all fits on one horizontal line
+[Image #1]
+
+---
+
+commit and push it
+
+---
+
+check the mobile header too
+
+---
+
+raise the breakpoint to 960px and push it
+
+---
+
+Also, I just realized that while this is a factory, it's really an agent orchestration control plane. You can add any workflows to this. It's kind of
+  like visual interface for and graph style idea (like langgraph) that is implemented using iii. I think we should rebrand this.
+
+---
+
+commit both and push the site

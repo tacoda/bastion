@@ -1,0 +1,5 @@
+Also, I just realized that while this is a factory, it's really an agent orchestration control plane. You can add any workflows to this. It's kind of like visual interface for and graph style idea (like langgraph) that is implemented using iii.
+
+---
+
+I think we should rebrand this

@@ -13,6 +13,7 @@ pub enum Route {
     Evals,
     Eval(String),
     Engine,
+    Workflows,
     Settings,
 }
 

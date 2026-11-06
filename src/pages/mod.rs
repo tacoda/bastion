@@ -9,3 +9,4 @@ pub mod govern;
 pub mod job;
 pub mod jobs;
 pub mod settings;
+pub mod workflows;

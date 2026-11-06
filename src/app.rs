@@ -14,12 +14,14 @@ use crate::pages::{
     job::JobPage,
     jobs::{JobsPage, NewRequestPage},
     settings::SettingsPage,
+    workflows::WorkflowsPage,
 };
 use crate::route::{Nav, Route};
 
 /// The sidebar's pages. A job and New request belong to Jobs.
-const PAGES: [(Route, &str, &str); 7] = [
+const PAGES: [(Route, &str, &str); 8] = [
     (Route::Jobs, "Jobs", icons::JOBS),
+    (Route::Workflows, "Workflows", icons::WORKFLOWS),
     (Route::Constraints, "Constraints", icons::CONSTRAINTS),
     (Route::Capabilities, "Capabilities", icons::CAPABILITIES),
     (Route::Audit, "Audit Log", icons::AUDIT),
@@ -126,6 +128,7 @@ pub fn App() -> impl IntoView {
                     Route::Evals => view! { <EvalsPage /> }.into_any(),
                     Route::Eval(id) => view! { <EvalPage id=id /> }.into_any(),
                     Route::Engine => view! { <EnginePage /> }.into_any(),
+                    Route::Workflows => view! { <WorkflowsPage /> }.into_any(),
                     Route::Settings => view! { <SettingsPage /> }.into_any(),
                 }}
             </main>

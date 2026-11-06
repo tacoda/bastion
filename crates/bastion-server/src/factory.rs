@@ -266,10 +266,16 @@ impl Factory {
                     Ok(rev) => {
                         record.rev = rev;
                         // Artifacts are written before the page hears of the
-                        // change, so a page that reads at once sees them.
+                        // change, so a page that reads at once sees them. Dark
+                        // decisions go in the audit log in the order they fell.
                         let (artifacts, rest): (Vec<Effect>, Vec<Effect>) =
                             effects.into_iter().partition(|e| {
-                                matches!(e, Effect::RecordArtifact { .. } | Effect::CaptureDiff)
+                                matches!(
+                                    e,
+                                    Effect::RecordArtifact { .. }
+                                        | Effect::CaptureDiff
+                                        | Effect::DarkDecided { .. }
+                                )
                             });
                         for effect in artifacts {
                             self.clone().run(record.clone(), effect).await;

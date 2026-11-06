@@ -118,7 +118,7 @@ fn stage_check(column: &str) -> String {
 /// The tables whose rows name a stage, with the columns a rebuild keeps.
 /// SQLite cannot change a `CHECK` in place, so a new stage in the core means
 /// a new migration that rebuilds these (`migrations`).
-fn staged_tables() -> [(&'static str, &'static str, String); 3] {
+fn staged_tables() -> [(&'static str, &'static str, String); 4] {
     let stage = stage_check("stage");
     let back_to = stage_check("back_to");
     [
@@ -178,8 +178,32 @@ fn staged_tables() -> [(&'static str, &'static str, String); 3] {
         PRIMARY KEY (stage, function))"
             ),
         ),
+        turns_table(&stage),
     ]
 }
+
+/// `turns` (A6), under the stage check `stage`.
+fn turns_table(stage: &str) -> (&'static str, &'static str, String) {
+    (
+        "turns",
+        TURN_COLUMNS,
+        format!(
+            "CREATE TABLE IF NOT EXISTS turns (
+    session TEXT PRIMARY KEY,
+    job TEXT NOT NULL REFERENCES jobs(id),
+    stage TEXT NOT NULL {stage},
+    turns INTEGER NOT NULL CHECK (turns >= 0),
+    calls INTEGER NOT NULL CHECK (calls >= 0),
+    call_errors INTEGER NOT NULL CHECK (call_errors >= 0),
+    cost_micros INTEGER NOT NULL CHECK (cost_micros >= 0),
+    ended_at INTEGER NOT NULL)"
+        ),
+    )
+}
+
+/// The columns of `turns` (A6), which named only the short pipeline's
+/// stages until migration 2.
+const TURN_COLUMNS: &str = "session, job, stage, turns, calls, call_errors, cost_micros, ended_at";
 
 /// The schema (D8): typed columns with constraints, no JSON in a text column.
 fn schema() -> Vec<String> {
@@ -289,9 +313,17 @@ const ALTERS: [&str; 5] = [
 
 /// Numbered migrations, each run once in order; `PRAGMA user_version` is the
 /// last one applied. Migration 1 rebuilds the tables that name a stage, for
-/// the full pipeline (A8).
+/// the full pipeline (A8); migration 2 rebuilds `turns`, which it missed.
 fn migrations() -> Vec<Vec<String>> {
-    vec![staged_tables().iter().flat_map(rebuild).collect()]
+    let staged = staged_tables();
+    vec![
+        staged.iter().flat_map(rebuild).collect(),
+        staged
+            .iter()
+            .filter(|t| t.0 == "turns")
+            .flat_map(rebuild)
+            .collect(),
+    ]
 }
 
 /// Rebuild a table under its new schema, keeping its rows. The rows go back
@@ -1135,15 +1167,18 @@ mod tests {
     #[test]
     fn migration_1_rebuilds_the_staged_tables_once_with_deferred_keys() {
         let fresh = transactions_at(0);
-        assert_eq!(fresh.len(), 2, "the schema, then migration 1");
+        assert_eq!(fresh.len(), 3, "the schema, then migrations 1 and 2");
         let m1 = &fresh[1];
         assert_eq!(m1.first().unwrap(), "PRAGMA defer_foreign_keys = ON");
         assert_eq!(m1.last().unwrap(), "PRAGMA user_version = 1");
-        for table in ["jobs", "artifacts", "capabilities"] {
+        for table in ["jobs", "artifacts", "capabilities", "turns"] {
             assert!(m1.contains(&format!("DROP TABLE {table}")));
         }
         assert!(m1.iter().any(|s| s.contains("'code_review'")));
-        assert_eq!(transactions_at(1).len(), 1, "nothing left to migrate");
+        let m2 = &transactions_at(1)[1];
+        assert!(m2.contains(&"DROP TABLE turns".to_string()));
+        assert!(!m2.contains(&"DROP TABLE jobs".to_string()));
+        assert_eq!(transactions_at(2).len(), 1, "nothing left to migrate");
     }
 
     #[test]

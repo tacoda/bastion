@@ -63,16 +63,7 @@ pub trait EvalStore {
     fn set_grade<'a>(&'a self, job: &'a str, grade: u8) -> Answer<'a, ()>;
 }
 
-pub const SCHEMA: [&str; 4] = [
-    "CREATE TABLE IF NOT EXISTS turns (
-        session TEXT PRIMARY KEY,
-        job TEXT NOT NULL REFERENCES jobs(id),
-        stage TEXT NOT NULL CHECK (stage IN ('plan','approve','build','review','land')),
-        turns INTEGER NOT NULL CHECK (turns >= 0),
-        calls INTEGER NOT NULL CHECK (calls >= 0),
-        call_errors INTEGER NOT NULL CHECK (call_errors >= 0),
-        cost_micros INTEGER NOT NULL CHECK (cost_micros >= 0),
-        ended_at INTEGER NOT NULL)",
+pub const SCHEMA: [&str; 3] = [
     "CREATE TABLE IF NOT EXISTS evals (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL CHECK (length(name) > 0),

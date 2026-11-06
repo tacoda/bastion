@@ -332,6 +332,11 @@ impl Factory {
                     self.apply(&id, Event::TurnFinished { outcome }).await.err()
                 }
             },
+            // ponytail: no job runs the full pipeline until A8's later steps run each step.
+            Effect::RunStep { stage } => {
+                let detail = format!("Bastion does not run the {stage:?} step yet.");
+                self.apply(&id, Event::StepFailed { detail }).await.err()
+            }
             Effect::RecordArtifact { stage, body } => {
                 let artifact = Artifact {
                     stage,

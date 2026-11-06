@@ -56,16 +56,25 @@ pub enum Oversight {
 }
 
 impl Oversight {
+    /// The approve and review dials are Bastion's own; the full pipeline's
+    /// other checkpoints follow wipp's presets (`oversight.py`).
     pub fn dials(self) -> Dials {
-        let (approve, review) = match self {
-            Oversight::High => (Dial::Ask, Dial::Ask),
-            Oversight::Medium => (Dial::Hold, Dial::Hold),
-            Oversight::Low | Oversight::Off => (Dial::Auto, Dial::Hold),
+        use Dial::{Ask, Auto, Hold};
+        let (approve, review, picks, uat, merge) = match self {
+            Oversight::High => (Ask, Ask, Ask, Ask, Ask),
+            Oversight::Medium => (Hold, Hold, Hold, Ask, Ask),
+            Oversight::Low => (Auto, Hold, Auto, Hold, Hold),
+            Oversight::Off => (Auto, Hold, Auto, Auto, Hold),
         };
         Dials {
             approve,
             review,
-            ..Dials::default()
+            questions: picks,
+            checks: picks,
+            refactor: picks,
+            uat,
+            merge,
+            trial: false,
         }
     }
 }
@@ -77,6 +86,19 @@ pub struct Settings {
     pub build_model: Model,
     pub forge: Forge,
     pub tracker: Tracker,
+}
+
+/// Each checkpoint's dial, under the key a version keeps it by.
+fn dial_keys(d: &mut Dials) -> [(&'static str, &mut Dial); 7] {
+    [
+        ("dial.approve", &mut d.approve),
+        ("dial.review", &mut d.review),
+        ("dial.questions", &mut d.questions),
+        ("dial.checks", &mut d.checks),
+        ("dial.refactor", &mut d.refactor),
+        ("dial.uat", &mut d.uat),
+        ("dial.merge", &mut d.merge),
+    ]
 }
 
 /// Each setting's words, as a version keeps them.
@@ -115,19 +137,20 @@ impl Settings {
 
     /// The settings as the key/value pairs a version keeps, in a fixed order.
     pub fn to_pairs(&self) -> Vec<(String, String)> {
-        [
-            ("dial.approve", word(&DIALS, self.dials.approve)),
-            ("dial.review", word(&DIALS, self.dials.review)),
-            ("model.plan.provider", self.plan_model.provider.clone()),
-            ("model.plan.model", self.plan_model.model.clone()),
-            ("model.build.provider", self.build_model.provider.clone()),
-            ("model.build.model", self.build_model.model.clone()),
-            ("forge", word(&FORGES, self.forge)),
-            ("tracker", word(&TRACKERS, self.tracker)),
-        ]
-        .into_iter()
-        .map(|(k, v)| (k.to_string(), v))
-        .collect()
+        let mut dials = self.dials;
+        let dials = dial_keys(&mut dials).map(|(k, d)| (k, word(&DIALS, *d)));
+        dials
+            .into_iter()
+            .chain([
+                ("model.plan.provider", self.plan_model.provider.clone()),
+                ("model.plan.model", self.plan_model.model.clone()),
+                ("model.build.provider", self.build_model.provider.clone()),
+                ("model.build.model", self.build_model.model.clone()),
+                ("forge", word(&FORGES, self.forge)),
+                ("tracker", word(&TRACKERS, self.tracker)),
+            ])
+            .map(|(k, v)| (k.to_string(), v))
+            .collect()
     }
 
     /// Settings from a version's pairs. A key that is missing or does not
@@ -149,11 +172,10 @@ impl Settings {
         text("model.plan.model", &mut s.plan_model.model);
         text("model.build.provider", &mut s.build_model.provider);
         text("model.build.model", &mut s.build_model.model);
-        if let Some(d) = get("dial.approve").and_then(|w| from_word(&DIALS, w)) {
-            s.dials.approve = d;
-        }
-        if let Some(d) = get("dial.review").and_then(|w| from_word(&DIALS, w)) {
-            s.dials.review = d;
+        for (key, dial) in dial_keys(&mut s.dials) {
+            if let Some(d) = get(key).and_then(|w| from_word(&DIALS, w)) {
+                *dial = d;
+            }
         }
         s.forge = get("forge")
             .and_then(|w| from_word(&FORGES, w))
@@ -212,6 +234,24 @@ mod tests {
         assert_eq!(Oversight::High.dials().at(Stage::Review), Dial::Ask);
         assert_eq!(Oversight::Off.dials().at(Stage::Approve), Dial::Auto);
         assert_eq!(Oversight::Off.dials().at(Stage::Review), Dial::Hold);
+    }
+
+    #[test]
+    fn the_full_pipelines_dials_follow_wipps_presets_and_survive_a_restore() {
+        let off = Oversight::Off.dials();
+        assert_eq!(off.at(Stage::Uat), Dial::Auto);
+        assert_eq!(off.at(Stage::Merge), Dial::Hold);
+        let medium = Settings {
+            dials: Oversight::Medium.dials(),
+            ..Settings::default()
+        };
+        assert_eq!(Settings::from_pairs(&medium.to_pairs()), medium);
+        let before_a8 = [("dial.approve".to_string(), "auto".to_string())];
+        let restored = Settings::from_pairs(&before_a8);
+        assert_eq!(
+            (restored.dials.approve, restored.dials.merge),
+            (Dial::Auto, Dial::Ask)
+        );
     }
 
     #[test]

@@ -7,12 +7,16 @@ mod brief;
 pub mod charter;
 pub mod eval;
 pub mod govern;
+mod pipeline;
 pub mod review;
 pub mod settings;
+
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
 pub use brief::{QUESTION_MARKER, brief, outcome};
+pub use pipeline::{Kind, Pipeline};
 
 /// How many failed turns in a row a stage gets before the job fails (D16).
 pub const MAX_TURN_FAILURES: u32 = 2;
@@ -20,8 +24,8 @@ pub const MAX_TURN_FAILURES: u32 = 2;
 // ponytail: one cap for every stage; give each stage its own when a stage needs longer.
 pub const TURN_CAP_SECS: u64 = 60 * 60;
 
-/// The stages of the short pipeline (D17), in order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Every stage a pipeline has (`Pipeline::stages` gives the order).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Stage {
     /// An agent reads the code and writes a plan.
@@ -34,25 +38,86 @@ pub enum Stage {
     Review,
     /// The change lands on the workspace's branch.
     Land,
+    // The full pipeline's own stages (A8), after wipp's.
+    /// The workspace's setup steps run in the VM.
+    Prepare,
+    /// An agent judges whether the request is one change or several.
+    Scope,
+    /// An agent reads the code and lists the tasks, and the questions it has.
+    Discover,
+    /// The owner answers discovery's questions.
+    Clarify,
+    /// An agent writes the acceptance criteria as scenarios.
+    Define,
+    /// The owner approves the criteria, or comments on them.
+    YourChecks,
+    /// An agent writes the acceptance tests and the commands that run them.
+    Specify,
+    /// The acceptance tests run before the build, and must fail.
+    Baseline,
+    /// An agent carries out one task, tests first.
+    Implement,
+    /// The workspace's test suites run.
+    Checks,
+    /// The approved acceptance tests run, and must pass.
+    Verify,
+    /// An agent proposes refactorings.
+    Refactor,
+    /// The owner picks the refactorings to make, or none.
+    PickRefactors,
+    /// The acceptance tests run again, after the refactoring.
+    Acceptance,
+    /// An agent reviews the change.
+    CodeReview,
+    /// The owner picks the review findings to fix, or none.
+    PickFindings,
+    /// The factory commits, pushes and opens the pull request.
+    Ship,
+    /// CI runs on the pull request.
+    Ci,
+    /// An agent fixes what CI found.
+    CiFix,
+    /// An agent proves the change meets its criteria, with evidence.
+    Prove,
+    /// An agent writes the briefing on the change.
+    Comprehend,
+    /// The owner tries the change.
+    Uat,
+    /// The owner decides the merge.
+    Merge,
+    /// The factory watches the deploy of the merged change.
+    Deploy,
+    /// An agent proposes what the factory should learn from the job.
+    Learn,
 }
 
-pub const SHORT_PIPELINE: [Stage; 5] = [
-    Stage::Plan,
-    Stage::Approve,
-    Stage::Build,
-    Stage::Review,
-    Stage::Land,
-];
-
 impl Stage {
+    pub fn kind(self) -> Kind {
+        use Stage::*;
+        match self {
+            Approve | Review | Clarify | YourChecks | PickRefactors | PickFindings | Uat
+            | Merge => Kind::Checkpoint,
+            Land | Prepare | Baseline | Checks | Verify | Acceptance | Ship | Ci | Deploy => {
+                Kind::Factory
+            }
+            Plan | Build | Scope | Discover | Define | Specify | Implement | Refactor
+            | CodeReview | CiFix | Prove | Comprehend | Learn => Kind::Turn,
+        }
+    }
+
     /// The checkpoint a person decides, if this stage is one.
     pub fn is_checkpoint(self) -> bool {
-        matches!(self, Stage::Approve | Stage::Review)
+        self.kind() == Kind::Checkpoint
     }
 
     /// An agent stage may not change the tree.
+    // ponytail: learn runs read-only, where wipp gives it no tools at all.
     pub fn read_only(self) -> bool {
-        self == Stage::Plan
+        use Stage::*;
+        matches!(
+            self,
+            Plan | Scope | Discover | Define | Refactor | CodeReview | Prove | Comprehend | Learn
+        )
     }
 }
 
@@ -105,6 +170,17 @@ pub struct Job {
     /// Fix turns a failing CI run has started (D16).
     pub ci_fixes: u32,
     pub updated_at: u64,
+    pub pipeline: Pipeline,
+    /// Where the work goes after the turn that reworks it (`pipeline::revise`).
+    pub back_to: Option<Stage>,
+    /// How many times each step has sent the work back.
+    pub revisions: BTreeMap<Stage, u32>,
+    /// The last failure that sent the work back. The same one again, word
+    /// for word, means the fix did not help, so the job waits on the owner.
+    pub last_refusal: Option<String>,
+    /// Discovery's tasks. Implement runs one turn per task.
+    pub tasks: Vec<String>,
+    pub done_tasks: u32,
 }
 
 /// Something that happened to a job.
@@ -144,6 +220,12 @@ pub enum Event {
     HoldExpired {
         stage: Stage,
     },
+    /// A step the factory runs itself passed.
+    StepPassed,
+    /// A step the factory runs itself failed, with what it printed.
+    StepFailed {
+        detail: String,
+    },
 }
 
 /// How a checkpoint is decided (D15): the owner decides, the default lands
@@ -160,19 +242,27 @@ pub enum Dial {
 /// How long a held checkpoint waits before it approves itself.
 pub const HOLD_SECS: u64 = 30 * 60;
 
-/// The dial of each checkpoint, as the owner set them.
+/// The dial of each checkpoint, as the owner set them. `review` is both the
+/// short pipeline's review and the full pipeline's pick of review findings.
+// ponytail: no dial for wipp's `refused` checkpoint; held calls (A5) wait on the owner.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Dials {
     pub approve: Dial,
     pub review: Dial,
+    pub questions: Dial,
+    pub checks: Dial,
+    pub refactor: Dial,
+    pub uat: Dial,
+    pub merge: Dial,
     /// An eval's run (A6): it approves its own plan and stops at review
     /// with its diff, so nothing lands.
     pub trial: bool,
 }
 
 impl Dials {
-    /// The dial a stage runs under. Review is the merge decision, so it never
-    /// goes below hold (D15). A stage that is not a checkpoint asks.
+    /// The dial a stage runs under. Review and merge decide what lands, so
+    /// they never go below hold (D15). A stage that is not a checkpoint asks.
     pub fn at(&self, stage: Stage) -> Dial {
         if self.trial {
             return if stage == Stage::Approve {
@@ -181,10 +271,16 @@ impl Dials {
                 Dial::Ask
             };
         }
+        let at_least_hold = |d| if d == Dial::Auto { Dial::Hold } else { d };
         match stage {
             Stage::Approve => self.approve,
-            Stage::Review if self.review == Dial::Auto => Dial::Hold,
-            Stage::Review => self.review,
+            Stage::Review => at_least_hold(self.review),
+            Stage::Merge => at_least_hold(self.merge),
+            Stage::Clarify => self.questions,
+            Stage::YourChecks => self.checks,
+            Stage::PickRefactors => self.refactor,
+            Stage::PickFindings => self.review,
+            Stage::Uat => self.uat,
             _ => Dial::Ask,
         }
     }
@@ -229,6 +325,9 @@ pub enum Effect {
     WatchCi,
     /// Merge the job's pull request, then send `Landed` or `LandFailed`.
     Merge,
+    /// Run a step the factory runs itself, then send `StepPassed` or
+    /// `StepFailed`. Ship sends `PrOpened` when it passes.
+    RunStep { stage: Stage },
 }
 
 impl Job {
@@ -237,7 +336,7 @@ impl Job {
             id,
             workspace,
             request,
-            stage: SHORT_PIPELINE[0],
+            stage: Stage::Plan,
             state: State::Queued,
             question: None,
             feedback: None,
@@ -247,7 +346,20 @@ impl Job {
             pr: None,
             ci_fixes: 0,
             updated_at: at,
+            pipeline: Pipeline::Short,
+            back_to: None,
+            revisions: BTreeMap::new(),
+            last_refusal: None,
+            tasks: Vec::new(),
+            done_tasks: 0,
         }
+    }
+
+    /// The job on another pipeline, at that pipeline's first stage.
+    pub fn on(mut self, pipeline: Pipeline) -> Self {
+        self.stage = pipeline.stages()[0];
+        self.pipeline = pipeline;
+        self
     }
 }
 
@@ -271,28 +383,33 @@ pub fn step(job: &Job, event: &Event, at: u64, dials: &Dials) -> (Job, Vec<Effec
         (State::Running, Event::TurnFinished { outcome }) => {
             turn_finished(&mut next, outcome, dials)
         }
-        (State::NeedsYou, Event::Approved)
-            if next.question.is_none() && next.stage != Stage::Land =>
-        {
-            next.feedback = None;
-            advance(&mut next, dials)
-        }
-        (State::NeedsYou, Event::HoldExpired { stage })
-            if *stage == next.stage
-                && next.question.is_none()
-                && dials.at(*stage) == Dial::Hold =>
-        {
-            next.feedback = None;
-            advance(&mut next, dials)
-        }
+        (State::NeedsYou, event) if decides(&next, event, dials) => approved(&mut next, dials),
         (State::NeedsYou, Event::Commented { text }) => commented(&mut next, text, dials),
         (_, event) if next.stage == Stage::Land => match land(&mut next, event, dials) {
+            Some(effects) => effects,
+            None => return (job.clone(), Vec::new()),
+        },
+        (State::Running, event) => match factory(&mut next, event, dials) {
             Some(effects) => effects,
             None => return (job.clone(), Vec::new()),
         },
         _ => return (job.clone(), Vec::new()),
     };
     (next, effects)
+}
+
+/// Whether the event decides the checkpoint the job waits at: the owner
+/// approved it, or its hold ran out. A question waits for its answer, and
+/// approve at land is the land's own (`land`).
+fn decides(job: &Job, event: &Event, dials: &Dials) -> bool {
+    let open = job.question.is_none() && job.stage != Stage::Land;
+    match event {
+        Event::Approved => open,
+        Event::HoldExpired { stage } => {
+            open && *stage == job.stage && dials.at(*stage) == Dial::Hold
+        }
+        _ => false,
+    }
 }
 
 /// Start the current stage.
@@ -303,19 +420,14 @@ fn enter(job: &mut Job, dials: &Dials) -> Vec<Effect> {
         return vec![Effect::Teardown];
     }
     if job.stage.is_checkpoint() {
-        job.state = State::NeedsYou;
-        return match dials.at(job.stage) {
-            Dial::Ask => Vec::new(),
-            Dial::Hold => vec![Effect::Hold {
-                stage: job.stage,
-                secs: HOLD_SECS,
-            }],
-            Dial::Auto => advance(job, dials),
-        };
+        return wait(job, dials);
     }
     job.state = State::Running;
-    if job.stage == Stage::Land {
-        return vec![Effect::Land];
+    match job.stage {
+        Stage::Land => return vec![Effect::Land],
+        Stage::Ci => return vec![Effect::WatchCi],
+        stage if stage.kind() == Kind::Factory => return vec![Effect::RunStep { stage }],
+        _ => {}
     }
     vec![Effect::StartTurn {
         stage: job.stage,
@@ -323,6 +435,19 @@ fn enter(job: &mut Job, dials: &Dials) -> Vec<Effect> {
         read_only: job.stage.read_only(),
         cap_secs: TURN_CAP_SECS,
     }]
+}
+
+/// Wait at a checkpoint, under its dial.
+fn wait(job: &mut Job, dials: &Dials) -> Vec<Effect> {
+    job.state = State::NeedsYou;
+    match dials.at(job.stage) {
+        Dial::Ask => Vec::new(),
+        Dial::Hold => vec![Effect::Hold {
+            stage: job.stage,
+            secs: HOLD_SECS,
+        }],
+        Dial::Auto => advance(job, dials),
+    }
 }
 
 /// An event at the land stage: a local land, or a pull request's CI and
@@ -386,15 +511,101 @@ fn ci_failed(job: &mut Job, log: &str, dials: &Dials) -> Vec<Effect> {
     enter(job, dials)
 }
 
+/// An event at a step the factory runs, or at the merge. `None` means the
+/// event does not fit, and nothing changes.
+fn factory(job: &mut Job, event: &Event, dials: &Dials) -> Option<Vec<Effect>> {
+    let runs = job.stage.kind() == Kind::Factory;
+    Some(match (job.stage, event) {
+        (Stage::Ship, Event::PrOpened { url }) => {
+            job.pr = Some(url.clone());
+            advance(job, dials)
+        }
+        (Stage::Ci, Event::CiPassed) | (Stage::Merge, Event::Landed) => advance(job, dials),
+        (Stage::Ci, Event::CiFailed { log }) => step_failed(job, log, dials),
+        (Stage::Merge, Event::LandFailed { error }) => stuck(job, error),
+        (_, Event::StepPassed) if runs => advance(job, dials),
+        (_, Event::StepFailed { detail }) if runs => step_failed(job, detail, dials),
+        _ => return None,
+    })
+}
+
+/// A failing step sends the work back to be fixed, with what failed as the
+/// fixing turn's brief, up to its limit (`pipeline::revise`). Past the limit,
+/// or when the same failure comes back word for word, the job waits on the
+/// owner.
+fn step_failed(job: &mut Job, detail: &str, dials: &Dials) -> Vec<Effect> {
+    let Some((fix, back_to, limit)) = pipeline::revise(job.stage) else {
+        return stuck(job, detail);
+    };
+    let tries = job.revisions.entry(job.stage).or_default();
+    if *tries >= limit || job.last_refusal.as_deref() == Some(detail) {
+        return stuck(job, detail);
+    }
+    *tries += 1;
+    job.last_refusal = Some(detail.into());
+    job.feedback = Some(format!(
+        "A step failed. Read its output, fix the cause, and commit.\n<output>\n{detail}\n</output>"
+    ));
+    rework(job, fix, back_to, dials)
+}
+
+/// The job waits on the owner at a step that failed: approve goes on
+/// without it, comment asks for one more fix.
+fn stuck(job: &mut Job, error: &str) -> Vec<Effect> {
+    job.state = State::NeedsYou;
+    job.error = Some(error.into());
+    Vec::new()
+}
+
+/// Send the work to `stage`, to come back to `back_to` once it is done.
+fn rework(job: &mut Job, stage: Stage, back_to: Option<Stage>, dials: &Dials) -> Vec<Effect> {
+    job.stage = stage;
+    job.back_to = back_to;
+    job.failures = 0;
+    enter(job, dials)
+}
+
+/// The owner approved, or a hold ran out. At the merge, that merges.
+fn approved(job: &mut Job, dials: &Dials) -> Vec<Effect> {
+    job.feedback = None;
+    job.error = None;
+    if job.stage == Stage::Merge {
+        job.state = State::Running;
+        return vec![Effect::Merge];
+    }
+    advance(job, dials)
+}
+
+/// Move to the pipeline's next stage. Past the last one, the job has landed.
 fn advance(job: &mut Job, dials: &Dials) -> Vec<Effect> {
-    let at = SHORT_PIPELINE.iter().position(|s| *s == job.stage);
-    match at.and_then(|i| SHORT_PIPELINE.get(i + 1)) {
+    let stages = job.pipeline.stages();
+    let at = stages.iter().position(|s| *s == job.stage);
+    job.last_refusal = None;
+    match at.and_then(|i| stages.get(i + 1)) {
         Some(stage) => {
             job.stage = *stage;
             job.failures = 0;
             enter(job, dials)
         }
-        None => Vec::new(),
+        None => {
+            job.state = State::Landed;
+            vec![Effect::Teardown]
+        }
+    }
+}
+
+/// Where a finished turn goes: the next task, back to the step that sent
+/// the work, or on.
+fn after_turn(job: &mut Job, dials: &Dials) -> Vec<Effect> {
+    if job.stage == Stage::Implement && job.back_to.is_none() {
+        job.done_tasks += 1;
+        if (job.done_tasks as usize) < job.tasks.len() {
+            return enter(job, dials);
+        }
+    }
+    match job.back_to.take() {
+        Some(stage) => rework(job, stage, None, dials),
+        None => advance(job, dials),
     }
 }
 
@@ -419,7 +630,7 @@ fn turn_finished(job: &mut Job, outcome: &Outcome, dials: &Dials) -> Vec<Effect>
                 effects.push(Effect::CaptureDiff);
             }
             job.feedback = None;
-            effects.extend(advance(job, dials));
+            effects.extend(after_turn(job, dials));
             effects
         }
         Outcome::Asked { question } => {
@@ -444,12 +655,12 @@ fn commented(job: &mut Job, text: &str, dials: &Dials) -> Vec<Effect> {
         job.feedback = Some(format!("You asked: {question}\nThe answer: {text}"));
     } else {
         job.feedback = Some(text.into());
-        job.stage = match job.stage {
-            Stage::Approve => Stage::Plan,
-            Stage::Review => Stage::Build,
-            other => other,
-        };
-        job.failures = 0;
+        job.error = None;
+        if job.stage == Stage::Uat {
+            job.revisions.clear();
+        }
+        let (stage, back_to) = pipeline::sent_back(job.stage);
+        return rework(job, stage, back_to, dials);
     }
     enter(job, dials)
 }
@@ -472,11 +683,9 @@ pub enum StepState {
 
 /// Every stage of the job's pipeline, in order, with its state.
 pub fn steps(job: &Job) -> Vec<(Stage, StepState)> {
-    let current = SHORT_PIPELINE
-        .iter()
-        .position(|s| *s == job.stage)
-        .unwrap_or(0);
-    SHORT_PIPELINE
+    let stages = job.pipeline.stages();
+    let current = stages.iter().position(|s| *s == job.stage).unwrap_or(0);
+    stages
         .iter()
         .enumerate()
         .map(|(i, stage)| {
@@ -518,7 +727,7 @@ pub enum Action {
 
 pub fn actions(job: &Job) -> Vec<Action> {
     let mut allowed = Vec::new();
-    if job.state == State::NeedsYou && job.stage == Stage::Land {
+    if job.state == State::NeedsYou && matches!(job.stage, Stage::Land | Stage::Merge) {
         allowed.push(Action::Approve);
     } else if job.state == State::NeedsYou {
         if job.question.is_some() {
@@ -546,5 +755,7 @@ pub fn admit(jobs: &[Job], limit: usize) -> Vec<String> {
         .collect()
 }
 
+#[cfg(test)]
+mod full_tests;
 #[cfg(test)]
 mod tests;

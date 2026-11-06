@@ -336,6 +336,13 @@ fn record(row: &Value) -> Result<Record, String> {
             pr: text(row, "pr"),
             ci_fixes: row["ci_fixes"].as_u64().unwrap_or(0) as u32,
             updated_at: parse(row, "updated_at")?,
+            // ponytail: the full pipeline's fields get columns when A8 step 2 runs it.
+            pipeline: Default::default(),
+            back_to: None,
+            revisions: Default::default(),
+            last_refusal: None,
+            tasks: Vec::new(),
+            done_tasks: 0,
         },
         runtime: Runtime {
             worktree: text(row, "worktree"),
@@ -900,7 +907,14 @@ mod tests {
             .collect();
         let tables: Vec<_> = seeds
             .iter()
-            .map(|s| s["sql"].as_str().unwrap().split_whitespace().nth(4).unwrap())
+            .map(|s| {
+                s["sql"]
+                    .as_str()
+                    .unwrap()
+                    .split_whitespace()
+                    .nth(4)
+                    .unwrap()
+            })
             .collect();
         assert_eq!(tables, ["constraints", "capabilities"]);
     }

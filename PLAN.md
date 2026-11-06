@@ -509,6 +509,33 @@ before it, and the next job uses the restored value.
 - Read-only stages get a read-only grant. A changed tree in one is reverted.
 - The owner picks a pipeline per request, and sets the dial per checkpoint.
 
+**Steps**, from wipp's stage graph (`stages.py` at `f7c7e02`):
+
+1. **The graph in the core.** Every stage, its kind (turn, checkpoint or the
+   factory's own step), its next stage per outcome, and whether it is
+   read-only. The eight checkpoints of wipp's `oversight.py` (questions,
+   approve, checks, refused, refactor, review, uat, merge), each with its own
+   dial; merge never goes below hold. Two pipelines: the short one, and the
+   full one with acceptance tests when the workspace has checks to run. The
+   bounds of wipp's `REVISIONS`, and a revise loop that stops when a refusal
+   repeats word for word. Pure, with tests. The app still runs the short
+   pipeline.
+2. **Shape.** Scope, discover, clarify and plan, live. Discovery's tasks feed
+   implement. Read-only turns: the tree is snapshotted before the turn and put
+   back after it if it changed.
+3. **Acceptance tests.** Define, your checks, specify, baseline and falsify.
+   The baseline runs each check before the build, and a green check must go
+   red once against broken code. The approved files are fingerprinted, and
+   verify fails on a changed one.
+4. **Build.** Implement one turn per task, checks, verify, refactor with the
+   owner's pick, acceptance, and review with the owner's pick.
+5. **Ship.** Ship, CI, CI fix, prove, comprehend, UAT, merge, deploy, learn
+   and teardown, then revive and onboard.
+6. **Split.** Scope's split verdict makes parts that follow each other. The
+   Jobs page shows the parts under their job.
+7. **The owner's choices, then the exit.** A pipeline per request, a dial per
+   checkpoint in Settings, and each stage's proof on the job page.
+
 **Exit, live:** a request in this repository runs the full pipeline to a
 merged change. Each stage leaves an artifact, the baseline tests fail before
 the build and pass after it, and each checkpoint obeys its dial.
@@ -653,7 +680,7 @@ starts until the owner asks.
 | A5 | done | The gate, the ladders and the audit chain in `bastion-core` (def679b); the governance tables, the hook and the owner's commands (a509bb1); held calls and the Governance page (b4f2704). First live exit on `j4825765c` (ee4435e): a plan's write held, Allow once ran exactly it, Refuse reached the agent, `keep-tests` passed a `git rm` at checked and refused it at enforced, and verification failed after one byte of entry 20 changed. Then, from what that exit found: the review page freeze (513da6c); a keyed chain, its writer's state with a 5 s limit per write, and export (d0d3a27); charter constraints and repository hooks from `.claude/settings.json` (37a4b8e); a `tests-kept` constraint on the review diff (c7e992b); Stop during a busy turn and a single send-back (2b9afae); the add form and each constraint's history (4855dca). 45 core tests, 49 app tests, 2 view tests. Second live exit (2026-10-31) on `j3e0ca30c`, with a charter in `demo-a` (deny `Bash(git push:*)`, a PreToolUse hook that refuses `rm`, a Stop hook that runs pytest): the job page showed the charter, its rule and every hook run; the hook passed 12 calls with exit 0 and refused `rm -f /work/repo/notes.txt` with exit 2 and its own message; the Stop hook ran pytest after each build; with `tests-kept` enforced, a build that dropped `test_add` went back to build with the rule, and at checked the same finding waited for the owner. On the Governance page, the form added `no-curl` (entry 333), History listed `tests-kept`'s promotion and demotion, the chain verified 332 and then 335 entries under the Keychain key, and Export wrote 335 entries and `{"verified":true}`. Not run live: the `git push` deny rule (the agent read it in its brief and never made the call; the core and gate tests cover it), and a stalled audit (the unit test covers it). |
 | A6 | done | Spike N9: `judge::evaluate` has no provider worker in this stack, so a run is graded by a harness turn with no tools; `harness::metrics` meters each session (docs/levels.md). Build (38519c5): `Dials::trial` in the core (a trial approves its own plan and stops at review with its diff, so nothing lands), the core's `eval` module (arms, tally from the audit, totals, differences, grade), an arm's rungs applied per trial job in the gate, every turn of every job metered into `turns`, the eval tables, and the Evals page. 51 core tests, 58 app tests. Live exit (2026-10-31), eval `ee8eaaddd` on `demo-a` from `d6227b2`: three requests that each ask for a `wc` count, A with `no-wc` told and B with it enforced. All six runs reached review and were graded. In total B differs from A: refused 0 -> 5, review findings 2 -> 0, turns 39 -> 28, calls 33 -> 17, cost $0.0344 -> $0.0207; grades 7 and 7. Each request lists B's refused calls with their audit entries (#375, #405, #363, #452, ...) and links to the trial job, which shows it stopped at review with Land pending. Apply B set `no-wc` to enforced and the audit recorded `ee8eaaddd arm b: Told -> Enforced` (#487) and the eval the owner acted on (#488). Not varied yet: the model per stage and the pipeline, since there is one of each until A7 and A8. |
 | A7 | done | Built (3605253): the GitHub forge (push `bastion/<job>`, open or reuse the pull request, poll its checks, a bounded CI fix turn with the failing log, merge on Approve), issues as requests that link back and close on merge, versioned settings with Restore, oversight presets, a model per stage from `llm-router`, and the Accounts list; the governance pages split into Constraints, Capabilities and Audit Log with Lucide icons (dbe1cf7). 57 core tests, 66 app tests. Live exit (2026-10-31) on `ianparo/bastion` (private, CI runs pytest and needs a CHANGELOG.md entry): job `j7eb804a7` started from issue #1 and links to it; it opened pull request #2 (`bastion/j7eb804a7`, body `Closes #1`); CI failed on the changelog, Bastion sent the fix turn with the CI log (ci_fixes 1), the fixed change was pushed to the same pull request, and CI passed. Settings: forge set to GitHub (v1), the medium preset set both dials to hold (v2), Restore of v1 wrote v3 with the dials back at ask, and the next job (`ja0b04eb6`) waited at approve with no hold timer. Approve at land then merged pull request #2 into `main` (2beb204) and issue #1 closed. Not run live: a fix turn that fixes CI by itself (see below). |
-| A8 | in progress | Spike N11 (20a9b71): the `configuration` worker can carry config as YAML, but the owner chose the database (D26). The Constraints and Capabilities pages each show charter, harness and factory sections (D25, 062cd3e), checked in the window. A7's exit was checked again: pull request #2 merged (2beb204), issue #1 closed, the job's branch deleted, CI green on `main`. First step now: D26, the defaults move into `seed/governance.sql` and the gate re-reads the database before each turn. |
+| A8 | in progress | Spike N11 (20a9b71): the `configuration` worker can carry config as YAML, but the owner chose the database (D26). The Constraints and Capabilities pages each show charter, harness and factory sections (D25, 062cd3e), checked in the window. A7's exit was checked again: pull request #2 merged (2beb204), issue #1 closed, the job's branch deleted, CI green on `main`. D26 (7e22bc3): the defaults moved into `seed/governance.sql`, and the gate reads the database again before each turn. 58 core tests, 67 app tests. Step 1, the graph in the core: every full-pipeline stage with its kind, the full pipeline with and without acceptance tests, a dial per checkpoint with wipp's presets and merge held at least, steps the factory runs (`RunStep`, `StepPassed`, `StepFailed`), the revise loop with wipp's limits and the stop on a repeated failure, and one implement turn per task. Checkpoints stay their own stages (the owner's choice, 2026-11-06), and the agent's review turn is `code_review`. The app still runs only the short pipeline, and a `RunStep` fails the step. 75 core tests, 67 app tests. Next: step 2, shape. |
 | A9 to A13 | — | — |
 | Later (§10) | on hold | — |
 

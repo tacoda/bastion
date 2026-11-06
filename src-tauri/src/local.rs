@@ -1,4 +1,4 @@
-//! The local target (D30): a `bastion-server` on this machine, started by the
+//! The `local` Bastion server (D30): a `bastion-server` on this machine, started by the
 //! app, or the one already running. It outlives the app, so jobs go on.
 
 use std::fs::File;
@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use bastion_protocol::Target;
+use bastion_protocol::{LOCAL, Server};
 
 use crate::profile::Profile;
 
@@ -25,7 +25,7 @@ const BINARY: &str = concat!(
 
 /// Attach to the local server, starting it first if nothing listens on its
 /// port. `data` holds its token and its log.
-pub fn start(profile: &Profile, data: &Path) -> Result<Target, String> {
+pub fn start(profile: &Profile, data: &Path) -> Result<Server, String> {
     if !listening() {
         spawn(profile, data)?;
     }
@@ -41,7 +41,8 @@ pub fn start(profile: &Profile, data: &Path) -> Result<Target, String> {
         }
         std::thread::sleep(Duration::from_millis(200));
     }
-    Ok(Target {
+    Ok(Server {
+        name: LOCAL.into(),
         url: format!("http://127.0.0.1:{PORT}"),
         token: std::fs::read_to_string(&token)
             .map_err(|e| format!("{}: {e}", token.display()))?

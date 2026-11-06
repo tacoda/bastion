@@ -158,7 +158,7 @@ fn what_approve_does(d: &JobDetail) -> &'static str {
     }
 }
 
-/// The request and its badges: state, workspace, id and age.
+/// The request and its badges: state, Bastion server, workspace, id and age.
 fn header(d: &JobDetail) -> impl IntoView + use<> {
     let (symbol, color) = mark(&d.job.state);
     let badge = "rounded-full border border-line px-2 py-0.5 text-muted";
@@ -167,6 +167,7 @@ fn header(d: &JobDetail) -> impl IntoView + use<> {
             <h1 class="m-0 text-2xl font-bold">{d.job.request.clone()}</h1>
             <div class="flex flex-wrap gap-2 text-xs">
                 <span class={format!("rounded-full border border-line px-2 py-0.5 {color}")}>{format!("{symbol} {}", d.job.state.replace('_', " "))}</span>
+                <span class=badge title="Bastion server">{crate::ipc::current()}</span>
                 <span class=badge>{d.job.workspace.clone()}</span>
                 <span class=badge>{d.job.id.clone()}</span>
                 <span class=badge>{ago(d.job.created_at)}</span>

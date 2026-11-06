@@ -61,6 +61,32 @@ fn ask_on_quit(set_asking: WriteSignal<bool>) -> impl Fn(bool) + Copy {
     }
 }
 
+/// A page about one Bastion server, which shows the server picker (D30).
+fn about_one_server(route: &Route) -> bool {
+    !matches!(route, Route::Jobs | Route::NewRequest | Route::Job(_))
+}
+
+/// Which Bastion server the page shows. Every page reads again on a change.
+#[component]
+fn ServerPicker() -> impl IntoView {
+    let servers = LocalResource::new(ipc::servers);
+    let (shown, set_shown) = signal(ipc::current());
+    view! {
+        <label class="mb-4 flex w-fit items-center gap-2 text-sm text-muted">"Bastion server"
+            <select class="rounded border border-line bg-bg px-2 py-1 text-ink" on:change=move |e| {
+                let name = event_target_value(&e);
+                ipc::choose(&name);
+                set_shown.set(name);
+            }>
+                {move || servers.get().unwrap_or_default().into_iter().map(|s| {
+                    let selected = s.name == shown.get();
+                    view! { <option value=s.name.clone() selected=selected>{s.name.clone()}</option> }
+                }).collect_view()}
+            </select>
+        </label>
+    }
+}
+
 #[component]
 pub fn App() -> impl IntoView {
     let (route, set_route) = signal(Route::Jobs);
@@ -87,6 +113,9 @@ pub fn App() -> impl IntoView {
                 })}
             </nav>
             <main id="main" tabindex="-1" class="min-w-0 p-8">
+                <Show when=move || about_one_server(&route.get())>
+                    <ServerPicker />
+                </Show>
                 {move || match route.get() {
                     Route::Jobs => view! { <JobsPage /> }.into_any(),
                     Route::NewRequest => view! { <NewRequestPage /> }.into_any(),

@@ -13,11 +13,12 @@ pub mod command {
     pub const STACK_STATUS: &str = "stack_status";
     pub const STACK_START: &str = "stack_start";
     pub const STACK_STOP: &str = "stack_stop";
-    pub const PROFILE: &str = "profile";
     /// Takes `{ stopStack: bool }`.
     pub const QUIT: &str = "quit";
-    /// The server this window talks to, with its token (D28).
-    pub const TARGET: &str = "target";
+    /// The Bastion servers this app knows, `local` first (D30).
+    pub const SERVERS: &str = "servers";
+    pub const SERVER_ADD: &str = "server_add";
+    pub const SERVER_REMOVE: &str = "server_remove";
     pub const CONSOLE: &str = "console";
     /// Takes `{ request: LogRequest }`.
     pub const CONTAINER_LOGS: &str = "container_logs";
@@ -110,12 +111,17 @@ pub enum Change {
     Console,
 }
 
-/// The server a window talks to (D28): its base URL and bearer token.
+/// A Bastion server the app talks to (D28, D30): its name, its base URL and
+/// its bearer token. `local` is the one the app starts on this machine.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Target {
+pub struct Server {
+    pub name: String,
     pub url: String,
     pub token: String,
 }
+
+/// The name of the Bastion server the app starts on this machine.
+pub const LOCAL: &str = "local";
 
 /// The app's link to the engine.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -209,17 +215,6 @@ pub enum StartRefused {
     Failed {
         message: String,
     },
-}
-
-/// The profile the app runs with (PLAN.md D12). It holds no secret.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ActiveProfile {
-    pub name: String,
-    pub kind: String,
-    pub engine_url: String,
-    pub checkout: String,
-    /// The file the profiles live in.
-    pub file: String,
 }
 
 /// One container of the compose project (PLAN.md A2).

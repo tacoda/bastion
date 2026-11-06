@@ -1,7 +1,7 @@
 //! The Settings page: the active profile (A1) and the workspaces (A3). A7
 //! adds the rest.
 
-use bastion_protocol::{ActiveProfile, DialsView, Workspace, command, event};
+use bastion_protocol::{DialsView, LOCAL, Server, Workspace, command, event};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::Serialize;
@@ -146,31 +146,84 @@ fn Workspaces() -> impl IntoView {
     }
 }
 
+#[derive(Serialize)]
+struct AddServer {
+    server: Server,
+}
+
+#[derive(Serialize)]
+struct Named {
+    name: String,
+}
+
+/// The Bastion servers this app knows (D30): `local`, and the ones added
+/// here. A token is kept in the Keychain.
+#[component]
+fn BastionServers() -> impl IntoView {
+    let servers = LocalResource::new(ipc::servers);
+    let (name, set_name) = signal(String::new());
+    let (url, set_url) = signal(String::new());
+    let (token, set_token) = signal(String::new());
+    let (note, set_note) = signal(String::new());
+    let after = move |answer: Result<(), ipc::Failure<String>>| async move {
+        match answer {
+            Ok(()) => {
+                set_note.set(String::new());
+                ipc::refresh_servers().await;
+                servers.refetch();
+            }
+            Err(e) => set_note.set(e.text()),
+        }
+    };
+    let add = move |_| {
+        let server = Server {
+            name: name.get(),
+            url: url.get(),
+            token: token.get(),
+        };
+        spawn_local(async move {
+            after(ipc::call::<(), String>(command::SERVER_ADD, AddServer { server }).await).await;
+        });
+    };
+    let remove = move |name: String| {
+        spawn_local(async move {
+            after(ipc::call::<(), String>(command::SERVER_REMOVE, Named { name }).await).await;
+        });
+    };
+    let input = "rounded border border-line bg-bg px-2 py-1 text-ink";
+    view! {
+        <section class="mb-4 grid gap-3 rounded-xl border border-line bg-panel p-4">
+            <h2 class="m-0 text-sm font-semibold text-muted">"Bastion servers"</h2>
+            <ul class="m-0 grid list-none gap-1 p-0 text-sm">
+                {move || servers.get().unwrap_or_default().into_iter().map(|s| {
+                    let n = s.name.clone();
+                    view! {
+                        <li class="flex items-center gap-3">
+                            <span class="font-semibold">{s.name.clone()}</span>
+                            <span class="text-muted">{s.url.clone()}</span>
+                            {(s.name != LOCAL).then(|| view! {
+                                <button class="text-bad hover:underline" on:click=move |_| remove(n.clone())>"Remove"</button>
+                            })}
+                        </li>
+                    }
+                }).collect_view()}
+            </ul>
+            <div class="flex flex-wrap items-end gap-2 text-sm">
+                <label class="grid gap-1 text-muted">"Name"<input class=input prop:value=name on:input=move |e| set_name.set(event_target_value(&e)) /></label>
+                <label class="grid gap-1 text-muted">"URL"<input class=input placeholder="http://127.0.0.1:49191" prop:value=url on:input=move |e| set_url.set(event_target_value(&e)) /></label>
+                <label class="grid gap-1 text-muted">"Token"<input class=input type="password" prop:value=token on:input=move |e| set_token.set(event_target_value(&e)) /></label>
+                <button class="rounded-lg border border-line px-3 py-1.5 hover:bg-line" on:click=add>"Add"</button>
+            </div>
+            <p class="m-0 text-bad" role="alert">{note}</p>
+        </section>
+    }
+}
+
 #[component]
 pub fn SettingsPage() -> impl IntoView {
-    let (profile, set_profile) = signal(None::<ActiveProfile>);
-    spawn_local(async move {
-        if let Ok(p) = ipc::call::<ActiveProfile, String>(command::PROFILE, None {}).await {
-            set_profile.set(Some(p));
-        }
-    });
-    let row = |label: &'static str, value: String| {
-        view! { <dt class="text-muted">{label}</dt><dd class="m-0 break-all">{value}</dd> }
-    };
     view! {
         <h1 class="mt-0 text-2xl font-bold">"Settings"</h1>
-        <section class="grid gap-2 rounded-xl border border-line bg-panel p-4">
-            <h2 class="m-0 text-sm font-semibold text-muted">"Profile"</h2>
-            {move || profile.get().map(|p| view! {
-                <dl class="m-0 grid grid-cols-[120px_1fr] gap-x-3 gap-y-1">
-                    {row("Name", p.name)}
-                    {row("Kind", p.kind)}
-                    {row("Engine", p.engine_url)}
-                    {row("Checkout", p.checkout)}
-                    {row("File", p.file)}
-                </dl>
-            })}
-        </section>
+        <BastionServers />
         <FactorySettings />
         <Checkpoints />
         <SettingsHistory />

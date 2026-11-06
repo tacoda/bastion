@@ -1,7 +1,7 @@
 //! The Jobs page and New request (PLAN.md A3): every job, the ones waiting on
 //! the owner first, after wipp's Jobs page and GitHub Actions' runs list.
 
-use bastion_protocol::{IssueView, JobSummary, Workspace, command, event};
+use bastion_protocol::{IssueView, JobSummary, LOCAL, Workspace, command, event};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::Serialize;
@@ -18,25 +18,43 @@ struct Submit {
     request: String,
 }
 
-/// Every job, kept current by `job-changed`. Only the latest read lands.
-fn jobs_signal() -> (ReadSignal<Vec<JobSummary>>, ReadSignal<String>) {
-    let (jobs, set_jobs) = signal(Vec::<JobSummary>::new());
+/// A job, and the Bastion server it runs on (D30).
+#[derive(Clone)]
+struct ServerJob {
+    server: String,
+    job: JobSummary,
+}
+
+/// Every server's jobs, and why any server could not be read.
+async fn read_all_jobs() -> (Vec<ServerJob>, String) {
+    let (mut all, mut errors) = (Vec::new(), Vec::new());
+    for s in ipc::servers().await {
+        match ipc::call_on::<Vec<JobSummary>, String>(&s.name, command::JOBS, None {}).await {
+            Ok(jobs) => all.extend(jobs.into_iter().map(|job| ServerJob {
+                server: s.name.clone(),
+                job,
+            })),
+            Err(e) => errors.push(e.text()),
+        }
+    }
+    all.sort_by_key(|j| std::cmp::Reverse(j.job.created_at));
+    (all, errors.join(" "))
+}
+
+/// Every job on every server, kept current by `job-changed`. Only the
+/// latest read lands.
+fn jobs_signal() -> (ReadSignal<Vec<ServerJob>>, ReadSignal<String>) {
+    let (jobs, set_jobs) = signal(Vec::<ServerJob>::new());
     let (error, set_error) = signal(String::new());
     let latest = StoredValue::new(0u64);
     let reload = move || {
         let n = latest.get_value() + 1;
         latest.set_value(n);
         spawn_local(async move {
-            let answer = ipc::call::<Vec<JobSummary>, String>(command::JOBS, None {}).await;
-            if latest.get_value() != n {
-                return;
-            }
-            match answer {
-                Ok(all) => {
-                    set_error.set(String::new());
-                    set_jobs.set(all);
-                }
-                Err(e) => set_error.set(e.text()),
+            let (all, errors) = read_all_jobs().await;
+            if latest.get_value() == n {
+                set_error.set(errors);
+                set_jobs.set(all);
             }
         });
     };
@@ -64,19 +82,24 @@ pub fn workspaces_signal() -> ReadSignal<Vec<Workspace>> {
     workspaces
 }
 
-fn row(job: JobSummary) -> impl IntoView {
+fn row(sj: ServerJob) -> impl IntoView {
     let go = nav();
+    let ServerJob { server, job } = sj;
     let (symbol, color) = mark(&job.state);
-    let id = job.id.clone();
+    let (id, on) = (job.id.clone(), server.clone());
     view! {
         <li class="border-t border-line first:border-t-0">
             <button class="grid w-full grid-cols-[24px_1fr_auto] items-start gap-x-3 px-3 py-2.5 text-left hover:bg-line"
-                on:click=move |_| go.set(Route::Job(id.clone()))>
+                on:click=move |_| {
+                    // The job's page talks to the server it runs on.
+                    ipc::choose(&on);
+                    go.set(Route::Job(id.clone()))
+                }>
                 <span class={format!("text-lg leading-6 {color}")} aria-hidden="true">{symbol}</span>
                 <span class="grid min-w-0 gap-0.5">
                     <span class="truncate font-semibold">{job.request.clone()}</span>
                     <span class="text-xs text-muted">
-                        {format!("{} · {} · {} · {}", job.workspace, job.id, job.state.replace('_', " "), ago(job.created_at))}
+                        {format!("{server} · {} · {} · {} · {}", job.workspace, job.id, job.state.replace('_', " "), ago(job.created_at))}
                     </span>
                 </span>
                 <span class="rounded-full border border-line px-2 py-0.5 text-xs capitalize text-muted">{job.stage.clone()}</span>
@@ -85,7 +108,7 @@ fn row(job: JobSummary) -> impl IntoView {
     }
 }
 
-fn group(title: String, jobs: Vec<JobSummary>, accent: bool) -> impl IntoView {
+fn group(title: String, jobs: Vec<ServerJob>, accent: bool) -> impl IntoView {
     let border = if accent { "border-warn" } else { "border-line" };
     view! {
         <section class={format!("mb-4 rounded-xl border {border} bg-panel")}>
@@ -99,11 +122,22 @@ fn group(title: String, jobs: Vec<JobSummary>, accent: bool) -> impl IntoView {
     }
 }
 
+/// A job's Bastion server and workspace, as the filter names them.
+fn place(j: &ServerJob) -> String {
+    format!("{} / {}", j.server, j.job.workspace)
+}
+
 #[component]
 pub fn JobsPage() -> impl IntoView {
     let go = nav();
     let (jobs, error) = jobs_signal();
-    let workspaces = workspaces_signal();
+    // The filter's choices: each Bastion server and workspace that has jobs.
+    let places = move || {
+        let mut all: Vec<String> = jobs.get().iter().map(place).collect();
+        all.sort();
+        all.dedup();
+        all
+    };
     let (workspace, set_workspace) = signal(String::new());
     let (text, set_text) = signal(String::new());
     let (show_finished, set_show_finished) = signal(false);
@@ -112,11 +146,11 @@ pub fn JobsPage() -> impl IntoView {
         let (ws, words) = (workspace.get(), text.get().to_lowercase());
         jobs.get()
             .into_iter()
-            .filter(|j| ws.is_empty() || j.workspace == ws)
+            .filter(|j| ws.is_empty() || place(j) == ws)
             .filter(|j| {
                 words.is_empty()
-                    || j.request.to_lowercase().contains(&words)
-                    || j.id.contains(&words)
+                    || j.job.request.to_lowercase().contains(&words)
+                    || j.job.id.contains(&words)
             })
             .collect::<Vec<_>>()
     };
@@ -133,7 +167,7 @@ pub fn JobsPage() -> impl IntoView {
             <label class="grid gap-1 text-muted">"Workspace"
                 <select class=input on:change=move |e| set_workspace.set(event_target_value(&e))>
                     <option value="">"Every workspace"</option>
-                    {move || workspaces.get().into_iter().map(|w| view! { <option value=w.name.clone()>{w.name.clone()}</option> }).collect_view()}
+                    {move || places().into_iter().map(|p| view! { <option value=p.clone()>{p.clone()}</option> }).collect_view()}
                 </select>
             </label>
             <label class="grid gap-1 text-muted">"Search"
@@ -142,9 +176,9 @@ pub fn JobsPage() -> impl IntoView {
         </div>
         {move || {
             let all = shown();
-            let waiting: Vec<_> = all.iter().filter(|j| j.state == "needs_you").cloned().collect();
-            let active: Vec<_> = all.iter().filter(|j| IN_PROGRESS.contains(&j.state.as_str())).cloned().collect();
-            let done: Vec<_> = all.iter().filter(|j| FINISHED.contains(&j.state.as_str())).cloned().collect();
+            let waiting: Vec<_> = all.iter().filter(|j| j.job.state == "needs_you").cloned().collect();
+            let active: Vec<_> = all.iter().filter(|j| IN_PROGRESS.contains(&j.job.state.as_str())).cloned().collect();
+            let done: Vec<_> = all.iter().filter(|j| FINISHED.contains(&j.job.state.as_str())).cloned().collect();
             let done_count = done.len();
             view! {
                 {(!waiting.is_empty()).then(|| group(format!("Waiting for you ({})", waiting.len()), waiting, true))}
@@ -164,12 +198,15 @@ pub fn JobsPage() -> impl IntoView {
 #[component]
 pub fn NewRequestPage() -> impl IntoView {
     let go = nav();
+    // A request runs on `local` unless the owner picks another server (D30).
+    ipc::choose(LOCAL);
+    let servers = LocalResource::new(ipc::servers);
     let workspaces = workspaces_signal();
-    let (target, set_target) = signal(String::new());
+    let (picked, set_picked) = signal(String::new());
     let (request, set_request) = signal(String::new());
     let (error, set_error) = signal(String::new());
     let chosen = move || {
-        let t = target.get();
+        let t = picked.get();
         if t.is_empty() {
             workspaces
                 .get()
@@ -197,8 +234,16 @@ pub fn NewRequestPage() -> impl IntoView {
         <button class="mb-2 text-sm text-muted hover:text-ink" on:click=move |_| go.set(Route::Jobs)>"← All jobs"</button>
         <h1 class="mt-0 text-2xl font-bold">"New request"</h1>
         <section class="grid max-w-2xl gap-3 rounded-xl border border-line bg-panel p-4">
+            <label class="grid gap-1 text-sm text-muted">"Bastion server"
+                <select class=input on:change=move |e| {
+                    set_picked.set(String::new());
+                    ipc::choose(&event_target_value(&e));
+                }>
+                    {move || servers.get().unwrap_or_default().into_iter().map(|s| view! { <option value=s.name.clone()>{s.name.clone()}</option> }).collect_view()}
+                </select>
+            </label>
             <label class="grid gap-1 text-sm text-muted">"Workspace"
-                <select class=input on:change=move |e| set_target.set(event_target_value(&e))>
+                <select class=input on:change=move |e| set_picked.set(event_target_value(&e))>
                     {move || workspaces.get().into_iter().map(|w| view! { <option value=w.name.clone()>{w.name.clone()}</option> }).collect_view()}
                 </select>
             </label>
@@ -206,7 +251,7 @@ pub fn NewRequestPage() -> impl IntoView {
                 <textarea class={format!("{input} min-h-32")} prop:value=request on:input=move |e| set_request.set(event_target_value(&e))></textarea>
             </label>
             <p class="m-0 text-sm text-muted">
-                {move || if workspaces.get().is_empty() { "Add a workspace in Settings first." } else { "" }}
+                {move || if workspaces.get().is_empty() { "This Bastion server has no workspace yet. Add one in Settings." } else { "" }}
             </p>
             <p class="m-0 text-bad" role="alert">{error}</p>
             <button class="w-fit rounded-lg bg-primary px-3 py-2 font-semibold text-white hover:bg-primary-hover disabled:opacity-50"

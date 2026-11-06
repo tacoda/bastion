@@ -1,33 +1,24 @@
-//! The app's own commands: the active profile, the window's server, and quit.
+//! The app's own commands: the Bastion servers it knows, and quit.
 
-use std::path::PathBuf;
-
-use bastion_protocol::{ActiveProfile, Target};
+use bastion_protocol::Server;
 use tauri::{AppHandle, State};
 
-use crate::profile::{Kind, Profiles};
+use crate::servers::Servers;
 
-/// Where `profiles.toml` was read from.
-pub struct ProfilesFile(pub PathBuf);
-
+/// Every Bastion server this app knows, `local` first, with their tokens (D30).
 #[tauri::command]
-pub fn profile(profiles: State<'_, Profiles>, file: State<'_, ProfilesFile>) -> ActiveProfile {
-    let p = profiles.active();
-    ActiveProfile {
-        name: p.name.clone(),
-        kind: match p.kind {
-            Kind::Local => "local".into(),
-        },
-        engine_url: p.engine_url.clone(),
-        checkout: p.checkout.display().to_string(),
-        file: file.0.display().to_string(),
-    }
+pub fn servers(servers: State<'_, Servers>) -> Result<Vec<Server>, String> {
+    servers.all()
 }
 
-/// The server this window talks to, with its token (D28).
 #[tauri::command]
-pub fn target(target: State<'_, Target>) -> Target {
-    target.inner().clone()
+pub fn server_add(servers: State<'_, Servers>, server: Server) -> Result<(), String> {
+    servers.add(server)
+}
+
+#[tauri::command]
+pub fn server_remove(servers: State<'_, Servers>, name: String) -> Result<(), String> {
+    servers.remove(&name)
 }
 
 /// Quit the app. The server and its stack keep running unless the page

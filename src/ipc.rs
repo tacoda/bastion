@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use bastion_protocol::routes::{self, Body};
-use bastion_protocol::{Change, EngineStatus, Link, Target, command, event};
+use bastion_protocol::{Change, EngineStatus, LOCAL, Link, Server, command, event};
 use js_sys::{Promise, Reflect, Uint8Array};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -27,8 +27,18 @@ extern "C" {
     async fn listen_js(event: &str, handler: &Closure<dyn FnMut(JsValue)>) -> JsValue;
 }
 
-/// Call a command. `E` is the command's typed error; a string error reads as one too.
+/// Call a command on the current Bastion server. `E` is the command's typed
+/// error; a string error reads as one too.
 pub async fn call<T: DeserializeOwned, E: DeserializeOwned>(
+    cmd: &str,
+    args: impl Serialize,
+) -> Result<T, Failure<E>> {
+    call_on(&current(), cmd, args).await
+}
+
+/// Call a command on the Bastion server named `on`.
+pub async fn call_on<T: DeserializeOwned, E: DeserializeOwned>(
+    on: &str,
     cmd: &str,
     args: impl Serialize,
 ) -> Result<T, Failure<E>> {
@@ -46,7 +56,7 @@ pub async fn call<T: DeserializeOwned, E: DeserializeOwned>(
         Body::Field(name) => args.remove(name),
         Body::Rest => Some(Value::Object(args)),
     };
-    let target = target().await.map_err(Failure::Broken)?;
+    let target = server(on).await.map_err(Failure::Broken)?;
     let to = To {
         method,
         path: &path,
@@ -55,8 +65,8 @@ pub async fn call<T: DeserializeOwned, E: DeserializeOwned>(
     };
     let (ok, text) = fetch(&target, &to).await.map_err(|_| {
         Failure::Broken(format!(
-            "Bastion's server at {} cannot be reached.",
-            target.url
+            "The Bastion server {} at {} cannot be reached.",
+            target.name, target.url
         ))
     })?;
     let value: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
@@ -116,19 +126,56 @@ async fn invoke<T: DeserializeOwned, E: DeserializeOwned>(
 }
 
 thread_local! {
-    static TARGET: RefCell<Option<Target>> = const { RefCell::new(None) };
+    /// The Bastion servers the app knows, `local` first, read once.
+    static SERVERS: RefCell<Option<Vec<Server>>> = const { RefCell::new(None) };
+    /// The server a page about one server shows, and a job's page uses (D30).
+    static CURRENT: RefCell<String> = RefCell::new(LOCAL.to_string());
+    /// The servers whose events are followed.
+    static FOLLOWED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
-/// The window's server, asked of the app once.
-async fn target() -> Result<Target, String> {
-    if let Some(t) = TARGET.with(|t| t.borrow().clone()) {
-        return Ok(t);
+/// Every Bastion server the app knows, `local` first.
+pub async fn servers() -> Vec<Server> {
+    if let Some(all) = SERVERS.with(|s| s.borrow().clone()) {
+        return all;
     }
-    let t: Target = invoke::<Target, String>(command::TARGET, None {})
+    refresh_servers().await
+}
+
+/// Read the server list again, after one was added or removed, and follow
+/// any new one's events.
+pub async fn refresh_servers() -> Vec<Server> {
+    let all = invoke::<Vec<Server>, String>(command::SERVERS, None {})
         .await
-        .map_err(Failure::text)?;
-    TARGET.with(|cell| *cell.borrow_mut() = Some(t.clone()));
-    Ok(t)
+        .unwrap_or_default();
+    SERVERS.with(|s| *s.borrow_mut() = Some(all.clone()));
+    for s in &all {
+        if !FOLLOWED.with(|f| f.borrow().contains(&s.name)) {
+            FOLLOWED.with(|f| f.borrow_mut().push(s.name.clone()));
+            leptos::task::spawn_local(follow(s.name.clone()));
+        }
+    }
+    all
+}
+
+async fn server(name: &str) -> Result<Server, String> {
+    servers()
+        .await
+        .into_iter()
+        .find(|s| s.name == name)
+        .ok_or_else(|| format!("no Bastion server named {name}"))
+}
+
+/// The server pages about one server show.
+pub fn current() -> String {
+    CURRENT.with(|c| c.borrow().clone())
+}
+
+/// Show the server named `name`: every page reads again from it.
+pub fn choose(name: &str) {
+    if CURRENT.with(|c| c.replace(name.to_string())) != name {
+        read_everything_again();
+    }
 }
 
 /// One request: its method, its path, its JSON body, and the last event
@@ -141,13 +188,13 @@ struct To<'a> {
 }
 
 /// One request to the server. Returns whether it succeeded, and its body.
-async fn fetch(target: &Target, to: &To<'_>) -> Result<(bool, String), JsValue> {
+async fn fetch(target: &Server, to: &To<'_>) -> Result<(bool, String), JsValue> {
     let response = request(target, to).await?;
     let text = JsFuture::from(response.text()?).await?;
     Ok((response.ok(), text.as_string().unwrap_or_default()))
 }
 
-async fn request(target: &Target, to: &To<'_>) -> Result<Response, JsValue> {
+async fn request(target: &Server, to: &To<'_>) -> Result<Response, JsValue> {
     let headers = Headers::new()?;
     headers.set("Authorization", &format!("Bearer {}", target.token))?;
     if let Some(id) = to.last_event {
@@ -216,7 +263,9 @@ pub fn listen<T: DeserializeOwned + 'static>(event: &'static str, on_event: impl
             let _ = w.add_event_listener_with_callback("focus", on_focus.as_ref().unchecked_ref());
         }
         on_focus.forget(); // the window lives as long as the app
-        leptos::task::spawn_local(follow());
+        leptos::task::spawn_local(async {
+            refresh_servers().await;
+        });
     }
 }
 
@@ -267,96 +316,123 @@ fn read_everything_again() {
     });
 }
 
-fn deliver(change: Change) {
-    match change {
-        Change::Job { id } => dispatch(event::JOB_CHANGED, Value::String(id)),
-        Change::Engine { status } => dispatch(
-            event::ENGINE_CHANGED,
-            serde_json::to_value(status).unwrap_or_default(),
-        ),
-        Change::Console => dispatch(event::CONSOLE_CHANGED, Value::Null),
+/// One Bastion server's event feed: its name and the last event id seen.
+struct Feed {
+    server: String,
+    last: Option<String>,
+}
+
+impl Feed {
+    /// A change from this server. Job changes reach the pages from every
+    /// server, because the Jobs page lists them all; the rest only from the
+    /// current server, so a page never shows another server's state.
+    fn publish(&self, event: &str, payload: Value) {
+        if event == event::JOB_CHANGED || self.server == current() {
+            dispatch(event, payload);
+        }
+    }
+
+    fn deliver(&self, change: Change) {
+        let (event, payload) = match change {
+            Change::Job { id } => (event::JOB_CHANGED, Value::String(id)),
+            Change::Engine { status } => (
+                event::ENGINE_CHANGED,
+                serde_json::to_value(status).unwrap_or_default(),
+            ),
+            Change::Console => (event::CONSOLE_CHANGED, Value::Null),
+        };
+        self.publish(event, payload);
+    }
+
+    /// Changes were missed: the jobs read again, and everything else too if
+    /// this is the server the pages show.
+    fn resync(&self) {
+        if self.server == current() {
+            read_everything_again();
+        } else {
+            dispatch(event::JOB_CHANGED, Value::String(String::new()));
+        }
+    }
+
+    /// One server-sent event: an id and a change, or a request to read again.
+    fn block(&mut self, block: &str) {
+        for line in block.lines() {
+            if let Some(id) = line.strip_prefix("id: ") {
+                self.last = Some(id.to_string());
+            } else if line == "event: resync" {
+                self.resync();
+            } else if let Some(change) = line
+                .strip_prefix("data: ")
+                .and_then(|data| serde_json::from_str::<Change>(data).ok())
+            {
+                self.deliver(change);
+            }
+        }
+    }
+
+    /// Read one connection's events until it ends.
+    async fn stream(&mut self, server: &Server) -> Result<(), JsValue> {
+        let to = To {
+            method: "GET",
+            path: "/events",
+            body: None,
+            last_event: self.last.as_deref(),
+        };
+        let response = request(server, &to).await?;
+        if !response.ok() {
+            return Err(JsValue::from_str(&format!(
+                "events: status {}",
+                response.status()
+            )));
+        }
+        // A reconnect may have missed changes the server did not replay.
+        if self.last.is_some() {
+            self.resync();
+        }
+        let reader: ReadableStreamDefaultReader = response
+            .body()
+            .ok_or("events: no body")?
+            .get_reader()
+            .unchecked_into();
+        let mut buffer = String::new();
+        loop {
+            let chunk = JsFuture::from(reader.read()).await?;
+            if Reflect::get(&chunk, &"done".into())?.as_bool() == Some(true) {
+                return Ok(());
+            }
+            let bytes = Uint8Array::new(&Reflect::get(&chunk, &"value".into())?).to_vec();
+            buffer.push_str(&String::from_utf8_lossy(&bytes));
+            while let Some(end) = buffer.find("\n\n") {
+                let block: String = buffer.drain(..end + 2).collect();
+                self.block(&block);
+            }
+        }
     }
 }
 
-/// Follow the server's events for the life of the window, reconnecting with
-/// the last id seen. While the server cannot be reached, the pages show the
-/// engine as down.
-async fn follow() {
-    let mut last: Option<String> = None;
-    loop {
-        match target().await {
-            Ok(t) => {
-                if let Err(e) = stream(&t, &mut last).await {
-                    web_sys::console::warn_1(&e);
-                }
-                let down = EngineStatus {
-                    url: t.url.clone(),
-                    link: Link::Down,
-                    functions: None,
-                };
-                dispatch(
-                    event::ENGINE_CHANGED,
-                    serde_json::to_value(down).unwrap_or_default(),
-                );
-            }
-            Err(e) => web_sys::console::warn_1(&e.into()),
+/// Follow one server's events while it is in the list, reconnecting with
+/// the last id seen. While it cannot be reached, its engine shows as down.
+async fn follow(name: String) {
+    let mut feed = Feed {
+        server: name,
+        last: None,
+    };
+    while let Ok(s) = server(&feed.server).await {
+        if let Err(e) = feed.stream(&s).await {
+            web_sys::console::warn_1(&e);
         }
+        let down = EngineStatus {
+            url: s.url.clone(),
+            link: Link::Down,
+            functions: None,
+        };
+        feed.publish(
+            event::ENGINE_CHANGED,
+            serde_json::to_value(down).unwrap_or_default(),
+        );
         sleep(1000).await;
     }
-}
-
-/// Read one connection's events until it ends.
-async fn stream(target: &Target, last: &mut Option<String>) -> Result<(), JsValue> {
-    let to = To {
-        method: "GET",
-        path: "/events",
-        body: None,
-        last_event: last.as_deref(),
-    };
-    let response = request(target, &to).await?;
-    if !response.ok() {
-        return Err(JsValue::from_str(&format!(
-            "events: status {}",
-            response.status()
-        )));
-    }
-    // A reconnect may have missed changes the server did not replay.
-    if last.is_some() {
-        read_everything_again();
-    }
-    let reader: ReadableStreamDefaultReader = response
-        .body()
-        .ok_or("events: no body")?
-        .get_reader()
-        .unchecked_into();
-    let mut buffer = String::new();
-    loop {
-        let chunk = JsFuture::from(reader.read()).await?;
-        if Reflect::get(&chunk, &"done".into())?.as_bool() == Some(true) {
-            return Ok(());
-        }
-        let bytes = Uint8Array::new(&Reflect::get(&chunk, &"value".into())?).to_vec();
-        buffer.push_str(&String::from_utf8_lossy(&bytes));
-        while let Some(end) = buffer.find("\n\n") {
-            let block: String = buffer.drain(..end + 2).collect();
-            sse_block(&block, last);
-        }
-    }
-}
-
-/// One server-sent event: an id and a change, or a request to read again.
-fn sse_block(block: &str, last: &mut Option<String>) {
-    for line in block.lines() {
-        if let Some(id) = line.strip_prefix("id: ") {
-            *last = Some(id.to_string());
-        } else if line == "event: resync" {
-            read_everything_again();
-        } else if let Some(data) = line.strip_prefix("data: ")
-            && let Ok(change) = serde_json::from_str::<Change>(data)
-        {
-            deliver(change);
-        }
-    }
+    FOLLOWED.with(|f| f.borrow_mut().retain(|n| *n != feed.server));
 }
 
 async fn sleep(ms: i32) {

@@ -1,29 +1,31 @@
 //! Bastion's window (PLAN.md D27, D28). It starts or attaches to the local
-//! server and tells the page where it is; the page does the rest over HTTP.
+//! Bastion server and tells the page about every server it knows; the page
+//! does the rest over HTTP.
 
 mod commands;
 mod local;
 mod profile;
+mod servers;
 
 use bastion_protocol::event;
-use commands::app::ProfilesFile;
 use profile::Profiles;
+use servers::{Keychain, Servers};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
 
 /// The checkout this build came from, which holds `worker-compose.yaml`.
 // ponytail: a build-time path; packaging the stack replaces it (PLAN.md A11).
 const CHECKOUT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
 
-/// Load the profile, then start or attach to its local server.
+/// Start or attach to the `local` Bastion server, with the checkout and
+/// engine `profiles.toml` names, and load the servers the owner added.
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let path = app.path().app_config_dir()?.join(profile::FILE_NAME);
     let checkout = std::path::Path::new(CHECKOUT).canonicalize()?;
     let profiles = Profiles::load_or_create(&path, checkout)?;
     let data = app.path().app_data_dir()?.join("server");
-    let target = local::start(profiles.active(), &data)?;
-    app.manage(target);
-    app.manage(profiles);
-    app.manage(ProfilesFile(path));
+    let local = local::start(profiles.active(), &data)?;
+    let file = app.path().app_config_dir()?.join(servers::FILE_NAME);
+    app.manage(Servers::new(file, local, Box::new(Keychain)));
     Ok(())
 }
 
@@ -45,8 +47,9 @@ pub fn run() {
         .setup(setup)
         .on_window_event(on_window)
         .invoke_handler(tauri::generate_handler![
-            commands::app::profile,
-            commands::app::target,
+            commands::app::servers,
+            commands::app::server_add,
+            commands::app::server_remove,
             commands::app::quit,
         ])
         .build(tauri::generate_context!())

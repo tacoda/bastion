@@ -21,4 +21,5 @@ tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 bastion-protocol = { path = "../crates/bastion-protocol" }
 toml = "0.9"
+keyring = { version = "3", features = ["apple-native"] }
 

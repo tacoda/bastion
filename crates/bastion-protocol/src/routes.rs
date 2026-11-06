@@ -121,7 +121,12 @@ mod tests {
         for cmd in ROUTED {
             assert!(route(cmd).is_some(), "{cmd}");
         }
-        for cmd in [command::PROFILE, command::QUIT, command::TARGET] {
+        for cmd in [
+            command::QUIT,
+            command::SERVERS,
+            command::SERVER_ADD,
+            command::SERVER_REMOVE,
+        ] {
             assert!(route(cmd).is_none(), "{cmd}");
         }
     }

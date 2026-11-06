@@ -1,7 +1,9 @@
 //! `bastion-server`, headless (D27): starts or attaches to the stack in
-//! `--checkout`, runs the factory on it, and serves the API on loopback.
+//! `--checkout`, runs the factory on it, and serves the API: on loopback by
+//! default, or on `--listen` over TLS (P5).
 //!
-//! `bastion-server [--checkout DIR] [--data DIR] [--port N] [--engine URL] [--owner NAME]`
+//! `bastion-server [--checkout DIR] [--data DIR] [--port N] [--engine URL] [--owner NAME]
+//!                 [--listen IP --tls-cert PEM --tls-key PEM]`
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -10,6 +12,7 @@ use bastion_server::engine::{Engine, IiiEngine};
 use bastion_server::machine::{Machine, ThisMachine};
 use bastion_server::server::Server;
 use bastion_server::stack::{self, Stack};
+use bastion_server::tls::{self, Serving, TlsListener};
 use bastion_server::{api, http, rt};
 
 struct Args {
@@ -19,10 +22,11 @@ struct Args {
     data: PathBuf,
     port: u16,
     engine: String,
+    serving: Serving,
 }
 
 /// Flags as `--name value`, each with its default.
-// ponytail: four flags read by hand; a parser crate when flags grow past these.
+// ponytail: flags read by hand; a parser crate when flags grow past these.
 fn args() -> Result<Args, String> {
     let given: Vec<String> = std::env::args().skip(1).collect();
     let flag = |name: &str| {
@@ -38,6 +42,11 @@ fn args() -> Result<Args, String> {
         data: flag("--data").map_or_else(|| checkout.join("data/server"), PathBuf::from),
         port: flag("--port").map_or(Ok(49190), |p| p.parse().map_err(|_| format!("--port {p}")))?,
         engine: flag("--engine").unwrap_or_else(|| "ws://127.0.0.1:49160".into()),
+        serving: tls::serving(
+            flag("--listen").as_deref(),
+            flag("--tls-cert").as_deref(),
+            flag("--tls-key").as_deref(),
+        )?,
         checkout,
     })
 }
@@ -94,16 +103,30 @@ fn main() -> Result<(), String> {
             .clone()
             .unwrap_or_else(|| git_user(&*server.machine));
         server.start_factory(seed, a.data.join("bundles"), owner.clone());
-        let listener = tokio::net::TcpListener::bind(("127.0.0.1", a.port))
-            .await
-            .map_err(|e| format!("port {}: {e}", a.port))?;
-        println!(
-            "bastion-server: serving on 127.0.0.1:{}, token in {}",
-            a.port,
-            a.data.join("token").display()
-        );
-        axum::serve(listener, http::router(server, &token, &owner))
-            .await
-            .map_err(|e| e.to_string())
+        let app = http::router(server, &token, &owner);
+        serve(&a, app).await
     })
+}
+
+/// Serve `app` where `--listen` says, over TLS when given a certificate.
+async fn serve(a: &Args, app: axum::Router) -> Result<(), String> {
+    let at = (a.serving.ip, a.port);
+    let tcp = tokio::net::TcpListener::bind(at)
+        .await
+        .map_err(|e| format!("{}:{}: {e}", at.0, at.1))?;
+    let scheme = if a.serving.tls.is_some() { "https" } else { "http" };
+    println!(
+        "bastion-server: serving {scheme} on {}:{}, token in {}",
+        at.0,
+        at.1,
+        a.data.join("token").display()
+    );
+    let served = match &a.serving.tls {
+        None => axum::serve(tcp, app).await,
+        Some((cert, key)) => {
+            let acceptor = tls::acceptor(cert, key)?;
+            axum::serve(TlsListener { tcp, acceptor }, app).await
+        }
+    };
+    served.map_err(|e| e.to_string())
 }

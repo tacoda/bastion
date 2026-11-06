@@ -1,0 +1,92 @@
+{
+  "cli_version": "0.12.2",
+  "checkpoint_id": "01M6S9KQ775ACC1MQ05J68WNW6",
+  "session_id": "c3e38517-6d5a-49ad-b899-fecb5525cb41",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-06T20:43:12.151821Z",
+  "branch": "main",
+  "checkpoints_count": 10,
+  "save_step_count": 2,
+  "files_touched": [
+    "src-tauri/icons/128x128.png",
+    "src-tauri/icons/128x128@2x.png",
+    "src-tauri/icons/32x32.png",
+    "src-tauri/icons/Square107x107Logo.png",
+    "src-tauri/icons/Square142x142Logo.png",
+    "src-tauri/icons/Square150x150Logo.png",
+    "src-tauri/icons/Square284x284Logo.png",
+    "src-tauri/icons/Square30x30Logo.png",
+    "src-tauri/icons/Square310x310Logo.png",
+    "src-tauri/icons/Square44x44Logo.png",
+    "src-tauri/icons/Square71x71Logo.png",
+    "src-tauri/icons/Square89x89Logo.png",
+    "src-tauri/icons/StoreLogo.png",
+    "src-tauri/icons/icon.icns",
+    "src-tauri/icons/icon.ico",
+    "src-tauri/icons/icon.png"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "885744a4a9bc",
+  "checkpoint_transcript_start": 237,
+  "transcript_lines_at_start": 237,
+  "compact_transcript_start": 32,
+  "token_usage": {
+    "input_tokens": 96,
+    "cache_creation_tokens": 75054,
+    "cache_read_tokens": 8019416,
+    "output_tokens": 40767,
+    "api_call_count": 48
+  },
+  "redaction": {
+    "replacements": 0,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_013ybpe8tMRpNAy8guBM3Vjz",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "voice-check"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "c70a48871646",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 137,
+        "end": 138,
+        "entry_ids": [
+          "092a06d9-a73c-4e91-a58a-bada23a725d2"
+        ],
+        "tool_use_id": "toolu_013ybpe8tMRpNAy8guBM3Vjz"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_013ybpe8tMRpNAy8guBM3Vjz"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: voice-check",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 12
+  }
+}

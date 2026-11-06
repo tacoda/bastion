@@ -1,0 +1,50 @@
+It looks ok. Colors and general design is nice. Feels a little cramped. Should also be more focused on what it is and not too many details on how it works. I'll add a docs section later for how it works in detail. This product page should be more focused on problem, solution, and practical use-cases. Text should be a little bigger and elements should have a little more breathing room.
+
+---
+
+Also these two things are not true. Even if they are not implemented yet - they are non-goals
+[Image #1]
+
+---
+
+I turned on pages - did you push the last changes?
+
+---
+
+Yeah, it updated
+
+---
+
+I also want an icon or image for bastion - I want it in a similar, modern style with clean lines and it should be a castle
+
+---
+
+Also add that the factory has an oversight dial - starts lights-on and each component can be made darker independently as you verify and trust them more
+
+---
+
+Make the png
+
+---
+
+Drop the nothing merges itself thing - that can be another dial because its another step
+
+---
+
+Update it to a software factory with a built-in oversight dial
+
+---
+
+Also add an animation. I want a lighter spot (like a spotlight) to follow the mouse. It should be noticable, but subtle. It should be enough to make it obvious it is "shining a light into the dark".
+
+---
+
+make the spotlight a little stronger and add a bit more contrast around entities when it passes over them so they get emphasized instead of washed out
+
+---
+
+use the castle icon as the app icon too
+
+---
+
+commit the icons separately

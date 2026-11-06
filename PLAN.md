@@ -128,7 +128,7 @@ code inside Bastion is the diff a job proposes.
 | D32 | A Bastion server listens on loopback unless its admin gives it an address and a TLS certificate and key; it refuses a non-loopback address without them. | A token sent over plain HTTP can be read by anyone on the network. |
 | D33 | Every step of a pipeline is lights-on (it waits for a person to approve its result or send it back with feedback) or dark (it goes on at once). Every step starts lights-on, and each can be set on its own, merge included. A workflow's level follows from its steps: lights-on when every step has a person's gate, dim when at least one step up to the merge has one, and dark when none up to the merge has one (no human oversight of what merges). No step waits on a timer. The checkpoint stages fold into the steps they judge, and merge is a step that merges. Oversight decides only human approval and feedback: every step's result is kept, and every decision is logged, whatever the dial. A person's decisions are in the audit log with their name, and a dark step's decision is there too, named as the dial's. Replaces D15. | The owner's choice (2026-11-06): the factory runs the whole pipeline, and the amount of oversight is the variable. A step is governed by a person or runs alone; a timer that approves by itself governs nothing. |
 | D34 | Model provider keys are configuration, not environment. Bastion stores each key in the stack's `secrets` worker (store `vault`, readable only by `llm-router`) and points the router's provider entry at it as `secret://NAME`; the router resolves it at each request and reports whether a provider has a key without returning it. Providers with their own worker (Anthropic, OpenAI, DeepSeek, xAI, Z.AI for GLM, Kimi, OpenRouter) take their key that way; other OpenAI-compatible hosts (Together, Fireworks, Qwen through DashScope, a local Ollama) go through a Bastion provider worker that serves any number of them. | The owner's choice (2026-11-06): a key for any provider, with a spread wide enough that most people can use it, and no dependency on `ANTHROPIC_API_KEY` in the environment. |
-| D35 | A pipeline is a workflow: a flow chart of steps that a person edits on a canvas. Bastion ships a few workflows, and people make their own for themselves and others to use. For now only an admin makes or changes a workflow; members and viewers use them. | The owner's choice (2026-11-06). |
+| D35 | A pipeline is a workflow: a graph of steps that a person edits on a canvas. Each node is a step: what runs, its oversight dial (D33), a note that the node expands to show and that the step's agent reads, and the results it declares, such as documents, kept in the database. A link sends one step's results to another. Links carry no conditions: a step's entry criteria are the results of the steps linked into it, and its exit criteria are the results it declares, and a code check, not a model, holds a step that lacks either. Bastion ships a few workflows, and people make their own for themselves and others to use. For now only an admin makes or changes a workflow; members and viewers use them. | The owner's choice (2026-11-06). |
 
 ## 4. The repository
 
@@ -651,19 +651,34 @@ workflows as an interactive flow chart on a canvas (D35).
 
 **Steps:**
 
-- **W1, the model.** A workflow is a named graph of steps, each with its
-  oversight dial (D33), kept on the Bastion server with its versions. The
-  default workflows ship with the server and cannot be deleted, only
-  copied.
-- **W2, the canvas.** A Workflows page draws a workflow as a flow chart:
-  add, remove, connect and reorder steps, and set each step's dial. Only an
-  admin edits (D31); everyone else sees it read-only.
+- **W1, the model.** A workflow is a graph, kept on the Bastion server
+  with its versions. A node is a step (stage, dial, note, the results it
+  declares, its place on the canvas); a link joins two nodes, and the later
+  one gets the earlier one's results. The graph has no cycle, each stage at
+  most once, and one node that lands the change (land or merge) with only
+  deploy and learn after it. Only an agent step declares results. A job
+  keeps the version it started on and runs the nodes in link order, ties
+  broken by the canvas, skipping every stage the graph does not have.
+  Before a step: each result linked into it exists, or the job waits on a
+  person. After a turn: its report gives each declared result as a
+  `RESULT <name>:` section, kept as a document; a missing one is one more
+  try with the reason, then a wait on a person. The built-in workflows
+  (short, full, full without acceptance tests) are chains with no results
+  and the settings' dials; they cannot be changed or deleted, only copied.
+- **W2, the canvas.** A Workflows page draws each workflow's nodes and
+  links. An admin (D31) drags a node, links two by dragging from one to the
+  other, removes a node or a link, adds a step from a palette, and expands
+  a node to set its dial, note and results; saving makes a new version.
+  Everyone else sees it read-only.
 - **W3, picking one.** New request picks a workflow, the server's default
-  first; the job page draws the job's workflow with its progress.
+  first. The job page draws the job's workflow with each step's state, and
+  each result as its document.
 
-**Exit, live:** an admin copies a default workflow, drops a step on the
-canvas and saves it; a member runs a request on the copy and the job skips
-that step; a viewer sees the workflow but cannot edit it.
+**Exit, live:** an admin copies a default workflow, removes a step, gives
+plan a `design-notes` result linked into build, and saves; a member runs a
+request on the copy; the job skips the removed step, the design notes are
+kept as a document and reach the build's brief; a viewer sees the workflow
+but cannot edit it.
 
 #### A8 — The full pipeline (L)
 

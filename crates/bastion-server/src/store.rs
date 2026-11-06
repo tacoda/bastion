@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use bastion_core::audit::{self, Entry};
 use bastion_core::govern::{Call, Capability, Constraint};
-use bastion_core::{Dial, Dials, Job, Stage};
+use bastion_core::{Dial, Dials, Job, Stage, State};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -472,14 +472,21 @@ fn text(row: &Value, column: &str) -> Option<String> {
     row[column].as_str().map(String::from)
 }
 
+/// A live job kept at a checkpoint before D33 waits on the step it judged.
 fn record(row: &Value) -> Result<Record, String> {
+    let state: State = parse(row, "state")?;
+    let stage: Stage = parse(row, "stage")?;
     Ok(Record {
         job: Job {
             id: parse(row, "id")?,
             workspace: parse(row, "workspace")?,
             request: parse(row, "request")?,
-            stage: parse(row, "stage")?,
-            state: parse(row, "state")?,
+            stage: if state.finished() {
+                stage
+            } else {
+                bastion_core::folded(stage)
+            },
+            state,
             question: text(row, "question"),
             feedback: text(row, "feedback"),
             plan: text(row, "plan"),
@@ -746,10 +753,13 @@ impl Store for SqlStore {
                 .await?
             {
                 let dial: Dial = parse(&row, "dial")?;
-                match row["checkpoint"].as_str() {
-                    Some("approve") => dials.approve = dial,
-                    Some("review") => dials.review = dial,
-                    _ => {}
+                let judged: &[Stage] = match row["checkpoint"].as_str() {
+                    Some("approve") => &[Stage::Plan],
+                    Some("review") => &[Stage::Build, Stage::CodeReview],
+                    _ => &[],
+                };
+                for stage in judged {
+                    dials.set(*stage, dial);
                 }
             }
             Ok(dials)
@@ -932,7 +942,7 @@ pub mod fake {
         }
 
         fn dials(&self) -> Answer<'_, Dials> {
-            let dials = *self.dials.lock().unwrap();
+            let dials = self.dials.lock().unwrap().clone();
             Box::pin(async move { Ok(dials) })
         }
 
@@ -1175,6 +1185,7 @@ mod tests {
     fn a_row_reads_back_as_the_record_it_was_written_from() {
         let mut r = record();
         r.job.state = State::NeedsYou;
+        // Kept at a checkpoint before D33.
         r.job.stage = Stage::Approve;
         r.job.plan = Some("1. x".into());
         r.job.pipeline = bastion_core::Pipeline::Full;
@@ -1188,7 +1199,9 @@ mod tests {
             .zip(values.as_array().unwrap())
             .map(|(c, v)| (c.to_string(), v.clone()))
             .collect();
-        assert_eq!(super::record(&Value::Object(row)).unwrap(), r);
+        let mut folded = r;
+        folded.job.stage = Stage::Plan;
+        assert_eq!(super::record(&Value::Object(row)).unwrap(), folded);
     }
 }
 

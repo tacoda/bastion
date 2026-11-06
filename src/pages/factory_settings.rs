@@ -114,18 +114,17 @@ fn set_model(s: &mut SettingsView, plan: bool, choice: &str) {
     (*p, *m) = (provider.to_string(), model.to_string());
 }
 
-/// The oversight presets, each one button that sets both dials.
+/// The oversight presets, each one button that sets every step's dial (D33).
 fn presets(preset: impl Fn(&'static str) + Copy + 'static) -> impl IntoView {
     let all = [
-        ("high", "High: you approve plans and changes"),
-        ("medium", "Medium: both hold"),
-        ("low", "Low: plans auto, changes hold"),
-        ("off", "Off"),
+        ("lights_on", "Lights-on: every step waits for you"),
+        ("dim", "Dim: only ship, land, merge and deploy wait for you"),
+        ("dark", "Dark: no step waits for you"),
     ];
     view! {
         <div class="flex flex-wrap items-center gap-2 text-sm">
             <span class="text-muted">"Oversight:"</span>
-            {all.map(|(p, title)| view! { <button class=BUTTON title=title on:click=move |_| preset(p)>{p}</button> })}
+            {all.map(|(p, title)| view! { <button class=BUTTON title=title on:click=move |_| preset(p)>{p.replace('_', "-")}</button> })}
         </div>
     }
 }

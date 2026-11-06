@@ -1,4 +1,5 @@
-//! Every transition of the short pipeline, as plain function calls.
+//! Every transition of the short pipeline, as plain function calls. Every
+//! dial is lights-on unless a test sets it (D33).
 
 use super::*;
 
@@ -71,7 +72,7 @@ fn admission_provisions_and_provisioning_starts_a_read_only_plan_turn() {
 #[test]
 fn a_finished_plan_is_recorded_and_waits_for_approval() {
     let (j, effects) = run(&planned());
-    assert_eq!((j.stage, j.state), (Stage::Approve, State::NeedsYou));
+    assert_eq!((j.stage, j.state), (Stage::Plan, State::NeedsYou));
     assert_eq!(j.plan.as_deref(), Some("1. Add /health"));
     assert_eq!(
         effects,
@@ -134,9 +135,15 @@ fn a_comment_at_review_rebuilds() {
 }
 
 #[test]
-fn review_approval_lands_and_landing_tears_down() {
+fn the_land_waits_before_it_acts_then_lands_and_tears_down() {
     let mut events = planned();
     events.extend([Event::Approved, done("Added /health"), Event::Approved]);
+    let (j, effects) = run(&events);
+    assert_eq!(
+        (j.stage, j.state, effects),
+        (Stage::Land, State::NeedsYou, vec![])
+    );
+    events.push(Event::Approved);
     let (j, effects) = run(&events);
     assert_eq!(
         (j.stage, j.state, effects),
@@ -287,16 +294,10 @@ fn steps_show_done_before_the_current_stage_and_pending_after_it() {
     let states: Vec<StepState> = steps(&j).into_iter().map(|(_, s)| s).collect();
     assert_eq!(
         states,
-        [
-            StepState::Done,
-            StepState::Done,
-            StepState::Running,
-            StepState::Pending,
-            StepState::Pending
-        ]
+        [StepState::Done, StepState::Running, StepState::Pending]
     );
     let (j, _) = run(&planned());
-    assert_eq!(steps(&j)[1], (Stage::Approve, StepState::Waiting));
+    assert_eq!(steps(&j)[0], (Stage::Plan, StepState::Waiting));
     let (j, _) = run(&[
         Event::Admitted,
         Event::ProvisionFailed { error: "x".into() },
@@ -311,6 +312,7 @@ fn a_landed_job_shows_every_step_done() {
         Event::Approved,
         done("built"),
         Event::Approved,
+        Event::Approved,
         Event::Landed,
     ]);
     let (j, _) = run(&events);
@@ -322,7 +324,7 @@ fn a_finished_build_records_its_report_and_captures_the_diff_for_review() {
     let mut events = planned();
     events.extend([Event::Approved, done("Added /health")]);
     let (j, effects) = run(&events);
-    assert_eq!((j.stage, j.state), (Stage::Review, State::NeedsYou));
+    assert_eq!((j.stage, j.state), (Stage::Build, State::NeedsYou));
     assert_eq!(
         effects,
         vec![
@@ -343,14 +345,16 @@ fn run_with(dials: Dials, events: &[Event]) -> (Job, Vec<Effect>) {
     current
 }
 
+/// Every step lights-on but `stage`, which is at `dial`.
+fn one(stage: Stage, dial: Dial) -> Dials {
+    let mut d = Dials::default();
+    d.set(stage, dial);
+    d
+}
+
 #[test]
-fn an_auto_approve_goes_straight_to_build() {
-    let dials = Dials {
-        approve: Dial::Auto,
-        review: Dial::Ask,
-        ..Dials::default()
-    };
-    let (j, effects) = run_with(dials, &planned());
+fn a_dark_plan_goes_straight_to_build() {
+    let (j, effects) = run_with(one(Stage::Plan, Dial::Dark), &planned());
     assert_eq!((j.stage, j.state), (Stage::Build, State::Running));
     assert!(matches!(
         &effects[..],
@@ -365,86 +369,20 @@ fn an_auto_approve_goes_straight_to_build() {
 }
 
 #[test]
-fn a_held_checkpoint_waits_then_approves_when_the_hold_expires() {
-    let dials = Dials {
-        approve: Dial::Hold,
-        review: Dial::Ask,
-        ..Dials::default()
-    };
-    let (j, effects) = run_with(dials, &planned());
-    assert_eq!((j.stage, j.state), (Stage::Approve, State::NeedsYou));
+fn with_every_dial_dark_a_request_lands_alone() {
+    let events = [
+        Event::Admitted,
+        Event::Provisioned,
+        done("plan"),
+        done("built"),
+    ];
+    let (j, effects) = run_with(Dials::all(Dial::Dark), &events);
     assert_eq!(
-        effects.last(),
-        Some(&Effect::Hold {
-            stage: Stage::Approve,
-            secs: HOLD_SECS
-        })
+        (j.stage, j.state, effects.last()),
+        (Stage::Land, State::Running, Some(&Effect::Land))
     );
-    let mut events = planned();
-    events.push(Event::HoldExpired {
-        stage: Stage::Approve,
-    });
-    let (j, _) = run_with(dials, &events);
-    assert_eq!((j.stage, j.state), (Stage::Build, State::Running));
-}
-
-#[test]
-fn a_hold_that_expires_after_the_owner_acted_changes_nothing() {
-    let dials = Dials {
-        approve: Dial::Hold,
-        review: Dial::Ask,
-        ..Dials::default()
-    };
-    let mut events = planned();
-    events.extend([
-        Event::Commented {
-            text: "redo".into(),
-        },
-        Event::HoldExpired {
-            stage: Stage::Approve,
-        },
-    ]);
-    let (j, _) = run_with(dials, &events);
-    assert_eq!((j.stage, j.state), (Stage::Plan, State::Running));
-}
-
-#[test]
-fn review_never_goes_below_hold() {
-    let dials = Dials {
-        approve: Dial::Auto,
-        review: Dial::Auto,
-        ..Dials::default()
-    };
-    assert_eq!(dials.at(Stage::Review), Dial::Hold);
-    let (j, effects) = run_with(
-        dials,
-        &[
-            Event::Admitted,
-            Event::Provisioned,
-            done("plan"),
-            done("built"),
-        ],
-    );
-    assert_eq!((j.stage, j.state), (Stage::Review, State::NeedsYou));
-    assert_eq!(
-        effects.last(),
-        Some(&Effect::Hold {
-            stage: Stage::Review,
-            secs: HOLD_SECS
-        })
-    );
-}
-
-#[test]
-fn a_held_checkpoint_says_when_it_approves_itself() {
-    let dials = Dials {
-        approve: Dial::Hold,
-        review: Dial::Ask,
-        ..Dials::default()
-    };
-    let (j, _) = run_with(dials, &planned());
-    assert_eq!(hold_until(&j, &dials), Some(j.updated_at + HOLD_SECS));
-    assert_eq!(hold_until(&j, &Dials::default()), None);
+    let (j, _) = step(&j, &Event::Landed, AT + 9, &Dials::all(Dial::Dark));
+    assert_eq!(j.state, State::Landed);
 }
 
 #[test]
@@ -453,6 +391,7 @@ fn a_failed_land_waits_on_the_owner_with_its_vm_and_approve_retries_it() {
     events.extend([
         Event::Approved,
         done("built"),
+        Event::Approved,
         Event::Approved,
         Event::LandFailed {
             error: "no ref".into(),
@@ -510,6 +449,7 @@ fn opened() -> Job {
         Event::Approved,
         done("built"),
         Event::Approved,
+        Event::Approved,
     ])
     .0;
     assert_eq!((j.stage, j.state), (Stage::Land, State::Running));
@@ -564,9 +504,10 @@ fn a_failing_ci_run_sends_a_bounded_fix_turn_with_its_log() {
             panic!("a fix turn starts")
         };
         assert!(brief.contains("CHANGELOG.md has no entry"), "{brief}");
-        // The fix goes back through review and land to the same pull request.
+        // The fix waits on the owner again, then the land pushes to the same
+        // pull request.
         let mut back = next;
-        for e in [done("fixed"), Event::Approved] {
+        for e in [done("fixed"), Event::Approved, Event::Approved] {
             back = step(&back, &e, AT + 31, &Dials::default()).0;
         }
         assert_eq!((back.stage, back.pr.is_some()), (Stage::Land, true));

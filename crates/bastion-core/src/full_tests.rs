@@ -1,4 +1,6 @@
 //! The full pipeline's transitions (A8 step 1), as plain function calls.
+//! `go` runs with every dial dark, so a test sees the flow; `judge` runs
+//! with every dial lights-on, so a test sees the waits (D33).
 
 use super::*;
 
@@ -37,6 +39,10 @@ fn failed(detail: &str) -> Event {
 }
 
 fn go(j: &Job, e: &Event) -> (Job, Vec<Effect>) {
+    step(j, e, AT + 1, &Dials::all(Dial::Dark))
+}
+
+fn judge(j: &Job, e: &Event) -> (Job, Vec<Effect>) {
     step(j, e, AT + 1, &Dials::default())
 }
 
@@ -71,35 +77,46 @@ fn a_full_job_prepares_first_then_scopes_read_only() {
 }
 
 #[test]
-fn without_acceptance_tests_an_approved_plan_goes_to_implement() {
+fn without_acceptance_tests_the_plan_goes_to_implement() {
     let mut j = job(Pipeline::FullNoAcceptance);
-    j.stage = Stage::Approve;
-    j.state = State::NeedsYou;
-    let (j, effects) = go(&j, &Event::Approved);
+    j.stage = Stage::Plan;
+    j.state = State::Running;
+    let (j, effects) = go(&j, &done());
     assert_eq!(j.stage, Stage::Implement);
     assert!(starts_turn(&effects, Stage::Implement));
 }
 
 #[test]
-fn each_checkpoint_obeys_its_own_dial_and_merge_never_goes_below_hold() {
-    let dials = Dials {
-        questions: Dial::Auto,
-        merge: Dial::Auto,
-        ..Dials::default()
-    };
+fn each_step_obeys_its_own_dial_and_a_step_that_acts_waits_before_it_acts() {
+    let mut dials = Dials::default();
+    dials.set(Stage::Discover, Dial::Dark);
     let (j, effects) = step(&at(Stage::Discover, State::Running), &done(), AT, &dials);
-    assert_eq!(j.stage, Stage::Plan, "clarify on auto passes through");
+    assert_eq!(j.stage, Stage::Plan, "a dark discover goes on");
     assert!(starts_turn(&effects, Stage::Plan));
 
     let (j, effects) = step(&at(Stage::Comprehend, State::Running), &done(), AT, &dials);
-    assert_eq!((j.stage, j.state), (Stage::Uat, State::NeedsYou));
-    assert!(!effects.iter().any(|e| matches!(e, Effect::Hold { .. })));
+    assert_eq!((j.stage, j.state), (Stage::Comprehend, State::NeedsYou));
+    assert!(
+        effects
+            .iter()
+            .all(|e| matches!(e, Effect::RecordArtifact { .. }))
+    );
     let (j, effects) = step(&j, &Event::Approved, AT, &dials);
-    assert_eq!((j.stage, j.state), (Stage::Merge, State::NeedsYou));
-    assert!(effects.contains(&Effect::Hold {
-        stage: Stage::Merge,
-        secs: HOLD_SECS
-    }));
+    assert_eq!(
+        (j.stage, j.state, effects),
+        (Stage::Merge, State::NeedsYou, vec![])
+    );
+    let (j, effects) = step(&j, &Event::Approved, AT, &dials);
+    assert_eq!((j.state, effects), (State::Running, vec![Effect::Merge]));
+
+    dials.set(Stage::Merge, Dial::Dark);
+    let (_, effects) = step(
+        &at(Stage::Comprehend, State::NeedsYou),
+        &Event::Approved,
+        AT,
+        &dials,
+    );
+    assert_eq!(effects, vec![Effect::Merge], "a dark merge merges alone");
 }
 
 #[test]
@@ -213,19 +230,24 @@ fn a_failed_deploy_waits_on_the_owner_at_once() {
 }
 
 #[test]
-fn comments_at_the_picks_and_uat_send_the_work_to_implement() {
-    let comment = Event::Commented {
+fn notes_on_refactor_review_and_comprehend_send_the_work_to_implement() {
+    let note = Event::Commented {
         text: "Extract the parser".into(),
     };
-    let (j, _) = go(&at(Stage::PickRefactors, State::NeedsYou), &comment);
+    let (j, _) = judge(&at(Stage::Refactor, State::NeedsYou), &note);
     assert_eq!(
         (j.stage, j.back_to),
         (Stage::Implement, Some(Stage::Acceptance))
     );
+    let (j, _) = judge(&at(Stage::CodeReview, State::NeedsYou), &note);
+    assert_eq!(
+        (j.stage, j.back_to),
+        (Stage::Implement, Some(Stage::Checks))
+    );
 
-    let mut uat = at(Stage::Uat, State::NeedsYou);
+    let mut uat = at(Stage::Comprehend, State::NeedsYou);
     uat.revisions.insert(Stage::Checks, 2);
-    let (j, _) = go(&uat, &comment);
+    let (j, _) = judge(&uat, &note);
     assert_eq!(
         (j.stage, j.back_to),
         (Stage::Implement, Some(Stage::Checks))
@@ -268,8 +290,8 @@ fn discovery_reads_tasks_and_questions() {
 }
 
 #[test]
-fn discovery_with_questions_waits_at_clarify_and_the_answers_reach_the_plan() {
-    let (j, effects) = go(
+fn discovery_with_questions_waits_and_the_answers_reach_the_plan() {
+    let (j, effects) = judge(
         &at(Stage::Discover, State::Running),
         &Event::TurnFinished {
             outcome: Outcome::Done {
@@ -277,7 +299,7 @@ fn discovery_with_questions_waits_at_clarify_and_the_answers_reach_the_plan() {
             },
         },
     );
-    assert_eq!((j.stage, j.state), (Stage::Clarify, State::NeedsYou));
+    assert_eq!((j.stage, j.state), (Stage::Discover, State::NeedsYou));
     assert_eq!(j.tasks.len(), 2);
     assert!(effects.iter().any(|e| matches!(
         e,
@@ -286,7 +308,7 @@ fn discovery_with_questions_waits_at_clarify_and_the_answers_reach_the_plan() {
             ..
         }
     )));
-    let (j, effects) = go(
+    let (j, effects) = judge(
         &j,
         &Event::Commented {
             text: "8080".into(),
@@ -301,15 +323,8 @@ fn discovery_with_questions_waits_at_clarify_and_the_answers_reach_the_plan() {
 }
 
 #[test]
-fn discovery_without_questions_goes_straight_to_the_plan() {
-    let (j, _) = go(
-        &at(Stage::Discover, State::Running),
-        &Event::TurnFinished {
-            outcome: Outcome::Done {
-                report: "TASKS:\n1. Add the route\nQUESTIONS:\n".into(),
-            },
-        },
-    );
+fn a_dark_discovery_goes_on_to_the_plan_with_its_questions_open() {
+    let (j, _) = go(&at(Stage::Discover, State::Running), &reply(DISCOVERY));
     assert_eq!((j.stage, j.state), (Stage::Plan, State::Running));
 }
 
@@ -326,25 +341,25 @@ const SPEC: &str =
 
 #[test]
 fn defines_criteria_reach_specify_and_the_owner_may_redefine_three_times() {
-    let (j, _) = go(&at(Stage::Define, State::Running), &reply("C1: it answers"));
+    let (j, _) = judge(&at(Stage::Define, State::Running), &reply("C1: it answers"));
     assert_eq!(
-        (j.stage, j.criteria.as_deref()),
-        (Stage::YourChecks, Some("C1: it answers"))
+        (j.stage, j.state, j.criteria.as_deref()),
+        (Stage::Define, State::NeedsYou, Some("C1: it answers"))
     );
     let mut j = j;
     for _ in 0..MAX_REDEFINES {
         assert!(actions(&j).contains(&Action::Comment));
-        (j, _) = go(
+        (j, _) = judge(
             &j,
             &Event::Commented {
                 text: "fewer".into(),
             },
         );
-        assert_eq!(j.stage, Stage::Define);
-        (j, _) = go(&j, &reply("C1: it answers"));
+        assert_eq!((j.stage, j.state), (Stage::Define, State::Running));
+        (j, _) = judge(&j, &reply("C1: it answers"));
     }
     assert_eq!(actions(&j), vec![Action::Approve, Action::Stop]);
-    let (_, effects) = go(&j, &Event::Approved);
+    let (_, effects) = judge(&j, &Event::Approved);
     let brief = match effects.as_slice() {
         [
             Effect::StartTurn {
@@ -418,32 +433,32 @@ fn a_changed_test_at_verify_waits_on_the_owner_without_a_fix_turn() {
 }
 
 #[test]
-fn a_refactor_with_nothing_proposed_goes_to_acceptance_and_one_with_proposals_waits_for_a_pick() {
+fn a_refactor_waits_for_a_pick_unless_its_dial_is_dark() {
     let (j, effects) = go(&at(Stage::Refactor, State::Running), &reply("REFACTORS:\n"));
     assert_eq!(j.stage, Stage::Acceptance);
     assert!(effects.contains(&Effect::RunStep {
         stage: Stage::Acceptance
     }));
-    let (j, _) = go(
+    let (j, _) = judge(
         &at(Stage::Refactor, State::Running),
         &reply("REFACTORS:\n1. Extract the parser"),
     );
-    assert_eq!((j.stage, j.state), (Stage::PickRefactors, State::NeedsYou));
+    assert_eq!((j.stage, j.state), (Stage::Refactor, State::NeedsYou));
 }
 
 #[test]
-fn a_review_captures_the_diff_and_waits_for_a_pick_only_when_it_found_something() {
+fn a_review_captures_the_diff_and_waits_for_a_pick_unless_its_dial_is_dark() {
     let (j, effects) = go(
         &at(Stage::CodeReview, State::Running),
         &reply("FINDINGS:\n"),
     );
     assert_eq!(j.stage, Stage::Ship);
     assert!(effects.contains(&Effect::CaptureDiff));
-    let (j, _) = go(
+    let (j, _) = judge(
         &at(Stage::CodeReview, State::Running),
         &reply("FINDINGS:\n1. calc.py:3 divides by zero"),
     );
-    assert_eq!((j.stage, j.state), (Stage::PickFindings, State::NeedsYou));
+    assert_eq!((j.stage, j.state), (Stage::CodeReview, State::NeedsYou));
 }
 
 #[test]

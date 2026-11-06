@@ -368,8 +368,6 @@ pub struct JobSummary {
     pub error: Option<String>,
     pub created_at: u64,
     pub updated_at: u64,
-    /// When a held checkpoint approves itself, if the job waits at one.
-    pub hold_until: Option<u64>,
     /// What the owner may do now: `approve`, `comment`, `answer`, `stop`.
     pub actions: Vec<String>,
     /// The job's pull request, when the forge is GitHub.

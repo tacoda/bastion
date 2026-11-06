@@ -12,8 +12,7 @@ use bastion_core::govern::Enforcement;
 use bastion_core::review;
 use bastion_core::settings::Forge;
 use bastion_core::{
-    BASE_TAG, Dial, Dials, Effect, Event, HOLD_SECS, Job, Outcome, Pipeline, Stage, State, admit,
-    outcome, step,
+    BASE_TAG, Dials, Effect, Event, Job, Outcome, Pipeline, Stage, State, admit, outcome, step,
 };
 use serde_json::{Value, json};
 
@@ -383,10 +382,6 @@ impl Factory {
             Effect::Teardown => {
                 self.grade_trial(&record);
                 self.teardown(&record).await.err()
-            }
-            Effect::Hold { stage, secs } => {
-                self.hold_checkpoint(id.clone(), stage, secs);
-                None
             }
         };
         if let Some(error) = failed {
@@ -931,16 +926,6 @@ impl Factory {
         Ok(())
     }
 
-    /// Approve a held checkpoint when its time runs out. The core ignores it if
-    /// the owner acted first.
-    fn hold_checkpoint(self: &Arc<Self>, id: String, stage: Stage, secs: u64) {
-        let factory = self.clone();
-        crate::rt::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(secs)).await;
-            let _ = factory.apply(&id, Event::HoldExpired { stage }).await;
-        });
-    }
-
     /// Judge a build's diff by the constraints that bind it. An enforced
     /// rule it breaks sends the work back once with the rule and what broke
     /// it; if the next build breaks it the same way, the owner decides.
@@ -1176,15 +1161,6 @@ impl Factory {
                     };
                     let factory = self.clone();
                     crate::rt::spawn(async move { factory.run(record, effect).await });
-                }
-                (State::NeedsYou, stage, _) => {
-                    // A hold that was counting down when the app quit.
-                    if let Ok(dials) = self.store.dials().await
-                        && dials.at(stage) == Dial::Hold
-                    {
-                        let left = (record.job.updated_at + HOLD_SECS).saturating_sub(now());
-                        self.hold_checkpoint(id, stage, left);
-                    }
                 }
                 // The turn may have ended while the app was closed.
                 (State::Running, _, Some(session))

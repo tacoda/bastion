@@ -12,7 +12,7 @@ use serde::Serialize;
 
 use crate::ipc;
 use crate::pages::diff::DiffView;
-use crate::route::{Route, ago, mark, nav, until};
+use crate::route::{Route, ago, mark, nav};
 
 #[derive(Serialize)]
 struct Id {
@@ -127,8 +127,8 @@ fn charter(c: Option<CharterView>) -> impl IntoView + use<> {
     })
 }
 
-/// What the checkpoint judges: the plan at approve, discovery's questions
-/// at clarify, and the build's report and its diff at review.
+/// What the wait judges: the step's own artifact, with the diff after the
+/// build and the code review, and before a step that lands the change.
 fn judged(d: &JobDetail) -> (Option<String>, Option<String>) {
     let latest = |stage: &str| {
         d.artifacts
@@ -138,40 +138,39 @@ fn judged(d: &JobDetail) -> (Option<String>, Option<String>) {
             .map(|a| a.body.clone())
     };
     match d.job.stage.as_str() {
-        "review" => (latest("build"), latest("review")),
-        "approve" => (latest("plan"), None),
-        "clarify" => (latest("discover"), None),
-        "your_checks" => (latest("define"), None),
-        "pick_refactors" => (latest("refactor"), None),
-        "pick_findings" => (latest("code_review"), latest("review")),
-        "prove" => (latest("prove"), None),
-        "uat" => (latest("comprehend"), None),
-        "merge" => (latest("comprehend"), latest("review")),
-        _ => (None, None),
+        "build" | "code_review" => (latest(&d.job.stage), latest("review")),
+        "land" => (latest("build"), latest("review")),
+        "ship" | "merge" => (latest("comprehend"), latest("review")),
+        stage => (latest(stage), None),
     }
 }
 
-/// What Approve does at the checkpoint the job waits at.
+/// What Approve does at the step the job waits on (D33).
 fn what_approve_does(d: &JobDetail) -> &'static str {
+    let failed = d.job.error.is_some();
     match d.job.stage.as_str() {
-        "land" if d.job.pr.is_some() => {
+        "land" if d.job.pr.is_some() && !failed => {
             "CI passed on the pull request. Approve merges it, or stop the job."
         }
-        "land" => "Approve retries the land, or stop the job.",
-        "review" => "Approve the build artifact to move on, or send it back with a note.",
-        "clarify" => "Answer discovery's questions in a note, or approve to plan without answers.",
-        "your_checks" => {
-            "Approve these criteria to write their tests, or send them back with a note."
+        "land" | "ship" | "merge" | "deploy" if failed => {
+            "Approve tries the step again, or stop the job."
         }
-        "pick_refactors" => "Name the refactorings to make in a note, or approve to make none.",
-        "pick_findings" => "Name the findings to fix in a note, or approve to fix none.",
+        "land" => "Approve lands the change on the workspace's branch.",
+        "ship" => "Approve pushes the change and opens its pull request.",
+        "merge" => "Approve merges the pull request.",
+        "deploy" => "Approve watches the deploy of the merged change.",
+        _ if failed => "Approve goes on without this step, or send it back with a note.",
+        "discover" => {
+            "Answer discovery's questions in a note, or approve to plan on its assumptions."
+        }
+        "define" => "Approve these criteria to write their tests, or send them back with a note.",
+        "refactor" => "Name the refactorings to make in a note, or approve to make none.",
+        "code_review" => "Name the findings to fix in a note, or approve to fix none.",
         "prove" => "The proof is partial. Approve to go on, or send it back with a note.",
-        "uat" => {
+        "comprehend" => {
             "Try the change as the briefing says, then approve, or say what is wrong in a note."
         }
-        "merge" if d.job.pr.is_some() => "Approve merges the pull request.",
-        "merge" => "Approve lands the change on the workspace's branch.",
-        _ => "Approve the plan artifact to move on, or send it back with a note.",
+        _ => "Approve this step's result to move on, or send it back with a note.",
     }
 }
 
@@ -289,12 +288,6 @@ pub fn JobPage(id: String) -> impl IntoView {
         <Show when=waits>
             <section class="mb-4 grid gap-3 rounded-xl border border-warn bg-panel p-4">
                 <h2 class="m-0 text-sm font-semibold text-warn">"Waiting for you"</h2>
-                {move || detail.get().and_then(|d| d.job.hold_until).map(|at| view! {
-                    <p class="m-0 text-sm text-warn">{format!(
-                        "Held: this approves itself {} unless you act first.",
-                        until(at)
-                    )}</p>
-                })}
                 {move || detail.get().and_then(|d| d.job.question).map(|q| view! {
                     <p class="m-0"><strong>"The agent asks: "</strong>{q}</p>
                 })}

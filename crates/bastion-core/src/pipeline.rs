@@ -9,7 +9,8 @@ use crate::Stage;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Pipeline {
-    /// Plan, approve, build, review, land (D17).
+    /// Plan, build, land (D17). Approve and review are plan's and build's
+    /// waits (D33).
     #[default]
     Short,
     /// wipp's whole factory, with acceptance tests written and proven first.
@@ -19,47 +20,34 @@ pub enum Pipeline {
     FullNoAcceptance,
 }
 
-const SHORT: [Stage; 5] = [
-    Stage::Plan,
-    Stage::Approve,
-    Stage::Build,
-    Stage::Review,
-    Stage::Land,
-];
+const SHORT: [Stage; 3] = [Stage::Plan, Stage::Build, Stage::Land];
 
-const FULL: [Stage; 26] = [
+const FULL: [Stage; 20] = [
     Stage::Prepare,
     Stage::Scope,
     Stage::Discover,
-    Stage::Clarify,
     Stage::Plan,
-    Stage::Approve,
     Stage::Define,
-    Stage::YourChecks,
     Stage::Specify,
     Stage::Baseline,
     Stage::Implement,
     Stage::Checks,
     Stage::Verify,
     Stage::Refactor,
-    Stage::PickRefactors,
     Stage::Acceptance,
     Stage::CodeReview,
-    Stage::PickFindings,
     Stage::Ship,
     Stage::Ci,
     Stage::Prove,
     Stage::Comprehend,
-    Stage::Uat,
     Stage::Merge,
     Stage::Deploy,
     Stage::Learn,
 ];
 
 /// The stages that exist only to write and prove acceptance tests.
-const ACCEPTANCE: [Stage; 6] = [
+const ACCEPTANCE: [Stage; 5] = [
     Stage::Define,
-    Stage::YourChecks,
     Stage::Specify,
     Stage::Baseline,
     Stage::Verify,
@@ -87,7 +75,8 @@ impl Pipeline {
 pub enum Kind {
     /// An agent turn.
     Turn,
-    /// The owner decides, under the checkpoint's dial.
+    /// A person decided, before D33 folded each checkpoint into the step
+    /// it judged (`folded`). No pipeline has one now.
     Checkpoint,
     /// The factory runs it itself: a script, a check, a push, a watch.
     Factory,
@@ -110,17 +99,32 @@ pub fn revise(stage: Stage) -> Option<(Stage, Option<Stage>, u32)> {
     })
 }
 
-/// Where a comment at a checkpoint sends the work, and where the reworked
-/// work goes after it. A comment on a step that waits on the owner asks for
-/// one more try at fixing it.
-pub fn sent_back(stage: Stage) -> (Stage, Option<Stage>) {
+/// Where a note sends the work, and where the reworked work goes after it.
+/// On a `judged` result, the note is what a person sends at that step:
+/// answers to discovery's questions go to plan, and picked refactorings,
+/// findings or UAT notes go to implement. A note on a step that failed asks
+/// for one more try at fixing it, and any other note reruns the step.
+pub fn sent_back(stage: Stage, judged: bool) -> (Stage, Option<Stage>) {
     match stage {
-        Stage::Approve | Stage::Clarify => (Stage::Plan, None),
-        Stage::Review => (Stage::Build, None),
-        Stage::YourChecks => (Stage::Define, None),
-        Stage::PickRefactors => (Stage::Implement, Some(Stage::Acceptance)),
-        Stage::PickFindings | Stage::Uat => (Stage::Implement, Some(Stage::Checks)),
+        Stage::Discover if judged => (Stage::Plan, None),
+        Stage::Refactor if judged => (Stage::Implement, Some(Stage::Acceptance)),
+        Stage::CodeReview | Stage::Comprehend if judged => (Stage::Implement, Some(Stage::Checks)),
         other => revise(other).map_or((other, None), |(fix, back, _)| (fix, back)),
+    }
+}
+
+/// The step an old checkpoint judged, where a stored job waiting at it
+/// now waits (D33). Any other stage is itself.
+pub fn folded(stage: Stage) -> Stage {
+    match stage {
+        Stage::Approve => Stage::Plan,
+        Stage::Clarify => Stage::Discover,
+        Stage::YourChecks => Stage::Define,
+        Stage::Review => Stage::Build,
+        Stage::PickRefactors => Stage::Refactor,
+        Stage::PickFindings => Stage::CodeReview,
+        Stage::Uat => Stage::Comprehend,
+        other => other,
     }
 }
 
@@ -145,32 +149,24 @@ mod tests {
     }
 
     #[test]
-    fn without_acceptance_tests_the_full_pipeline_goes_from_approve_to_implement() {
+    fn without_acceptance_tests_the_full_pipeline_goes_from_plan_to_implement() {
         let stages = Pipeline::FullNoAcceptance.stages();
-        let approve = stages.iter().position(|s| *s == Stage::Approve).unwrap();
-        assert_eq!(stages[approve + 1], Stage::Implement);
+        let plan = stages.iter().position(|s| *s == Stage::Plan).unwrap();
+        assert_eq!(stages[plan + 1], Stage::Implement);
         assert!(!stages.contains(&Stage::Verify));
         assert_eq!(stages.len(), FULL.len() - ACCEPTANCE.len());
     }
 
     #[test]
-    fn every_full_stage_has_one_kind_and_only_checkpoints_wait_on_a_dial() {
-        let checkpoints: Vec<Stage> = Pipeline::Full
-            .stages()
+    fn no_pipeline_has_a_checkpoint_and_each_one_folds_into_a_step() {
+        for stage in FULL.iter().chain(&SHORT) {
+            assert!(stage.dialed(), "{stage:?}");
+        }
+        for stage in Stage::ALL
             .into_iter()
             .filter(|s| s.kind() == Kind::Checkpoint)
-            .collect();
-        assert_eq!(
-            checkpoints,
-            [
-                Stage::Clarify,
-                Stage::Approve,
-                Stage::YourChecks,
-                Stage::PickRefactors,
-                Stage::PickFindings,
-                Stage::Uat,
-                Stage::Merge,
-            ]
-        );
+        {
+            assert!(folded(stage).dialed(), "{stage:?}");
+        }
     }
 }

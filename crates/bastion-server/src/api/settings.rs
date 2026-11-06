@@ -5,11 +5,11 @@
 use std::path::Path;
 
 use bastion_core::settings::{Forge, Model, Oversight, Settings, Tracker};
-use bastion_core::{Dial, Dials};
+use bastion_core::{Dial, Stage};
 use bastion_protocol::{AccountView, IssueView, ModelOption, SettingsView, VersionView};
 use serde_json::json;
 
-use super::factory::{FactoryCell, factory, name};
+use super::factory::{FactoryCell, factory, name, plan_and_change};
 use crate::events::Bus;
 use crate::factory::{Submission, now};
 use crate::{forge, settings_store};
@@ -26,8 +26,8 @@ fn word<T: for<'de> serde::Deserialize<'de>>(text: &str, what: &str) -> Result<T
 
 fn view_of(s: &Settings) -> SettingsView {
     SettingsView {
-        approve: name(s.dials.approve),
-        review: name(s.dials.review),
+        approve: name(s.dials.at(Stage::Plan)),
+        review: name(s.dials.at(Stage::Build)),
         plan_provider: s.plan_model.provider.clone(),
         plan_model: s.plan_model.model.clone(),
         build_provider: s.build_model.provider.clone(),
@@ -37,17 +37,20 @@ fn view_of(s: &Settings) -> SettingsView {
     }
 }
 
-fn settings_of(v: &SettingsView) -> Result<Settings, String> {
+/// The settings the page sent, over `was` for the dials it does not show.
+fn settings_of(v: &SettingsView, was: Settings) -> Result<Settings, String> {
     let model = |provider: &str, model: &str| Model {
         provider: provider.trim().into(),
         model: model.trim().into(),
     };
+    let mut dials = was.dials;
+    plan_and_change(
+        &mut dials,
+        word::<Dial>(&v.approve, "dial")?,
+        word::<Dial>(&v.review, "dial")?,
+    );
     Ok(Settings {
-        dials: Dials {
-            approve: word::<Dial>(&v.approve, "dial")?,
-            review: word::<Dial>(&v.review, "dial")?,
-            ..Dials::default()
-        },
+        dials,
         plan_model: model(&v.plan_provider, &v.plan_model),
         build_model: model(&v.build_provider, &v.build_model),
         forge: word::<Forge>(&v.forge, "forge")?,
@@ -66,8 +69,9 @@ pub async fn settings_set(
     cell: &FactoryCell,
     settings: SettingsView,
 ) -> Result<(), String> {
-    let next = settings_of(&settings)?;
-    settings_store::change(&**factory(cell)?.store(), &next, now()).await?;
+    let store = factory(cell)?.store().clone();
+    let next = settings_of(&settings, settings_store::current(&*store).await?)?;
+    settings_store::change(&*store, &next, now()).await?;
     changed(events);
     Ok(())
 }
@@ -241,17 +245,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_settings_view_reads_back_and_a_bad_word_is_refused() {
-        let s = Settings {
+    fn a_settings_view_reads_back_keeps_the_dials_it_hides_and_refuses_a_bad_word() {
+        let mut s = Settings {
             forge: Forge::Github,
             tracker: Tracker::GithubIssues,
             ..Settings::default()
         };
-        assert_eq!(settings_of(&view_of(&s)), Ok(s));
+        s.dials.set(Stage::Plan, Dial::Dark);
+        s.dials.set(Stage::Discover, Dial::Dark);
+        assert_eq!(settings_of(&view_of(&s), s.clone()), Ok(s));
         let bad = SettingsView {
             forge: "gitlab".into(),
             ..view_of(&Settings::default())
         };
-        assert!(settings_of(&bad).unwrap_err().contains("gitlab"));
+        assert!(
+            settings_of(&bad, Settings::default())
+                .unwrap_err()
+                .contains("gitlab")
+        );
     }
 }

@@ -62,9 +62,9 @@ fn Checkpoints() -> impl IntoView {
                             save(d);
                         }
                     }>
-                    {["ask", "hold", "auto"].map(|option| {
+                    {[("lights_on", "lights-on"), ("dark", "dark")].map(|(option, shown)| {
                         let selected = move || dials.get().is_some_and(|d| (if is_review { d.review } else { d.approve }) == option);
-                        view! { <option value=option selected=selected>{option}</option> }
+                        view! { <option value=option selected=selected>{shown}</option> }
                     })}
                 </select>
             </label>
@@ -72,9 +72,9 @@ fn Checkpoints() -> impl IntoView {
     };
     view! {
         <section class="mt-4 grid gap-2 rounded-xl border border-line bg-panel p-4">
-            <h2 class="m-0 text-sm font-semibold text-muted">"Checkpoints"</h2>
+            <h2 class="m-0 text-sm font-semibold text-muted">"Oversight"</h2>
             <p class="m-0 text-sm text-muted">
-                "Ask waits for you. Hold approves by itself after 30 minutes unless you act. Auto approves at once. Review is the merge, so it never goes below hold."
+                "Lights-on waits for you to approve or send the work back. Dark goes on at once. The change's dial covers the build and the code review."
             </p>
             <div class="flex flex-wrap gap-4">
                 {choice("Approve the plan", false)}

@@ -1,4 +1,4 @@
-//! The owner's settings (PLAN.md A7, D23): the checkpoint dials, the model
+//! The owner's settings (PLAN.md A7, D23): each step's dial, the model
 //! each agent stage runs, and which forge and tracker the factory uses. They
 //! are kept as versions of key/value pairs, so any version can be restored.
 
@@ -41,40 +41,31 @@ pub enum Tracker {
     GithubIssues,
 }
 
-/// How much the owner decides, as one choice that sets both dials.
+/// The oversight presets, one per workflow level (D33).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Oversight {
-    /// The owner approves every plan and every change.
-    High,
-    /// Plans and changes approve themselves after a hold unless the owner acts.
-    Medium,
-    /// Plans approve at once; changes still hold for the owner.
-    Low,
-    /// As little as Bastion allows: review never goes below hold (D15).
-    Off,
+    /// Every step waits for a person.
+    LightsOn,
+    /// Only the steps that act outside the job (ship, land, merge, deploy)
+    /// wait for a person, so a person gates the merge.
+    Dim,
+    /// No step waits.
+    Dark,
 }
 
 impl Oversight {
-    /// The approve and review dials are Bastion's own; the full pipeline's
-    /// other checkpoints follow wipp's presets (`oversight.py`).
     pub fn dials(self) -> Dials {
-        use Dial::{Ask, Auto, Hold};
-        let (approve, review, picks, uat, merge) = match self {
-            Oversight::High => (Ask, Ask, Ask, Ask, Ask),
-            Oversight::Medium => (Hold, Hold, Hold, Ask, Ask),
-            Oversight::Low => (Auto, Hold, Auto, Hold, Hold),
-            Oversight::Off => (Auto, Hold, Auto, Auto, Hold),
-        };
-        Dials {
-            approve,
-            review,
-            questions: picks,
-            checks: picks,
-            refactor: picks,
-            uat,
-            merge,
-            trial: false,
+        match self {
+            Oversight::LightsOn => Dials::all(Dial::LightsOn),
+            Oversight::Dim => {
+                let mut d = Dials::all(Dial::Dark);
+                for stage in Stage::ALL.into_iter().filter(|s| s.acts()) {
+                    d.set(stage, Dial::LightsOn);
+                }
+                d
+            }
+            Oversight::Dark => Dials::all(Dial::Dark),
         }
     }
 }
@@ -88,24 +79,49 @@ pub struct Settings {
     pub tracker: Tracker,
 }
 
-/// Each checkpoint's dial, under the key a version keeps it by.
-fn dial_keys(d: &mut Dials) -> [(&'static str, &mut Dial); 7] {
-    [
-        ("dial.approve", &mut d.approve),
-        ("dial.review", &mut d.review),
-        ("dial.questions", &mut d.questions),
-        ("dial.checks", &mut d.checks),
-        ("dial.refactor", &mut d.refactor),
-        ("dial.uat", &mut d.uat),
-        ("dial.merge", &mut d.merge),
-    ]
+/// The key a version keeps a step's dial by, such as `step.code_review`.
+fn step_key(stage: Stage) -> String {
+    let name = serde_json::to_value(stage).expect("a stage is a word");
+    format!("step.{}", name.as_str().unwrap_or_default())
 }
 
-/// Each setting's words, as a version keeps them.
-const DIALS: [(Dial, &str); 3] = [
-    (Dial::Ask, "ask"),
-    (Dial::Hold, "hold"),
-    (Dial::Auto, "auto"),
+/// The checkpoint dials a version kept before D33, and the steps each
+/// judged. Review and merge never went below hold, which reads as
+/// lights-on, the default, so they are not read.
+const OLD_DIALS: [(&str, &[Stage]); 5] = [
+    ("dial.approve", &[Stage::Plan]),
+    ("dial.questions", &[Stage::Discover]),
+    ("dial.checks", &[Stage::Define]),
+    ("dial.refactor", &[Stage::Refactor]),
+    ("dial.uat", &[Stage::Comprehend]),
+];
+
+/// Each step's dial from a version: the old checkpoint dials first, then
+/// each step's own.
+fn dials_from(read: &dyn Fn(&str) -> Option<Dial>) -> Dials {
+    let mut d = Dials::default();
+    for (key, stages) in OLD_DIALS {
+        let dial = read(key);
+        stages
+            .iter()
+            .for_each(|s| dial.into_iter().for_each(|v| d.set(*s, v)));
+    }
+    for stage in Stage::ALL.into_iter().filter(|s| s.dialed()) {
+        read(&step_key(stage))
+            .into_iter()
+            .for_each(|v| d.set(stage, v));
+    }
+    d
+}
+
+/// Each setting's words, as a version keeps them. The first word is the
+/// one written; the others are read from versions kept before D33.
+const DIALS: [(Dial, &str); 5] = [
+    (Dial::LightsOn, "lights_on"),
+    (Dial::Dark, "dark"),
+    (Dial::LightsOn, "ask"),
+    (Dial::LightsOn, "hold"),
+    (Dial::Dark, "auto"),
 ];
 const FORGES: [(Forge, &str); 2] = [(Forge::Local, "local"), (Forge::Github, "github")];
 const TRACKERS: [(Tracker, &str); 2] = [
@@ -137,19 +153,20 @@ impl Settings {
 
     /// The settings as the key/value pairs a version keeps, in a fixed order.
     pub fn to_pairs(&self) -> Vec<(String, String)> {
-        let mut dials = self.dials;
-        let dials = dial_keys(&mut dials).map(|(k, d)| (k, word(&DIALS, *d)));
-        dials
-            .into_iter()
-            .chain([
-                ("model.plan.provider", self.plan_model.provider.clone()),
-                ("model.plan.model", self.plan_model.model.clone()),
-                ("model.build.provider", self.build_model.provider.clone()),
-                ("model.build.model", self.build_model.model.clone()),
-                ("forge", word(&FORGES, self.forge)),
-                ("tracker", word(&TRACKERS, self.tracker)),
-            ])
-            .map(|(k, v)| (k.to_string(), v))
+        let dialed = Stage::ALL.into_iter().filter(|s| s.dialed());
+        dialed
+            .map(|s| (step_key(s), word(&DIALS, self.dials.at(s))))
+            .chain(
+                [
+                    ("model.plan.provider", self.plan_model.provider.clone()),
+                    ("model.plan.model", self.plan_model.model.clone()),
+                    ("model.build.provider", self.build_model.provider.clone()),
+                    ("model.build.model", self.build_model.model.clone()),
+                    ("forge", word(&FORGES, self.forge)),
+                    ("tracker", word(&TRACKERS, self.tracker)),
+                ]
+                .map(|(k, v)| (k.to_string(), v)),
+            )
             .collect()
     }
 
@@ -172,11 +189,7 @@ impl Settings {
         text("model.plan.model", &mut s.plan_model.model);
         text("model.build.provider", &mut s.build_model.provider);
         text("model.build.model", &mut s.build_model.model);
-        for (key, dial) in dial_keys(&mut s.dials) {
-            if let Some(d) = get(key).and_then(|w| from_word(&DIALS, w)) {
-                *dial = d;
-            }
-        }
+        s.dials = dials_from(&|key| get(key).and_then(|w| from_word(&DIALS, w)));
         s.forge = get("forge")
             .and_then(|w| from_word(&FORGES, w))
             .unwrap_or_default();
@@ -204,7 +217,7 @@ mod tests {
     #[test]
     fn settings_round_trip_through_their_pairs() {
         let s = Settings {
-            dials: Oversight::Low.dials(),
+            dials: Oversight::Dim.dials(),
             plan_model: Model {
                 provider: "anthropic".into(),
                 model: "claude-sonnet-5-5".into(),
@@ -220,38 +233,69 @@ mod tests {
     fn a_missing_or_unreadable_key_keeps_its_default() {
         let pairs = vec![
             ("forge".to_string(), "gitlab".to_string()),
-            ("dial.approve".into(), "auto".into()),
+            ("step.plan".into(), "dark".into()),
+            ("step.build".into(), "loud".into()),
         ];
         let s = Settings::from_pairs(&pairs);
         assert_eq!(
-            (s.forge, s.dials.approve, s.build_model.clone()),
-            (Forge::Local, Dial::Auto, Model::default())
+            (s.forge, s.dials.at(Stage::Plan), s.dials.at(Stage::Build)),
+            (Forge::Local, Dial::Dark, Dial::LightsOn)
         );
     }
 
     #[test]
-    fn a_preset_sets_both_dials_and_review_never_drops_below_hold() {
-        assert_eq!(Oversight::High.dials().at(Stage::Review), Dial::Ask);
-        assert_eq!(Oversight::Off.dials().at(Stage::Approve), Dial::Auto);
-        assert_eq!(Oversight::Off.dials().at(Stage::Review), Dial::Hold);
+    fn each_preset_makes_its_level_on_both_pipelines() {
+        use crate::{Level, Pipeline};
+        for pipeline in [Pipeline::Short, Pipeline::Full] {
+            for (preset, level) in [
+                (Oversight::LightsOn, Level::LightsOn),
+                (Oversight::Dim, Level::Dim),
+                (Oversight::Dark, Level::Dark),
+            ] {
+                assert_eq!(
+                    preset.dials().level(pipeline),
+                    level,
+                    "{preset:?} {pipeline:?}"
+                );
+            }
+        }
     }
 
     #[test]
-    fn the_full_pipelines_dials_follow_wipps_presets_and_survive_a_restore() {
-        let off = Oversight::Off.dials();
-        assert_eq!(off.at(Stage::Uat), Dial::Auto);
-        assert_eq!(off.at(Stage::Merge), Dial::Hold);
+    fn a_gate_only_after_the_merge_leaves_the_workflow_dark() {
+        use crate::{Level, Pipeline};
+        let mut d = Dials::all(Dial::Dark);
+        d.set(Stage::Learn, Dial::LightsOn);
+        assert_eq!(d.level(Pipeline::Full), Level::Dark);
+        d.set(Stage::Plan, Dial::LightsOn);
+        assert_eq!(d.level(Pipeline::Full), Level::Dim);
+    }
+
+    #[test]
+    fn a_version_kept_before_d33_maps_each_old_dial_to_the_steps_it_judged() {
+        let pairs = [
+            ("dial.approve", "auto"),
+            ("dial.review", "auto"),
+            ("dial.questions", "hold"),
+            ("dial.uat", "ask"),
+        ]
+        .map(|(k, v)| (k.to_string(), v.to_string()));
+        let d = Settings::from_pairs(&pairs).dials;
+        assert_eq!(d.at(Stage::Plan), Dial::Dark);
+        assert_eq!(
+            d.at(Stage::Build),
+            Dial::LightsOn,
+            "review never went below hold"
+        );
+        assert_eq!(d.at(Stage::CodeReview), Dial::LightsOn);
+        assert_eq!(d.at(Stage::Discover), Dial::LightsOn, "hold is lights-on");
+        assert_eq!(d.at(Stage::Comprehend), Dial::LightsOn);
+        assert_eq!(d.at(Stage::Checks), Dial::LightsOn, "a step no dial judged");
         let medium = Settings {
-            dials: Oversight::Medium.dials(),
+            dials: Oversight::Dim.dials(),
             ..Settings::default()
         };
         assert_eq!(Settings::from_pairs(&medium.to_pairs()), medium);
-        let before_a8 = [("dial.approve".to_string(), "auto".to_string())];
-        let restored = Settings::from_pairs(&before_a8);
-        assert_eq!(
-            (restored.dials.approve, restored.dials.merge),
-            (Dial::Auto, Dial::Ask)
-        );
     }
 
     #[test]

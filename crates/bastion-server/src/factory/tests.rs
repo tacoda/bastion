@@ -117,15 +117,16 @@ async fn finish_turn(rig: &Rig, id: &str) {
     panic!("no turn-completed binding for {session}");
 }
 
-/// Run a submitted job through its plan, the approval and its build, to review.
+/// Run a submitted job through its plan, the approval and its build, to
+/// the build's wait for review.
 async fn to_review(rig: &Rig, id: &str) {
     until(rig, id, Stage::Plan, State::Running).await;
     finish_turn(rig, id).await;
-    until(rig, id, Stage::Approve, State::NeedsYou).await;
+    until(rig, id, Stage::Plan, State::NeedsYou).await;
     rig.factory.apply(id, Event::Approved).await.unwrap();
     until(rig, id, Stage::Build, State::Running).await;
     finish_turn(rig, id).await;
-    until(rig, id, Stage::Review, State::NeedsYou).await;
+    until(rig, id, Stage::Build, State::NeedsYou).await;
 }
 
 /// The `argv` of each command the factory ran in the VM.
@@ -149,6 +150,7 @@ fn vm_commands(rig: &Rig) -> Vec<String> {
 #[test]
 fn a_full_request_prepares_and_its_read_only_turns_put_the_tree_back_to_a_tag() {
     let rig = rig();
+    *rig.store.dials.lock().unwrap() = bastion_core::Dials::all(bastion_core::Dial::Dark);
     crate::rt::block_on(async {
         let id = rig
             .factory
@@ -171,7 +173,6 @@ fn a_full_request_prepares_and_its_read_only_turns_put_the_tree_back_to_a_tag() 
         assert!(
             commands.contains(&"git -C /work/repo reset -q --hard bastion-before-turn".to_string())
         );
-        // The fake's reply has no TASKS: or QUESTIONS:, so there is nothing to clarify.
         finish_turn(&rig, &id).await;
         until(&rig, &id, Stage::Plan, State::Running).await;
         let stages: Vec<Stage> = rig
@@ -250,7 +251,7 @@ fn the_checks_step_runs_the_workspaces_command_and_passes_on_exit_0() {
         rig.store.insert(&record).await.unwrap();
         rig.factory.run_step(&record, Stage::Checks).await;
         let job = rig.store.load("j1").await.unwrap().job;
-        assert_eq!(job.stage, Stage::Verify);
+        assert_eq!((job.stage, job.state), (Stage::Checks, State::NeedsYou));
         assert!(vm_commands(&rig).contains(&"sh -c cd /work/repo && pytest -q".to_string()));
     });
 }
@@ -361,7 +362,7 @@ fn a_request_runs_the_short_pipeline_to_landed() {
         assert!(rig.engine.called("harness::send"));
 
         finish_turn(&rig, &id).await;
-        until(&rig, &id, Stage::Approve, State::NeedsYou).await;
+        until(&rig, &id, Stage::Plan, State::NeedsYou).await;
         let plan = rig.store.artifacts(&id).await.unwrap();
         assert_eq!(
             (plan[0].stage, plan[0].body.as_str()),
@@ -371,20 +372,13 @@ fn a_request_runs_the_short_pipeline_to_landed() {
         rig.factory.apply(&id, Event::Approved).await.unwrap();
         until(&rig, &id, Stage::Build, State::Running).await;
         finish_turn(&rig, &id).await;
-        until(&rig, &id, Stage::Review, State::NeedsYou).await;
-        let review: Vec<_> = rig
-            .store
-            .artifacts(&id)
-            .await
-            .unwrap()
-            .into_iter()
-            .filter(|a| a.stage == Stage::Review)
-            .collect();
-        assert_eq!(
-            review[0].body,
-            "No commits: the build left nothing to land."
-        );
+        until(&rig, &id, Stage::Build, State::NeedsYou).await;
+        let artifacts = rig.store.artifacts(&id).await.unwrap();
+        let diff = artifacts.iter().find(|a| a.stage == Stage::Review).unwrap();
+        assert_eq!(diff.body, "No commits: the build left nothing to land.");
 
+        rig.factory.apply(&id, Event::Approved).await.unwrap();
+        until(&rig, &id, Stage::Land, State::NeedsYou).await;
         rig.factory.apply(&id, Event::Approved).await.unwrap();
         until(&rig, &id, Stage::Land, State::Running).await;
         for _ in 0..200 {
@@ -402,7 +396,6 @@ fn a_request_runs_the_short_pipeline_to_landed() {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         until(&rig, &id, Stage::Land, State::Landed).await;
-        assert!(rig.engine.called("worktree::land"));
         let land = rig
             .engine
             .calls
@@ -457,13 +450,13 @@ fn a_failed_provision_fails_the_job_with_its_reason() {
 }
 
 #[test]
-fn an_auto_approve_dial_skips_the_owner_at_approve() {
+fn a_dark_plan_goes_on_without_the_owner() {
     let rig = rig();
-    *rig.store.dials.lock().unwrap() = bastion_core::Dials {
-        approve: bastion_core::Dial::Auto,
-        review: bastion_core::Dial::Ask,
-        ..bastion_core::Dials::default()
-    };
+    rig.store
+        .dials
+        .lock()
+        .unwrap()
+        .set(Stage::Plan, bastion_core::Dial::Dark);
     crate::rt::block_on(async {
         let id = rig.factory.submit("w", "x").await.unwrap();
         until(&rig, &id, Stage::Plan, State::Running).await;
@@ -596,6 +589,8 @@ fn with_github_as_the_forge_a_reviewed_change_goes_up_as_a_pull_request_and_merg
             .unwrap();
         let id = rig.factory.submit("w", "Add modulo").await.unwrap();
         to_review(&rig, &id).await;
+        rig.factory.apply(&id, Event::Approved).await.unwrap();
+        until(&rig, &id, Stage::Land, State::NeedsYou).await;
         rig.factory.apply(&id, Event::Approved).await.unwrap();
         for _ in 0..200 {
             if rig.store.load(&id).await.unwrap().job.pr.is_some() {

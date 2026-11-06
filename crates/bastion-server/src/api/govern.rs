@@ -184,13 +184,13 @@ pub async fn factory_capabilities(
     Ok(vec![
         row(
             "Approve a plan",
-            name(s.dials.approve),
-            "The approve checkpoint's dial.",
+            name(s.dials.at(bastion_core::Stage::Plan)),
+            "The plan step's dial.",
         ),
         row(
             "Approve a change",
-            name(s.dials.at(bastion_core::Stage::Review)),
-            "The review checkpoint's dial; never below hold.",
+            name(s.dials.at(bastion_core::Stage::Build)),
+            "The build step's dial.",
         ),
         if github {
             row(

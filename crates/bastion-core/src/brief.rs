@@ -25,7 +25,9 @@ TASKS:
 QUESTIONS:
 1. A question only the owner can answer, if any.
 
-Leave QUESTIONS empty when you have none. Ask only what the code cannot tell you.";
+Leave QUESTIONS empty when you have none. Ask only what the code cannot tell you.
+The work may go on before anyone answers, so write the answer you assume for each
+question into the task it affects.";
 
 const DEFINE: &str = "\
 You are defining the acceptance tests for a change to the repository in

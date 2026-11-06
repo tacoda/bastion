@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
-use bastion_core::{Dials, Event, actions, hold_until, steps};
+use bastion_core::{Dial, Dials, Event, Stage, actions, steps};
 use bastion_protocol::{
     ArtifactView, CharterView, DialsView, HeldCallView, JobDetail, JobSummary, StepView,
     TranscriptLine, Workspace,
@@ -33,7 +33,7 @@ pub(super) fn name<T: Serialize>(value: T) -> String {
         .unwrap_or_default()
 }
 
-fn summary(r: &Record, dials: &Dials) -> JobSummary {
+fn summary(r: &Record) -> JobSummary {
     let j = &r.job;
     JobSummary {
         id: j.id.clone(),
@@ -45,7 +45,6 @@ fn summary(r: &Record, dials: &Dials) -> JobSummary {
         error: j.error.clone(),
         created_at: r.created_at,
         updated_at: j.updated_at,
-        hold_until: hold_until(j, dials),
         actions: actions(j).into_iter().map(name).collect(),
         pr: j.pr.clone(),
         issue: r.runtime.issue.clone(),
@@ -102,14 +101,7 @@ pub async fn workspace_add(
 
 pub async fn jobs(cell: &FactoryCell) -> Result<Vec<JobSummary>, String> {
     let factory = factory(cell)?;
-    let dials = factory.store().dials().await?;
-    Ok(factory
-        .store()
-        .jobs()
-        .await?
-        .iter()
-        .map(|r| summary(r, &dials))
-        .collect())
+    Ok(factory.store().jobs().await?.iter().map(summary).collect())
 }
 
 /// The latest turn's messages, or none when the job has no turn or the
@@ -181,7 +173,7 @@ pub async fn job(cell: &FactoryCell, id: String) -> Result<JobDetail, String> {
         })
         .collect();
     Ok(JobDetail {
-        job: summary(&record, &factory.store().dials().await?),
+        job: summary(&record),
         steps,
         artifacts,
         transcript,
@@ -232,28 +224,37 @@ pub async fn job_stop(cell: &FactoryCell, id: String) -> Result<(), String> {
     factory(cell)?.apply(&id, Event::Stopped).await
 }
 
+/// Set the plan's dial and the change's (build and code review), keeping
+/// every other step's.
+// ponytail: the page sets two dials until O3 gives it one per step.
+pub(super) fn plan_and_change(d: &mut Dials, plan: Dial, change: Dial) {
+    d.set(Stage::Plan, plan);
+    d.set(Stage::Build, change);
+    d.set(Stage::CodeReview, change);
+}
+
 pub async fn dials(cell: &FactoryCell) -> Result<DialsView, String> {
     let d = crate::settings_store::current(&**factory(cell)?.store())
         .await?
         .dials;
     Ok(DialsView {
-        approve: name(d.approve),
-        review: name(d.review),
+        approve: name(d.at(Stage::Plan)),
+        review: name(d.at(Stage::Build)),
     })
 }
 
 pub async fn dials_set(cell: &FactoryCell, dials: DialsView) -> Result<(), String> {
     let parse = |text: &str| {
         serde_json::from_value(json!(text))
-            .map_err(|_| format!("{text:?} is not ask, hold or auto"))
+            .map_err(|_| format!("{text:?} is not lights_on, dim or dark"))
     };
     let factory = factory(cell)?;
     let mut next = crate::settings_store::current(&**factory.store()).await?;
-    next.dials = Dials {
-        approve: parse(&dials.approve)?,
-        review: parse(&dials.review)?,
-        ..Dials::default()
-    };
+    plan_and_change(
+        &mut next.dials,
+        parse(&dials.approve)?,
+        parse(&dials.review)?,
+    );
     crate::settings_store::change(&**factory.store(), &next, crate::factory::now())
         .await
         .map(|_| ())

@@ -1,10 +1,9 @@
 //! The shell (PLAN.md A1): the sidebar, the page it shows, and the question on
 //! quit while the stack runs.
 
-use bastion_protocol::{ActiveProfile, command, event};
+use bastion_protocol::{StackState, StackStatus, command, event};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use serde::Serialize;
 
 use crate::icons;
 use crate::ipc::{self, None};
@@ -37,29 +36,37 @@ fn section(route: &Route) -> Route {
     }
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Quit {
-    stop_stack: bool,
+/// The stack belongs to the server (D27), so a quit asks only while it runs.
+/// Returns what the dialog's buttons do: quit, stopping the stack or not.
+fn ask_on_quit(set_asking: WriteSignal<bool>) -> impl Fn(bool) + Copy {
+    ipc::listen(event::QUIT_REQUESTED, move |()| {
+        spawn_local(async move {
+            let running = ipc::call::<StackStatus, String>(command::STACK_STATUS, None {})
+                .await
+                .is_ok_and(|s| s.state == StackState::Running);
+            if running {
+                set_asking.set(true);
+            } else {
+                let _ = ipc::call::<(), String>(command::QUIT, None {}).await;
+            }
+        });
+    });
+    move |stop_stack: bool| {
+        spawn_local(async move {
+            if stop_stack {
+                let _ = ipc::call::<StackStatus, String>(command::STACK_STOP, None {}).await;
+            }
+            let _ = ipc::call::<(), String>(command::QUIT, None {}).await;
+        });
+    }
 }
 
 #[component]
 pub fn App() -> impl IntoView {
     let (route, set_route) = signal(Route::Jobs);
     provide_context::<Nav>(set_route);
-    let (profile, set_profile) = signal(String::new());
     let (asking, set_asking) = signal(false);
-    spawn_local(async move {
-        if let Ok(p) = ipc::call::<ActiveProfile, String>(command::PROFILE, None {}).await {
-            set_profile.set(p.name);
-        }
-    });
-    ipc::listen(event::QUIT_REQUESTED, move |()| set_asking.set(true));
-    let quit = move |stop_stack: bool| {
-        spawn_local(async move {
-            let _ = ipc::call::<(), String>(command::QUIT, Quit { stop_stack }).await;
-        });
-    };
+    let quit = ask_on_quit(set_asking);
 
     view! {
         <a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:m-2 focus:rounded focus:bg-primary focus:px-3 focus:py-2 focus:text-white">
@@ -78,7 +85,6 @@ pub fn App() -> impl IntoView {
                         >{icons::icon(glyph)}{label}</button>
                     }
                 })}
-                <p class="mt-auto px-2 text-xs text-muted">{profile}</p>
             </nav>
             <main id="main" tabindex="-1" class="min-w-0 p-8">
                 {move || match route.get() {

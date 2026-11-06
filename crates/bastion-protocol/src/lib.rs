@@ -2,6 +2,8 @@
 //! event the app emits, with their types. The view and the app both depend on
 //! this crate, and on nothing of each other's.
 
+pub mod routes;
+
 use serde::{Deserialize, Serialize};
 
 /// Command names, so the view and the app cannot drift apart.
@@ -14,6 +16,8 @@ pub mod command {
     pub const PROFILE: &str = "profile";
     /// Takes `{ stopStack: bool }`.
     pub const QUIT: &str = "quit";
+    /// The server this window talks to, with its token (D28).
+    pub const TARGET: &str = "target";
     pub const CONSOLE: &str = "console";
     /// Takes `{ request: LogRequest }`.
     pub const CONTAINER_LOGS: &str = "container_logs";
@@ -104,6 +108,13 @@ pub enum Change {
     },
     /// A worker joined or left the engine.
     Console,
+}
+
+/// The server a window talks to (D28): its base URL and bearer token.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Target {
+    pub url: String,
+    pub token: String,
 }
 
 /// The app's link to the engine.

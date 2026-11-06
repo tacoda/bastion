@@ -501,6 +501,38 @@ mod tests {
         (status, String::from_utf8_lossy(&body).into_owned())
     }
 
+    /// Every command the page routes reaches a handler here: no 404 for a
+    /// path that does not exist, no 405 for the wrong method.
+    #[test]
+    fn every_route_the_page_uses_exists() {
+        crate::rt::block_on(async {
+            for cmd in bastion_protocol::routes::ROUTED {
+                let (method, path, body) = bastion_protocol::routes::route(cmd).unwrap();
+                let path = path.replace("{number}", "7").replace(['{', '}'], "");
+                let body = match body {
+                    bastion_protocol::routes::Body::Empty => Body::empty(),
+                    _ => Body::from("{}"),
+                };
+                let request = Request::builder()
+                    .method(method)
+                    .uri(&path)
+                    .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(body)
+                    .unwrap();
+                let status = router(server(), TOKEN)
+                    .oneshot(request)
+                    .await
+                    .unwrap()
+                    .status();
+                assert!(
+                    status != StatusCode::NOT_FOUND && status != StatusCode::METHOD_NOT_ALLOWED,
+                    "{cmd}: {method} {path} answered {status}"
+                );
+            }
+        });
+    }
+
     #[test]
     fn a_request_without_the_token_is_refused() {
         crate::rt::block_on(async {

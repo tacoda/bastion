@@ -1,15 +1,11 @@
-//! The app's own commands: the active profile, and quitting with or without
-//! the stack (PLAN.md D13).
+//! The app's own commands: the active profile, the window's server, and quit.
 
 use std::path::PathBuf;
-use std::sync::Arc;
 
-use bastion_protocol::{ActiveProfile, StackState};
+use bastion_protocol::{ActiveProfile, Target};
 use tauri::{AppHandle, State};
 
-use crate::machine::Machine;
 use crate::profile::{Kind, Profiles};
-use crate::stack::Stack;
 
 /// Where `profiles.toml` was read from.
 pub struct ProfilesFile(pub PathBuf);
@@ -28,24 +24,15 @@ pub fn profile(profiles: State<'_, Profiles>, file: State<'_, ProfilesFile>) -> 
     }
 }
 
+/// The server this window talks to, with its token (D28).
 #[tauri::command]
-pub fn quit(
-    app: AppHandle,
-    stack: State<'_, Stack>,
-    machine: State<'_, Arc<dyn Machine>>,
-    stop_stack: bool,
-) -> Result<(), String> {
-    if stop_stack {
-        stack.stop(machine.inner().as_ref())?;
-    }
-    app.exit(0);
-    Ok(())
+pub fn target(target: State<'_, Target>) -> Target {
+    target.inner().clone()
 }
 
-/// A quit asks the owner first only while this profile's stack runs.
-pub fn should_ask(stack: &Stack, machine: &dyn Machine) -> bool {
-    matches!(
-        stack.status(machine).map(|s| s.state),
-        Ok(StackState::Running)
-    )
+/// Quit the app. The server and its stack keep running unless the page
+/// stopped the stack first (D27).
+#[tauri::command]
+pub fn quit(app: AppHandle) {
+    app.exit(0);
 }

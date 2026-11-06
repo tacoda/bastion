@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bastion · agent workflows as graphs you can see and govern</title>
-<meta name="description" content="Bastion is an agent orchestration control plane on iii. A workflow is a graph of steps, agents work each step in a sandbox, and you choose which steps wait for a person.">
+<title>Bastion · a software factory for agent work</title>
+<meta name="description" content="Bastion is a software factory for agent work. A request goes in, agents work it through a pipeline of stages, and a reviewed change comes out.">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-512.png">
 <meta name="voice-register" content="informational">
@@ -148,7 +148,7 @@ footer { padding: 48px 0; color: var(--dim); }
 <div class="app">
 
 <header>
-  <div class="brand"><img src="icon.svg" width="28" height="28" alt=""><b>bastion</b> <span>· control plane</span></div>
+  <div class="brand"><img src="icon.svg" width="28" height="28" alt=""><b>bastion</b> <span>· software factory</span></div>
   <nav>
     <a href="#problem">problem</a>
     <a href="#oversight">oversight</a>
@@ -162,8 +162,8 @@ footer { padding: 48px 0; color: var(--dim); }
 </header>
 
 <section>
-  <h1>Agent workflows as graphs you can see and govern.</h1>
-  <p class="lede">Bastion is an agent orchestration control plane, built on iii. A workflow is a graph of steps: skills, prompts, commands, and Bastion's own stages. Give it a request, and agents work each step in a sandbox while you choose which steps wait for you, merge included. It's early, and the canvas for editing workflows is still in progress.</p>
+  <h1>A software factory with a built-in oversight dial.</h1>
+  <p class="lede">Give Bastion a request. Agents work it through a pipeline in a sandbox, and you choose how closely to watch each step, merge included. It's early, and the full pipeline is still in progress.</p>
   <p class="facts">Rust · Tauri 2 + Leptos · on <a href="https://iii.dev">iii</a> 0.25.0 · macOS and Linux</p>
   <div class="cta">
     <a class="btn primary" href="#start">Get started</a>
@@ -215,7 +215,7 @@ footer { padding: 48px 0; color: var(--dim); }
 <section id="oversight">
   <h2>The oversight dial</h2>
   <p class="title">Start with the lights on. Turn them off one step at a time.</p>
-  <p>A new workflow waits after every step for you to approve its result or send it back with a note. Each step has its own dial, so as you trust a step more, you turn that one dark and leave the rest alone. A dark step goes on at once. Nothing waits on a timer, and every result and decision goes in the log whatever the dial says.</p>
+  <p>A new factory waits after every step for you to approve its result or send it back with a note. Each step has its own dial, so as you trust a step more, you turn that one dark and leave the rest alone. A dark step goes on at once. Nothing waits on a timer, and every result and decision goes in the log whatever the dial says.</p>
   <div class="dials" aria-label="Illustration of step dials">
     <div class="dial"><div class="who">plan<span>trusted after many plans</span></div><div class="lvl"><span>lights-on</span><span class="on">dark</span></div></div>
     <div class="dial"><div class="who">define<span>your checks, mostly trusted</span></div><div class="lvl"><span>lights-on</span><span class="on">dark</span></div></div>
@@ -259,7 +259,6 @@ footer { padding: 48px 0; color: var(--dim); }
   <p class="title">Run the pipeline your team already uses.</p>
   <p>A workflow is a graph of steps. Each step is a skill, a prompt, a command, or a built-in Bastion stage. Skills come first: a skill step is an agent turn that follows <code>.claude/skills/&lt;name&gt;/SKILL.md</code> from your repository. A command step runs one shell line in the job's VM, such as <code>make test</code>, with no agent, and exit 0 passes.</p>
   <p>Links carry results, not conditions. A step declares what it gives, such as <code>design-notes</code>, and the next step gets it in its brief. If a result is missing, a code check holds the step: the agent gets one more try with the reason, then the job waits for a person. Every step keeps its own dial.</p>
-  <p>If you know LangGraph, a step is a node and a link is an edge. The difference is that a link carries a result, not a condition, and the steps run on iii, in the job's sandbox VM.</p>
   <div class="wf" aria-label="Illustration of a custom workflow">
     <div class="step"><span>skill</span>plan</div><span class="link res">design-notes →</span>
     <div class="step"><span>skill</span>build</div><span class="link">→</span>

@@ -65,7 +65,6 @@ pub fn App() -> impl IntoView {
         <a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:m-2 focus:rounded focus:bg-primary focus:px-3 focus:py-2 focus:text-white">
             "Skip to content"
         </a>
-        <crate::spike_n12::SpikeN12 />
         <div class="grid min-h-screen grid-cols-[200px_minmax(0,1fr)]">
             <nav aria-label="Main" class="sticky top-0 flex h-screen flex-col gap-1 border-r border-line bg-panel p-3">
                 <p class="m-0 mb-3 px-2 text-lg font-extrabold">"Bastion"</p>

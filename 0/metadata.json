@@ -1,0 +1,48 @@
+{
+  "cli_version": "0.12.2",
+  "checkpoint_id": "01M6SJ667C7WK7FNFKSTW24P01",
+  "session_id": "4e279253-a1ef-48c0-9838-f53383068502",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-06T23:13:04.926566Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "PLAN.md",
+    "crates/bastion-server/src/api/providers.rs",
+    "crates/bastion-server/src/api/sign_in.rs",
+    "src/pages/factory_settings.rs",
+    "worker-compose.lock",
+    "worker-compose.yaml"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "658e988cbf65",
+  "checkpoint_transcript_start": 285,
+  "transcript_lines_at_start": 285,
+  "compact_transcript_start": 37,
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 14698,
+    "cache_read_tokens": 2163286,
+    "output_tokens": 6088,
+    "api_call_count": 14
+  },
+  "redaction": {
+    "replacements": 2,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 2,
+      "credentialed_uri": 0,
+      "entropy": 0,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 2
+  }
+}

@@ -39,6 +39,14 @@ fn run(events: &[Event]) -> (Job, Vec<Effect>) {
     current
 }
 
+/// A step's result, kept as its artifact.
+fn result(stage: Stage, body: &str) -> Effect {
+    Effect::RecordArtifact {
+        stage,
+        body: body.into(),
+    }
+}
+
 fn planned() -> Vec<Event> {
     vec![Event::Admitted, Event::Provisioned, done("1. Add /health")]
 }
@@ -151,7 +159,13 @@ fn the_land_waits_before_it_acts_then_lands_and_tears_down() {
     );
     events.push(Event::Landed);
     let (j, effects) = run(&events);
-    assert_eq!((j.state, effects), (State::Landed, vec![Effect::Teardown]));
+    assert_eq!(
+        (j.state, effects),
+        (
+            State::Landed,
+            vec![result(Stage::Land, "Landed."), Effect::Teardown]
+        )
+    );
 }
 
 #[test]
@@ -360,6 +374,7 @@ fn a_dark_plan_goes_straight_to_build() {
         &effects[..],
         [
             Effect::RecordArtifact { .. },
+            Effect::DarkDecided { stage: Stage::Plan },
             Effect::StartTurn {
                 stage: Stage::Build,
                 ..
@@ -402,7 +417,11 @@ fn a_failed_land_waits_on_the_owner_with_its_vm_and_approve_retries_it() {
         (j.stage, j.state, j.error.as_deref()),
         (Stage::Land, State::NeedsYou, Some("no ref"))
     );
-    assert!(effects.is_empty(), "the VM stays: no teardown");
+    assert_eq!(
+        effects,
+        vec![result(Stage::Land, "no ref")],
+        "the VM stays: no teardown"
+    );
     assert_eq!(actions(&j), vec![Action::Approve, Action::Stop]);
     events.push(Event::Approved);
     let (j, effects) = run(&events);
@@ -461,7 +480,7 @@ fn opened() -> Job {
         AT + 20,
         &Dials::default(),
     );
-    assert_eq!(effects, vec![Effect::WatchCi]);
+    assert_eq!(effects.last(), Some(&Effect::WatchCi));
     j = next;
     j
 }
@@ -470,12 +489,21 @@ fn opened() -> Job {
 fn a_passing_pull_request_waits_for_the_owner_and_approve_merges() {
     let j = opened();
     let (j, effects) = step(&j, &Event::CiPassed, AT + 21, &Dials::default());
-    assert_eq!((j.state, effects.len()), (State::NeedsYou, 0));
+    assert_eq!(
+        (j.state, effects),
+        (State::NeedsYou, vec![result(Stage::Land, "Passed.")])
+    );
     assert!(actions(&j).contains(&Action::Approve));
     let (j, effects) = step(&j, &Event::Approved, AT + 22, &Dials::default());
     assert_eq!((j.state, effects), (State::Running, vec![Effect::Merge]));
     let (j, effects) = step(&j, &Event::Landed, AT + 23, &Dials::default());
-    assert_eq!((j.state, effects), (State::Landed, vec![Effect::Teardown]));
+    assert_eq!(
+        (j.state, effects),
+        (
+            State::Landed,
+            vec![result(Stage::Land, "Landed."), Effect::Teardown]
+        )
+    );
 }
 
 #[test]
@@ -500,7 +528,7 @@ fn a_failing_ci_run_sends_a_bounded_fix_turn_with_its_log() {
                 .unwrap()
                 .contains("CHANGELOG.md has no entry")
         );
-        let Effect::StartTurn { brief, .. } = &effects[0] else {
+        let Some(Effect::StartTurn { brief, .. }) = effects.last() else {
             panic!("a fix turn starts")
         };
         assert!(brief.contains("CHANGELOG.md has no entry"), "{brief}");

@@ -416,6 +416,8 @@ pub enum Effect {
     /// Run a step the factory runs itself, then send `StepPassed` or
     /// `StepFailed`. Ship sends `PrOpened` when it passes.
     RunStep { stage: Stage },
+    /// A dark step went on with no person (D33): note it in the audit log.
+    DarkDecided { stage: Stage },
 }
 
 impl Job {
@@ -476,17 +478,44 @@ pub fn step(job: &Job, event: &Event, at: u64, dials: &Dials) -> (Job, Vec<Effec
         (State::NeedsYou, event) if decides(&next, event) => approved(&mut next, dials),
         (State::NeedsYou, Event::Commented { text }) => commented(&mut next, text, dials),
         (State::Running, Event::VmLost) => revive(&mut next),
-        (_, event) if next.stage == Stage::Land => match land(&mut next, event, dials) {
-            Some(effects) => effects,
-            None => return (job.clone(), Vec::new()),
-        },
-        (State::Running, event) => match factory(&mut next, event, dials) {
-            Some(effects) => effects,
-            None => return (job.clone(), Vec::new()),
-        },
+        (State::Running, event) if kept(job, event).is_some() => {
+            let Some(effects) = after_step(&mut next, event, dials) else {
+                return (job.clone(), Vec::new());
+            };
+            kept(job, event).into_iter().chain(effects).collect()
+        }
         _ => return (job.clone(), Vec::new()),
     };
     (next, effects)
+}
+
+/// A step the factory runs reported: its land, CI or own result. `None`
+/// means the event does not fit, and nothing changes.
+fn after_step(job: &mut Job, event: &Event, dials: &Dials) -> Option<Vec<Effect>> {
+    if job.stage == Stage::Land {
+        land(job, event, dials)
+    } else {
+        factory(job, event, dials)
+    }
+}
+
+/// The result a step the factory runs reported, kept as its artifact
+/// whatever the dial (D33).
+fn kept(job: &Job, event: &Event) -> Option<Effect> {
+    let body = match event {
+        Event::StepPassed | Event::CiPassed => "Passed.".into(),
+        Event::Landed => "Landed.".into(),
+        Event::ChecksGreen => "Every check passed before anything was built.".into(),
+        Event::PrOpened { url } => format!("Opened {url}"),
+        Event::StepFailed { detail } | Event::StepStuck { detail } => detail.clone(),
+        Event::CiFailed { log } => log.clone(),
+        Event::LandFailed { error } => error.clone(),
+        _ => return None,
+    };
+    Some(Effect::RecordArtifact {
+        stage: job.stage,
+        body,
+    })
 }
 
 /// Whether the event decides the step the job waits on: a person approved
@@ -552,7 +581,12 @@ fn wait(job: &mut Job, dials: &Dials) -> Vec<Effect> {
             job.state = State::NeedsYou;
             Vec::new()
         }
-        Dial::Dark => approved(job, dials),
+        Dial::Dark => {
+            let decided = Effect::DarkDecided { stage: job.stage };
+            std::iter::once(decided)
+                .chain(approved(job, dials))
+                .collect()
+        }
     }
 }
 

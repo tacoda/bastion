@@ -183,7 +183,7 @@ fn a_full_request_prepares_and_its_read_only_turns_put_the_tree_back_to_a_tag() 
             .iter()
             .map(|a| a.stage)
             .collect();
-        assert_eq!(stages, [Stage::Scope, Stage::Discover]);
+        assert_eq!(stages, [Stage::Prepare, Stage::Scope, Stage::Discover]);
     });
 }
 

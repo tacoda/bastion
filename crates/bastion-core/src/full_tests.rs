@@ -38,8 +38,16 @@ fn failed(detail: &str) -> Event {
     }
 }
 
+/// Every dial dark, without the audit notes and the step results that
+/// dark steps make (`a_dark_step_notes_its_decision_and_keeps_its_result`).
 fn go(j: &Job, e: &Event) -> (Job, Vec<Effect>) {
-    step(j, e, AT + 1, &Dials::all(Dial::Dark))
+    let (next, effects) = step(j, e, AT + 1, &Dials::all(Dial::Dark));
+    let flow = |e: &Effect| match e {
+        Effect::DarkDecided { .. } => false,
+        Effect::RecordArtifact { stage, .. } => stage.kind() != Kind::Factory,
+        _ => true,
+    };
+    (next, effects.into_iter().filter(flow).collect())
 }
 
 fn judge(j: &Job, e: &Event) -> (Job, Vec<Effect>) {
@@ -116,7 +124,16 @@ fn each_step_obeys_its_own_dial_and_a_step_that_acts_waits_before_it_acts() {
         AT,
         &dials,
     );
-    assert_eq!(effects, vec![Effect::Merge], "a dark merge merges alone");
+    assert_eq!(
+        effects,
+        vec![
+            Effect::DarkDecided {
+                stage: Stage::Merge
+            },
+            Effect::Merge
+        ],
+        "a dark merge merges alone, and says so"
+    );
 }
 
 #[test]
@@ -528,4 +545,28 @@ fn a_lost_vm_is_provisioned_again_and_its_stage_starts_over() {
         State::Failed,
         "a VM that keeps dying fails the job"
     );
+}
+
+#[test]
+fn a_dark_step_notes_its_decision_and_keeps_its_result() {
+    let checks = at(Stage::Checks, State::Running);
+    let passed = Effect::RecordArtifact {
+        stage: Stage::Checks,
+        body: "Passed.".into(),
+    };
+    let (_, effects) = step(&checks, &Event::StepPassed, AT, &Dials::all(Dial::Dark));
+    assert_eq!(
+        effects,
+        [
+            passed.clone(),
+            Effect::DarkDecided {
+                stage: Stage::Checks
+            },
+            Effect::RunStep {
+                stage: Stage::Verify
+            },
+        ]
+    );
+    let (j, effects) = judge(&checks, &Event::StepPassed);
+    assert_eq!((j.state, effects), (State::NeedsYou, vec![passed]));
 }

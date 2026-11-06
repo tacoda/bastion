@@ -202,22 +202,24 @@ pub async fn job_submit(
         .await
 }
 
-pub async fn job_approve(cell: &FactoryCell, id: String) -> Result<(), String> {
-    factory(cell)?.apply(&id, Event::Approved).await
+pub async fn job_approve(cell: &FactoryCell, id: String, by: String) -> Result<(), String> {
+    factory(cell)?.decide(&id, Event::Approved, &by).await
 }
 
-pub async fn job_comment(cell: &FactoryCell, id: String, text: String) -> Result<(), String> {
+/// A note from `by`: an answer to the job's question, or the step sent back.
+pub async fn job_comment(
+    cell: &FactoryCell,
+    id: String,
+    text: String,
+    by: String,
+) -> Result<(), String> {
     if text.trim().is_empty() {
         return Err("a comment needs text".into());
     }
-    factory(cell)?
-        .apply(
-            &id,
-            Event::Commented {
-                text: text.trim().into(),
-            },
-        )
-        .await
+    let event = Event::Commented {
+        text: text.trim().into(),
+    };
+    factory(cell)?.decide(&id, event, &by).await
 }
 
 pub async fn job_stop(cell: &FactoryCell, id: String) -> Result<(), String> {

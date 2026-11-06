@@ -364,7 +364,8 @@ async fn job_approve(
     Extension(person): Extension<Person>,
     Path(id): Path<String>,
 ) -> Response {
-    let approve = api::factory::job_approve(&app.server.factory, id.clone());
+    let by = person.name.clone();
+    let approve = api::factory::job_approve(&app.server.factory, id.clone(), by);
     on_job(&app, &person, &id, async { answer(approve.await) }).await
 }
 
@@ -379,7 +380,8 @@ async fn job_comment(
     Path(id): Path<String>,
     Json(b): Json<Text>,
 ) -> Response {
-    let comment = api::factory::job_comment(&app.server.factory, id.clone(), b.text);
+    let by = person.name.clone();
+    let comment = api::factory::job_comment(&app.server.factory, id.clone(), b.text, by);
     on_job(&app, &person, &id, async { answer(comment.await) }).await
 }
 

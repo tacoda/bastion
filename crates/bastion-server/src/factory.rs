@@ -329,6 +329,10 @@ impl Factory {
     async fn run_effect(self: Arc<Self>, record: Record, effect: Effect) {
         let id = record.job.id.clone();
         let failed = match effect {
+            Effect::DarkDecided { stage } => {
+                self.dark_decided(&id, stage);
+                None
+            }
             Effect::Provision => match self.provision(&record).await {
                 Ok(()) => self.apply(&id, Event::Provisioned).await.err(),
                 Err(error) => self
@@ -1177,6 +1181,7 @@ impl Factory {
 }
 
 mod acceptance;
+mod decide;
 /// The sandbox worker's answer for a VM that no longer exists (S002).
 fn vm_lost(error: &str) -> bool {
     error.contains("sandbox not found")

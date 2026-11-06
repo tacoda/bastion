@@ -4,23 +4,19 @@
 mod commands;
 mod profile;
 
-// The server's modules, under the paths the commands already use (S1).
-use bastion_server::{
-    charter, console, doctor, engine, eval_store, evals, factory, forge, machine, settings_store,
-    stack, store,
-};
+use bastion_server::events::Bus;
+use bastion_server::server::Server;
+use bastion_server::{engine, machine, stack};
+use tokio::sync::broadcast::error::RecvError;
 
 use std::sync::Arc;
 
-use bastion_protocol::{Link, event};
+use bastion_protocol::{Change, event};
 use commands::app::{ProfilesFile, should_ask};
-use commands::factory::FactoryCell;
 use engine::{Engine, IiiEngine};
-use factory::Factory;
 use machine::{Machine, ThisMachine};
 use profile::Profiles;
 use stack::Stack;
-use store::SqlStore;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
 
 /// The checkout this build came from, which holds `worker-compose.yaml`.
@@ -37,47 +33,17 @@ fn hold_quit(app: &AppHandle) -> bool {
     true
 }
 
-/// Once the engine is up: open the store, start the factory, and resume its jobs.
-fn start_factory(
-    app: AppHandle,
-    engine: Arc<dyn Engine>,
-    machine: Arc<dyn Machine>,
-    cell: FactoryCell,
-) -> Result<(), String> {
+/// Where the factory keeps its bundles, and the first-run rules and grants
+/// the stack carries (D26).
+fn factory_inputs(app: &AppHandle) -> Result<(String, std::path::PathBuf), String> {
     let scratch = app
         .path()
         .app_cache_dir()
         .map_err(|e| e.to_string())?
         .join("bundles");
-    // The first-run rules and grants are data the stack carries (D26).
     let seed = std::fs::read_to_string(format!("{CHECKOUT}/seed/governance.sql"))
         .map_err(|e| format!("seed/governance.sql: {e}"))?;
-    bastion_server::rt::spawn(async move {
-        loop {
-            if engine.link() == Link::Up {
-                match SqlStore::open(engine.clone(), &seed).await {
-                    Ok(store) => {
-                        let emitter = app.clone();
-                        let on_change = Arc::new(move |id: &str| {
-                            let _ = emitter.emit(event::JOB_CHANGED, id);
-                        });
-                        let factory =
-                            Factory::new(engine, Arc::new(store), machine, on_change, scratch);
-                        if let Err(e) = factory.start() {
-                            eprintln!("the factory did not start: {e}");
-                        }
-                        let _ = cell.set(factory);
-                        // Pages that loaded before the factory read again.
-                        let _ = app.emit(event::JOB_CHANGED, "");
-                        return;
-                    }
-                    Err(e) => eprintln!("the store did not open: {e}"),
-                }
-            }
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        }
-    });
-    Ok(())
+    Ok((seed, scratch))
 }
 
 /// Load the profile, connect to the engine, and start the factory once it is up.
@@ -93,26 +59,37 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         log: app.path().app_log_dir()?.join("compose.log"),
     };
     let engine: Arc<dyn Engine> = Arc::new(IiiEngine::connect(&active.engine_url));
-    commands::engine::watch(app.handle().clone(), engine.clone());
-    let handle = app.handle().clone();
-    engine.on_functions_changed(Arc::new(move || {
-        let _ = handle.emit(event::CONSOLE_CHANGED, ());
-    }))?;
     let machine: Arc<dyn Machine> = Arc::new(ThisMachine);
-    let cell = FactoryCell::default();
-    start_factory(
-        app.handle().clone(),
-        engine.clone(),
-        machine.clone(),
-        cell.clone(),
-    )?;
-    app.manage(cell);
+    let server = Server::new(engine.clone(), machine.clone())?;
+    bridge(app.handle().clone(), server.events.clone());
+    let (seed, scratch) = factory_inputs(app.handle())?;
+    server.start_factory(seed, scratch);
+    app.manage(server.factory.clone());
+    app.manage(server.events.clone());
     app.manage(engine);
     app.manage(machine);
     app.manage(profiles);
     app.manage(ProfilesFile(path));
     app.manage(stack);
     Ok(())
+}
+
+/// Pass the server's changes to the page as the Tauri events it listens for,
+/// until S3 has the page follow `GET /events` itself.
+fn bridge(app: AppHandle, events: Arc<Bus>) {
+    let mut changes = events.subscribe();
+    bastion_server::rt::spawn(async move {
+        loop {
+            let _ = match changes.recv().await {
+                Ok((_, Change::Job { id })) => app.emit(event::JOB_CHANGED, id),
+                Ok((_, Change::Engine { status })) => app.emit(event::ENGINE_CHANGED, status),
+                Ok((_, Change::Console)) => app.emit(event::CONSOLE_CHANGED, ()),
+                // Missed changes: every page reads again.
+                Err(RecvError::Lagged(_)) => app.emit(event::JOB_CHANGED, ""),
+                Err(RecvError::Closed) => return,
+            };
+        }
+    });
 }
 
 /// Ask before closing while the stack runs, and read every page again on focus.

@@ -1,14 +1,6 @@
-//! The Doctor command.
+//! The `doctor` commands, each a call to `bastion_server::api::doctor` (D28; S3 removes them).
 
-use std::sync::Arc;
-
-use bastion_protocol::DoctorReport;
-use tauri::State;
-
-use crate::doctor;
-use crate::engine::Engine;
-use crate::machine::Machine;
-use crate::profile::Profiles;
+use super::prelude::*;
 
 #[tauri::command]
 pub async fn doctor(
@@ -16,6 +8,5 @@ pub async fn doctor(
     engine: State<'_, Arc<dyn Engine>>,
     profiles: State<'_, Profiles>,
 ) -> Result<DoctorReport, ()> {
-    let checkout = profiles.active().checkout.clone();
-    Ok(doctor::run(machine.inner().as_ref(), engine.inner().as_ref(), &checkout).await)
+    api::doctor::doctor(&machine, &engine, &profiles.active().checkout).await
 }

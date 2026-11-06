@@ -90,6 +90,22 @@ pub mod event {
     pub const JOB_CHANGED: &str = "job-changed";
 }
 
+/// A change the server pushes (D10, D29). The page reads the named
+/// resource again; only the engine's status rides along whole.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Change {
+    /// A job changed. An empty id means every job, as after a settings change.
+    Job {
+        id: String,
+    },
+    Engine {
+        status: EngineStatus,
+    },
+    /// A worker joined or left the engine.
+    Console,
+}
+
 /// The app's link to the engine.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

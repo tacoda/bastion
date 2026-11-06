@@ -542,38 +542,6 @@ containers:
         x86_64-unknown-linux-musl:
           sha256: 15122602ade9fb83b295a13bc4aa9f2e442264edea234db9e32a4b82aeca354f
           url: https://api.workers.iii.dev/download/provider-anthropic/1.2.29/x86_64-unknown-linux-musl
-  provider-claude-code:
-    worker: package://provider-claude-code
-    requested: 0.1.25
-    resolved:
-      name: provider-claude-code
-      version: 0.1.25
-      type: binary
-      artifacts:
-        aarch64-apple-darwin:
-          sha256: 7d37ebca424d75e9ca06909c200b51f476b8dd5293deac6b36211970941e67c8
-          url: https://api.workers.iii.dev/download/provider-claude-code/0.1.25/aarch64-apple-darwin
-        aarch64-pc-windows-msvc:
-          sha256: f444266c166d6a84e6e8132f5c74da1ae43abe6fe72e66e044b36b846a557399
-          url: https://api.workers.iii.dev/download/provider-claude-code/0.1.25/aarch64-pc-windows-msvc
-        aarch64-unknown-linux-gnu:
-          sha256: 9c00168b4b82f0a8d9b00e5fb7534786aa4865f35b3fda2ebfd929701e322ca5
-          url: https://api.workers.iii.dev/download/provider-claude-code/0.1.25/aarch64-unknown-linux-gnu
-        armv7-unknown-linux-gnueabihf:
-          sha256: 0870b8a2e3fd4e9b1b84bf53bffe1a6fea66114854a450e7dfc6f6c4ec9fcea4
-          url: https://api.workers.iii.dev/download/provider-claude-code/0.1.25/armv7-unknown-linux-gnueabihf
-        x86_64-apple-darwin:
-          sha256: 9f7fcf69c49833f51ce5337972601438a6b48d891ed1d09e32e38a8f02cd5914
-          url: https://api.workers.iii.dev/download/provider-claude-code/0.1.25/x86_64-apple-darwin
-        x86_64-pc-windows-msvc:
-          sha256: 3872bc7dd0bfbcd00161afa5e6001d1f4fe8dd5a3de770f9588a4f937d2f92a3
-          url: https://api.workers.iii.dev/download/provider-claude-code/0.1.25/x86_64-pc-windows-msvc
-        x86_64-unknown-linux-gnu:
-          sha256: 7b64e29d62a981cf8e072f6b1db8535aeea00806b12e36d4b49270885c1149f9
-          url: https://api.workers.iii.dev/download/provider-claude-code/0.1.25/x86_64-unknown-linux-gnu
-        x86_64-unknown-linux-musl:
-          sha256: c39873a6a7a46f81596ce8b95fe04a4b3ac83f4e9ec7f92dc113de4af3696383
-          url: https://api.workers.iii.dev/download/provider-claude-code/0.1.25/x86_64-unknown-linux-musl
   provider-deepseek:
     worker: package://provider-deepseek
     requested: 0.1.24

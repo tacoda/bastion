@@ -266,7 +266,6 @@ pub fn ModelProviders() -> impl IntoView {
 fn provider_row(p: ProviderView, note: WriteSignal<String>, reload: Callback<()>) -> AnyView {
     match p.id.as_str() {
         "openai-codex" => codex_row(p, note, reload).into_any(),
-        "claude-code" => claude_code_row(p).into_any(),
         _ => key_row(p, note, reload).into_any(),
     }
 }
@@ -277,21 +276,6 @@ fn provider_name(p: &ProviderView) -> impl IntoView + use<> {
     view! {
         <span class={if ok { "text-ok" } else { "text-warn" }}>{if ok { "✓" } else { "!" }}</span>
         <strong>{p.name.clone()}</strong>
-    }
-}
-
-/// Claude Code reads the sign-in of `claude` on the stack's machine.
-fn claude_code_row(p: ProviderView) -> impl IntoView {
-    let status = if p.source == "signed_in" {
-        "signed in on the stack's machine"
-    } else {
-        "not signed in: run `claude` and /login on the machine that runs the stack"
-    };
-    view! {
-        <li class="flex flex-wrap items-center gap-2">
-            {provider_name(&p)}
-            <span class="text-muted">{status}</span>
-        </li>
     }
 }
 

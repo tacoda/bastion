@@ -1,35 +1,21 @@
 //! Model providers that sign in with a subscription instead of a key (D34).
 //! OpenAI Codex signs in with a ChatGPT plan by a device code, through its
-//! worker. Claude Code reads the sign-in of `claude` on the machine that runs
-//! the stack, so Bastion can only report it.
+//! worker. Claude takes a key only (D36).
 
 use bastion_protocol::{ProviderView, SignIn};
 use serde_json::json;
 
 use crate::engine::Engine;
 
-/// Whether a subscription provider is signed in. `llm-router` reports these
-/// as having no credential, so each is asked its own way. A provider that
-/// takes a key is left as the router reported it.
+/// Whether OpenAI Codex is signed in. `llm-router` reports it as having no
+/// credential, so its worker is asked. A provider that takes a key is left
+/// as the router reported it.
 pub async fn with_sign_in(engine: &dyn Engine, mut p: ProviderView) -> ProviderView {
-    let signed_in = match p.id.as_str() {
-        "openai-codex" => {
-            let status = engine.call("bastion", "provider::openai-codex::auth::status", json!({}));
-            status.await.is_ok_and(|v| v["status"] == "authenticated")
-        }
-        // Its catalog is empty until it finds a sign-in.
-        "claude-code" => {
-            let models = engine.call(
-                "bastion",
-                "router::models::list",
-                json!({ "provider": p.id }),
-            );
-            models
-                .await
-                .is_ok_and(|v| v["models"].as_array().is_some_and(|m| !m.is_empty()))
-        }
-        _ => return p,
-    };
+    if p.id != "openai-codex" {
+        return p;
+    }
+    let status = engine.call("bastion", "provider::openai-codex::auth::status", json!({}));
+    let signed_in = status.await.is_ok_and(|v| v["status"] == "authenticated");
     p.source = if signed_in { "signed_in" } else { "none" }.into();
     p
 }
@@ -87,17 +73,13 @@ mod tests {
     }
 
     #[test]
-    fn each_subscription_is_asked_its_own_way_and_a_key_provider_is_left_alone() {
-        let engine = FakeEngine::new(Link::Up)
-            .answer(
-                "provider::openai-codex::auth::status",
-                Ok(json!({ "status": "authenticated" })),
-            )
-            .answer("router::models::list", Ok(json!({ "models": [] })));
+    fn codex_is_asked_and_a_key_provider_is_left_alone() {
+        let engine = FakeEngine::new(Link::Up).answer(
+            "provider::openai-codex::auth::status",
+            Ok(json!({ "status": "authenticated" })),
+        );
         let codex = crate::rt::block_on(with_sign_in(&engine, view("openai-codex")));
         assert_eq!(codex.source, "signed_in");
-        let claude = crate::rt::block_on(with_sign_in(&engine, view("claude-code")));
-        assert_eq!(claude.source, "none", "no models means no sign-in");
         let mut deepseek = view("deepseek");
         deepseek.source = "secret".into();
         let kept = crate::rt::block_on(with_sign_in(&engine, deepseek.clone()));

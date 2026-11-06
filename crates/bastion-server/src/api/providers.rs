@@ -122,7 +122,7 @@ async fn known(engine: &dyn Engine, id: &str) -> Result<String, String> {
     let Some(p) = all.iter().find(|p| p.id == id) else {
         return Err(format!("no model provider {id}"));
     };
-    if p.source == "signed_in" || matches!(id, "openai-codex" | "claude-code") {
+    if p.source == "signed_in" || id == "openai-codex" {
         return Err(format!(
             "{} signs in with a subscription, not a key",
             p.name

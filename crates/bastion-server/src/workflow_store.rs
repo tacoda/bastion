@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 
 use bastion_core::workflow::{Graph, Link, Node, Step};
-use bastion_core::{Dials, Pipeline, Stage};
+use bastion_core::{Dials, Pipeline};
 use serde_json::{Value, json};
 
 use crate::store::{Answer, Record, SqlStore, Store, name, parse};
@@ -60,7 +60,7 @@ pub async fn all(store: &dyn Store, dials: &Dials) -> Result<Vec<Workflow>, Stri
             id: id.to_string(),
             name: name.to_string(),
             version: 0,
-            graph: Graph::chain(&pipeline.stages(), dials),
+            graph: Graph::chain(&pipeline.stages(), |s| dials.at(s)),
         })
         .collect();
     for (id, name, version) in store.workflows().await? {
@@ -110,14 +110,6 @@ pub async fn start_on(
     Ok((job.running(w.graph.steps()?), Some(w.version)))
 }
 
-/// The dials a job on a kept workflow runs under: its version's.
-pub async fn dials_of(store: &dyn Store, r: &Record) -> Result<Option<Dials>, String> {
-    let (Some(id), Some(version)) = (&r.runtime.workflow, r.runtime.workflow_version) else {
-        return Ok(None);
-    };
-    Ok(store.graph_at(id, version).await?.map(|g| g.dials()))
-}
-
 /// Fill each job's steps from the workflow version it runs.
 pub async fn with_flows(
     store: &(dyn WorkflowStore + Sync),
@@ -144,21 +136,24 @@ pub const SCHEMA: [&str; 4] = [
         name TEXT NOT NULL CHECK (length(name) > 0),
         version INTEGER NOT NULL CHECK (version >= 1),
         updated_at INTEGER NOT NULL)",
-    // Each version's steps, where they sit on the canvas.
+    // Each version's steps, where they sit on the canvas. `run` is a
+    // skill's name or a command line.
     "CREATE TABLE IF NOT EXISTS workflow_nodes (
         workflow TEXT NOT NULL,
         version INTEGER NOT NULL CHECK (version >= 1),
+        id TEXT NOT NULL CHECK (length(id) > 0),
         stage TEXT NOT NULL CHECK (length(stage) > 0),
+        run TEXT NOT NULL,
         dial TEXT NOT NULL CHECK (dial IN ('lights_on','dark')),
         note TEXT NOT NULL,
         x INTEGER NOT NULL,
         y INTEGER NOT NULL,
-        PRIMARY KEY (workflow, version, stage))",
+        PRIMARY KEY (workflow, version, id))",
     // The results each step declares, in order.
     "CREATE TABLE IF NOT EXISTS workflow_results (
         workflow TEXT NOT NULL,
         version INTEGER NOT NULL,
-        stage TEXT NOT NULL,
+        node TEXT NOT NULL,
         n INTEGER NOT NULL CHECK (n >= 0),
         name TEXT NOT NULL CHECK (length(name) > 0),
         PRIMARY KEY (workflow, version, name))",
@@ -172,7 +167,9 @@ pub const SCHEMA: [&str; 4] = [
 
 fn node_of(r: &Value) -> Result<Node, String> {
     Ok(Node {
+        id: parse(r, "id")?,
         stage: parse(r, "stage")?,
+        run: parse(r, "run")?,
         dial: parse(r, "dial")?,
         note: parse(r, "note")?,
         results: Vec::new(),
@@ -186,22 +183,22 @@ fn graph_statements(id: &str, version: u64, g: &Graph) -> Vec<Value> {
     let statement = |sql: &str, params: Value| json!({ "sql": sql, "params": params });
     let nodes = g.nodes.iter().map(|n| {
         statement(
-            "INSERT INTO workflow_nodes (workflow, version, stage, dial, note, x, y) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            json!([id, version, name(n.stage), name(n.dial), n.note, n.x, n.y]),
+            "INSERT INTO workflow_nodes (workflow, version, id, stage, run, dial, note, x, y) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            json!([id, version, n.id, name(n.stage), n.run.trim(), name(n.dial), n.note, n.x, n.y]),
         )
     });
     let results = g.nodes.iter().flat_map(|n| {
         n.results.iter().enumerate().map(move |(i, r)| {
             statement(
-                "INSERT INTO workflow_results (workflow, version, stage, n, name) VALUES (?, ?, ?, ?, ?)",
-                json!([id, version, name(n.stage), i, r.trim()]),
+                "INSERT INTO workflow_results (workflow, version, node, n, name) VALUES (?, ?, ?, ?, ?)",
+                json!([id, version, n.id, i, r.trim()]),
             )
         })
     });
     let links = g.links.iter().map(|l| {
         statement(
             "INSERT INTO workflow_links (workflow, version, source, target) VALUES (?, ?, ?, ?)",
-            json!([id, version, name(l.from), name(l.to)]),
+            json!([id, version, l.from, l.to]),
         )
     });
     nodes.chain(results).chain(links).collect()
@@ -224,7 +221,9 @@ impl WorkflowStore for SqlStore {
             let where_ = "WHERE workflow = ? AND version = ?";
             let mut nodes = self
                 .rows(
-                    &format!("SELECT stage, dial, note, x, y FROM workflow_nodes {where_}"),
+                    &format!(
+                        "SELECT id, stage, run, dial, note, x, y FROM workflow_nodes {where_}"
+                    ),
                     at.clone(),
                     node_of,
                 )
@@ -234,13 +233,13 @@ impl WorkflowStore for SqlStore {
             }
             let results = self
                 .rows(
-                    &format!("SELECT stage, name FROM workflow_results {where_} ORDER BY stage, n"),
+                    &format!("SELECT node, name FROM workflow_results {where_} ORDER BY node, n"),
                     at.clone(),
-                    |r| Ok((parse::<Stage>(r, "stage")?, parse::<String>(r, "name")?)),
+                    |r| Ok((parse::<String>(r, "node")?, parse::<String>(r, "name")?)),
                 )
                 .await?;
-            for (stage, result) in results {
-                if let Some(n) = nodes.iter_mut().find(|n| n.stage == stage) {
+            for (node, result) in results {
+                if let Some(n) = nodes.iter_mut().find(|n| n.id == node) {
                     n.results.push(result);
                 }
             }
@@ -358,10 +357,12 @@ pub mod fake {
 mod tests {
     use super::*;
     use crate::store::fake::FakeStore;
-    use bastion_core::Dial;
+    use bastion_core::{Dial, Stage};
 
     fn copy() -> Workflow {
-        let mut graph = Graph::chain(&[Stage::Plan, Stage::Build, Stage::Land], &Dials::default());
+        let mut graph = Graph::chain(&[Stage::Plan, Stage::Build, Stage::Land], |_| {
+            Dial::LightsOn
+        });
         graph.nodes[0].results = vec!["design-notes".into()];
         Workflow {
             id: "w1".into(),
@@ -378,7 +379,7 @@ mod tests {
         dials.set(Stage::Build, Dial::Dark);
         crate::rt::block_on(async {
             let short = find(&store, &dials, "short").await.unwrap();
-            assert_eq!(short.graph.dials().at(Stage::Build), Dial::Dark);
+            assert_eq!(short.graph.nodes[1].dial, Dial::Dark);
             assert!(short.built_in());
             let refused = save(&store, &short, 1).await.unwrap_err();
             assert!(refused.contains("built in"), "{refused}");
@@ -412,7 +413,7 @@ mod tests {
     }
 
     #[test]
-    fn a_job_on_a_kept_workflow_runs_that_versions_steps_under_its_dials() {
+    fn a_job_on_a_kept_workflow_runs_that_versions_steps_with_their_dials() {
         let store = FakeStore::default();
         let job = bastion_core::Job::new("j1".into(), "w".into(), "r".into(), 1);
         crate::rt::block_on(async {
@@ -433,18 +434,7 @@ mod tests {
             assert_eq!(version, Some(1));
             assert_eq!(j.stages(), [Stage::Plan, Stage::Build, Stage::Land]);
             assert_eq!(j.flow[1].needs, ["design-notes"]);
-            let record = Record {
-                job: j,
-                runtime: crate::store::Runtime {
-                    workflow: Some("w1".into()),
-                    workflow_version: version,
-                    ..Default::default()
-                },
-                rev: 1,
-                created_at: 1,
-            };
-            let dials = dials_of(&store, &record).await.unwrap().unwrap();
-            assert_eq!(dials.at(Stage::Build), Dial::Dark);
+            assert_eq!(j.flow[1].dial, Dial::Dark, "each step keeps its own dial");
         });
     }
 }

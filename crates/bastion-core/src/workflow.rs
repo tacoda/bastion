@@ -1,21 +1,27 @@
-//! Workflows (PLAN.md D35, W1): a graph of steps on a canvas. A link sends
-//! one step's results to another, and carries no condition: a step's entry
-//! criteria are the results linked into it, and its exit criteria are the
-//! results it declares.
+//! Workflows (PLAN.md D35, W1): a graph of steps on a canvas. A step is a
+//! skill (the preferred building block), a prompt, a command, or a Bastion
+//! stage. A link sends one step's results to another, and carries no
+//! condition: a step's entry criteria are the results linked into it, and
+//! its exit criteria are the results it declares.
 
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Dial, Dials, Kind, Stage};
+use crate::{Dial, Kind, Level, Stage};
 
 /// One step on the canvas.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Node {
+    /// Unique in its workflow; a built-in step's is its stage's name.
+    pub id: String,
+    /// What runs: `skill`, `prompt`, `command`, or a Bastion stage.
     pub stage: Stage,
+    /// The skill's name, or the command line. Empty for anything else.
+    pub run: String,
     pub dial: Dial,
-    /// What the step should know, shown when the node is expanded and given
-    /// to its agent.
+    /// What the step should know, shown when the node is expanded. A
+    /// prompt's instructions; for any agent step, part of its brief.
     pub note: String,
     /// The results it declares, by name, such as `design-notes`.
     pub results: Vec<String>,
@@ -23,11 +29,11 @@ pub struct Node {
     pub y: i32,
 }
 
-/// The later step gets the earlier step's results.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// The later node gets the earlier node's results.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Link {
-    pub from: Stage,
-    pub to: Stage,
+    pub from: String,
+    pub to: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,30 +42,114 @@ pub struct Graph {
     pub links: Vec<Link>,
 }
 
-/// A step as a job runs it: its note, the results it needs (entry
-/// criteria) and the results it gives (exit criteria).
+/// A step as a job runs it: what runs, its dial, its note, the results it
+/// needs (entry criteria) and the results it gives (exit criteria).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Step {
+    pub id: String,
     pub stage: Stage,
+    pub run: String,
+    pub dial: Dial,
     pub note: String,
     pub needs: Vec<String>,
     pub gives: Vec<String>,
 }
 
+/// The level of steps in this order with these dials (D33): lights-on when
+/// every step is, dim when at least one up to the merge is, and dark when
+/// none up to the merge is. Land is the short pipeline's merge.
+pub fn level_of(steps: &[(Stage, Dial)]) -> Level {
+    let on = |s: &(Stage, Dial)| s.1 == Dial::LightsOn;
+    let merge = steps
+        .iter()
+        .position(|s| matches!(s.0, Stage::Merge | Stage::Land))
+        .map_or(steps.len(), |i| i + 1);
+    if steps.iter().all(on) {
+        Level::LightsOn
+    } else if steps[..merge].iter().any(on) {
+        Level::Dim
+    } else {
+        Level::Dark
+    }
+}
+
+/// A skill's name is a folder under `.claude/skills`: letters, digits,
+/// `-` and `_` only, so it cannot leave that folder.
+pub fn skill_name_ok(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// What a node lacks to run: a skill its folder's name, a command its
+/// line, a prompt its instructions.
+fn missing_run(n: &Node) -> Option<&'static str> {
+    match n.stage {
+        Stage::Skill if !skill_name_ok(&n.run) => Some("a skill needs its folder's name"),
+        Stage::Command if n.run.trim().is_empty() => Some("a command needs its command line"),
+        Stage::Prompt if n.note.trim().is_empty() => Some("a prompt needs its instructions"),
+        _ => None,
+    }
+}
+
+/// A node has what it runs, and gives results only if an agent or a
+/// command runs it.
+fn what_runs(n: &Node) -> Result<(), String> {
+    if let Some(why) = missing_run(n) {
+        return Err(format!("{}: {why}", n.id));
+    }
+    let gives = n.stage.kind() == Kind::Turn || n.stage == Stage::Command;
+    if !gives && !n.results.is_empty() {
+        return Err(format!("{}: {:?} gives no results", n.id, n.stage));
+    }
+    Ok(())
+}
+
+/// The results a report gives: the text under each `RESULT <name>:` line,
+/// up to the next one.
+pub fn results(report: &str) -> BTreeMap<String, String> {
+    let mut found = BTreeMap::new();
+    let mut current: Option<(String, Vec<&str>)> = None;
+    for line in report.lines() {
+        let header = line
+            .trim()
+            .strip_prefix("RESULT ")
+            .and_then(|r| r.strip_suffix(':'));
+        if let Some(name) = header {
+            if let Some((n, text)) = current.take() {
+                found.insert(n, text.join("\n").trim().to_string());
+            }
+            current = Some((name.trim().to_string(), Vec::new()));
+        } else if let Some((_, text)) = &mut current {
+            text.push(line);
+        }
+    }
+    if let Some((n, text)) = current {
+        found.insert(n, text.join("\n").trim().to_string());
+    }
+    found.retain(|_, text| !text.is_empty());
+    found
+}
+
 impl Graph {
-    /// `stages` linked one after another, with `dials`: a built-in workflow.
-    pub fn chain(stages: &[Stage], dials: &Dials) -> Graph {
+    /// `stages` linked one after another, with each stage's dial: a
+    /// built-in workflow.
+    pub fn chain(stages: &[Stage], dial: impl Fn(Stage) -> Dial) -> Graph {
+        let id = |s: &Stage| format!("{s:?}").to_lowercase();
         let nodes = stages.iter().enumerate().map(|(i, s)| Node {
+            id: id(s),
             stage: *s,
-            dial: dials.at(*s),
+            run: String::new(),
+            dial: dial(*s),
             note: String::new(),
             results: Vec::new(),
             x: 220 * i as i32,
             y: 0,
         });
         let links = stages.windows(2).map(|w| Link {
-            from: w[0],
-            to: w[1],
+            from: id(&w[0]),
+            to: id(&w[1]),
         });
         Graph {
             nodes: nodes.collect(),
@@ -67,38 +157,29 @@ impl Graph {
         }
     }
 
-    pub fn dials(&self) -> Dials {
-        let mut d = Dials::default();
-        for n in &self.nodes {
-            d.set(n.stage, n.dial);
-        }
-        d
-    }
-
-    fn node(&self, stage: Stage) -> Option<&Node> {
-        self.nodes.iter().find(|n| n.stage == stage)
+    fn node(&self, id: &str) -> Option<&Node> {
+        self.nodes.iter().find(|n| n.id == id)
     }
 
     /// The nodes in link order: a node runs after every node linked into
     /// it, and nodes free at once run left to right on the canvas.
-    pub fn order(&self) -> Result<Vec<Stage>, String> {
+    pub fn order(&self) -> Result<Vec<&Node>, String> {
         let mut by_place: Vec<&Node> = self.nodes.iter().collect();
         by_place.sort_by_key(|n| (n.x, n.y));
-        let mut waiting: BTreeMap<Stage, usize> = self.nodes.iter().map(|n| (n.stage, 0)).collect();
+        let mut waiting: BTreeMap<&str, usize> =
+            self.nodes.iter().map(|n| (n.id.as_str(), 0)).collect();
         for l in &self.links {
-            *waiting.get_mut(&l.to).ok_or(format!(
-                "a link goes to {:?}, which is not a step here",
-                l.to
-            ))? += 1;
+            let to = waiting.get_mut(l.to.as_str());
+            *to.ok_or(format!("a link goes to {}, which is not a step here", l.to))? += 1;
         }
-        let mut order = Vec::new();
+        let mut order: Vec<&Node> = Vec::new();
         while let Some(next) = by_place
             .iter()
-            .find(|n| waiting[&n.stage] == 0 && !order.contains(&n.stage))
+            .find(|n| waiting[n.id.as_str()] == 0 && !order.iter().any(|o| o.id == n.id))
         {
-            order.push(next.stage);
-            for l in self.links.iter().filter(|l| l.from == next.stage) {
-                *waiting.get_mut(&l.to).expect("checked above") -= 1;
+            order.push(next);
+            for l in self.links.iter().filter(|l| l.from == next.id) {
+                *waiting.get_mut(l.to.as_str()).expect("checked above") -= 1;
             }
         }
         if order.len() < self.nodes.len() {
@@ -107,10 +188,15 @@ impl Graph {
         Ok(order)
     }
 
-    /// Whether the graph makes a workflow: each node a step a person can
-    /// oversee, each stage once, no circle, links between its own nodes,
-    /// results only on agent steps and each named once, and one node that
-    /// lands the change with only deploy and learn after it.
+    /// The workflow's level, its nodes in link order.
+    pub fn level(&self) -> Result<Level, String> {
+        let steps: Vec<(Stage, Dial)> = self.order()?.iter().map(|n| (n.stage, n.dial)).collect();
+        Ok(level_of(&steps))
+    }
+
+    /// Whether the graph makes a workflow: each node sound, results named
+    /// once, links between its own nodes, no circle, and one node that lands
+    /// the change with only deploy and learn after it.
     pub fn check(&self) -> Result<(), String> {
         for (i, n) in self.nodes.iter().enumerate() {
             self.check_node(i, n)?;
@@ -121,54 +207,54 @@ impl Graph {
                 return Err(format!("the result name {r:?} is empty or taken"));
             }
         }
-        if let Some(l) = self.links.iter().find(|l| self.node(l.from).is_none()) {
+        if let Some(l) = self.links.iter().find(|l| self.node(&l.from).is_none()) {
             return Err(format!(
-                "a link comes from {:?}, which is not a step here",
+                "a link comes from {}, which is not a step here",
                 l.from
             ));
         }
-        let order = self.order()?;
-        crate::pipeline::check_landing(&order)
+        let stages: Vec<Stage> = self.order()?.iter().map(|n| n.stage).collect();
+        crate::pipeline::check_landing(&stages)
     }
 
-    /// The `i`th node: a step a person can oversee, not already in the
-    /// graph, and giving results only if an agent runs it.
+    /// The `i`th node: its id new, a step a person can oversee, a Bastion
+    /// stage at most once, a skill or command with what it runs, a prompt
+    /// with its instructions, and results only where an agent or a command
+    /// gives them.
     fn check_node(&self, i: usize, n: &Node) -> Result<(), String> {
+        let before = &self.nodes[..i];
+        if n.id.trim().is_empty() || before.iter().any(|m| m.id == n.id) {
+            return Err(format!("the step id {:?} is empty or taken", n.id));
+        }
         if !n.stage.dialed() {
             return Err(format!("{:?} is not a step", n.stage));
         }
-        if self.nodes[..i].iter().any(|m| m.stage == n.stage) {
+        let custom = matches!(n.stage, Stage::Skill | Stage::Prompt | Stage::Command);
+        if !custom && before.iter().any(|m| m.stage == n.stage) {
             return Err(format!("{:?} is in the workflow twice", n.stage));
         }
-        if !n.results.is_empty() && n.stage.kind() != Kind::Turn {
-            return Err(format!(
-                "{:?} runs no agent, so it gives no results",
-                n.stage
-            ));
-        }
-        Ok(())
+        what_runs(n)
     }
 
     /// The steps a job runs, in link order.
     pub fn steps(&self) -> Result<Vec<Step>, String> {
-        let gives = |stage: Stage| {
-            self.node(stage)
-                .map(|n| n.results.clone())
-                .unwrap_or_default()
-        };
+        let gives = |id: &str| self.node(id).map(|n| n.results.clone()).unwrap_or_default();
         Ok(self
             .order()?
             .into_iter()
-            .map(|stage| Step {
-                stage,
-                note: self.node(stage).map(|n| n.note.clone()).unwrap_or_default(),
+            .map(|n| Step {
+                id: n.id.clone(),
+                stage: n.stage,
+                run: n.run.clone(),
+                dial: n.dial,
+                note: n.note.clone(),
                 needs: self
                     .links
                     .iter()
-                    .filter(|l| l.to == stage)
-                    .flat_map(|l| gives(l.from))
+                    .filter(|l| l.to == n.id)
+                    .flat_map(|l| gives(&l.from))
                     .collect(),
-                gives: gives(stage),
+                gives: n.results.clone(),
             })
             .collect())
     }
@@ -179,9 +265,11 @@ mod tests {
     use super::*;
     use Stage::*;
 
-    fn node(stage: Stage, x: i32, results: &[&str]) -> Node {
+    fn node(id: &str, stage: Stage, x: i32, results: &[&str]) -> Node {
         Node {
+            id: id.into(),
             stage,
+            run: String::new(),
             dial: Dial::LightsOn,
             note: String::new(),
             results: results.iter().map(|r| r.to_string()).collect(),
@@ -190,41 +278,48 @@ mod tests {
         }
     }
 
-    fn link(from: Stage, to: Stage) -> Link {
-        Link { from, to }
+    fn link(from: &str, to: &str) -> Link {
+        Link {
+            from: from.into(),
+            to: to.into(),
+        }
+    }
+
+    fn ids(g: &Graph) -> Vec<String> {
+        g.order().unwrap().iter().map(|n| n.id.clone()).collect()
     }
 
     #[test]
     fn nodes_run_in_link_order_and_free_ones_left_to_right() {
         let g = Graph {
             nodes: vec![
-                node(Land, 0, &[]),
-                node(Build, 50, &[]),
-                node(Plan, 100, &[]),
+                node("land", Land, 0, &[]),
+                node("build", Build, 50, &[]),
+                node("plan", Plan, 100, &[]),
             ],
-            links: vec![link(Plan, Build), link(Build, Land)],
+            links: vec![link("plan", "build"), link("build", "land")],
         };
-        assert_eq!(g.order(), Ok(vec![Plan, Build, Land]));
+        assert_eq!(ids(&g), ["plan", "build", "land"]);
         let free = Graph {
             nodes: vec![
-                node(Plan, 100, &[]),
-                node(Scope, 0, &[]),
-                node(Land, 200, &[]),
+                node("plan", Plan, 100, &[]),
+                node("scope", Scope, 0, &[]),
+                node("land", Land, 200, &[]),
             ],
             links: vec![],
         };
-        assert_eq!(free.order(), Ok(vec![Scope, Plan, Land]));
+        assert_eq!(ids(&free), ["scope", "plan", "land"]);
     }
 
     #[test]
     fn a_step_needs_the_results_linked_into_it() {
         let g = Graph {
             nodes: vec![
-                node(Plan, 0, &["design-notes"]),
-                node(Build, 100, &[]),
-                node(Land, 200, &[]),
+                node("plan", Plan, 0, &["design-notes"]),
+                node("build", Build, 100, &[]),
+                node("land", Land, 200, &[]),
             ],
-            links: vec![link(Plan, Build), link(Build, Land)],
+            links: vec![link("plan", "build"), link("build", "land")],
         };
         assert_eq!(g.check(), Ok(()));
         let steps = g.steps().unwrap();
@@ -234,40 +329,82 @@ mod tests {
     }
 
     #[test]
+    fn skills_prompts_and_commands_may_repeat_and_each_needs_what_it_runs() {
+        let mut lint = node("lint", Command, 0, &["lint-report"]);
+        lint.run = "make lint".into();
+        let mut review = node("review", Skill, 100, &[]);
+        review.run = "code-review".into();
+        let mut tests = node("tests", Command, 200, &[]);
+        tests.run = "npm test".into();
+        let g = Graph {
+            nodes: vec![lint, review, tests, node("land", Land, 300, &[])],
+            links: vec![link("lint", "review")],
+        };
+        assert_eq!(g.check(), Ok(()));
+        let mut bad = g.clone();
+        bad.nodes[1].run = "../etc".into();
+        assert!(bad.check().unwrap_err().contains("skill"));
+        let mut bad = g.clone();
+        bad.nodes[2].run = " ".into();
+        assert!(bad.check().unwrap_err().contains("command line"));
+        let mut bad = g;
+        bad.nodes.push(node("ask", Prompt, 250, &[]));
+        assert!(bad.check().unwrap_err().contains("instructions"));
+    }
+
+    #[test]
     fn a_bad_graph_says_what_is_wrong() {
         let circle = Graph {
             nodes: vec![
-                node(Plan, 0, &[]),
-                node(Build, 100, &[]),
-                node(Land, 200, &[]),
+                node("plan", Plan, 0, &[]),
+                node("build", Build, 100, &[]),
+                node("land", Land, 200, &[]),
             ],
-            links: vec![link(Plan, Build), link(Build, Plan)],
+            links: vec![link("plan", "build"), link("build", "plan")],
         };
         assert!(circle.check().unwrap_err().contains("circle"));
         let results_on_land = Graph {
-            nodes: vec![node(Plan, 0, &[]), node(Land, 100, &["notes"])],
+            nodes: vec![
+                node("plan", Plan, 0, &[]),
+                node("land", Land, 100, &["notes"]),
+            ],
             links: vec![],
         };
         assert!(results_on_land.check().unwrap_err().contains("no results"));
         let no_land = Graph {
-            nodes: vec![node(Plan, 0, &[])],
+            nodes: vec![node("plan", Plan, 0, &[])],
             links: vec![],
         };
         assert!(no_land.check().unwrap_err().contains("nothing lands"));
+        let twice = Graph {
+            nodes: vec![
+                node("a", Plan, 0, &[]),
+                node("b", Plan, 50, &[]),
+                node("land", Land, 100, &[]),
+            ],
+            links: vec![],
+        };
+        assert!(twice.check().unwrap_err().contains("twice"));
         let stray = Graph {
-            nodes: vec![node(Plan, 0, &[]), node(Land, 100, &[])],
-            links: vec![link(Build, Land)],
+            nodes: vec![node("plan", Plan, 0, &[]), node("land", Land, 100, &[])],
+            links: vec![link("build", "land")],
         };
         assert!(stray.check().unwrap_err().contains("not a step here"));
     }
 
     #[test]
     fn a_chain_is_a_valid_workflow_with_the_dials_given() {
-        let mut dials = Dials::default();
-        dials.set(Build, Dial::Dark);
-        let g = Graph::chain(&[Plan, Build, Land], &dials);
+        let dark_build = |s| {
+            if s == Build {
+                Dial::Dark
+            } else {
+                Dial::LightsOn
+            }
+        };
+        let g = Graph::chain(&[Plan, Build, Land], dark_build);
         assert_eq!(g.check(), Ok(()));
-        assert_eq!(g.dials().at(Build), Dial::Dark);
-        assert_eq!(g.order(), Ok(vec![Plan, Build, Land]));
+        assert_eq!(g.nodes[1].dial, Dial::Dark);
+        assert_eq!(ids(&g), ["plan", "build", "land"]);
+        assert_eq!(g.level(), Ok(Level::Dim));
     }
 }

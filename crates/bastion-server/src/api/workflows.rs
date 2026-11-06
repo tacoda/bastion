@@ -17,16 +17,15 @@ fn view_of(w: &Workflow) -> WorkflowView {
         name: w.name.clone(),
         built_in: w.built_in(),
         version: w.version,
-        level: w.graph.order().map_or_else(
-            |_| "dim".into(),
-            |order| name(w.graph.dials().level(&order)),
-        ),
+        level: w.graph.level().map_or_else(|_| "dim".into(), name),
         nodes: w
             .graph
             .nodes
             .iter()
             .map(|n| NodeView {
+                id: n.id.clone(),
                 stage: name(n.stage),
+                run: n.run.clone(),
                 dial: name(n.dial),
                 note: n.note.clone(),
                 results: n.results.clone(),
@@ -39,8 +38,8 @@ fn view_of(w: &Workflow) -> WorkflowView {
             .links
             .iter()
             .map(|l| LinkView {
-                from: name(l.from),
-                to: name(l.to),
+                from: l.from.clone(),
+                to: l.to.clone(),
             })
             .collect(),
     }
@@ -105,7 +104,7 @@ pub async fn workflow_delete(cell: &FactoryCell, id: String) -> Result<(), Strin
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bastion_core::{Dials, Stage};
+    use bastion_core::{Dial, Stage};
 
     #[test]
     fn a_view_reads_back_as_its_graph_and_a_bad_word_is_refused() {
@@ -113,7 +112,9 @@ mod tests {
             id: "short".into(),
             name: "Short".into(),
             version: 0,
-            graph: Graph::chain(&[Stage::Plan, Stage::Build, Stage::Land], &Dials::default()),
+            graph: Graph::chain(&[Stage::Plan, Stage::Build, Stage::Land], |_| {
+                Dial::LightsOn
+            }),
         };
         let v = view_of(&w);
         assert_eq!((v.built_in, v.level.as_str()), (true, "lights_on"));

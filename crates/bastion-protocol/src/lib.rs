@@ -179,7 +179,12 @@ pub struct WorkflowView {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NodeView {
+    /// Unique in its workflow; links name it.
+    pub id: String,
+    /// `skill`, `prompt`, `command`, or a Bastion stage.
     pub stage: String,
+    /// A skill's name or a command line.
+    pub run: String,
     pub dial: String,
     pub note: String,
     pub results: Vec<String>,

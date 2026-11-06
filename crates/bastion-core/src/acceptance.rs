@@ -140,6 +140,19 @@ pub fn suite(ran: &Ran) -> Event {
     }
 }
 
+/// A workflow's command step (D35): exit 0 passes with what it printed,
+/// which is its result; anything else fails with it.
+pub fn command(ran: &Ran) -> Event {
+    match ran.code {
+        0 => Event::Ran {
+            output: ran.output.clone(),
+        },
+        code => Event::StepFailed {
+            detail: format!("The command failed (exit {code}):\n{}", ran.output),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -212,5 +225,23 @@ mod tests {
             verified(&[ran("C1", 1)], &[]),
             Event::StepFailed { detail } if detail.contains("C1 is not met (exit 1)")
         ));
+    }
+
+    #[test]
+    fn a_command_passes_with_its_output_or_fails_with_it() {
+        let ran = |code| Ran {
+            criterion: "make lint".into(),
+            code,
+            output: "0 problems".into(),
+        };
+        assert_eq!(
+            command(&ran(0)),
+            Event::Ran {
+                output: "0 problems".into()
+            }
+        );
+        assert!(
+            matches!(command(&ran(2)), Event::StepFailed { detail } if detail.contains("exit 2"))
+        );
     }
 }

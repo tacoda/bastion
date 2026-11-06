@@ -158,7 +158,8 @@ fn staged_tables() -> [(&'static str, &'static str, String); 4] {
         falsify_tried INTEGER NOT NULL DEFAULT 0 CHECK (falsify_tried IN (0, 1)),
         requester TEXT,
         workflow TEXT,
-        workflow_version INTEGER)"
+        workflow_version INTEGER,
+        node TEXT)"
             ),
         ),
         (
@@ -308,14 +309,14 @@ pub fn seed_statements(sql: &str) -> Vec<Value> {
         .collect()
 }
 
-const JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue, pipeline, back_to, last_refusal, done_tasks, criteria, falsify_tried, requester, workflow, workflow_version";
+const JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue, pipeline, back_to, last_refusal, done_tasks, criteria, falsify_tried, requester, workflow, workflow_version, node";
 /// The job columns before migration 1, which its rebuild copies.
 const LEGACY_JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue";
 
 /// Columns added after a table was first made. Each runs once; on a table
 /// that already has the column it fails, and that failure is expected.
 // They run before the numbered migrations, which need these columns to exist.
-const ALTERS: [&str; 7] = [
+const ALTERS: [&str; 8] = [
     "ALTER TABLE jobs ADD COLUMN pr TEXT",
     "ALTER TABLE jobs ADD COLUMN ci_fixes INTEGER NOT NULL DEFAULT 0 CHECK (ci_fixes >= 0)",
     "ALTER TABLE jobs ADD COLUMN issue TEXT",
@@ -323,11 +324,13 @@ const ALTERS: [&str; 7] = [
     "ALTER TABLE jobs ADD COLUMN requester TEXT",
     "ALTER TABLE jobs ADD COLUMN workflow TEXT",
     "ALTER TABLE jobs ADD COLUMN workflow_version INTEGER",
+    "ALTER TABLE jobs ADD COLUMN node TEXT",
 ];
 
 /// Numbered migrations, each run once in order; `PRAGMA user_version` is the
 /// last one applied. Migration 1 rebuilds the tables that name a stage, for
-/// the full pipeline (A8); migration 2 rebuilds `turns`, which it missed.
+/// the full pipeline (A8); migration 2 rebuilds `turns`, which it missed;
+/// migration 3 rebuilds them all for a workflow's own steps (D35).
 fn migrations() -> Vec<Vec<String>> {
     let staged = staged_tables();
     vec![
@@ -335,6 +338,21 @@ fn migrations() -> Vec<Vec<String>> {
         staged
             .iter()
             .filter(|t| t.0 == "turns")
+            .flat_map(rebuild)
+            .collect(),
+        // Every column now, as the alters ran before the migrations.
+        staged
+            .iter()
+            .map(|(table, columns, create)| {
+                let columns = if *table == "jobs" {
+                    JOB_COLUMNS
+                } else {
+                    columns
+                };
+                (*table, columns, create.clone())
+            })
+            .collect::<Vec<_>>()
+            .iter()
             .flat_map(rebuild)
             .collect(),
     ]
@@ -560,6 +578,7 @@ fn record(row: &Value) -> Result<Record, String> {
             last_refusal: text(row, "last_refusal"),
             tasks: Vec::new(),
             flow: Vec::new(),
+            node: text(row, "node"),
             results: Default::default(),
             done_tasks: parse(row, "done_tasks")?,
             criteria: text(row, "criteria"),
@@ -660,7 +679,8 @@ fn job_params(r: &Record) -> Value {
         j.falsify_tried,
         r.runtime.requester,
         r.runtime.workflow,
-        r.runtime.workflow_version
+        r.runtime.workflow_version,
+        j.node
     ])
 }
 
@@ -768,12 +788,12 @@ impl Store for SqlStore {
             let rows = self
                 .execute(
                     "UPDATE jobs SET stage = ?, state = ?, question = ?, feedback = ?, plan = ?, failures = ?, error = ?, worktree = ?, sandbox = ?, session = ?, updated_at = ?, pr = ?, ci_fixes = ?, issue = ?,
-                     pipeline = ?, back_to = ?, last_refusal = ?, done_tasks = ?, criteria = ?, falsify_tried = ?, rev = rev + 1
+                     pipeline = ?, back_to = ?, last_refusal = ?, done_tasks = ?, criteria = ?, falsify_tried = ?, node = ?, rev = rev + 1
                      WHERE id = ? AND rev = ? RETURNING rev",
                     json!([
                         name(j.stage), name(j.state), j.question, j.feedback, j.plan, j.failures, j.error,
                         r.runtime.worktree, r.runtime.sandbox, r.runtime.session, j.updated_at, j.pr, j.ci_fixes, r.runtime.issue,
-                        name(j.pipeline), j.back_to.map(name), j.last_refusal, j.done_tasks, j.criteria, j.falsify_tried, j.id, r.rev
+                        name(j.pipeline), j.back_to.map(name), j.last_refusal, j.done_tasks, j.criteria, j.falsify_tried, j.node, j.id, r.rev
                     ]),
                 )
                 .await?;
@@ -1137,8 +1157,8 @@ mod tests {
                     .unwrap()
                     .contains("WHERE id = ? AND rev = ?")
             );
-            assert_eq!(update["params"][20], "j1");
-            assert_eq!(update["params"][21], 1);
+            assert_eq!(update["params"][21], "j1");
+            assert_eq!(update["params"][22], 1);
         });
     }
 
@@ -1208,7 +1228,7 @@ mod tests {
     #[test]
     fn migration_1_rebuilds_the_staged_tables_once_with_deferred_keys() {
         let fresh = transactions_at(0);
-        assert_eq!(fresh.len(), 3, "the schema, then migrations 1 and 2");
+        assert_eq!(fresh.len(), 4, "the schema, then migrations 1 to 3");
         let m1 = &fresh[1];
         assert_eq!(m1.first().unwrap(), "PRAGMA defer_foreign_keys = ON");
         assert_eq!(m1.last().unwrap(), "PRAGMA user_version = 1");
@@ -1219,7 +1239,13 @@ mod tests {
         let m2 = &transactions_at(1)[1];
         assert!(m2.contains(&"DROP TABLE turns".to_string()));
         assert!(!m2.contains(&"DROP TABLE jobs".to_string()));
-        assert_eq!(transactions_at(2).len(), 1, "nothing left to migrate");
+        let m3 = &transactions_at(2)[1];
+        assert!(m3.iter().any(|s| s.contains("'command'")));
+        assert!(
+            m3.iter()
+                .any(|s| s.starts_with("INSERT INTO jobs") && s.contains("workflow_version, node"))
+        );
+        assert_eq!(transactions_at(3).len(), 1, "nothing left to migrate");
     }
 
     #[test]
@@ -1267,7 +1293,10 @@ mod tests {
         r.job.pipeline = bastion_core::Pipeline::Full;
         r.job.back_to = Some(Stage::Checks);
         r.job.done_tasks = 2;
+        r.job.node = Some("lint".into());
         r.runtime.sandbox = Some("vm-1".into());
+        r.runtime.workflow = Some("w1".into());
+        r.runtime.workflow_version = Some(3);
         let columns: Vec<&str> = JOB_COLUMNS.split(", ").collect();
         let values = job_params(&r);
         let row: serde_json::Map<String, Value> = columns

@@ -18,8 +18,9 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-pub use brief::{BASE_TAG, Discovery, QUESTION_MARKER, brief, discovery, listed, outcome, results};
+pub use brief::{BASE_TAG, Discovery, QUESTION_MARKER, brief, discovery, listed, outcome};
 pub use pipeline::{Kind, Pipeline, folded};
+pub use workflow::results;
 
 /// How many failed turns in a row a stage gets before the job fails (D16).
 pub const MAX_TURN_FAILURES: u32 = 2;
@@ -95,11 +96,18 @@ pub enum Stage {
     /// An agent breaks the product code on purpose, so the baseline can see
     /// each check that passed already fail.
     Falsify,
+    // A workflow's own steps (D35).
+    /// An agent follows a skill in the repository.
+    Skill,
+    /// An agent follows the workflow's instructions for the step.
+    Prompt,
+    /// A shell line runs in the VM: a bash command, a script or a task runner.
+    Command,
 }
 
 impl Stage {
     /// Every stage, for the store's checks. A new stage goes here too.
-    pub const ALL: [Stage; 31] = {
+    pub const ALL: [Stage; 34] = {
         use Stage::*;
         [
             Plan,
@@ -133,6 +141,9 @@ impl Stage {
             Deploy,
             Learn,
             Falsify,
+            Skill,
+            Prompt,
+            Command,
         ]
     };
 
@@ -143,9 +154,11 @@ impl Stage {
                 Kind::Checkpoint
             }
             Land | Prepare | Baseline | Checks | Verify | Acceptance | Ship | Ci | Merge
-            | Deploy => Kind::Factory,
+            | Deploy | Command => Kind::Factory,
             Plan | Build | Scope | Discover | Define | Specify | Implement | Refactor
-            | CodeReview | CiFix | Prove | Comprehend | Learn | Falsify => Kind::Turn,
+            | CodeReview | CiFix | Prove | Comprehend | Learn | Falsify | Skill | Prompt => {
+                Kind::Turn
+            }
         }
     }
 
@@ -240,6 +253,8 @@ pub struct Job {
     /// The steps of the workflow the job runs (D35), in order. Empty: the
     /// steps of its pipeline.
     pub flow: Vec<workflow::Step>,
+    /// The workflow step the job is at, by id.
+    pub node: Option<String>,
     /// The results its steps gave, by name.
     pub results: BTreeMap<String, String>,
 }
@@ -289,6 +304,10 @@ pub enum Event {
     },
     /// The baseline found checks that pass before anything was built.
     ChecksGreen,
+    /// A command step passed, with what it printed.
+    Ran {
+        output: String,
+    },
     /// The job's VM is gone, as after its stack restarted. Its commits are
     /// in the worktree, so a new VM picks the job up where it was (revive).
     VmLost,
@@ -353,18 +372,8 @@ impl Dials {
     /// step is, dim when at least one step up to the merge is, and dark when
     /// no step up to the merge is. The short pipeline's land is its merge.
     pub fn level(&self, stages: &[Stage]) -> Level {
-        let on = |s: &Stage| self.at(*s) == Dial::LightsOn;
-        let merge = stages
-            .iter()
-            .position(|s| matches!(s, Stage::Merge | Stage::Land))
-            .map_or(stages.len(), |i| i + 1);
-        if stages.iter().all(on) {
-            Level::LightsOn
-        } else if stages[..merge].iter().any(on) {
-            Level::Dim
-        } else {
-            Level::Dark
-        }
+        let steps: Vec<(Stage, Dial)> = stages.iter().map(|s| (*s, self.at(*s))).collect();
+        workflow::level_of(&steps)
     }
 
     /// Keeps only the steps that are not lights-on, so equal dials compare
@@ -450,6 +459,7 @@ impl Job {
             criteria: None,
             falsify_tried: false,
             flow: Vec::new(),
+            node: None,
             results: BTreeMap::new(),
         }
     }
@@ -463,18 +473,37 @@ impl Job {
         }
     }
 
-    /// The workflow step the job is at, if it runs a workflow's steps.
+    /// The workflow step the job is at. None while a fix loop runs another
+    /// stage for it, or on a pipeline.
     pub fn step(&self) -> Option<&workflow::Step> {
-        self.flow.iter().find(|s| s.stage == self.stage)
+        let at = self.node.as_deref()?;
+        self.flow
+            .iter()
+            .find(|s| s.id == at && s.stage == self.stage)
     }
 
     /// The job on a workflow's steps, at its first step.
     pub fn running(mut self, flow: Vec<workflow::Step>) -> Self {
         if let Some(first) = flow.first() {
             self.stage = first.stage;
+            self.node = Some(first.id.clone());
         }
         self.flow = flow;
         self
+    }
+
+    /// The step after this one: the next node of its workflow, or the next
+    /// stage of its pipeline.
+    fn next(&self) -> Option<(Stage, Option<String>)> {
+        if self.flow.is_empty() {
+            return pipeline::next_listed(&self.stages(), self.stage).map(|s| (s, None));
+        }
+        let at = self
+            .flow
+            .iter()
+            .position(|s| Some(&s.id) == self.node.as_ref());
+        let next = self.flow.get(at.map_or(0, |i| i + 1))?;
+        Some((next.stage, Some(next.id.clone())))
     }
 
     /// The job on another pipeline, at that pipeline's first stage.
@@ -538,6 +567,7 @@ fn kept(job: &Job, event: &Event) -> Option<Effect> {
         Event::ChecksGreen => "Every check passed before anything was built.".into(),
         Event::PrOpened { url } => format!("Opened {url}"),
         Event::StepFailed { detail } | Event::StepStuck { detail } => detail.clone(),
+        Event::Ran { output } => output.clone(),
         Event::CiFailed { log } => log.clone(),
         Event::LandFailed { error } => error.clone(),
         _ => return None,
@@ -614,7 +644,8 @@ fn wait(job: &mut Job, dials: &Dials) -> Vec<Effect> {
         job.state = State::Stopped;
         return vec![Effect::Teardown];
     }
-    match dials.at(job.stage) {
+    let dial = job.step().map_or_else(|| dials.at(job.stage), |s| s.dial);
+    match dial {
         Dial::LightsOn => {
             job.state = State::NeedsYou;
             Vec::new()
@@ -695,6 +726,13 @@ fn factory(job: &mut Job, event: &Event, dials: &Dials) -> Option<Vec<Effect>> {
         (_, Event::StepFailed { detail }) if runs => step_failed(job, detail, dials),
         (_, Event::StepStuck { detail }) if runs => stuck(job, detail),
         (Stage::Baseline, Event::ChecksGreen) => checks_green(job, dials),
+        // A command's output is each result it declares.
+        (Stage::Command, Event::Ran { output }) => {
+            for name in job.step().map(|s| s.gives.clone()).unwrap_or_default() {
+                job.results.insert(name, output.clone());
+            }
+            wait(job, dials)
+        }
         _ => return None,
     })
 }
@@ -765,9 +803,10 @@ fn approved(job: &mut Job, dials: &Dials) -> Vec<Effect> {
 /// Move to the job's next step. Past the last one, the job has landed.
 fn advance(job: &mut Job, dials: &Dials) -> Vec<Effect> {
     job.last_refusal = None;
-    match pipeline::next_listed(&job.stages(), job.stage) {
-        Some(stage) => {
+    match job.next() {
+        Some((stage, node)) => {
             job.stage = stage;
+            job.node = node;
             job.failures = 0;
             enter(job, dials)
         }

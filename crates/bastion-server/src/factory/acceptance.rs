@@ -64,6 +64,25 @@ impl Factory {
             .unwrap_or_else(|detail: String| Event::StepStuck { detail })
     }
 
+    /// A workflow's command step (D35): its line in the repository.
+    pub(super) async fn command_step(&self, record: &Record) -> Event {
+        let ran = async {
+            let line = record
+                .job
+                .step()
+                .map(|s| s.run.clone())
+                .ok_or("no command to run")?;
+            let vm = Vm {
+                engine: &*self.engine,
+                sandbox: record.runtime.sandbox.as_deref().ok_or("no VM")?,
+                spec: Spec { checks: Vec::new() },
+            };
+            Ok(acceptance::command(&vm.run(&line, &line).await?))
+        };
+        ran.await
+            .unwrap_or_else(|detail: String| Event::StepStuck { detail })
+    }
+
     /// The spec the latest specify turn wrote.
     async fn latest_spec(&self, job: &str) -> Result<Spec, String> {
         let artifacts = self.store.artifacts(job).await?;

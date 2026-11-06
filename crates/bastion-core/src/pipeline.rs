@@ -47,7 +47,7 @@ const FULL: [Stage; 20] = [
 
 /// Every step in the order work flows through them, short and full
 /// pipelines merged. It places a step a workflow left out (`next_listed`).
-const ORDER: [Stage; 22] = [
+const ORDER: [Stage; 25] = [
     Stage::Prepare,
     Stage::Scope,
     Stage::Discover,
@@ -57,6 +57,9 @@ const ORDER: [Stage; 22] = [
     Stage::Baseline,
     Stage::Build,
     Stage::Implement,
+    Stage::Skill,
+    Stage::Prompt,
+    Stage::Command,
     Stage::Checks,
     Stage::Verify,
     Stage::Refactor,

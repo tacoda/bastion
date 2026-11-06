@@ -573,36 +573,10 @@ fn a_dark_step_notes_its_decision_and_keeps_its_result() {
 
 /// Plan gives `design-notes` into build; review is left out.
 fn notes_flow() -> Job {
-    use crate::workflow::{Graph, Link, Node};
-    let node = |stage, results: &[&str]| Node {
-        stage,
-        dial: Dial::Dark,
-        note: if stage == Stage::Build {
-            "Keep the change small.".into()
-        } else {
-            String::new()
-        },
-        results: results.iter().map(|r| r.to_string()).collect(),
-        x: 0,
-        y: 0,
-    };
-    let g = Graph {
-        nodes: vec![
-            node(Stage::Plan, &["design-notes"]),
-            node(Stage::Build, &[]),
-            node(Stage::Land, &[]),
-        ],
-        links: vec![
-            Link {
-                from: Stage::Plan,
-                to: Stage::Build,
-            },
-            Link {
-                from: Stage::Build,
-                to: Stage::Land,
-            },
-        ],
-    };
+    use crate::workflow::Graph;
+    let mut g = Graph::chain(&[Stage::Plan, Stage::Build, Stage::Land], |_| Dial::Dark);
+    g.nodes[0].results = vec!["design-notes".into()];
+    g.nodes[1].note = "Keep the change small.".into();
     let mut j = job(Pipeline::Short).running(g.steps().unwrap());
     j.state = State::Running;
     j
@@ -654,4 +628,68 @@ fn a_step_whose_linked_result_is_missing_waits_before_it_runs() {
     assert_eq!((j.stage, j.state), (Stage::Build, State::NeedsYou));
     assert!(j.error.unwrap().contains("design-notes"));
     assert!(effects.is_empty());
+}
+
+/// A skill, then a command that gives `lint-report`, then land.
+fn custom_flow() -> Job {
+    use crate::workflow::{Graph, Link, Node};
+    let node = |id: &str, stage, run: &str, results: &[&str], x| Node {
+        id: id.into(),
+        stage,
+        run: run.into(),
+        dial: Dial::Dark,
+        note: String::new(),
+        results: results.iter().map(|r| r.to_string()).collect(),
+        x,
+        y: 0,
+    };
+    let g = Graph {
+        nodes: vec![
+            node("tidy", Stage::Skill, "tidy-imports", &[], 0),
+            node("lint", Stage::Command, "make lint", &["lint-report"], 100),
+            node("land", Stage::Land, "", &[], 200),
+        ],
+        links: vec![Link {
+            from: "tidy".into(),
+            to: "lint".into(),
+        }],
+    };
+    assert_eq!(g.check(), Ok(()));
+    let mut j = job(Pipeline::Short).running(g.steps().unwrap());
+    j.state = State::Running;
+    j
+}
+
+#[test]
+fn a_skill_step_follows_its_skill_and_a_command_gives_its_output_as_its_result() {
+    let j = custom_flow();
+    assert!(brief(&j).contains("/work/repo/.claude/skills/tidy-imports/SKILL.md"));
+    let (j, effects) = go(&j, &done());
+    assert_eq!((j.stage, j.node.as_deref()), (Stage::Command, Some("lint")));
+    assert_eq!(
+        effects.last(),
+        Some(&Effect::RunStep {
+            stage: Stage::Command
+        })
+    );
+    let (j, _) = go(
+        &j,
+        &Event::Ran {
+            output: "0 problems".into(),
+        },
+    );
+    assert_eq!(j.results["lint-report"], "0 problems");
+    assert_eq!((j.stage, j.node.as_deref()), (Stage::Land, Some("land")));
+}
+
+#[test]
+fn a_failing_command_waits_on_a_person() {
+    let mut j = custom_flow();
+    j.stage = Stage::Command;
+    j.node = Some("lint".into());
+    let (j, _) = go(&j, &failed("3 problems"));
+    assert_eq!(
+        (j.stage, j.state, j.error.as_deref()),
+        (Stage::Command, State::NeedsYou, Some("3 problems"))
+    );
 }

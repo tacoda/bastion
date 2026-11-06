@@ -247,20 +247,16 @@ impl Factory {
         Ok(id)
     }
 
-    /// The dials a job runs under: a trial's own, its kept workflow's, or
-    /// the owner's.
+    /// The dials a job runs under: a trial's own, or the owner's. A job on
+    /// a kept workflow takes each step's dial from the step.
     async fn dials_for(&self, id: &str) -> Result<Dials, String> {
-        if self.store.eval_run_of(id).await?.is_some() {
-            return Ok(Dials {
+        Ok(match self.store.eval_run_of(id).await? {
+            Some(_) => Dials {
                 trial: true,
                 ..Dials::default()
-            });
-        }
-        let record = self.store.load(id).await?;
-        match workflow_store::dials_of(&*self.store, &record).await? {
-            Some(dials) => Ok(dials),
-            None => Ok(settings_store::current(&*self.store).await?.dials),
-        }
+            },
+            None => settings_store::current(&*self.store).await?.dials,
+        })
     }
 
     /// Step one job with one event, save it, and run its effects.
@@ -734,6 +730,7 @@ impl Factory {
                 self.acceptance_step(record, stage).await
             }
             Stage::Checks => self.checks_step(record).await,
+            Stage::Command => self.command_step(record).await,
             Stage::Ship => self
                 .ship(record)
                 .await

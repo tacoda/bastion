@@ -1,0 +1,5 @@
+update the plan with our progress, commit and push to main, do the workflows on the canvas next.
+
+---
+
+CI seems like it's failing again

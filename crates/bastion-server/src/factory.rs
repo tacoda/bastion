@@ -339,13 +339,13 @@ impl Factory {
                 brief,
                 cap_secs,
                 ..
-            } => match self.start_turn(&record, stage, &brief, cap_secs).await {
-                Ok(()) => None,
-                Err(error) => {
-                    let outcome = Outcome::Failed { error };
-                    self.apply(&id, Event::TurnFinished { outcome }).await.err()
-                }
-            },
+            } => {
+                let started = self.start_turn(&record, stage, &brief, cap_secs).await;
+                let failed = |error| Event::TurnFinished {
+                    outcome: Outcome::Failed { error },
+                };
+                self.report_failure(&id, started, failed).await
+            }
             Effect::RunStep { stage } => self.run_step(&record, stage).await,
             Effect::RecordArtifact { stage, body } => {
                 let artifact = Artifact {
@@ -371,10 +371,11 @@ impl Factory {
                 };
                 self.store.add_artifact(&id, &artifact).await.err()
             }
-            Effect::Land => match self.land(&record).await {
-                Ok(()) => None,
-                Err(error) => self.apply(&id, Event::LandFailed { error }).await.err(),
-            },
+            Effect::Land => {
+                let landed = self.land(&record).await;
+                let failed = |error| Event::LandFailed { error };
+                self.report_failure(&id, landed, failed).await
+            }
             Effect::WatchCi | Effect::Merge => self.forge_effect(&record, effect).await,
             Effect::Teardown => {
                 self.grade_trial(&record);
@@ -437,11 +438,18 @@ impl Factory {
     }
 
     /// A worktree on the host, a VM, and the worktree's branch cloned into it (N7).
+    /// On a revive the job keeps its worktree, which holds its commits.
     async fn provision(&self, record: &Record) -> Result<(), String> {
         let job = &record.job;
-        let worktree = self.create_worktree(job).await?;
-        self.set_runtime(&job.id, |r| r.worktree = Some(worktree.clone()))
-            .await?;
+        let worktree = match &record.runtime.worktree {
+            Some(kept) => kept.clone(),
+            None => {
+                let made = self.create_worktree(job).await?;
+                self.set_runtime(&job.id, |r| r.worktree = Some(made.clone()))
+                    .await?;
+                made
+            }
+        };
         let sandbox = self
             .engine
             .call_for(
@@ -497,8 +505,10 @@ impl Factory {
             ],
         )
         .await?;
-        // What a review or refactor turn diffs against.
-        self.vm_exec(&sandbox, &["git", "-C", REPO, "tag", "-f", BASE_TAG])
+        // What a review or refactor turn diffs against: where the job forked
+        // from its workspace's branch, so a revived VM still sees the change.
+        let base = self.fork_point(record, &path).await;
+        self.vm_exec(&sandbox, &["git", "-C", REPO, "tag", "-f", BASE_TAG, &base])
             .await?;
         Ok(())
     }
@@ -641,14 +651,40 @@ impl Factory {
         };
         self.release(id);
         evals::meter(&*self.engine, &*self.store, &record.job, session).await;
-        if record.job.stage.read_only()
-            && let Some(sandbox) = &record.runtime.sandbox
-        {
-            self.put_back(sandbox).await;
-        }
+        self.tidy_after_turn(&record).await;
         let _ = self
             .apply(id, Event::TurnFinished { outcome: result })
             .await;
+    }
+
+    /// When an effect failed, tell the core: the VM is gone, or `failed`.
+    async fn report_failure(
+        self: &Arc<Self>,
+        id: &str,
+        result: Result<(), String>,
+        failed: impl FnOnce(String) -> Event,
+    ) -> Option<String> {
+        let error = result.err()?;
+        let event = if vm_lost(&error) {
+            Event::VmLost
+        } else {
+            failed(error)
+        };
+        self.apply(id, event).await.err()
+    }
+
+    /// After a turn: a read-only stage's tree goes back, and a turn that
+    /// writes code has its commits kept in the worktree, so a lost VM loses
+    /// none. A bring-back error means no new commits, which is not a failure.
+    async fn tidy_after_turn(&self, record: &Record) {
+        let stage = record.job.stage;
+        match &record.runtime.sandbox {
+            Some(sandbox) if stage.read_only() => self.put_back(sandbox).await,
+            Some(_) if writes_code(stage) => {
+                let _ = self.bring_back(record).await;
+            }
+            _ => {}
+        }
     }
 
     /// A read-only stage leaves no change behind, not even a commit: the tree
@@ -682,6 +718,10 @@ impl Factory {
             _ => Event::StepFailed {
                 detail: format!("Bastion does not run the {stage:?} step yet."),
             },
+        };
+        let event = match event {
+            Event::StepStuck { detail } if vm_lost(&detail) => Event::VmLost,
+            other => other,
         };
         self.apply(&record.job.id, event).await.err()
     }
@@ -1012,6 +1052,19 @@ impl Factory {
         self.land_here(record, &worktree, &target).await
     }
 
+    /// The commit the job's branch forked from its workspace's branch, or the
+    /// branch's head when that cannot be read.
+    async fn fork_point(&self, record: &Record, path: &Path) -> String {
+        let Ok(target) = self.workspace_branch(record).await else {
+            return "HEAD".into();
+        };
+        self.git(path, &["merge-base", "HEAD", &target])
+            .map(|sha| sha.trim().to_string())
+            .ok()
+            .filter(|sha| !sha.is_empty())
+            .unwrap_or_else(|| "HEAD".into())
+    }
+
     /// The branch of the job's workspace, which its change goes into.
     async fn workspace_branch(&self, record: &Record) -> Result<String, String> {
         self.store
@@ -1145,6 +1198,19 @@ impl Factory {
 }
 
 mod acceptance;
+/// The sandbox worker's answer for a VM that no longer exists (S002).
+fn vm_lost(error: &str) -> bool {
+    error.contains("sandbox not found")
+}
+
+/// The turns whose commits are the job's work.
+fn writes_code(stage: Stage) -> bool {
+    matches!(
+        stage,
+        Stage::Build | Stage::Implement | Stage::CiFix | Stage::Specify
+    )
+}
+
 /// A specify reply the app cannot read as a spec goes back to the core as
 /// unusable, so the turn gets one more try with the reason.
 fn usable(stage: Stage, outcome: Outcome) -> Outcome {

@@ -494,3 +494,23 @@ fn with_no_pull_request_ship_passes_straight_through_ci() {
     assert_eq!(j.stage, Stage::Prove);
     assert!(starts_turn(&effects, Stage::Prove));
 }
+
+#[test]
+fn a_lost_vm_is_provisioned_again_and_its_stage_starts_over() {
+    let (j, effects) = go(&at(Stage::Implement, State::Running), &Event::VmLost);
+    assert_eq!((j.stage, j.state), (Stage::Implement, State::Provisioning));
+    assert_eq!(effects, vec![Effect::Provision]);
+    let (j, effects) = go(&j, &Event::Provisioned);
+    assert_eq!((j.stage, j.state), (Stage::Implement, State::Running));
+    assert!(starts_turn(&effects, Stage::Implement));
+    let mut j = j;
+    for _ in 0..MAX_REVIVES {
+        j.state = State::Running;
+        (j, _) = go(&j, &Event::VmLost);
+    }
+    assert_eq!(
+        j.state,
+        State::Failed,
+        "a VM that keeps dying fails the job"
+    );
+}

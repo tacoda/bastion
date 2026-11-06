@@ -167,7 +167,7 @@ fn a_full_request_prepares_and_its_read_only_turns_put_the_tree_back_to_a_tag() 
         until(&rig, &id, Stage::Discover, State::Running).await;
         let commands = vm_commands(&rig);
         assert!(commands.contains(&"git -C /work/repo tag -f bastion-before-turn".to_string()));
-        assert!(commands.contains(&"git -C /work/repo tag -f bastion-base".to_string()));
+        assert!(commands.contains(&"git -C /work/repo tag -f bastion-base HEAD".to_string()));
         assert!(
             commands.contains(&"git -C /work/repo reset -q --hard bastion-before-turn".to_string())
         );
@@ -280,6 +280,67 @@ fn with_the_local_forge_ship_brings_the_commits_back_and_prove_starts() {
                 .any(|c| c.contains("bundle create /work/out.bundle"))
         );
         assert_eq!(rig.store.load("j1").await.unwrap().job.pr, None);
+    });
+}
+
+#[test]
+fn a_lost_vm_gets_a_new_one_on_the_same_worktree_and_one_that_keeps_dying_fails_the_job() {
+    let engine =
+        Arc::new(engine().answer("approval::set-mode", Err("sandbox not found: vm1".into())));
+    let store = Arc::new(FakeStore::default());
+    store.workspaces.lock().unwrap().push(Workspace {
+        name: "w".into(),
+        path: "/repo".into(),
+        branch: "main".into(),
+        checks: String::new(),
+    });
+    let factory = Factory::new(
+        engine.clone() as Arc<dyn Engine>,
+        store.clone() as Arc<dyn Store>,
+        Arc::new(FakeMachine::new().run_ok("git", "")),
+        Arc::new(|_| {}),
+        "/scratch".into(),
+    );
+    let rig = Rig {
+        factory,
+        engine,
+        store,
+    };
+    crate::rt::block_on(async {
+        let mut job = Job::new("j1".into(), "w".into(), "r".into(), 1).on(Pipeline::Full);
+        (job.stage, job.state) = (Stage::Implement, State::Provisioning);
+        let record = Record {
+            job,
+            runtime: Runtime {
+                worktree: Some("wt-kept".into()),
+                sandbox: Some("vm1".into()),
+                ..Runtime::default()
+            },
+            rev: 1,
+            created_at: 1,
+        };
+        rig.store.insert(&record).await.unwrap();
+        rig.factory.apply("j1", Event::Provisioned).await.unwrap();
+        for _ in 0..200 {
+            if rig.store.load("j1").await.unwrap().job.state == State::Failed {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let r = rig.store.load("j1").await.unwrap();
+        assert_eq!(r.job.state, State::Failed, "{:?}", r.job.error);
+        assert_eq!(r.runtime.worktree.as_deref(), Some("wt-kept"));
+        let calls = rig.engine.calls.lock().unwrap();
+        assert!(
+            !calls.iter().any(|c| c.1 == "worktree::create"),
+            "the worktree is kept"
+        );
+        let vms = calls.iter().filter(|c| c.1 == "sandbox::create").count();
+        assert_eq!(
+            vms,
+            bastion_core::MAX_REVIVES as usize,
+            "a new VM per revive"
+        );
     });
 }
 

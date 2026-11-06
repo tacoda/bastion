@@ -278,6 +278,9 @@ pub enum Event {
     },
     /// The baseline found checks that pass before anything was built.
     ChecksGreen,
+    /// The job's VM is gone, as after its stack restarted. Its commits are
+    /// in the worktree, so a new VM picks the job up where it was (revive).
+    VmLost,
 }
 
 /// How a checkpoint is decided (D15): the owner decides, the default lands
@@ -442,6 +445,7 @@ pub fn step(job: &Job, event: &Event, at: u64, dials: &Dials) -> (Job, Vec<Effec
         }
         (State::NeedsYou, event) if decides(&next, event, dials) => approved(&mut next, dials),
         (State::NeedsYou, Event::Commented { text }) => commented(&mut next, text, dials),
+        (State::Running, Event::VmLost) => revive(&mut next),
         (_, event) if next.stage == Stage::Land => match land(&mut next, event, dials) {
             Some(effects) => effects,
             None => return (job.clone(), Vec::new()),
@@ -467,6 +471,20 @@ fn decides(job: &Job, event: &Event, dials: &Dials) -> bool {
         }
         _ => false,
     }
+}
+
+/// How many times in a row a job may lose its VM before it fails.
+pub const MAX_REVIVES: u32 = 2;
+
+/// Give the job a new VM, which re-enters its stage once provisioned. A VM
+/// that keeps dying fails the job rather than looping.
+fn revive(job: &mut Job) -> Vec<Effect> {
+    job.failures += 1;
+    if job.failures > MAX_REVIVES {
+        return fail(job, "the job's VM was lost again after a revive");
+    }
+    job.state = State::Provisioning;
+    vec![Effect::Provision]
 }
 
 /// Start the current stage.

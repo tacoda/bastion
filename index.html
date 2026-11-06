@@ -105,13 +105,11 @@ pre { margin: 0 0 16px; padding: 20px; background: var(--panel2); border: 1px so
 @media (hover: hover) and (prefers-reduced-motion: no-preference) {
   .lit { position: relative; background-image: radial-gradient(260px circle at var(--mx, -999px) var(--my, -999px), rgba(255, 244, 228, .10), transparent 70%); }
   .lit::after { content: ""; position: absolute; inset: -1px; padding: 1.5px; border-radius: inherit; pointer-events: none;
-    background: radial-gradient(240px circle at var(--mx, -999px) var(--my, -999px), rgba(255, 248, 238, .95), rgba(255, 248, 238, .25) 45%, transparent 70%);
+    background: radial-gradient(36px circle at var(--gx, -999px) var(--gy, -999px), rgba(255, 255, 255, var(--gs, 0)), transparent),
+      radial-gradient(240px circle at var(--mx, -999px) var(--my, -999px), rgba(255, 248, 238, .95), rgba(255, 248, 238, .25) 45%, transparent 70%);
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
 }
-.flecks { position: fixed; inset: 0; pointer-events: none; z-index: 2; }
-.flecks i { position: absolute; left: 0; top: 0; width: 56px; height: 2px; margin: -1px 0 0 -28px; border-radius: 1px; opacity: 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 248, 238, .95), transparent); box-shadow: 0 0 12px 1px rgba(255, 248, 238, .3); }
-@media (hover: none), (prefers-reduced-motion: reduce) { .spot, .flecks { display: none; } }
+@media (hover: none), (prefers-reduced-motion: reduce) { .spot { display: none; } }
 
 ul.plain { list-style: none; padding: 0; margin: 0 0 16px; max-width: 72ch; }
 ul.plain li { padding: 12px 0; border-bottom: 1px solid var(--line); }
@@ -266,10 +264,6 @@ cargo tauri dev</pre>
   const lit = [...document.querySelectorAll('.card, .col, .panel, .case, .dials, .note, .step, .btn, pre')];
   lit.forEach(el => el.classList.add('lit'));
   let x = -9999, y = -9999, queued = false;
-  const flecks = document.createElement('div');
-  flecks.className = 'flecks';
-  document.body.append(flecks);
-  const glints = Array.from({ length: 6 }, () => flecks.appendChild(document.createElement('i')));
   const reach = 140;
   // One light source, above and to the left of the pointer. An entity reflects it only on the
   // edge that faces it most directly, at the point on that edge nearest the pointer.
@@ -288,17 +282,20 @@ cargo tauri dev</pre>
       const lx = sx - e.px, ly = sy - e.py, facing = (lx * e.nx + ly * e.ny) / Math.hypot(lx, ly);
       const d = Math.hypot(x - e.px, y - e.py);
       const strength = d < reach ? facing * (1 - d / reach) ** 1.5 : 0;
-      if (strength > (best ? best.strength : 0)) best = { ...e, strength, vertical: e.nx !== 0 };
+      if (strength > (best ? best.strength : 0)) best = { ...e, strength };
     }
     return best;
   };
+  // The reflection is drawn in each entity's lit edge, so it stays on the outline.
   const reflect = rects => {
-    const hits = rects.map(reflection).filter(Boolean).sort((a, b) => b.strength - a.strength);
-    glints.forEach((g, i) => {
-      const h = hits[i];
-      g.style.opacity = h ? h.strength.toFixed(3) : 0;
-      if (h) g.style.transform = `translate(${h.px}px, ${h.py}px)${h.vertical ? ' rotate(90deg)' : ''}`;
-    });
+    const hits = rects.map((r, i) => ({ i, h: reflection(r) })).filter(o => o.h)
+      .sort((a, b) => b.h.strength - a.h.strength).slice(0, 6);
+    lit.forEach(el => el.style.setProperty('--gs', 0));
+    for (const { i, h } of hits) {
+      lit[i].style.setProperty('--gx', h.px - rects[i].left + 'px');
+      lit[i].style.setProperty('--gy', h.py - rects[i].top + 'px');
+      lit[i].style.setProperty('--gs', h.strength.toFixed(3));
+    }
   };
   const paint = () => {
     queued = false;

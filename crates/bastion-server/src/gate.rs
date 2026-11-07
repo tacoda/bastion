@@ -44,6 +44,22 @@ pub struct Gate {
     findings: Mutex<HashMap<String, Vec<String>>>,
     /// The rungs an eval's arm sets for each of its trial jobs.
     overrides: Mutex<HashMap<String, Vec<Override>>>,
+    /// Each job's approved acceptance test files, which no turn may write.
+    // ponytail: kept in memory; a server restart after the baseline forgets them, and verify still catches a change.
+    approved: Mutex<HashMap<String, Vec<String>>>,
+}
+
+/// The factory's rule for one approved acceptance test (A8): enforced, so
+/// a turn that writes it is refused.
+fn approved_test(file: &str) -> Constraint {
+    Constraint {
+        id: format!("approved-test:{file}"),
+        rule: format!("Do not change {file}: it is an approved acceptance test."),
+        function: "sandbox::fs::write".into(),
+        contains: format!("/work/repo/{file}"),
+        rung: bastion_core::govern::Enforcement::Enforced,
+        source: bastion_core::govern::Source::Owner,
+    }
 }
 
 /// What the rules read from a call: its command line in any of the shapes
@@ -102,6 +118,7 @@ impl Gate {
             hook_runs: Mutex::new(HashMap::new()),
             findings: Mutex::new(HashMap::new()),
             overrides: Mutex::new(HashMap::new()),
+            approved: Mutex::new(HashMap::new()),
         })
     }
 
@@ -199,6 +216,12 @@ impl Gate {
             .unwrap_or_default()
     }
 
+    /// Refuse every write to these files in the job's turns from now on.
+    pub fn protect(&self, job: &str, files: Vec<String>) {
+        self.note("protect", job, files.join(", "));
+        self.approved.lock().unwrap().insert(job.into(), files);
+    }
+
     /// Judge a trial job under its arm's rungs from now on.
     pub fn set_overrides(&self, job: &str, overrides: Vec<Override>) {
         let detail = overrides
@@ -250,6 +273,9 @@ impl Gate {
                 .into_iter()
                 .flat_map(|c| c.constraints.clone()),
         );
+        if let Some(files) = self.approved.lock().unwrap().get(job) {
+            all.extend(files.iter().map(|f| approved_test(f)));
+        }
         if let Some(o) = self.overrides.lock().unwrap().get(job) {
             bastion_core::eval::apply(&mut all, &mut [], o);
         }
@@ -701,6 +727,23 @@ mod tests {
                 .unwrap()
                 .contains("no-login-shell")
         );
+    }
+
+    #[test]
+    fn an_approved_acceptance_test_cannot_be_written_once_protected() {
+        let r = rig();
+        let write = |path: &str| {
+            r.gate.judge(&envelope(
+                "build",
+                "sandbox::fs::write",
+                json!({ "path": format!("/work/repo/{path}") }),
+            ))["decision"]
+                .clone()
+        };
+        assert_eq!(write("tests/test_c1.py"), "continue");
+        r.gate.protect("j1", vec!["tests/test_c1.py".into()]);
+        assert_eq!(write("tests/test_c1.py"), "deny");
+        assert_eq!(write("calc.py"), "continue");
     }
 
     #[test]

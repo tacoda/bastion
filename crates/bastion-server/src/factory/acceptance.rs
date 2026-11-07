@@ -30,11 +30,15 @@ impl Factory {
                 sandbox,
                 spec: self.latest_spec(&record.job.id).await?,
             };
-            match stage {
+            let judged = match stage {
                 Stage::Baseline if record.job.falsify_tried => vm.judge_falsify().await,
                 Stage::Baseline => vm.baseline().await,
                 _ => vm.verify().await,
+            };
+            if stage == Stage::Baseline && judged == Ok(Event::StepPassed) {
+                self.gate.protect(&record.job.id, vm.spec.files());
             }
+            judged
         };
         ran.await
             .unwrap_or_else(|detail: String| Event::StepStuck { detail })

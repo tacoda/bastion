@@ -1,0 +1,31 @@
+<task-notification>
+<task-id>b58ke3oax</task-id>
+<summary>Monitor event: "full job je9da2a54 step changes"</summary>
+<event>13:11:05 implement running</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b58ke3oax</task-id>
+<summary>Monitor event: "full job je9da2a54 step changes"</summary>
+<event>13:12:20 implement needs_you
+approved implement 200</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b58ke3oax</task-id>
+<summary>Monitor event: "full job je9da2a54 step changes"</summary>
+<event>13:12:50 implement running</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b58ke3oax</task-id>
+<summary>Monitor event: "full job je9da2a54 step changes"</summary>
+<event>13:13:05 verify needs_you
+STOP The approved checks were changed after the baseline:</event>
+</task-notification>

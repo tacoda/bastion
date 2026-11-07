@@ -327,7 +327,7 @@ fn canvas(
     let pending = move || {
         drag.get().filter(|d| d.linking).map(|d| {
             let (x, y) = d.moved();
-            view! { <line x1=d.origin.0 y1=d.origin.1 x2=x y2=y class="stroke-primary" stroke-width="2" stroke-dasharray="4 4" /> }
+            view! { <line x1=d.origin.0 y1=d.origin.1 x2=x y2=y class="pointer-events-none stroke-primary" stroke-width="2" stroke-dasharray="4 4" /> }
         })
     };
     view! {
@@ -509,6 +509,7 @@ fn manage(
         };
         let then = move |id: String| {
             chosen.set(id);
+            name.set(String::new());
             "Copied. Change it, then save.".into()
         };
         answer.act(command::WORKFLOW_COPY, args, then);

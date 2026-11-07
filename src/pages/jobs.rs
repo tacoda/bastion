@@ -110,8 +110,9 @@ fn row(sj: ServerJob, down: bool) -> impl IntoView {
     let dim = if down { "opacity-60" } else { "" };
     let unreachable = if down { " · unreachable" } else { "" };
     let (id, on) = (job.id.clone(), server.clone());
+    let indent = if job.parent.is_some() { "pl-6" } else { "" };
     view! {
-        <li class={format!("border-t border-line first:border-t-0 {dim}")}>
+        <li class={format!("border-t border-line first:border-t-0 {dim} {indent}")}>
             <button class="grid w-full grid-cols-[24px_1fr_auto] items-start gap-x-3 px-3 py-2.5 text-left hover:bg-line"
                 on:click=move |_| {
                     // The job's page talks to the server it runs on.
@@ -121,6 +122,7 @@ fn row(sj: ServerJob, down: bool) -> impl IntoView {
                 <span class={format!("text-lg leading-6 {color}")} aria-hidden="true">{symbol}</span>
                 <span class="grid min-w-0 gap-0.5">
                     <span class="truncate font-semibold">{job.request.clone()}</span>
+                    {job.part.clone().map(|p| view! { <span class="truncate text-sm">{format!("Part: {p}")}</span> })}
                     <span class="text-xs text-muted">
                         {format!("{server}{unreachable} · {} · {} · {} · {}{}", job.workspace, job.id, job.state.replace('_', " "), ago(job.created_at), asked_by(&job))}
                     </span>
@@ -139,7 +141,7 @@ fn group(title: String, jobs: Vec<ServerJob>, down: Vec<String>, accent: bool) -
             {if jobs.is_empty() {
                 view! { <p class="m-0 px-3 py-2.5 text-sm text-muted">"Nothing here."</p> }.into_any()
             } else {
-                let rows = jobs.into_iter().map(|j| {
+                let rows = families(jobs).into_iter().map(|j| {
                     let gone = down.contains(&j.server);
                     row(j, gone)
                 });
@@ -147,6 +149,22 @@ fn group(title: String, jobs: Vec<ServerJob>, down: Vec<String>, accent: bool) -
             }}
         </section>
     }
+}
+
+/// Each job followed by its parts, so a split shows under its job.
+fn families(mut jobs: Vec<ServerJob>) -> Vec<ServerJob> {
+    let head = |j: &ServerJob| j.job.parent.clone().unwrap_or_else(|| j.job.id.clone());
+    let mut order: Vec<String> = Vec::new();
+    for j in &jobs {
+        if !order.contains(&head(j)) {
+            order.push(head(j));
+        }
+    }
+    jobs.sort_by_key(|j| {
+        let family = order.iter().position(|h| *h == head(j));
+        (family, j.job.parent.is_some(), j.job.id.clone())
+    });
+    jobs
 }
 
 /// " · by ana", for a job someone asked for.
@@ -432,5 +450,37 @@ mod tests {
         assert!(note.contains("Two cannot be reached"), "{note}");
         assert!(note.contains("local: no database"), "{note}");
         assert!(!note.contains("Two: cannot"), "{note}");
+    }
+
+    #[test]
+    fn a_split_job_lists_its_parts_under_it() {
+        let job = |id: &str, parent: Option<&str>| ServerJob {
+            server: "local".into(),
+            job: JobSummary {
+                id: id.into(),
+                workspace: "w".into(),
+                request: "r".into(),
+                stage: "plan".into(),
+                state: "queued".into(),
+                question: None,
+                error: None,
+                created_at: 0,
+                updated_at: 0,
+                actions: Vec::new(),
+                pr: None,
+                issue: None,
+                requester: None,
+                parent: parent.map(String::from),
+                part: None,
+            },
+        };
+        let listed = vec![
+            job("j1-3", Some("j1")),
+            job("j2", None),
+            job("j1", None),
+            job("j1-2", Some("j1")),
+        ];
+        let ids: Vec<String> = families(listed).into_iter().map(|j| j.job.id).collect();
+        assert_eq!(ids, ["j1", "j1-2", "j1-3", "j2"]);
     }
 }

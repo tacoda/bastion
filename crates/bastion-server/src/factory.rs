@@ -280,7 +280,8 @@ impl Factory {
                         record.rev = rev;
                         // Artifacts are written before the page hears of the
                         // change, so a page that reads at once sees them. Dark
-                        // decisions go in the audit log in the order they fell.
+                        // decisions go in the audit log in the order they fell,
+                        // and a split's parts are kept before the page hears.
                         let (artifacts, rest): (Vec<Effect>, Vec<Effect>) =
                             effects.into_iter().partition(|e| {
                                 matches!(
@@ -288,6 +289,7 @@ impl Factory {
                                     Effect::RecordArtifact { .. }
                                         | Effect::CaptureDiff
                                         | Effect::DarkDecided { .. }
+                                        | Effect::Split { .. }
                                 )
                             });
                         for effect in artifacts {
@@ -372,6 +374,7 @@ impl Factory {
                 self.report_failure(&id, started, failed).await
             }
             Effect::RunStep { stage } => self.run_step(&record, stage).await,
+            Effect::Split { parts } => self.add_parts(&record, parts).await.err(),
             Effect::RecordArtifact { stage, body } => {
                 let artifact = Artifact {
                     stage,
@@ -1202,6 +1205,7 @@ impl Factory {
 
 mod acceptance;
 mod decide;
+mod split;
 /// The sandbox worker's answer for a VM that no longer exists (S002).
 fn vm_lost(error: &str) -> bool {
     error.contains("sandbox not found")

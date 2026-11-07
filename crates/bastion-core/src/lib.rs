@@ -257,6 +257,12 @@ pub struct Job {
     pub node: Option<String>,
     /// The results its steps gave, by name.
     pub results: BTreeMap<String, String>,
+    /// The job this one is a part of, when scope split it (A8 step 6).
+    pub parent: Option<String>,
+    /// The part that must land before this one is admitted.
+    pub after: Option<String>,
+    /// The part of the request this job does.
+    pub part: Option<String>,
 }
 
 /// Something that happened to a job.
@@ -432,6 +438,8 @@ pub enum Effect {
     RunStep { stage: Stage },
     /// A dark step went on with no person (D33): note it in the audit log.
     DarkDecided { stage: Stage },
+    /// Scope split the request: keep these jobs, the later parts, queued.
+    Split { parts: Vec<Job> },
 }
 
 impl Job {
@@ -461,6 +469,9 @@ impl Job {
             flow: Vec::new(),
             node: None,
             results: BTreeMap::new(),
+            parent: None,
+            after: None,
+            part: None,
         }
     }
 
@@ -925,6 +936,11 @@ fn turn_finished(job: &mut Job, outcome: &Outcome, dials: &Dials) -> Vec<Effect>
 fn after_report(job: &mut Job, report: &str, dials: &Dials) -> Vec<Effect> {
     match job.stage {
         Stage::Discover => discovered(job, report),
+        Stage::Scope => {
+            let mut effects = split(job, &parts(report));
+            effects.extend(after_turn(job, dials));
+            return effects;
+        }
         Stage::Define => job.criteria = Some(report.into()),
         Stage::Specify => job.falsify_tried = false,
         Stage::Prove => return proved(job, report, dials),
@@ -954,10 +970,49 @@ fn proved(job: &mut Job, report: &str, dials: &Dials) -> Vec<Effect> {
 
 /// Keep discovery's tasks for implement. Its questions wait with it, and
 /// the answers go to plan (`pipeline::sent_back`).
-// ponytail: scope's verdict is not read; every request is one change until split (A8 step 6).
 fn discovered(job: &mut Job, report: &str) {
     job.tasks = discovery(report).tasks;
     job.done_tasks = 0;
+}
+
+/// The parts scope's report names under `PARTS:`, in the order they land.
+fn parts(report: &str) -> Vec<String> {
+    report
+        .lines()
+        .map(str::trim)
+        .skip_while(|l| !l.eq_ignore_ascii_case("PARTS:"))
+        .filter_map(brief::item)
+        .map(String::from)
+        .collect()
+}
+
+/// Scope named several parts: this job does the first, and each later part
+/// is a new job that waits for the one before it to land. A part is not
+/// split again.
+fn split(job: &mut Job, parts: &[String]) -> Vec<Effect> {
+    let is_part = job.parent.is_some() || job.part.is_some();
+    if is_part || parts.len() < 2 {
+        return Vec::new();
+    }
+    job.part = Some(parts[0].clone());
+    let mut before = job.id.clone();
+    let later = parts[1..].iter().enumerate().map(|(k, part)| {
+        let mut next = Job::new(
+            format!("{}-{}", job.id, k + 2),
+            job.workspace.clone(),
+            job.request.clone(),
+            job.updated_at,
+        )
+        .on(job.pipeline)
+        .running(job.flow.clone());
+        next.parent = Some(job.id.clone());
+        next.after = Some(std::mem::replace(&mut before, next.id.clone()));
+        next.part = Some(part.clone());
+        next
+    });
+    vec![Effect::Split {
+        parts: later.collect(),
+    }]
 }
 
 /// A reply the factory cannot read gets one more try with the reason, then
@@ -1085,7 +1140,16 @@ fn redefined_enough(job: &Job) -> bool {
 /// a VM at once.
 pub fn admit(jobs: &[Job], limit: usize) -> Vec<String> {
     let busy = jobs.iter().filter(|j| j.state.holds_vm()).count();
-    let mut queued: Vec<&Job> = jobs.iter().filter(|j| j.state == State::Queued).collect();
+    // A part waits for the part before it to land.
+    let waiting = |j: &Job| {
+        j.after
+            .as_ref()
+            .is_some_and(|a| jobs.iter().any(|o| &o.id == a && o.state != State::Landed))
+    };
+    let mut queued: Vec<&Job> = jobs
+        .iter()
+        .filter(|j| j.state == State::Queued && !waiting(j))
+        .collect();
     queued.sort_by_key(|j| j.updated_at);
     queued
         .into_iter()

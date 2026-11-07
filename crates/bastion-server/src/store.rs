@@ -159,7 +159,10 @@ fn staged_tables() -> [(&'static str, &'static str, String); 4] {
         requester TEXT,
         workflow TEXT,
         workflow_version INTEGER,
-        node TEXT)"
+        node TEXT,
+        parent TEXT,
+        after_job TEXT,
+        part TEXT)"
             ),
         ),
         (
@@ -309,14 +312,14 @@ pub fn seed_statements(sql: &str) -> Vec<Value> {
         .collect()
 }
 
-const JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue, pipeline, back_to, last_refusal, done_tasks, criteria, falsify_tried, requester, workflow, workflow_version, node";
+const JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue, pipeline, back_to, last_refusal, done_tasks, criteria, falsify_tried, requester, workflow, workflow_version, node, parent, after_job, part";
 /// The job columns before migration 1, which its rebuild copies.
 const LEGACY_JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue";
 
 /// Columns added after a table was first made. Each runs once; on a table
 /// that already has the column it fails, and that failure is expected.
 // They run before the numbered migrations, which need these columns to exist.
-const ALTERS: [&str; 8] = [
+const ALTERS: [&str; 11] = [
     "ALTER TABLE jobs ADD COLUMN pr TEXT",
     "ALTER TABLE jobs ADD COLUMN ci_fixes INTEGER NOT NULL DEFAULT 0 CHECK (ci_fixes >= 0)",
     "ALTER TABLE jobs ADD COLUMN issue TEXT",
@@ -325,6 +328,9 @@ const ALTERS: [&str; 8] = [
     "ALTER TABLE jobs ADD COLUMN workflow TEXT",
     "ALTER TABLE jobs ADD COLUMN workflow_version INTEGER",
     "ALTER TABLE jobs ADD COLUMN node TEXT",
+    "ALTER TABLE jobs ADD COLUMN parent TEXT",
+    "ALTER TABLE jobs ADD COLUMN after_job TEXT",
+    "ALTER TABLE jobs ADD COLUMN part TEXT",
 ];
 
 /// Numbered migrations, each run once in order; `PRAGMA user_version` is the
@@ -580,6 +586,9 @@ fn record(row: &Value) -> Result<Record, String> {
             flow: Vec::new(),
             node: text(row, "node"),
             results: Default::default(),
+            parent: text(row, "parent"),
+            after: text(row, "after_job"),
+            part: text(row, "part"),
             done_tasks: parse(row, "done_tasks")?,
             criteria: text(row, "criteria"),
             falsify_tried: row["falsify_tried"].as_i64() == Some(1)
@@ -680,7 +689,10 @@ fn job_params(r: &Record) -> Value {
         r.runtime.requester,
         r.runtime.workflow,
         r.runtime.workflow_version,
-        j.node
+        j.node,
+        j.parent,
+        j.after,
+        j.part
     ])
 }
 
@@ -788,12 +800,12 @@ impl Store for SqlStore {
             let rows = self
                 .execute(
                     "UPDATE jobs SET stage = ?, state = ?, question = ?, feedback = ?, plan = ?, failures = ?, error = ?, worktree = ?, sandbox = ?, session = ?, updated_at = ?, pr = ?, ci_fixes = ?, issue = ?,
-                     pipeline = ?, back_to = ?, last_refusal = ?, done_tasks = ?, criteria = ?, falsify_tried = ?, node = ?, rev = rev + 1
+                     pipeline = ?, back_to = ?, last_refusal = ?, done_tasks = ?, criteria = ?, falsify_tried = ?, node = ?, part = ?, rev = rev + 1
                      WHERE id = ? AND rev = ? RETURNING rev",
                     json!([
                         name(j.stage), name(j.state), j.question, j.feedback, j.plan, j.failures, j.error,
                         r.runtime.worktree, r.runtime.sandbox, r.runtime.session, j.updated_at, j.pr, j.ci_fixes, r.runtime.issue,
-                        name(j.pipeline), j.back_to.map(name), j.last_refusal, j.done_tasks, j.criteria, j.falsify_tried, j.node, j.id, r.rev
+                        name(j.pipeline), j.back_to.map(name), j.last_refusal, j.done_tasks, j.criteria, j.falsify_tried, j.node, j.part, j.id, r.rev
                     ]),
                 )
                 .await?;
@@ -1157,8 +1169,8 @@ mod tests {
                     .unwrap()
                     .contains("WHERE id = ? AND rev = ?")
             );
-            assert_eq!(update["params"][21], "j1");
-            assert_eq!(update["params"][22], 1);
+            assert_eq!(update["params"][22], "j1");
+            assert_eq!(update["params"][23], 1);
         });
     }
 

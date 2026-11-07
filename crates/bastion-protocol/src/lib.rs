@@ -419,6 +419,12 @@ pub struct JobSummary {
     /// Who asked for the job (D31).
     #[serde(default)]
     pub requester: Option<String>,
+    /// The job this one is a part of, when scope split it (A8 step 6).
+    #[serde(default)]
+    pub parent: Option<String>,
+    /// The part of the request this job does.
+    #[serde(default)]
+    pub part: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

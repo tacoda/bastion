@@ -182,11 +182,13 @@ fn header(d: &JobDetail) -> impl IntoView + use<> {
     view! {
         <div class="mb-4 grid gap-2">
             <h1 class="m-0 text-2xl font-bold">{d.job.request.clone()}</h1>
+            {d.job.part.clone().map(|p| view! { <p class="m-0">{format!("Part: {p}")}</p> })}
             <div class="flex flex-wrap gap-2 text-xs">
                 <span class={format!("rounded-full border border-line px-2 py-0.5 {color}")}>{format!("{symbol} {}", d.job.state.replace('_', " "))}</span>
                 <span class=badge title="Bastion server">{crate::ipc::current()}</span>
                 <span class=badge>{d.job.workspace.clone()}</span>
                 <span class=badge>{d.job.id.clone()}</span>
+                {d.job.parent.clone().map(|p| view! { <span class=badge>{format!("part of {p}")}</span> })}
                 <span class=badge>{ago(d.job.created_at)}</span>
                 {d.job.issue.clone().map(|url| view! { <a class="rounded-full border border-line px-2 py-0.5 text-link" href=url.clone() target="_blank">{format!("issue {}", url.rsplit('/').next().unwrap_or_default())}</a> })}
                 {d.job.pr.clone().map(|url| view! { <a class="rounded-full border border-line px-2 py-0.5 text-link" href=url.clone() target="_blank">{format!("pull request {}", url.rsplit('/').next().unwrap_or_default())}</a> })}

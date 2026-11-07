@@ -49,6 +49,8 @@ fn summary(r: &Record) -> JobSummary {
         pr: j.pr.clone(),
         issue: r.runtime.issue.clone(),
         requester: r.runtime.requester.clone(),
+        parent: j.parent.clone(),
+        part: j.part.clone(),
     }
 }
 

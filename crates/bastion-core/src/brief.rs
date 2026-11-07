@@ -14,7 +14,13 @@ changes in each, and the tests that prove it. Keep it short enough to review.";
 const SCOPE: &str = "\
 You are scoping a request for the repository in /work/repo. Do not change any file.
 Read what you need, then say whether the request is one change, or several that
-should land apart. Name the parts if it is several, and why.";
+should land apart, and why. End your reply with the parts in the order they
+should land, each a request that one change can meet:
+
+PARTS:
+1. The first part.
+
+List one part when the request is one change.";
 
 const DISCOVER: &str = "\
 You are reading the repository in /work/repo before a change is planned. Do not
@@ -156,6 +162,11 @@ pub fn brief(job: &Job) -> String {
             job.request
         ),
     ];
+    if let Some(part) = &job.part {
+        parts.push(format!(
+            "The request was split into parts that land one after another. Do only this part:\n<part>\n{part}\n</part>"
+        ));
+    }
     parts.extend(earlier_work(job));
     parts.extend(workflow_step(job));
     if let Some(task) = task(job) {
@@ -279,7 +290,7 @@ pub fn listed(report: &str, header: &str) -> Vec<String> {
 }
 
 /// The text of a list item: `1. text`, `1) text` or `- text`.
-fn item(line: &str) -> Option<&str> {
+pub(crate) fn item(line: &str) -> Option<&str> {
     let rest = line
         .strip_prefix('-')
         .or_else(|| {

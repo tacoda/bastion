@@ -717,3 +717,63 @@ fn a_workflow_job_is_at_its_node_when_a_stage_is_there_twice() {
     let states: Vec<StepState> = crate::steps(&j).into_iter().map(|s| s.1).collect();
     assert_eq!(states, [StepState::Done, StepState::Running]);
 }
+
+const THREE_PARTS: &str =
+    "Three changes.\n\nPARTS:\n1. Add the model\n2. Add the endpoint\n3. Add the page";
+
+#[test]
+fn scope_splits_a_request_into_parts_that_land_in_order() {
+    let (j, effects) = go(&at(Stage::Scope, State::Running), &reply(THREE_PARTS));
+    assert_eq!(j.part.as_deref(), Some("Add the model"));
+    assert_eq!(j.stage, Stage::Discover);
+    let Some(parts) = effects.iter().find_map(|e| match e {
+        Effect::Split { parts } => Some(parts),
+        _ => None,
+    }) else {
+        panic!("{effects:?}")
+    };
+    let shape: Vec<_> = parts
+        .iter()
+        .map(|p| {
+            (
+                p.id.as_str(),
+                p.after.as_deref(),
+                p.part.as_deref(),
+                p.stage,
+            )
+        })
+        .collect();
+    assert_eq!(
+        shape,
+        [
+            ("j1-2", Some("j1"), Some("Add the endpoint"), Stage::Prepare),
+            ("j1-3", Some("j1-2"), Some("Add the page"), Stage::Prepare),
+        ]
+    );
+    assert!(parts.iter().all(|p| p.parent.as_deref() == Some("j1")));
+    assert!(crate::brief::brief(&parts[0]).contains("<part>\nAdd the endpoint\n</part>"));
+}
+
+#[test]
+fn one_part_or_a_part_itself_is_not_split() {
+    let one = "PARTS:\n1. Add the model";
+    let (j, effects) = go(&at(Stage::Scope, State::Running), &reply(one));
+    assert!(j.part.is_none());
+    assert!(!effects.iter().any(|e| matches!(e, Effect::Split { .. })));
+    let mut part = at(Stage::Scope, State::Running);
+    part.parent = Some("j0".into());
+    let (_, effects) = go(&part, &reply(THREE_PARTS));
+    assert!(!effects.iter().any(|e| matches!(e, Effect::Split { .. })));
+}
+
+#[test]
+fn a_part_is_admitted_only_once_the_part_before_it_lands() {
+    let mut first = job(Pipeline::Full);
+    first.state = State::Running;
+    let mut second = job(Pipeline::Full);
+    second.id = "j1-2".into();
+    second.after = Some("j1".into());
+    assert!(crate::admit(&[first.clone(), second.clone()], 4).is_empty());
+    first.state = State::Landed;
+    assert_eq!(crate::admit(&[first, second], 4), ["j1-2"]);
+}

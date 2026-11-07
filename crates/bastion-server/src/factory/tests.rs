@@ -49,7 +49,11 @@ struct Rig {
 }
 
 fn rig() -> Rig {
-    let engine = Arc::new(engine());
+    rig_on(engine())
+}
+
+fn rig_on(engine: FakeEngine) -> Rig {
+    let engine = Arc::new(engine);
     let store = Arc::new(FakeStore::default());
     store.workspaces.lock().unwrap().push(Workspace {
         name: "w".into(),
@@ -645,4 +649,41 @@ fn a_specify_reply_that_is_not_a_spec_is_unusable_and_other_replies_pass_through
     let spec = r#"{"checks": [{"criterion": "C1", "run": "x", "files": ["t.py"]}]}"#;
     assert_eq!(super::usable(Stage::Specify, done(spec)), done(spec));
     assert_eq!(super::usable(Stage::Plan, done("no json")), done("no json"));
+}
+
+#[test]
+fn a_scope_that_names_parts_keeps_each_later_part_as_a_job_that_waits() {
+    let parts = "PARTS:\n1. Add the model\n2. Add the endpoint";
+    let reply = json!({ "messages": [
+        { "message": { "role": "assistant", "content": [{ "type": "text", "text": parts }] } },
+    ]});
+    let rig = rig_on(engine().answer("session::messages", Ok(reply)));
+    *rig.store.dials.lock().unwrap() = bastion_core::Dials::all(bastion_core::Dial::Dark);
+    crate::rt::block_on(async {
+        let how = super::Submission {
+            pipeline: Pipeline::Full,
+            requester: Some("ana".into()),
+            ..Default::default()
+        };
+        let id = rig
+            .factory
+            .submit_with("w", "Add a health check", how)
+            .await
+            .unwrap();
+        until(&rig, &id, Stage::Scope, State::Running).await;
+        finish_turn(&rig, &id).await;
+        until(&rig, &id, Stage::Discover, State::Running).await;
+        let first = rig.store.load(&id).await.unwrap();
+        assert_eq!(first.job.part.as_deref(), Some("Add the model"));
+        let second = rig.store.load(&format!("{id}-2")).await.unwrap();
+        assert_eq!(
+            (
+                second.job.state,
+                second.job.after.as_deref(),
+                second.job.part.as_deref()
+            ),
+            (State::Queued, Some(id.as_str()), Some("Add the endpoint"))
+        );
+        assert_eq!(second.runtime.requester.as_deref(), Some("ana"));
+    });
 }

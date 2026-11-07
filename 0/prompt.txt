@@ -1,0 +1,87 @@
+<task-notification>
+<task-id>bwg9iwy08</task-id>
+<summary>Monitor event: "full job jb1cf52a9 step changes"</summary>
+<event>13:18:27 verify needs_you</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bwg9iwy08</task-id>
+<summary>Monitor event: "full job jb1cf52a9 step changes"</summary>
+<event>approved verify 200
+13:18:42 refactor needs_you</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bwg9iwy08</task-id>
+<summary>Monitor event: "full job jb1cf52a9 step changes"</summary>
+<event>approved refactor 200</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bwg9iwy08</task-id>
+<summary>Monitor event: "full job jb1cf52a9 step changes"</summary>
+<event>13:19:27 ship needs_you</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bwg9iwy08</task-id>
+<summary>Monitor event: "full job jb1cf52a9 step changes"</summary>
+<event>approved ship 200</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bwg9iwy08</task-id>
+<summary>Monitor event: "full job jb1cf52a9 step changes"</summary>
+<event>13:19:42 ci running
+13:19:57 ci needs_you</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bwg9iwy08</task-id>
+<summary>Monitor event: "full job jb1cf52a9 step changes"</summary>
+<event>approved ci 200</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bwg9iwy08</task-id>
+<summary>Monitor event: "full job jb1cf52a9 step changes"</summary>
+<event>13:20:42 merge needs_you</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bwg9iwy08</task-id>
+<summary>Monitor event: "full job jb1cf52a9 step changes"</summary>
+<event>approved merge 200</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bq6kyz33m</task-id>
+<summary>Monitor event: "full job j0781345c step changes"</summary>
+<event>[Monitor expired after 30m with 1 event delivered. Re-arm it if you still need the watch.]</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bik6wuyn1</task-id>
+<summary>Monitor event: "full job j0781345c step changes"</summary>
+<event>[Monitor expired after 30m with 9 events delivered. Re-arm it if you still need the watch.]</event>
+</task-notification>

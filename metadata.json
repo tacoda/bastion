@@ -1,0 +1,58 @@
+{
+  "cli_version": "0.12.2",
+  "checkpoint_id": "01M6T3XHJWYS902HGK0621WNAC",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "PLAN.md",
+    "crates/bastion-core/src/brief.rs",
+    "crates/bastion-core/src/full_tests.rs",
+    "crates/bastion-core/src/lib.rs",
+    "crates/bastion-protocol/src/lib.rs",
+    "crates/bastion-server/src/api/factory.rs",
+    "crates/bastion-server/src/factory.rs",
+    "crates/bastion-server/src/factory/split.rs",
+    "crates/bastion-server/src/factory/tests.rs",
+    "crates/bastion-server/src/store.rs",
+    "src/pages/job.rs",
+    "src/pages/jobs.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 78,
+    "cache_creation_tokens": 347859,
+    "cache_read_tokens": 13283492,
+    "output_tokens": 22919,
+    "api_call_count": 39,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 559,
+    "layers": {
+      "betterleaks": 23,
+      "connection_string": 0,
+      "credential_key": 511,
+      "credential_value": 22,
+      "credentialed_uri": 0,
+      "entropy": 8,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}

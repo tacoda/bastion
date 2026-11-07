@@ -777,3 +777,12 @@ fn a_part_is_admitted_only_once_the_part_before_it_lands() {
     first.state = State::Landed;
     assert_eq!(crate::admit(&[first, second], 4), ["j1-2"]);
 }
+
+#[test]
+fn implement_after_specify_is_told_the_acceptance_tests_are_fixed() {
+    let mut j = at(Stage::Implement, State::Running);
+    j.tasks = vec!["Add tests for modulo".into()];
+    assert!(!crate::brief::brief(&j).contains("bastion-spec"));
+    j.criteria = Some("C1. modulo works".into());
+    assert!(crate::brief::brief(&j).contains("Do not create, change, move or delete them"));
+}

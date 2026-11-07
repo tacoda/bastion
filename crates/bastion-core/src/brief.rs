@@ -57,6 +57,14 @@ Then reply with one fenced JSON block, and nothing after it:
 
 Every criterion needs a check. A command must exit non-zero when a test fails.";
 
+/// Implement after specify: the acceptance tests are approved, and verify
+/// stops on a change to one, so a task that asks for them is done already.
+const APPROVED_TESTS: &str = "\
+The acceptance tests for these criteria are written, committed and approved, at
+the tag bastion-spec. Do not create, change, move or delete them, even when a
+task asks for tests of the same behaviour: those tests exist. Make them pass by
+changing the product code, and put any other test in a new file.";
+
 const FALSIFY: &str = "\
 Some acceptance tests below already pass, before anything was built. Prove that
 each one can fail: make the smallest change to the product code that a real bug
@@ -195,6 +203,9 @@ fn earlier_work(job: &Job) -> Vec<String> {
         parts.push(format!(
             "The approved acceptance criteria:\n<criteria>\n{criteria}\n</criteria>"
         ));
+    }
+    if job.stage == Stage::Implement && job.criteria.is_some() {
+        parts.push(APPROVED_TESTS.into());
     }
     if job.stage == Stage::Plan && !job.tasks.is_empty() {
         let tasks: Vec<String> = job.tasks.iter().map(|t| format!("- {t}")).collect();

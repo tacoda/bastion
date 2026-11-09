@@ -105,9 +105,14 @@ fn object(slot: serde_json::map::Entry<'_>) -> &mut Map<String, Value> {
     value.as_object_mut().expect("just made an object")
 }
 
+/// One write to the router's entry at a time, as each replaces it whole.
+// ponytail: one lock per server process; two servers on one stack can still race.
+static ENTRY: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// Read the router's entry, set or clear one provider's key, write it back.
 /// `configuration::set` replaces the whole value.
 async fn point(engine: &dyn Engine, id: &str, reference: Option<String>) -> Result<(), String> {
+    let _entry = ENTRY.lock().await;
     let get = json!({ "id": ROUTER_ENTRY, "raw": true });
     let current = engine.call("default", "configuration::get", get).await?;
     let value = with_key(current["value"].clone(), id, reference);

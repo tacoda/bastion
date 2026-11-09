@@ -323,10 +323,7 @@ async fn stack_start(State(app): State<App>) -> Response {
 }
 
 async fn stack_stop(State(app): State<App>) -> Response {
-    answer(api::stack::stack_stop(
-        &app.server.stack,
-        &app.server.machine,
-    ))
+    answer(api::stack::stack_stop(&app.server.stack, &app.server.machine).await)
 }
 
 async fn console(State(app): State<App>) -> Response {

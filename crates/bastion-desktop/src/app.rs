@@ -13,6 +13,7 @@ use serde_json::Value;
 
 use crate::client::{self, Ask};
 use crate::events::{self, Feed};
+use crate::pages::{Ctx, Page, jobs, new_request};
 use crate::route::{PAGES, Route};
 use crate::{icons, start, theme};
 
@@ -24,8 +25,17 @@ pub enum Message {
     Feed((String, Feed)),
     CloseRequested,
     StackRunning(bool),
-    Quit { stop_stack: bool },
+    Quit {
+        stop_stack: bool,
+    },
     Stay,
+    /// A job's page, on the server it runs on.
+    OpenJob {
+        server: String,
+        id: String,
+    },
+    Jobs(jobs::Msg),
+    NewRequest(new_request::Msg),
 }
 
 pub struct App {
@@ -35,8 +45,7 @@ pub struct App {
     route: Route,
     /// Servers whose stream is down, so what was read from them may be stale.
     down: BTreeSet<String>,
-    /// The last push, shown until the pages that use it are built (G2).
-    last_push: Option<String>,
+    page: Page,
     asking: bool,
     problem: Option<String>,
 }
@@ -49,7 +58,7 @@ impl App {
             current: LOCAL.into(),
             route: Route::Jobs,
             down: BTreeSet::new(),
-            last_push: None,
+            page: Page::Pending,
             asking: false,
             problem: None,
         };
@@ -78,13 +87,51 @@ impl App {
         Task::perform(client::call(self.http.clone(), server, ask), then)
     }
 
+    fn ctx(&self) -> Ctx {
+        Ctx {
+            http: self.http.clone(),
+            servers: self.servers.clone(),
+            current: self.current.clone(),
+            down: self.down.clone(),
+        }
+    }
+
+    /// Show `route`'s page and read it.
+    fn go(&mut self, route: Route) -> Task<Message> {
+        let (page, first) = Page::open(&route, &self.ctx());
+        (self.route, self.page) = (route, page);
+        first
+    }
+
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::Started(Ok(all)) => self.servers = all,
+            Message::Started(Ok(all)) => {
+                self.servers = all;
+                return self.go(self.route.clone());
+            }
             Message::Started(Err(why)) => self.problem = Some(why),
-            Message::Go(route) => self.route = route,
-            Message::Choose(name) => self.current = name,
-            Message::Feed((server, feed)) => self.on_feed(server, feed),
+            Message::Go(route) => return self.go(route),
+            Message::Choose(name) => {
+                self.current = name;
+                return self.go(self.route.clone());
+            }
+            Message::OpenJob { server, id } => {
+                // The job's page talks to the server it runs on.
+                self.current = server;
+                return self.go(Route::Job(id));
+            }
+            Message::Jobs(msg) => {
+                if let Page::Jobs(state) = &mut self.page {
+                    jobs::update(state, msg);
+                }
+            }
+            Message::NewRequest(msg) => {
+                let ctx = self.ctx();
+                if let Page::NewRequest(state) = &mut self.page {
+                    return new_request::update(state, msg, &ctx);
+                }
+            }
+            Message::Feed((server, feed)) => return self.on_feed(server, feed),
             Message::CloseRequested => return self.on_close(),
             Message::StackRunning(true) => self.asking = true,
             Message::StackRunning(false) => return iced::exit(),
@@ -94,19 +141,23 @@ impl App {
         Task::none()
     }
 
-    fn on_feed(&mut self, server: String, feed: Feed) {
-        match feed {
-            Feed::Up => {
-                self.down.remove(&server);
-            }
+    /// A push: note whether the server answers, and read the page again
+    /// when what it shows may have changed. A job change reaches the page
+    /// from every server, because the Jobs page lists them all; the rest
+    /// only from the server the page shows.
+    fn on_feed(&mut self, server: String, feed: Feed) -> Task<Message> {
+        let everything = match feed {
+            Feed::Up => !self.down.remove(&server),
             Feed::Down => {
                 self.down.insert(server);
+                return Task::none();
             }
-            Feed::Resync => self.last_push = Some(format!("{server}: read everything again")),
-            Feed::Change(change) => {
-                self.last_push = Some(format!("{server}: {}", describe(&change)))
-            }
-        }
+            Feed::Resync => true,
+            Feed::Change(Change::Job { id }) => id.is_empty(),
+            Feed::Change(_) if server != self.current => return Task::none(),
+            Feed::Change(_) => false,
+        };
+        self.page.reload(&self.ctx(), everything)
     }
 
     /// The stack belongs to the server (D27), so a quit asks only while it runs.
@@ -212,22 +263,10 @@ impl App {
     }
 
     fn page(&self) -> Element<'_, Message> {
-        let title = text(self.route.title()).size(24).font(theme::BOLD);
-        let note = match (&self.problem, &self.last_push) {
-            (Some(why), _) => text(why.clone()).color(theme::BAD),
-            (None, Some(push)) => text(format!("Last push: {push}")).color(theme::MUTED),
-            (None, None) => text("This page is built in G2.").color(theme::MUTED),
-        };
-        column![title, note].spacing(12).into()
-    }
-}
-
-fn describe(change: &Change) -> String {
-    match change {
-        Change::Job { id } if id.is_empty() => "every job".into(),
-        Change::Job { id } => format!("job {id}"),
-        Change::Engine { status } => format!("engine {:?}", status.link),
-        Change::Console => "the console".into(),
+        if let Some(why) = &self.problem {
+            return text(why.clone()).color(theme::BAD).into();
+        }
+        self.page.view(&self.route, &self.ctx())
     }
 }
 

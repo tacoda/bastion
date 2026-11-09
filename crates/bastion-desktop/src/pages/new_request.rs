@@ -1,0 +1,318 @@
+//! New request (PLAN.md A3, A7, D35): a request for a workspace on one
+//! Bastion server, run by the workflow picked, or started from a GitHub
+//! issue.
+
+use std::fmt;
+
+use bastion_protocol::{IssueView, LOCAL, WorkflowView, Workspace, command};
+use iced::widget::{
+    Column, button, column, container, pick_list, row, scrollable, text, text_editor,
+};
+use iced::{Element, Fill, Task};
+use serde_json::json;
+
+use super::{Ctx, labeled};
+use crate::app::Message;
+use crate::client::Ask;
+use crate::route::Route;
+use crate::theme;
+
+/// A workflow as the picker shows it; an empty id runs the server's default.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Choice {
+    id: String,
+    name: String,
+}
+
+impl fmt::Display for Choice {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.name)
+    }
+}
+
+fn default_workflow() -> Choice {
+    Choice {
+        id: String::new(),
+        name: "The server's default".into(),
+    }
+}
+
+pub struct State {
+    /// A request runs on `local` unless the owner picks another server (D30).
+    server: String,
+    workspaces: Vec<Workspace>,
+    workspace: Option<String>,
+    workflows: Vec<Choice>,
+    workflow: Choice,
+    request: text_editor::Content,
+    issues: Vec<IssueView>,
+    issue_note: String,
+    error: String,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        State {
+            server: LOCAL.into(),
+            workspaces: vec![],
+            workspace: None,
+            workflows: vec![default_workflow()],
+            workflow: default_workflow(),
+            request: text_editor::Content::new(),
+            issues: vec![],
+            issue_note: String::new(),
+            error: String::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum Msg {
+    Server(String),
+    Workspaces(Result<Vec<Workspace>, String>),
+    Workflows(Result<Vec<WorkflowView>, String>),
+    Workspace(String),
+    Workflow(Choice),
+    Edit(text_editor::Action),
+    Submit,
+    LoadIssues,
+    Issues(Result<Vec<IssueView>, String>),
+    FromIssue(u64),
+    Started(Result<String, String>),
+}
+
+fn wrap(task: Task<Msg>) -> Task<Message> {
+    task.map(Message::NewRequest)
+}
+
+/// Read the picked server's workspaces and workflows.
+pub fn load(state: &State, ctx: &Ctx) -> Task<Message> {
+    let on = state.server.clone();
+    let spaces = ctx.clone().get(on.clone(), Ask::bare(command::WORKSPACES));
+    let flows = ctx.clone().get(on, Ask::bare(command::WORKFLOWS));
+    wrap(Task::batch([
+        Task::perform(spaces, Msg::Workspaces),
+        Task::perform(flows, Msg::Workflows),
+    ]))
+}
+
+impl State {
+    /// The workspace picked, else the server's first.
+    fn chosen(&self) -> Option<String> {
+        self.workspace
+            .clone()
+            .or_else(|| self.workspaces.first().map(|w| w.name.clone()))
+    }
+
+    fn ready(&self) -> bool {
+        self.chosen().is_some() && !self.request.text().trim().is_empty()
+    }
+
+    /// Send `ask` to the picked server.
+    fn ask<T>(&self, ctx: &Ctx, ask: Ask, then: fn(Result<T, String>) -> Msg) -> Task<Message>
+    where
+        T: serde::de::DeserializeOwned + Send + 'static,
+    {
+        wrap(ctx.task(&self.server, ask, then))
+    }
+
+    fn submit(&self, ctx: &Ctx) -> Task<Message> {
+        let mut args = json!({ "workspace": self.chosen(), "request": self.request.text().trim() });
+        if !self.workflow.id.is_empty() {
+            args["workflow"] = json!(self.workflow.id);
+        }
+        self.ask(
+            ctx,
+            Ask {
+                cmd: command::JOB_SUBMIT,
+                args,
+            },
+            Msg::Started,
+        )
+    }
+
+    /// List the workspace's open issues, or start a job from issue `number`.
+    fn issues(&self, ctx: &Ctx, number: Option<u64>) -> Task<Message> {
+        let mut args = json!({ "workspace": self.chosen() });
+        let Some(number) = number else {
+            return self.ask(
+                ctx,
+                Ask {
+                    cmd: command::ISSUES,
+                    args,
+                },
+                Msg::Issues,
+            );
+        };
+        args["number"] = json!(number);
+        self.ask(
+            ctx,
+            Ask {
+                cmd: command::JOB_FROM_ISSUE,
+                args,
+            },
+            Msg::Started,
+        )
+    }
+}
+
+pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
+    match msg {
+        Msg::Server(name) => {
+            *state = State {
+                server: name,
+                ..State::default()
+            };
+            return load(state, ctx);
+        }
+        Msg::Workspaces(Ok(all)) => state.workspaces = all,
+        Msg::Workflows(Ok(all)) => {
+            let named = all.into_iter().map(|w| Choice {
+                id: w.id,
+                name: w.name,
+            });
+            state.workflows = std::iter::once(default_workflow()).chain(named).collect();
+        }
+        Msg::Workspaces(Err(e)) | Msg::Workflows(Err(e)) => state.error = e,
+        Msg::Workspace(name) => state.workspace = Some(name),
+        Msg::Workflow(choice) => state.workflow = choice,
+        Msg::Edit(action) => state.request.perform(action),
+        Msg::Submit => return state.submit(ctx),
+        Msg::LoadIssues => return state.issues(ctx, None),
+        Msg::Issues(Ok(all)) => {
+            state.issue_note = if all.is_empty() {
+                "No open issues.".into()
+            } else {
+                String::new()
+            };
+            state.issues = all;
+        }
+        Msg::Issues(Err(e)) => state.issue_note = e,
+        Msg::FromIssue(number) => return state.issues(ctx, Some(number)),
+        Msg::Started(Ok(id)) => {
+            return Task::done(Message::OpenJob {
+                server: state.server.clone(),
+                id,
+            });
+        }
+        Msg::Started(Err(e)) => state.error = e,
+    }
+    Task::none()
+}
+
+fn form<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
+    let msg = Message::NewRequest;
+    let names: Vec<String> = ctx.servers.iter().map(|s| s.name.clone()).collect();
+    let server = pick_list(names, Some(state.server.clone()), move |n| {
+        msg(Msg::Server(n))
+    })
+    .style(theme::select);
+    let spaces: Vec<String> = state.workspaces.iter().map(|w| w.name.clone()).collect();
+    let space =
+        pick_list(spaces, state.chosen(), move |n| msg(Msg::Workspace(n))).style(theme::select);
+    let flow = pick_list(
+        state.workflows.clone(),
+        Some(state.workflow.clone()),
+        move |c| msg(Msg::Workflow(c)),
+    )
+    .style(theme::select);
+    let editor = text_editor(&state.request)
+        .on_action(move |a| msg(Msg::Edit(a)))
+        .height(128);
+    let empty = if state.workspaces.is_empty() {
+        "This Bastion server has no workspace yet. Add one in Settings."
+    } else {
+        ""
+    };
+    let submit = button("Submit").padding([8, 12]).style(theme::primary);
+    let submit = if state.ready() {
+        submit.on_press(msg(Msg::Submit))
+    } else {
+        submit
+    };
+    let body = column![
+        labeled("Bastion server", server),
+        labeled("Workspace", space),
+        labeled("Workflow", flow),
+        labeled("What should change?", editor),
+        text(empty).size(13).color(theme::MUTED),
+        text(&state.error).color(theme::BAD),
+        submit,
+    ]
+    .spacing(12);
+    container(body)
+        .padding(16)
+        .max_width(672)
+        .style(theme::panel)
+        .into()
+}
+
+fn issues(state: &State) -> Element<'_, Message> {
+    let load = button(text("Load issues").size(13))
+        .padding([4, 12])
+        .style(theme::secondary);
+    let head = row![
+        text("Or start from a GitHub issue")
+            .size(13)
+            .font(theme::BOLD)
+            .color(theme::MUTED)
+            .width(Fill),
+        load.on_press(Message::NewRequest(Msg::LoadIssues)),
+    ]
+    .align_y(iced::Center);
+    let rows = state.issues.iter().map(|i| {
+        let label = row![
+            text(format!("#{} ", i.number)).color(theme::MUTED),
+            text(i.title.clone())
+        ];
+        let open = Message::NewRequest(Msg::FromIssue(i.number));
+        button(label)
+            .width(Fill)
+            .padding([4, 8])
+            .style(theme::row_button)
+            .on_press(open)
+            .into()
+    });
+    let body = column![
+        head,
+        Column::with_children(rows),
+        text(&state.issue_note).size(13).color(theme::MUTED)
+    ];
+    container(body.spacing(8))
+        .padding(16)
+        .max_width(672)
+        .style(theme::panel)
+        .into()
+}
+
+pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
+    let back = button(text("← All jobs").size(13))
+        .style(theme::link)
+        .on_press(Message::Go(Route::Jobs));
+    let title = text("New request").size(24).font(theme::BOLD);
+    scrollable(column![back, title, form(state, ctx), issues(state)].spacing(12))
+        .height(Fill)
+        .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_request_needs_a_workspace_and_words_and_picks_the_first_workspace() {
+        let mut state = State::default();
+        assert!(!state.ready());
+        state.workspaces = vec![Workspace {
+            name: "calc".into(),
+            path: "/c".into(),
+            branch: "main".into(),
+            checks: String::new(),
+        }];
+        assert_eq!(state.chosen().as_deref(), Some("calc"));
+        state.request = text_editor::Content::with_text("  ");
+        assert!(!state.ready());
+        state.request = text_editor::Content::with_text("Add subtract.");
+        assert!(state.ready());
+    }
+}

@@ -195,3 +195,63 @@ pub fn field(_: &Theme, status: text_input::Status) -> text_input::Style {
         selection: PRIMARY,
     }
 }
+
+/// A section that wants attention: a warning-colored edge.
+pub fn accented(theme: &Theme) -> container::Style {
+    container::Style {
+        border: Border {
+            color: WARN,
+            ..lined(12.0)
+        },
+        ..panel(theme)
+    }
+}
+
+/// A 1 px line across a section.
+pub fn rule<'a, M: 'a>() -> iced::Element<'a, M> {
+    container(iced::widget::space::horizontal())
+        .height(1)
+        .width(iced::Fill)
+        .style(|_| container::Style {
+            background: Some(Background::Color(LINE)),
+            ..container::Style::default()
+        })
+        .into()
+}
+
+/// A whole row that opens something: no fill until hovered.
+pub fn row_button(_: &Theme, status: button::Status) -> button::Style {
+    let background = matches!(status, button::Status::Hovered | button::Status::Pressed)
+        .then_some(Background::Color(LINE));
+    button::Style {
+        background,
+        text_color: INK,
+        ..button::Style::default()
+    }
+}
+
+/// A small text button, muted until hovered, as "← All jobs".
+pub fn link(_: &Theme, status: button::Status) -> button::Style {
+    let text_color = if status == button::Status::Hovered {
+        INK
+    } else {
+        MUTED
+    };
+    button::Style {
+        text_color,
+        ..button::Style::default()
+    }
+}
+
+/// A pill around a short label, as a job's stage.
+pub fn chip(_: &Theme) -> container::Style {
+    container::Style {
+        text_color: Some(MUTED),
+        border: Border {
+            radius: 999.0.into(),
+            width: 1.0,
+            color: LINE,
+        },
+        ..container::Style::default()
+    }
+}

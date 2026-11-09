@@ -1,0 +1,12 @@
+push and start on G0
+
+---
+
+What is iced like? I've heard of that one before. I'm interested in that.
+
+---
+
+exclude spikes from CodeScene, don't worry about the baseline
+I've decided that I want to use iced - drop the older spikes
+Swap out the frontend to iced instead of tauri, trunk, and leptos
+Keep the backend the same

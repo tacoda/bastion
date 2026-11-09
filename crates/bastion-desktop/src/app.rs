@@ -41,6 +41,9 @@ pub enum Message {
     Govern(govern::Msg),
     Engine(engine::Msg),
     Evals(evals::Msg),
+    Settings(pages::settings::Msg),
+    /// Read the servers again, after Settings added or removed one.
+    ReadServers,
     /// Open a link, such as a pull request, in the browser.
     OpenUrl(String),
 }
@@ -103,6 +106,20 @@ impl App {
         }
     }
 
+    /// Read every server again, `local` first. The added servers' tokens
+    /// come from the Keychain, which can take seconds.
+    fn read_servers(&self) -> Task<Message> {
+        let Some(local) = self.server(LOCAL) else {
+            return Task::none();
+        };
+        let every = async move {
+            tokio::task::spawn_blocking(move || start::every(local))
+                .await
+                .map_err(|e| e.to_string())?
+        };
+        Task::perform(every, Message::Servers)
+    }
+
     /// Show `route`'s page and read it.
     fn go(&mut self, route: Route) -> Task<Message> {
         let (page, first) = Page::open(&route, &self.ctx());
@@ -117,22 +134,15 @@ impl App {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Started(Ok(local)) => {
-                self.servers = vec![local.clone()];
-                let every = async move {
-                    tokio::task::spawn_blocking(move || start::every(local))
-                        .await
-                        .map_err(|e| e.to_string())?
-                };
-                return Task::batch([
-                    self.go(self.route.clone()),
-                    Task::perform(every, Message::Servers),
-                ]);
+                self.servers = vec![local];
+                return Task::batch([self.go(self.route.clone()), self.read_servers()]);
             }
             Message::Servers(Ok(all)) => {
                 self.servers = all;
                 return self.page.reload(&self.ctx(), Push::All);
             }
             Message::Servers(Err(why)) => self.problem = Some(why),
+            Message::ReadServers => return self.read_servers(),
             Message::Started(Err(why)) => self.problem = Some(why),
             Message::Go(route) => return self.go(route),
             Message::Choose(name) => {
@@ -149,7 +159,8 @@ impl App {
             | Message::Job(_)
             | Message::Govern(_)
             | Message::Engine(_)
-            | Message::Evals(_)) => {
+            | Message::Evals(_)
+            | Message::Settings(_)) => {
                 let ctx = self.ctx();
                 return self.page.update(page, &ctx);
             }

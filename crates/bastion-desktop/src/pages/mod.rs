@@ -9,6 +9,7 @@ pub mod govern;
 pub mod job;
 pub mod jobs;
 pub mod new_request;
+pub mod settings;
 
 use std::collections::BTreeSet;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -162,6 +163,7 @@ pub enum Page {
     Engine(Box<engine::State>),
     Evals(Box<evals::List>),
     Eval(Box<evals::One>),
+    Settings(Box<settings::State>),
     /// A page G2 has not built yet.
     Pending,
 }
@@ -179,6 +181,7 @@ impl Page {
             Route::Engine => Page::Engine(Box::default()),
             Route::Evals => Page::Evals(Box::default()),
             Route::Eval(id) => Page::Eval(Box::new(evals::One::new(id.clone()))),
+            Route::Settings => Page::Settings(Box::default()),
             _ => Page::Pending,
         };
         let first = page.reload(ctx, Push::All);
@@ -189,7 +192,7 @@ impl Page {
     fn wants(&self, push: Push) -> bool {
         match self {
             Page::Pending => false,
-            Page::NewRequest(_) => push == Push::All,
+            Page::NewRequest(_) | Page::Settings(_) => push == Push::All,
             Page::Engine(_) => push != Push::Job,
             // ponytail: any job's change reads a job or an eval again; pass the id when that costs.
             _ => push != Push::Engine,
@@ -206,6 +209,7 @@ impl Page {
             Page::Engine(_) => engine::load(ctx),
             Page::Evals(_) => evals::load_list(ctx),
             Page::Eval(s) => evals::load_one(s, ctx),
+            Page::Settings(_) => settings::load(ctx),
             Page::Pending => Task::none(),
         }
     }
@@ -230,6 +234,7 @@ impl Page {
             (Page::Engine(s), Message::Engine(m)) => return engine::update(s, m, ctx),
             (Page::Evals(s), Message::Evals(m)) => return evals::update_list(s, m, ctx),
             (Page::Eval(s), Message::Evals(m)) => return evals::update_one(s, m, ctx),
+            (Page::Settings(s), Message::Settings(m)) => return settings::update(s, m, ctx),
             _ => {}
         }
         Task::none()
@@ -244,6 +249,7 @@ impl Page {
             Page::Engine(s) => engine::view(s),
             Page::Evals(s) => evals::view_list(s),
             Page::Eval(s) => evals::view_one(s, ctx),
+            Page::Settings(s) => settings::view(s, ctx),
             Page::Pending => {
                 let title = text(route.title()).size(24).font(theme::BOLD);
                 column![title, text("This page is built in G2.").color(theme::MUTED)]

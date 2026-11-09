@@ -1,10 +1,12 @@
 # Levels
 
-What each spike proved, with the versions it ran on. PLAN.md A0 lists the
-spikes.
+What each spike proved, with the versions it ran on. This is a record: the
+sections name the phases of the plan that built Bastion until 2026-11-09,
+which git history keeps, and a spike's notes describe the code of its day.
 
-Versions: `iii` 0.25.0, `iii-sdk` 0.25.0, Tauri 2.12.5, Leptos 0.8.22,
-Trunk 0.22.1, rustc 1.92.0, macOS on Apple Silicon.
+Versions when the spikes ran: `iii` 0.25.0, `iii-sdk` 0.25.0, Tauri 2.12.5,
+Leptos 0.8.22, Trunk 0.22.1, rustc 1.92.0, macOS on Apple Silicon. Tauri,
+Leptos and Trunk have since left Bastion.
 
 ## A0
 
@@ -37,6 +39,7 @@ N6's engine-status line and theme were not checked by eye.
 | Spike | Result | Date | Notes |
 |---|---|---|---|
 | N9 | partial | 2026-10-31 | `judge::evaluate` lives in namespace `bastion` and answers `{ "status": "error", "code": "provider_unavailable" }`: the stack has the `judge` worker but no `judge-<provider>` worker, so it has no model to grade with. Bastion grades with a harness turn that has no tools instead, and reads its last `GRADE: n` line. `harness::metrics` with `root_session_id` gives each session's `turns`, `function_calls`, `function_call_errors` and `cost_usd`, which the eval tallies. The stock `eval` worker analyzes finished harness sessions; it does not compare two configurations. `worktree::create` takes a commit as `base_ref`, so an eval pins its snapshot as a commit. |
+| N10 | probe | 2026-10-31 | Three probes, not pass-or-fail checks, run while building the GitHub forge and the model settings (commit `3605253`): `n10_functions` lists the functions of the stock `github`, `secrets` and `router` workers under a prefix, `n10_gh` shows what `github::exec` returns for a read-only `gh` call, and `n10_router` lists the models and providers `llm-router` offers. No result was recorded at the time. |
 | N11 | pass | 2026-10-31 | The stack's `configuration` worker (namespace `default`) can carry Bastion's harness and factory defaults (D26). `configuration::ensure` seeds an id once and writes `config/<id>.yaml`; a later `ensure` answers `"action": "preserved"` and keeps the stored value. A hand edit to that file reaches the next `configuration::get` with no restart. `configuration::on-updated` announces changes. `config/` is git-ignored, so the stack's own files hold the owner's choices. Spike: `crates/bastion-spikes/examples/n11_config.rs`. |
 
 ## S

@@ -132,10 +132,10 @@ pub fn nav(here: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
 
 /// The main action: white on purple.
 pub fn primary(_: &Theme, status: button::Status) -> button::Style {
-    let fill = if status == button::Status::Hovered {
-        PRIMARY_HOVER
-    } else {
-        PRIMARY
+    let fill = match status {
+        button::Status::Hovered => PRIMARY_HOVER,
+        button::Status::Disabled => Color { a: 0.5, ..PRIMARY },
+        _ => PRIMARY,
     };
     button::Style {
         background: Some(Background::Color(fill)),
@@ -148,9 +148,15 @@ pub fn primary(_: &Theme, status: button::Status) -> button::Style {
 /// Any other button: a lined box that fills on hover.
 pub fn secondary(_: &Theme, status: button::Status) -> button::Style {
     let background = (status == button::Status::Hovered).then_some(Background::Color(LINE));
+    // A button that cannot be pressed now reads faded, as `disabled:opacity-40` did.
+    let text_color = if status == button::Status::Disabled {
+        LINE
+    } else {
+        INK
+    };
     button::Style {
         background,
-        text_color: INK,
+        text_color,
         border: lined(8.0),
         ..button::Style::default()
     }

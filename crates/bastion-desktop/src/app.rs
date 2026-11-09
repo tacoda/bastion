@@ -13,7 +13,7 @@ use serde_json::Value;
 
 use crate::client::{self, Ask};
 use crate::events::{self, Feed};
-use crate::pages::{self, Ctx, Page, job, jobs, new_request};
+use crate::pages::{self, Ctx, Page, govern, job, jobs, new_request};
 use crate::route::{PAGES, Route};
 use crate::{icons, start, theme};
 
@@ -38,6 +38,7 @@ pub enum Message {
     Jobs(jobs::Msg),
     NewRequest(new_request::Msg),
     Job(job::Msg),
+    Govern(govern::Msg),
     /// Open a link, such as a pull request, in the browser.
     OpenUrl(String),
 }
@@ -156,6 +157,12 @@ impl App {
                 let ctx = self.ctx();
                 if let Page::Job(state) = &mut self.page {
                     return job::update(state, msg, &ctx);
+                }
+            }
+            Message::Govern(msg) => {
+                let ctx = self.ctx();
+                if let Page::Govern(state) = &mut self.page {
+                    return govern::update(state, msg, &ctx);
                 }
             }
             Message::OpenUrl(url) => open(&url),

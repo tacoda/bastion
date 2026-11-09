@@ -3,6 +3,7 @@
 
 pub mod diff;
 pub mod drawing;
+pub mod govern;
 pub mod job;
 pub mod jobs;
 pub mod new_request;
@@ -121,6 +122,7 @@ pub enum Page {
     Jobs(jobs::State),
     NewRequest(new_request::State),
     Job(Box<job::State>),
+    Govern(govern::State),
     /// A page G2 has not built yet.
     Pending,
 }
@@ -132,6 +134,9 @@ impl Page {
             Route::Jobs => Page::Jobs(jobs::State::default()),
             Route::NewRequest => Page::NewRequest(new_request::State::default()),
             Route::Job(id) => Page::Job(Box::new(job::State::new(id.clone()))),
+            Route::Constraints => Page::Govern(govern::State::new(govern::Which::Constraints)),
+            Route::Capabilities => Page::Govern(govern::State::new(govern::Which::Capabilities)),
+            Route::Audit => Page::Govern(govern::State::new(govern::Which::Audit)),
             _ => Page::Pending,
         };
         let first = page.reload(ctx, true);
@@ -146,6 +151,7 @@ impl Page {
             Page::NewRequest(s) if everything => new_request::load(s, ctx),
             // ponytail: any job's change reads this one again; pass the id when that costs.
             Page::Job(s) => job::load(s, ctx),
+            Page::Govern(s) => govern::load(s, ctx),
             _ => Task::none(),
         }
     }
@@ -155,6 +161,7 @@ impl Page {
             Page::Jobs(s) => jobs::view(s, ctx),
             Page::NewRequest(s) => new_request::view(s, ctx),
             Page::Job(s) => job::view(s, ctx),
+            Page::Govern(s) => govern::view(s),
             Page::Pending => {
                 let title = text(route.title()).size(24).font(theme::BOLD);
                 column![title, text("This page is built in G2.").color(theme::MUTED)]

@@ -653,7 +653,12 @@ mod tests {
             created_at: 1,
         };
         store.jobs.lock().unwrap().insert("j1".into(), job);
-        let log = AuditLog::start(store.clone(), KEY.to_vec(), crate::audit_log::WRITE_LIMIT);
+        let log = AuditLog::start(crate::audit_log::Writer {
+            store: store.clone(),
+            key: KEY.to_vec(),
+            limit: crate::audit_log::WRITE_LIMIT,
+            dir: None,
+        });
         let gate = Gate::new(
             store.clone(),
             engine.clone(),
@@ -753,7 +758,12 @@ mod tests {
             .gate
             .judge(&envelope("", "sandbox::exec", json!({ "argv": ["ls"] })));
         assert_eq!(answer["decision"], "deny");
-        let log = AuditLog::start(r.store.clone(), KEY.to_vec(), crate::audit_log::WRITE_LIMIT);
+        let log = AuditLog::start(crate::audit_log::Writer {
+            store: r.store.clone(),
+            key: KEY.to_vec(),
+            limit: crate::audit_log::WRITE_LIMIT,
+            dir: None,
+        });
         let unloaded = Gate::new(
             r.store.clone(),
             r.engine.clone(),

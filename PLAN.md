@@ -168,8 +168,7 @@ record, stalls a job, or runs a call twice.
   memory and read only the last entry at start, instead of the whole chain
   on each append. Retry a failed write with backoff instead of dropping it,
   spool queued records to disk so they survive a restart, and use a bounded
-  channel. Write and await a stack stop's record before the stack goes down.
-  Page `GET /audit`. Keep the tail's hash outside the database, so deleting
+  channel. Keep the tail's hash outside the database, so deleting
   the newest entries breaks verification.
 - **R2, resume is exact.** A turn's result names its session, and the core
   applies it only to that session at a turn step; the record clears the
@@ -190,7 +189,7 @@ record, stalls a job, or runs a call twice.
   connection reads as down), and on the openai-compat worker's requests. The
   worker retries its state reads at start. TLS handshakes run concurrently.
 - **R6, reads stay small.** The admission pump reads only active jobs. Page
-  `GET /jobs`. A row that fails to parse is logged and skipped, not fatal to
+  `GET /jobs` and `GET /audit`. A row that fails to parse is logged and skipped, not fatal to
   the list.
 - **R7, security edges.** Answer 404 for an unknown job and 502 or 503 for an
   engine failure, not 401 or 400. Compare tokens in constant time; create the
@@ -286,6 +285,6 @@ value; each is a phase of its own when it starts.
 | Phase | State | Evidence |
 |---|---|---|
 | C | done | C1 retired the old client; C2 removed the protocol and server parts only it used, and the client's profiles; C3 removed the fixed grading model, the dead queue, spikes N2, N12's server half and N14, the people and token type duplicates, every citation of an old plan phase, and the old client's words in server code. C4 removed the stack's `cron`, `storage`, `ide`, `workflow`, `memory` and `eval`, which nothing calls; `harness` calls `session-manager`, `context-manager`, `iii-directory`, `fp`, `judge` and `approval-gate` (from its binary), so they stay; `opengantry` stays for F4. C5 rewrote the README and CLAUDE.md, and the spikes crate went: its findings are in the code, and their record is `docs/engine-findings.md`. Exit, live (2026-11-09): the server and the stack restarted on the trimmed stack file, a short workflow's plan turn reached Approve, and the desktop client listed it; CI's steps pass with no Tauri, Leptos or wasm step. C6, with the owner's yes, deleted the untracked `floyd` data and config, 885 MB of engine telemetry, a database backup, `agents/` and `skills/provider-claude-code`. |
-| R | in progress | |
+| R | in progress | R1 (2026-11-09): the audit writer reads only the chain's tail, keeps each record in `audit-spool.jsonl` until it is written, tries a failed write again with backoff up to 30 s, and keeps the newest entry's sequence and hash in `audit-anchor`, so deleting entries from the end breaks the chain. Live: a stack stop's record waited in the spool while the stack was down and was written, with the start's, once it came back (entries 1347 and 1348), and the chain verified. The queue stays unbounded, as the spool keeps it on disk; a stop's record no longer needs writing before the stop. |
 | I | not started | |
 | F | not started | |

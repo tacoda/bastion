@@ -88,7 +88,10 @@ impl Server {
             Arc::new(store),
             self.machine.clone(),
             on_change,
-            scratch,
+            crate::factory::Dirs {
+                scratch,
+                data: Some(self.data.clone()),
+            },
         );
         if let Err(e) = factory.start() {
             eprintln!("the factory did not start: {e}");

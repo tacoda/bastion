@@ -103,6 +103,8 @@ pub trait Store: EvalStore + PeopleStore + SettingsStore + WorkflowStore + Send 
     fn release<'a>(&'a self, id: &'a str) -> Answer<'a, ()>;
     /// The whole audit chain, oldest first.
     fn audit(&self) -> Answer<'_, Vec<Entry>>;
+    /// The newest entry, the one the next appends after.
+    fn audit_tail(&self) -> Answer<'_, Option<Entry>>;
     /// Add the next entry. A second entry with the same `seq` is refused, so
     /// two writers cannot fork the chain.
     fn append_audit<'a>(&'a self, entry: &'a Entry) -> Answer<'a, ()>;
@@ -935,6 +937,13 @@ impl Store for SqlStore {
         })
     }
 
+    fn audit_tail(&self) -> Answer<'_, Option<Entry>> {
+        Box::pin(async move {
+            let sql = "SELECT seq, at, kind, subject, detail, prev, hash FROM audit_log ORDER BY seq DESC LIMIT 1";
+            Ok(self.rows(sql, json!([]), entry).await?.pop())
+        })
+    }
+
     fn append_audit<'a>(&'a self, e: &'a Entry) -> Answer<'a, ()> {
         Box::pin(async move {
             self.execute(
@@ -1093,6 +1102,11 @@ pub mod fake {
         fn audit(&self) -> Answer<'_, Vec<Entry>> {
             let all = self.audit.lock().unwrap().clone();
             Box::pin(async move { Ok(all) })
+        }
+
+        fn audit_tail(&self) -> Answer<'_, Option<Entry>> {
+            let last = self.audit.lock().unwrap().last().cloned();
+            Box::pin(async move { Ok(last) })
         }
 
         fn append_audit<'a>(&'a self, e: &'a Entry) -> Answer<'a, ()> {

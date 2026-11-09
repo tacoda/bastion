@@ -120,16 +120,40 @@ pub fn short_id() -> String {
     uuid::Uuid::new_v4().simple().to_string()[..8].to_string()
 }
 
+/// Where the factory keeps files: `scratch` for what it can lose, such as
+/// bundles, and `data` for what it must keep, such as audit records not yet
+/// written. A test gives no `data`.
+pub struct Dirs {
+    pub scratch: PathBuf,
+    pub data: Option<PathBuf>,
+}
+
+impl From<&str> for Dirs {
+    fn from(scratch: &str) -> Self {
+        Dirs {
+            scratch: scratch.into(),
+            data: None,
+        }
+    }
+}
+
 impl Factory {
     pub fn new(
         engine: Arc<dyn Engine>,
         store: Arc<dyn Store>,
         machine: Arc<dyn Machine>,
         on_change: OnChange,
-        scratch: PathBuf,
+        dirs: Dirs,
     ) -> Arc<Self> {
-        let audit = audit_log::key(&*machine)
-            .map(|key| AuditLog::start(store.clone(), key, audit_log::WRITE_LIMIT));
+        let audit = audit_log::key(&*machine).map(|key| {
+            let (store, limit, dir) = (store.clone(), audit_log::WRITE_LIMIT, dirs.data);
+            AuditLog::start(audit_log::Writer {
+                store,
+                key,
+                limit,
+                dir,
+            })
+        });
         if let Err(e) = &audit {
             eprintln!("the audit has no key, so the gate refuses every call: {e}");
         }
@@ -139,7 +163,7 @@ impl Factory {
             store,
             machine,
             on_change,
-            scratch,
+            scratch: dirs.scratch,
             bindings: Mutex::new(HashMap::new()),
             gate,
         })
@@ -1158,49 +1182,11 @@ impl Factory {
                 .set_charter(&record.job.id, charter::read(&*self.machine, &path));
         }
     }
-
-    /// After a restart: pick every active job back up where it was.
-    async fn resume(self: Arc<Self>) {
-        let Ok(records) = self.store.jobs().await else {
-            return;
-        };
-        for record in records.into_iter().filter(|r| !r.job.state.finished()) {
-            let id = record.job.id.clone();
-            match (
-                record.job.state,
-                record.job.stage,
-                record.runtime.session.clone(),
-            ) {
-                (State::Provisioning, ..) => {
-                    let error = "the server stopped while the job was provisioning".into();
-                    let _ = self.apply(&id, Event::ProvisionFailed { error }).await;
-                }
-                // A pull request already up waits on its CI again.
-                (State::Running, Stage::Land, _) => {
-                    let effect = if record.job.pr.is_some() {
-                        Effect::WatchCi
-                    } else {
-                        Effect::Land
-                    };
-                    let factory = self.clone();
-                    crate::rt::spawn(async move { factory.run(record, effect).await });
-                }
-                // The turn may have ended while the server was down.
-                (State::Running, _, Some(session))
-                    if self.listen_for_turn(&id, &session).is_ok() =>
-                {
-                    self.read_charter(&record).await;
-                    self.turn_done(&id, &session, false).await;
-                }
-                _ => {}
-            }
-        }
-        self.pump();
-    }
 }
 
 mod acceptance;
 mod decide;
+mod resume;
 mod split;
 /// The sandbox worker's answer for a VM that no longer exists (S002).
 fn vm_lost(error: &str) -> bool {

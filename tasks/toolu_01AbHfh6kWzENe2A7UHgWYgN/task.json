@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01AbHfh6kWzENe2A7UHgWYgN",
+  "agent_id": "ae5d789f694754ba5",
+  "subagent_type": "general-purpose",
+  "task_description": "Find stale code and plans",
+  "token_usage": {
+    "input_tokens": 116,
+    "cache_creation_tokens": 171959,
+    "cache_read_tokens": 6941899,
+    "output_tokens": 11746,
+    "api_call_count": 58
+  },
+  "started_at": "2026-11-09T15:48:16.907088-06:00",
+  "completed_at": "2026-11-09T15:53:29.565559-06:00"
+}

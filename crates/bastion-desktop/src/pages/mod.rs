@@ -1,6 +1,9 @@
 //! One file per page (PLAN.md G2). A page keeps its state here, reads from
 //! the servers through `Ctx`, and draws with the shared pieces below.
 
+pub mod diff;
+pub mod drawing;
+pub mod job;
 pub mod jobs;
 pub mod new_request;
 
@@ -105,6 +108,7 @@ pub fn labeled<'a, M: 'a>(label: &'a str, field: impl Into<Element<'a, M>>) -> E
 pub enum Page {
     Jobs(jobs::State),
     NewRequest(new_request::State),
+    Job(Box<job::State>),
     /// A page G2 has not built yet.
     Pending,
 }
@@ -115,6 +119,7 @@ impl Page {
         let page = match route {
             Route::Jobs => Page::Jobs(jobs::State::default()),
             Route::NewRequest => Page::NewRequest(new_request::State::default()),
+            Route::Job(id) => Page::Job(Box::new(job::State::new(id.clone()))),
             _ => Page::Pending,
         };
         let first = page.reload(ctx, true);
@@ -127,6 +132,8 @@ impl Page {
         match self {
             Page::Jobs(s) => jobs::load(s, ctx).map(Message::Jobs),
             Page::NewRequest(s) if everything => new_request::load(s, ctx),
+            // ponytail: any job's change reads this one again; pass the id when that costs.
+            Page::Job(s) => job::load(s, ctx),
             _ => Task::none(),
         }
     }
@@ -135,6 +142,7 @@ impl Page {
         match self {
             Page::Jobs(s) => jobs::view(s, ctx),
             Page::NewRequest(s) => new_request::view(s, ctx),
+            Page::Job(s) => job::view(s, ctx),
             Page::Pending => {
                 let title = text(route.title()).size(24).font(theme::BOLD);
                 column![title, text("This page is built in G2.").color(theme::MUTED)]

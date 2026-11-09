@@ -13,7 +13,7 @@ use serde_json::Value;
 
 use crate::client::{self, Ask};
 use crate::events::{self, Feed};
-use crate::pages::{Ctx, Page, jobs, new_request};
+use crate::pages::{Ctx, Page, job, jobs, new_request};
 use crate::route::{PAGES, Route};
 use crate::{icons, start, theme};
 
@@ -36,6 +36,9 @@ pub enum Message {
     },
     Jobs(jobs::Msg),
     NewRequest(new_request::Msg),
+    Job(job::Msg),
+    /// Open a link, such as a pull request, in the browser.
+    OpenUrl(String),
 }
 
 pub struct App {
@@ -131,6 +134,13 @@ impl App {
                     return new_request::update(state, msg, &ctx);
                 }
             }
+            Message::Job(msg) => {
+                let ctx = self.ctx();
+                if let Page::Job(state) = &mut self.page {
+                    return job::update(state, msg, &ctx);
+                }
+            }
+            Message::OpenUrl(url) => open(&url),
             Message::Feed((server, feed)) => return self.on_feed(server, feed),
             Message::CloseRequested => return self.on_close(),
             Message::StackRunning(true) => self.asking = true,
@@ -267,6 +277,18 @@ impl App {
             return text(why.clone()).color(theme::BAD).into();
         }
         self.page.view(&self.route, &self.ctx())
+    }
+}
+
+/// Open `url` in the browser.
+fn open(url: &str) {
+    let opener = if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    if let Err(e) = std::process::Command::new(opener).arg(url).spawn() {
+        eprintln!("{opener} {url}: {e}");
     }
 }
 

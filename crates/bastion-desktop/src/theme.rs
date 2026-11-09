@@ -255,3 +255,25 @@ pub fn chip(_: &Theme) -> container::Style {
         ..container::Style::default()
     }
 }
+
+/// A section that says something failed: a red edge.
+pub fn alarmed(theme: &Theme) -> container::Style {
+    container::Style {
+        border: Border {
+            color: BAD,
+            ..lined(12.0)
+        },
+        ..panel(theme)
+    }
+}
+
+/// Code, a report or a diff: the page color, slightly rounded.
+pub fn code(_: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(BG)),
+        border: rounded(4.0),
+        ..container::Style::default()
+    }
+}
+
+pub const MONO: Font = Font::MONOSPACE;

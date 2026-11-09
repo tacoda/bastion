@@ -1,43 +1,67 @@
 {
-  "usage" : "Spikes are evidence, not product code (PLAN.md G0): no Code Health rule applies to them.",
-  "rule_sets" : [ {
-    "matching_content_path" : "spikes/**",
-    "rules" : [ {
-      "name" : "Excess Number of Function Arguments",
-      "weight" : 0.0
-    }, {
-      "name" : "Complex Method",
-      "weight" : 0.0
-    }, {
-      "name" : "Large Method",
-      "weight" : 0.0
-    }, {
-      "name" : "Bumpy Road Ahead",
-      "weight" : 0.0
-    }, {
-      "name" : "Complex Conditional",
-      "weight" : 0.0
-    }, {
-      "name" : "String Heavy Function Arguments",
-      "weight" : 0.0
-    }, {
-      "name" : "Deep, Nested Complexity",
-      "weight" : 0.0
-    }, {
-      "name" : "Code Duplication",
-      "weight" : 0.0
-    }, {
-      "name" : "Lines of Code in a Single File",
-      "weight" : 0.0
-    }, {
-      "name" : "Overall Code Complexity",
-      "weight" : 0.0
-    }, {
-      "name" : "Low Cohesion",
-      "weight" : 0.0
-    }, {
-      "name" : "Brain Method",
-      "weight" : 0.0
-    } ]
-  } ]
+  "usage": "Spikes are evidence, not product code (PLAN.md G0): no Code Health rule applies to them. A canvas's draw takes the six arguments iced's canvas::Program trait fixes, so the argument count does not apply in the files that draw one.",
+  "rule_sets": [
+    {
+      "matching_content_path": "spikes/**",
+      "rules": [
+        {
+          "name": "Excess Number of Function Arguments",
+          "weight": 0.0
+        },
+        {
+          "name": "Complex Method",
+          "weight": 0.0
+        },
+        {
+          "name": "Large Method",
+          "weight": 0.0
+        },
+        {
+          "name": "Bumpy Road Ahead",
+          "weight": 0.0
+        },
+        {
+          "name": "Complex Conditional",
+          "weight": 0.0
+        },
+        {
+          "name": "String Heavy Function Arguments",
+          "weight": 0.0
+        },
+        {
+          "name": "Deep, Nested Complexity",
+          "weight": 0.0
+        },
+        {
+          "name": "Code Duplication",
+          "weight": 0.0
+        },
+        {
+          "name": "Lines of Code in a Single File",
+          "weight": 0.0
+        },
+        {
+          "name": "Overall Code Complexity",
+          "weight": 0.0
+        },
+        {
+          "name": "Low Cohesion",
+          "weight": 0.0
+        },
+        {
+          "name": "Brain Method",
+          "weight": 0.0
+        }
+      ]
+    },
+    {
+      "matching_content_path": "crates/bastion-desktop/src/pages/drawing.rs",
+      "rules": [
+        {
+          "name": "Excess Number of Function Arguments",
+          "weight": 0.0
+        }
+      ]
+    }
+  ]
 }

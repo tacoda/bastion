@@ -8,6 +8,7 @@ mod wire;
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use host::{Ctx, Live, WORKER};
 use iii_sdk::iii::WorkerMetadata;
@@ -111,6 +112,21 @@ fn connect() -> iii_sdk::IIIClient {
     register_worker(&url, options)
 }
 
+/// The kept hosts, read again until the state worker answers, as it may
+/// register a little after this worker starts.
+async fn hosts_at_start(ctx: &Ctx) -> Value {
+    let mut wait = Duration::from_millis(500);
+    for _ in 0..30 {
+        match ctx.read(HOSTS).await {
+            Ok(hosts) => return hosts,
+            Err(e) => eprintln!("could not read the hosts ({e}); trying again in {wait:?}"),
+        }
+        tokio::time::sleep(wait).await;
+        wait = (wait * 2).min(Duration::from_secs(10));
+    }
+    Value::Null
+}
+
 #[tokio::main]
 async fn main() {
     let ctx = Ctx::new(connect());
@@ -131,7 +147,7 @@ async fn main() {
             }
         }),
     );
-    let kept = checked(&ctx.kept(HOSTS).await).unwrap_or_default();
+    let kept = checked(&hosts_at_start(&ctx).await).unwrap_or_default();
     apply(&ctx, &live, &kept);
     signal(SignalKind::terminate())
         .expect("a SIGTERM handler")

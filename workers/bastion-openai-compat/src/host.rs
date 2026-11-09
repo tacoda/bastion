@@ -47,6 +47,8 @@ impl Ctx {
     pub fn new(iii: IIIClient) -> Arc<Self> {
         let http = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(10))
+            // A host silent this long is gone, as the router's idle timeout says.
+            .read_timeout(Duration::from_secs(120))
             .build()
             .expect("an HTTP client");
         Arc::new(Self {
@@ -62,8 +64,12 @@ impl Ctx {
     }
 
     pub async fn kept(&self, key: &str) -> Value {
+        self.read(key).await.unwrap_or(Value::Null)
+    }
+
+    pub async fn read(&self, key: &str) -> Result<Value, String> {
         let get = json!({ "scope": WORKER, "key": key });
-        self.call("state::get", get).await.unwrap_or(Value::Null)
+        self.call("state::get", get).await
     }
 
     pub async fn keep(&self, key: &str, value: Value) -> Result<(), String> {

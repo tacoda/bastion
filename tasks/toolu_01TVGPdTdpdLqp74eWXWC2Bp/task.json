@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01TVGPdTdpdLqp74eWXWC2Bp",
+  "agent_id": "ab69abf68101f984f",
+  "subagent_type": "general-purpose",
+  "task_description": "Find iii provider worker contract",
+  "token_usage": {
+    "input_tokens": 106,
+    "cache_creation_tokens": 158150,
+    "cache_read_tokens": 5831017,
+    "output_tokens": 4067,
+    "api_call_count": 53
+  },
+  "started_at": "2026-11-09T13:58:18.17432-06:00",
+  "completed_at": "2026-11-09T14:03:23.4251-06:00"
+}

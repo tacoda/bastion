@@ -59,13 +59,16 @@ fn token(data: &Path) -> Result<String, String> {
         return Ok(kept.trim().to_string());
     }
     let made = uuid::Uuid::new_v4().simple().to_string();
-    std::fs::write(&path, &made).map_err(|e| format!("{}: {e}", path.display()))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let only_me = std::fs::Permissions::from_mode(0o600);
-        std::fs::set_permissions(&path, only_me).map_err(|e| e.to_string())?;
-    }
+    // Made readable only by its owner from the start, never wider.
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&path)
+        .and_then(|mut file| file.write_all(made.as_bytes()))
+        .map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(made)
 }
 
@@ -134,4 +137,23 @@ async fn serve(a: &Args, app: axum::Router) -> Result<(), String> {
         }
     };
     served.map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn the_token_file_is_made_readable_only_by_its_owner_and_kept() {
+        let dir = std::env::temp_dir().join(format!("bastion-token-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let made = super::token(&dir).unwrap();
+        let mode = std::fs::metadata(dir.join("token"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+        assert_eq!(super::token(&dir).unwrap(), made);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

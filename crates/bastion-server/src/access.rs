@@ -33,7 +33,7 @@ pub async fn person(
     if given.is_empty() {
         return Err(Refusal::Unknown);
     }
-    if given == owner_token {
+    if same(given.as_bytes(), owner_token.as_bytes()) {
         return Ok(owner.clone());
     }
     let factory = server.factory.get().ok_or(Refusal::NotReady)?;
@@ -42,6 +42,12 @@ pub async fn person(
         Ok(None) => Err(Refusal::Unknown),
         Err(_) => Err(Refusal::NotReady),
     }
+}
+
+/// Whether two tokens match, in time that does not depend on where they
+/// differ. Only a length difference shows, and every token has one length.
+fn same(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).fold(0, |d, (x, y)| d | (x ^ y)) == 0
 }
 
 /// What a route does, by its method and matched path. Acting on a job is
@@ -124,6 +130,14 @@ pub async fn on_job(server: &Server, person: &Person, id: &str) -> Result<(), Re
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tokens_match_only_when_every_byte_does() {
+        assert!(same(b"t0ken", b"t0ken"));
+        assert!(!same(b"t0ken", b"t0kem"));
+        assert!(!same(b"t0ken", b"t0ke"));
+        assert!(!same(b"", b"t0ken"));
+    }
 
     #[test]
     fn routes_map_to_what_they_do() {

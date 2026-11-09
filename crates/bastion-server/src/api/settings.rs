@@ -103,13 +103,14 @@ pub async fn settings_restore(
     Ok(())
 }
 
-/// The chat models with tools on providers that have a key or a sign-in.
+/// The chat models with tools on providers that are ready: a key, a
+/// sign-in, or a local host that needs neither.
 pub async fn models(cell: &FactoryCell) -> Result<Vec<ModelOption>, String> {
     let factory = factory(cell)?;
     let providers = super::providers::providers(&**factory.engine()).await?;
     let keyed: Vec<&str> = providers
         .iter()
-        .filter(|p| p.source != "none")
+        .filter(|p| p.ready)
         .map(|p| p.id.as_str())
         .collect();
     let models = factory

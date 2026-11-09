@@ -111,6 +111,14 @@ containers:
   provider-openai-codex:
     worker: package://provider-openai-codex
     version: "0.4.30"
+  # Bastion's own: one provider per OpenAI-compatible host listed in
+  # Settings (PLAN.md K3). `cargo run` builds it when the source changed.
+  bastion-openai-compat:
+    worker: path://./workers/bastion-openai-compat
+    working_dir: .
+    start_after: [state, llm-router]
+    scripts:
+      run: cargo run -q -p bastion-openai-compat
   session-manager:
     worker: package://session-manager
     version: "1.0.35"

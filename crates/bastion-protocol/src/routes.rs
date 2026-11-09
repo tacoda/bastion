@@ -74,6 +74,8 @@ pub fn route(cmd: &str) -> Option<(&'static str, &'static str, Body)> {
         command::CODEX_SIGN_IN => ("POST", "/providers/openai-codex/sign-in", Empty),
         command::CODEX_SIGN_IN_POLL => ("POST", "/providers/openai-codex/sign-in/poll", Rest),
         command::CODEX_SIGN_OUT => ("POST", "/providers/openai-codex/sign-out", Empty),
+        command::HOSTS => ("GET", "/providers/hosts", Empty),
+        command::HOSTS_SET => ("PUT", "/providers/hosts", Field("hosts")),
         command::WORKFLOWS => ("GET", "/workflows", Empty),
         command::WORKFLOW_COPY => ("POST", "/workflows", Rest),
         command::WORKFLOW_SAVE => ("PUT", "/workflows/{id}", Field("workflow")),
@@ -83,7 +85,7 @@ pub fn route(cmd: &str) -> Option<(&'static str, &'static str, Body)> {
 }
 
 /// Every command this table routes.
-pub const ROUTED: [&str; 60] = [
+pub const ROUTED: [&str; 62] = [
     command::ENGINE_STATUS,
     command::DOCTOR,
     command::STACK_STATUS,
@@ -140,6 +142,8 @@ pub const ROUTED: [&str; 60] = [
     command::CODEX_SIGN_IN,
     command::CODEX_SIGN_IN_POLL,
     command::CODEX_SIGN_OUT,
+    command::HOSTS,
+    command::HOSTS_SET,
     command::WORKFLOWS,
     command::WORKFLOW_COPY,
     command::WORKFLOW_SAVE,

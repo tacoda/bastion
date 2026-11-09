@@ -272,7 +272,7 @@ fn provider_row(p: ProviderView, note: WriteSignal<String>, reload: Callback<()>
 
 /// A provider's name with a mark for whether it has a credential.
 fn provider_name(p: &ProviderView) -> impl IntoView + use<> {
-    let ok = p.source != "none";
+    let ok = p.ready || p.source != "none";
     view! {
         <span class={if ok { "text-ok" } else { "text-warn" }}>{if ok { "✓" } else { "!" }}</span>
         <strong>{p.name.clone()}</strong>
@@ -356,6 +356,7 @@ fn key_row(p: ProviderView, note: WriteSignal<String>, reload: Callback<()>) -> 
     let status = match p.source.as_str() {
         "secret" => "key set here",
         "env" => "key from the stack's environment",
+        _ if p.ready => "no key needed",
         _ => "no key",
     };
     let remove = (p.source == "secret").then(|| {

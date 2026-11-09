@@ -14,7 +14,7 @@ use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use bastion_core::Pipeline;
 use bastion_protocol::{
-    Change, ConstraintView, HeldCallRef, LogRequest, NewEval, SettingsView, Workspace,
+    Change, ConstraintView, HeldCallRef, HostView, LogRequest, NewEval, SettingsView, Workspace,
 };
 use futures_util::{Stream, stream};
 use serde::{Deserialize, Serialize};
@@ -98,6 +98,7 @@ fn people_routes() -> Router<App> {
 fn provider_routes() -> Router<App> {
     Router::new()
         .route("/providers", get(providers))
+        .route("/providers/hosts", get(hosts).put(hosts_set))
         .route(
             "/providers/{id}/key",
             put(provider_key_set).delete(provider_key_remove),
@@ -679,6 +680,15 @@ async fn token_revoke(State(app): State<App>, Path(id): Path<String>) -> Respons
 
 async fn providers(State(app): State<App>) -> Response {
     answer(api::providers::providers(&*app.server.engine).await)
+}
+
+async fn hosts(State(app): State<App>) -> Response {
+    answer(api::hosts::hosts(&*app.server.engine).await)
+}
+
+async fn hosts_set(State(app): State<App>, Json(b): Json<Vec<HostView>>) -> Response {
+    let set = api::hosts::hosts_set(&*app.server.engine, b).await;
+    read_again(&app, set)
 }
 
 #[derive(Deserialize)]

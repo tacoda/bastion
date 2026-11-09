@@ -15,21 +15,25 @@ const ROUTER_ENTRY: &str = "bastion-llm-router";
 /// The worker allowed to read a provider key.
 const READER: &str = "llm-router";
 
-/// Every provider the router knows, and where its key comes from.
+/// Every provider the router knows, and where its key comes from. A
+/// removed OpenAI-compatible host is left out: the router cannot drop it.
 pub async fn providers(engine: &dyn Engine) -> Result<Vec<ProviderView>, String> {
     let out = engine
         .call("bastion", "router::provider::list", json!({}))
         .await?;
+    let retired = super::hosts::retired(engine).await;
     let listed = out["providers"]
         .as_array()
         .into_iter()
         .flatten()
+        .filter(|p| !retired.contains(p["id"].as_str().unwrap_or_default()))
         .map(|p| ProviderView {
             id: text(&p["id"]),
             name: p["display_name"]
                 .as_str()
                 .map_or_else(|| text(&p["id"]), Into::into),
             source: p["credential_source"].as_str().unwrap_or("none").into(),
+            ready: p["configured"] == true,
         });
     let mut all = Vec::new();
     for p in listed {

@@ -37,6 +37,10 @@ pub mod command {
     /// Takes `{ login_id }`; answers `pending`, `ok`, `expired` or `canceled`.
     pub const CODEX_SIGN_IN_POLL: &str = "codex_sign_in_poll";
     pub const CODEX_SIGN_OUT: &str = "codex_sign_out";
+    /// The OpenAI-compatible hosts (K3).
+    pub const HOSTS: &str = "hosts";
+    /// Takes `{ hosts }`, the whole list.
+    pub const HOSTS_SET: &str = "hosts_set";
     /// Every workflow (D35), built-in first.
     pub const WORKFLOWS: &str = "workflows";
     /// Takes `{ from, name }`; answers the copy's id.
@@ -205,6 +209,20 @@ pub struct ProviderView {
     pub id: String,
     pub name: String,
     pub source: String,
+    /// Whether turns can run on it: a credential, or none needed (a local
+    /// host).
+    #[serde(default)]
+    pub ready: bool,
+}
+
+/// An OpenAI-compatible host that serves models as its own provider
+/// (PLAN.md K3). `api_url` is its full `/chat/completions` URL; its key, if
+/// it needs one, is set like any provider's.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HostView {
+    pub id: String,
+    pub name: String,
+    pub api_url: String,
 }
 
 /// A device-code sign-in under way: open `verification_uri`, enter

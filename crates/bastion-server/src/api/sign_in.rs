@@ -17,6 +17,7 @@ pub async fn with_sign_in(engine: &dyn Engine, mut p: ProviderView) -> ProviderV
     let status = engine.call("bastion", "provider::openai-codex::auth::status", json!({}));
     let signed_in = status.await.is_ok_and(|v| v["status"] == "authenticated");
     p.source = if signed_in { "signed_in" } else { "none" }.into();
+    p.ready = signed_in;
     p
 }
 
@@ -69,6 +70,7 @@ mod tests {
             id: id.into(),
             name: id.into(),
             source: "none".into(),
+            ready: false,
         }
     }
 

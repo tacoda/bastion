@@ -405,6 +405,7 @@ pub fn SettingsPage() -> impl IntoView {
         <BastionServers />
         <People />
         <ModelProviders />
+        <super::hosts::OpenAiHosts />
         <FactorySettings />
         <Oversight />
         <SettingsHistory />

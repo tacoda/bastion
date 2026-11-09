@@ -7,6 +7,7 @@ pub mod engine;
 pub mod evals;
 pub mod factory;
 pub mod govern;
+pub mod hosts;
 pub mod people;
 pub mod providers;
 pub mod settings;

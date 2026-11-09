@@ -744,6 +744,9 @@ impl Factory {
     /// Stop the VM. The worktree stays for the owner to look at.
     async fn teardown(&self, record: &Record) -> Result<(), String> {
         self.release(&record.job.id);
+        if let Some(session) = &record.runtime.session {
+            turn::stop(&*self.engine, session).await;
+        }
         self.gate.clear(&record.job.id).await;
         if let Some(sandbox) = &record.runtime.sandbox {
             self.engine

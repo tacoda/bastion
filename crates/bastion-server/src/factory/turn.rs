@@ -48,6 +48,14 @@ impl Turn {
     }
 }
 
+/// Cancel a session's turn, if one is still out. Best effort: a turn that
+/// already ended has nothing to cancel.
+pub async fn stop(engine: &dyn Engine, session: &str) {
+    let _ = engine
+        .call(NS, "harness::stop", json!({ "session_id": session }))
+        .await;
+}
+
 /// The text of a session's last assistant message.
 pub async fn final_reply(engine: &dyn Engine, session: &str) -> Result<String, String> {
     let out = engine
@@ -128,6 +136,7 @@ impl Factory {
     /// What the turn came to, or none while it still runs.
     async fn result(&self, record: &Record, turn: &Turn, timed_out: bool) -> Option<Outcome> {
         if timed_out {
+            stop(&*self.engine, &turn.session).await;
             let minutes = bastion_core::TURN_CAP_SECS / 60;
             let error = format!("the turn ran past {minutes} minutes");
             return Some(Outcome::Failed { error });

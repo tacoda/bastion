@@ -784,3 +784,30 @@ fn approved_tests_stay_protected_after_a_restart() {
         assert_eq!(rig.factory.gate.protected(&id), files);
     });
 }
+
+#[test]
+fn stopping_a_job_cancels_its_turn() {
+    let rig = rig();
+    crate::rt::block_on(async {
+        let id = rig.factory.submit("w", "x").await.unwrap();
+        until(&rig, &id, Stage::Plan, State::Running).await;
+        let session = loop {
+            if let Some(s) = rig.store.load(&id).await.unwrap().runtime.session {
+                break s;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        };
+        rig.factory.apply(&id, Event::Stopped).await.unwrap();
+        until(&rig, &id, Stage::Plan, State::Stopped).await;
+        for _ in 0..200 {
+            let stop = |c: &(String, String, serde_json::Value)| {
+                c.1 == "harness::stop" && c.2["session_id"] == session
+            };
+            if rig.engine.calls.lock().unwrap().iter().any(stop) {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("no harness::stop for {session}");
+    });
+}

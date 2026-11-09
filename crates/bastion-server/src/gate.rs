@@ -45,7 +45,7 @@ pub struct Gate {
     /// The rungs an eval's arm sets for each of its trial jobs.
     overrides: Mutex<HashMap<String, Vec<Override>>>,
     /// Each job's approved acceptance test files, which no turn may write.
-    // ponytail: kept in memory; a server restart after the baseline forgets them, and verify still catches a change.
+    /// The job's stored runtime keeps them across a restart.
     approved: Mutex<HashMap<String, Vec<String>>>,
 }
 
@@ -217,9 +217,19 @@ impl Gate {
     }
 
     /// Refuse every write to these files in the job's turns from now on.
+    /// Recorded only when the set changes, as a resumed turn protects again.
     pub fn protect(&self, job: &str, files: Vec<String>) {
-        self.note("protect", job, files.join(", "));
-        self.approved.lock().unwrap().insert(job.into(), files);
+        let detail = files.join(", ");
+        let was = self.approved.lock().unwrap().insert(job.into(), files);
+        if was.map(|w| w.join(", ")) != Some(detail.clone()) {
+            self.note("protect", job, detail);
+        }
+    }
+
+    #[cfg(test)]
+    pub fn protected(&self, job: &str) -> Vec<String> {
+        let approved = self.approved.lock().unwrap();
+        approved.get(job).cloned().unwrap_or_default()
     }
 
     /// Judge a trial job under its arm's rungs from now on.

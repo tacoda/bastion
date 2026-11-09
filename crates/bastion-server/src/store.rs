@@ -44,6 +44,8 @@ pub struct Runtime {
     /// The workflow the job runs (D35), and the version it started on.
     pub workflow: Option<String>,
     pub workflow_version: Option<u64>,
+    /// The approved acceptance test files, which no turn may write.
+    pub approved: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -128,12 +130,42 @@ fn stage_check(column: &str) -> String {
 /// a new migration that rebuilds these (`migrations`).
 fn staged_tables() -> [(&'static str, &'static str, String); 4] {
     let stage = stage_check("stage");
-    let back_to = stage_check("back_to");
     [
+        jobs_table(&stage),
         (
-            "jobs",
-            LEGACY_JOB_COLUMNS,
+            "artifacts",
+            "id, job, stage, body, created_at",
             format!(
+                "CREATE TABLE IF NOT EXISTS artifacts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job TEXT NOT NULL REFERENCES jobs(id),
+        stage TEXT NOT NULL {stage},
+        body TEXT NOT NULL,
+        created_at INTEGER NOT NULL)"
+            ),
+        ),
+        (
+            "capabilities",
+            "stage, function, rung",
+            format!(
+                "CREATE TABLE IF NOT EXISTS capabilities (
+        stage TEXT NOT NULL {stage},
+        function TEXT NOT NULL CHECK (length(function) > 0),
+        rung TEXT NOT NULL CHECK (rung IN ('denied','ask','allowed')),
+        PRIMARY KEY (stage, function))"
+            ),
+        ),
+        turns_table(&stage),
+    ]
+}
+
+/// `jobs`, under the stage check `stage`.
+fn jobs_table(stage: &str) -> (&'static str, &'static str, String) {
+    let back_to = stage_check("back_to");
+    (
+        "jobs",
+        LEGACY_JOB_COLUMNS,
+        format!(
                 "CREATE TABLE IF NOT EXISTS jobs (
         id TEXT PRIMARY KEY,
         workspace TEXT NOT NULL REFERENCES workspaces(name),
@@ -166,34 +198,10 @@ fn staged_tables() -> [(&'static str, &'static str, String); 4] {
         node TEXT,
         parent TEXT,
         after_job TEXT,
-        part TEXT)"
+        part TEXT,
+        approved TEXT)"
             ),
-        ),
-        (
-            "artifacts",
-            "id, job, stage, body, created_at",
-            format!(
-                "CREATE TABLE IF NOT EXISTS artifacts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        job TEXT NOT NULL REFERENCES jobs(id),
-        stage TEXT NOT NULL {stage},
-        body TEXT NOT NULL,
-        created_at INTEGER NOT NULL)"
-            ),
-        ),
-        (
-            "capabilities",
-            "stage, function, rung",
-            format!(
-                "CREATE TABLE IF NOT EXISTS capabilities (
-        stage TEXT NOT NULL {stage},
-        function TEXT NOT NULL CHECK (length(function) > 0),
-        rung TEXT NOT NULL CHECK (rung IN ('denied','ask','allowed')),
-        PRIMARY KEY (stage, function))"
-            ),
-        ),
-        turns_table(&stage),
-    ]
+    )
 }
 
 /// `turns`, under the stage check `stage`.
@@ -316,14 +324,14 @@ pub fn seed_statements(sql: &str) -> Vec<Value> {
         .collect()
 }
 
-const JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue, pipeline, back_to, last_refusal, done_tasks, criteria, falsify_tried, requester, workflow, workflow_version, node, parent, after_job, part";
+const JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue, pipeline, back_to, last_refusal, done_tasks, criteria, falsify_tried, requester, workflow, workflow_version, node, parent, after_job, part, approved";
 /// The job columns before migration 1, which its rebuild copies.
 const LEGACY_JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue";
 
 /// Columns added after a table was first made. Each runs once; on a table
 /// that already has the column it fails, and that failure is expected.
 // They run before the numbered migrations, which need these columns to exist.
-const ALTERS: [&str; 11] = [
+const ALTERS: [&str; 12] = [
     "ALTER TABLE jobs ADD COLUMN pr TEXT",
     "ALTER TABLE jobs ADD COLUMN ci_fixes INTEGER NOT NULL DEFAULT 0 CHECK (ci_fixes >= 0)",
     "ALTER TABLE jobs ADD COLUMN issue TEXT",
@@ -335,6 +343,7 @@ const ALTERS: [&str; 11] = [
     "ALTER TABLE jobs ADD COLUMN parent TEXT",
     "ALTER TABLE jobs ADD COLUMN after_job TEXT",
     "ALTER TABLE jobs ADD COLUMN part TEXT",
+    "ALTER TABLE jobs ADD COLUMN approved TEXT",
 ];
 
 /// Numbered migrations, each run once in order; `PRAGMA user_version` is the
@@ -606,6 +615,9 @@ fn record(row: &Value) -> Result<Record, String> {
             requester: text(row, "requester"),
             workflow: text(row, "workflow"),
             workflow_version: row["workflow_version"].as_u64(),
+            approved: text(row, "approved")
+                .map(|files| files.lines().map(String::from).collect())
+                .unwrap_or_default(),
         },
         rev: parse(row, "rev")?,
         created_at: parse(row, "created_at")?,
@@ -662,6 +674,12 @@ fn entry(row: &Value) -> Result<Entry, String> {
     })
 }
 
+/// The approved files as one column, one per line, or NULL when none.
+fn approved(r: &Record) -> Option<String> {
+    let files = &r.runtime.approved;
+    (!files.is_empty()).then(|| files.join("\n"))
+}
+
 fn job_params(r: &Record) -> Value {
     let j = &r.job;
     json!([
@@ -696,7 +714,8 @@ fn job_params(r: &Record) -> Value {
         j.node,
         j.parent,
         j.after,
-        j.part
+        j.part,
+        approved(r)
     ])
 }
 
@@ -804,12 +823,12 @@ impl Store for SqlStore {
             let rows = self
                 .execute(
                     "UPDATE jobs SET stage = ?, state = ?, question = ?, feedback = ?, plan = ?, failures = ?, error = ?, worktree = ?, sandbox = ?, session = ?, updated_at = ?, pr = ?, ci_fixes = ?, issue = ?,
-                     pipeline = ?, back_to = ?, last_refusal = ?, done_tasks = ?, criteria = ?, falsify_tried = ?, node = ?, part = ?, rev = rev + 1
+                     pipeline = ?, back_to = ?, last_refusal = ?, done_tasks = ?, criteria = ?, falsify_tried = ?, node = ?, part = ?, approved = ?, rev = rev + 1
                      WHERE id = ? AND rev = ? RETURNING rev",
                     json!([
                         name(j.stage), name(j.state), j.question, j.feedback, j.plan, j.failures, j.error,
                         r.runtime.worktree, r.runtime.sandbox, r.runtime.session, j.updated_at, j.pr, j.ci_fixes, r.runtime.issue,
-                        name(j.pipeline), j.back_to.map(name), j.last_refusal, j.done_tasks, j.criteria, j.falsify_tried, j.node, j.part, j.id, r.rev
+                        name(j.pipeline), j.back_to.map(name), j.last_refusal, j.done_tasks, j.criteria, j.falsify_tried, j.node, j.part, approved(r), j.id, r.rev
                     ]),
                 )
                 .await?;
@@ -1187,8 +1206,8 @@ mod tests {
                     .unwrap()
                     .contains("WHERE id = ? AND rev = ?")
             );
-            assert_eq!(update["params"][22], "j1");
-            assert_eq!(update["params"][23], 1);
+            assert_eq!(update["params"][23], "j1");
+            assert_eq!(update["params"][24], 1);
         });
     }
 

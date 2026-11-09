@@ -756,3 +756,31 @@ fn a_turn_reads_the_charter_from_the_base_commit_not_the_worktree() {
         }
     });
 }
+
+#[test]
+fn approved_tests_stay_protected_after_a_restart() {
+    let rig = rig();
+    crate::rt::block_on(async {
+        let id = rig.factory.submit("w", "x").await.unwrap();
+        until(&rig, &id, Stage::Plan, State::Running).await;
+        // As a baseline before a restart left it: stored, not in the gate.
+        let files = vec!["tests/test_c1.py".to_string()];
+        rig.factory
+            .set_runtime(&id, |r| r.approved = files.clone())
+            .await
+            .unwrap();
+        assert!(rig.factory.gate.protected(&id).is_empty());
+        finish_turn(&rig, &id).await;
+        until(&rig, &id, Stage::Plan, State::NeedsYou).await;
+        rig.factory.apply(&id, Event::Approved).await.unwrap();
+        until(&rig, &id, Stage::Build, State::Running).await;
+        for _ in 0..200 {
+            let session = rig.store.load(&id).await.unwrap().runtime.session;
+            if session.is_some_and(|s| s.contains("-build-")) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(rig.factory.gate.protected(&id), files);
+    });
+}

@@ -592,6 +592,9 @@ impl Factory {
         self.listen_for_turn(&turn)?;
         // The owner may have edited the rows directly (D26).
         self.gate.reload().await?;
+        if !record.runtime.approved.is_empty() {
+            self.gate.protect(&job.id, record.runtime.approved.clone());
+        }
 
         let mut message = String::new();
         if let Some(file) = self.at_base(record).await {
@@ -845,6 +848,10 @@ impl Factory {
     /// Judge the job's calls by its charter, read again from its worktree.
     async fn read_charter(&self, record: &Record) {
         let _ = self.load_arm(&record.job.id).await;
+        if !record.runtime.approved.is_empty() {
+            self.gate
+                .protect(&record.job.id, record.runtime.approved.clone());
+        }
         if let Some(file) = self.at_base(record).await {
             self.gate.set_charter(&record.job.id, charter::read(&file));
         }

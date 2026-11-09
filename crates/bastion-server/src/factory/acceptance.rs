@@ -36,7 +36,10 @@ impl Factory {
                 _ => vm.verify().await,
             };
             if stage == Stage::Baseline && judged == Ok(Event::StepPassed) {
-                self.gate.protect(&record.job.id, vm.spec.files());
+                let files = vm.spec.files();
+                self.set_runtime(&record.job.id, |r| r.approved = files.clone())
+                    .await?;
+                self.gate.protect(&record.job.id, files);
             }
             judged
         };

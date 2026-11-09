@@ -217,6 +217,16 @@ async fn authorized(State(app): State<App>, mut request: Request, next: Next) ->
     if let Some(kind) = audit_kind(act, response.status()) {
         note_act(&app, kind, &person, &did);
     }
+    engine_down(&app, response)
+}
+
+/// A request that failed while the engine link is down failed because of
+/// the engine, not the request: 503, not 400.
+fn engine_down(app: &App, mut response: Response) -> Response {
+    let down = app.server.engine.link() != bastion_protocol::Link::Up;
+    if down && response.status() == StatusCode::BAD_REQUEST {
+        *response.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
+    }
     response
 }
 
@@ -254,6 +264,7 @@ fn refused(why: Refusal) -> Response {
             "the server's people are not open yet; start the stack".to_string(),
         ),
         Refusal::Forbidden(why) => (StatusCode::FORBIDDEN, why),
+        Refusal::NoJob(why) => (StatusCode::NOT_FOUND, why),
     };
     (status, Json(json!({ "error": error }))).into_response()
 }
@@ -283,6 +294,9 @@ fn answer<T: Serialize>(result: Result<T, String>) -> Response {
         Ok(value) => Json(value).into_response(),
         Err(e) if e == NOT_STARTED => {
             (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": e }))).into_response()
+        }
+        Err(e) if crate::store::is_no_job(&e) => {
+            (StatusCode::NOT_FOUND, Json(json!({ "error": e }))).into_response()
         }
         Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
     }
@@ -960,9 +974,21 @@ mod tests {
             let (status, body) = call(s.clone(), post("/jobs/j1/approve", "mia-token", "")).await;
             assert_eq!(status, StatusCode::FORBIDDEN, "j1 is ana's");
             assert!(body.contains("only ana or an admin"), "{body}");
+            let (status, _) = call(s.clone(), post("/jobs/nope/approve", "mia-token", "")).await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "no such job");
 
             let (status, _) = call(s, get("/jobs", Some("nobody"))).await;
             assert_eq!(status, StatusCode::UNAUTHORIZED);
+        });
+    }
+
+    #[test]
+    fn a_failure_while_the_engine_is_down_is_unavailable_not_a_bad_request() {
+        crate::rt::block_on(async {
+            let s = staffed().await;
+            let bad = post("/jobs", TOKEN, r#"{"workspace":"","request":""}"#);
+            let (status, _) = call(s, bad).await;
+            assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
         });
     }
 

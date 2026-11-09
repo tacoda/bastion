@@ -77,6 +77,18 @@ pub struct HeldCall {
     pub at: u64,
 }
 
+/// Why a job could not be loaded: it does not exist. The HTTP API answers
+/// this with 404.
+pub fn no_job(id: &str) -> String {
+    format!("{NO_JOB}{id}")
+}
+
+pub fn is_no_job(error: &str) -> bool {
+    error.starts_with(NO_JOB)
+}
+
+const NO_JOB: &str = "no job ";
+
 /// A save lost to another writer (D8). The caller reloads and steps again.
 pub const STALE: &str = "stale: the job changed since it was read";
 
@@ -825,7 +837,7 @@ impl Store for SqlStore {
                     json!([id]),
                 )
                 .await?;
-            let found = record(rows.first().ok_or_else(|| format!("no job {id}"))?)?;
+            let found = record(rows.first().ok_or_else(|| no_job(id))?)?;
             let mut one = self
                 .with_lists(vec![found], "WHERE job = ?", json!([id]))
                 .await?;
@@ -1069,13 +1081,7 @@ pub mod fake {
         }
 
         fn load<'a>(&'a self, id: &'a str) -> Answer<'a, Record> {
-            let found = self
-                .jobs
-                .lock()
-                .unwrap()
-                .get(id)
-                .cloned()
-                .ok_or(format!("no job {id}"));
+            let found = self.jobs.lock().unwrap().get(id).cloned().ok_or(no_job(id));
             Box::pin(async move { found })
         }
 

@@ -17,6 +17,8 @@ pub enum Refusal {
     NotReady,
     /// Known, but the role does not allow it.
     Forbidden(String),
+    /// The job asked about does not exist.
+    NoJob(String),
 }
 
 /// The person a bearer token belongs to. The owner's token, kept in
@@ -105,7 +107,10 @@ pub async fn on_job(server: &Server, person: &Person, id: &str) -> Result<(), Re
         .store()
         .load(id)
         .await
-        .map_err(|_| Refusal::Unknown)?;
+        .map_err(|e| match crate::store::is_no_job(&e) {
+            true => Refusal::NoJob(e),
+            false => Refusal::NotReady,
+        })?;
     let requester = record.runtime.requester.unwrap_or_default();
     check(
         person,

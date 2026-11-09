@@ -1,0 +1,5 @@
+push and then start a stack for bastion
+
+---
+
+done, the stack is up — run the exit check

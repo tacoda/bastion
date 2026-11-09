@@ -35,6 +35,16 @@ pub trait Machine: Send + Sync {
 
 pub struct ThisMachine;
 
+/// The environment a long-running program such as the compose daemon is
+/// given: the basics to run, and iii's own settings. Model keys live in the
+/// vault (PLAN.md D34), never here.
+fn passed(name: &str) -> bool {
+    const BASICS: [&str; 9] = [
+        "PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "LC_ALL", "TERM",
+    ];
+    BASICS.contains(&name) || name.starts_with("III_")
+}
+
 /// How long a host command may run, such as a `git push` to a slow remote.
 const RUN_LIMIT: Duration = Duration::from_secs(300);
 
@@ -102,6 +112,10 @@ impl Machine for ThisMachine {
         Command::new(program)
             .args(args)
             .current_dir(dir)
+            // The daemon passes its environment on to every worker VM, so it
+            // gets only what a program needs to run, and no host secrets.
+            .env_clear()
+            .envs(std::env::vars().filter(|(name, _)| passed(name)))
             .stdin(Stdio::null())
             .stdout(file)
             .stderr(err)
@@ -315,6 +329,21 @@ mod tests {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap()
+    }
+
+    #[test]
+    fn a_spawned_program_gets_the_basics_and_no_secrets() {
+        for kept in ["PATH", "HOME", "TMPDIR", "III_URL"] {
+            assert!(passed(kept), "{kept}");
+        }
+        for dropped in [
+            "GITHUB_TOKEN",
+            "OPENAI_API_KEY",
+            "NPM_TOKEN",
+            "AWS_SECRET_ACCESS_KEY",
+        ] {
+            assert!(!passed(dropped), "{dropped}");
+        }
     }
 
     #[test]

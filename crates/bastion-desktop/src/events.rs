@@ -34,7 +34,7 @@ fn stream(key: &Key) -> impl Stream<Item = (String, Feed)> + use<> {
     let (name, url, token) = key.clone();
     let server = Server { name, url, token };
     iced::stream::channel(64, async move |mut out| {
-        let http = reqwest::Client::new();
+        let http = crate::client::stream_http();
         let mut last = None;
         loop {
             let _ = read(&http, &server, &mut last, &mut out).await;

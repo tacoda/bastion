@@ -1,13 +1,37 @@
 //! Calls to a Bastion server (PLAN.md D28): each command goes over HTTP by
 //! the route table in `bastion-protocol`, with the server's bearer token.
 
+use std::time::Duration;
+
 use bastion_protocol::Server;
 use bastion_protocol::routes::{self, Body};
 use serde_json::{Map, Value};
 
+/// How long a server has to accept a connection.
+const CONNECT: Duration = Duration::from_secs(5);
+/// How long a call may take, start of a stack included.
+const CALL: Duration = Duration::from_secs(120);
+/// How long the event stream may stay silent. The server sends a keep-alive
+/// every 15 s, so silence past this means a half-open connection.
+const SILENCE: Duration = Duration::from_secs(45);
+
 /// One HTTP client for every call, so connections are kept.
 pub fn http() -> reqwest::Client {
-    reqwest::Client::new()
+    let built = reqwest::Client::builder()
+        .connect_timeout(CONNECT)
+        .timeout(CALL)
+        .build();
+    built.expect("the TLS backend loads")
+}
+
+/// The client for a server's event stream: no limit on the whole stream,
+/// only on each silence.
+pub fn stream_http() -> reqwest::Client {
+    let built = reqwest::Client::builder()
+        .connect_timeout(CONNECT)
+        .read_timeout(SILENCE)
+        .build();
+    built.expect("the TLS backend loads")
 }
 
 /// One command for a server and its arguments.

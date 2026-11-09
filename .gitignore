@@ -1,7 +1,4 @@
-/dist/
 /target/
-/src-tauri/target/
-/src-tauri/gen/schemas
 
 # What the engine and its workers write at runtime.
 /data/
@@ -12,3 +9,4 @@
 .env
 .DS_Store
 /spikes/target/
+/spikes/*/target/

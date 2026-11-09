@@ -1,5 +1,4 @@
-# The workspace's toolchain. Trunk 0.22 needs rustc 1.96.1 or newer.
+# The workspace's toolchain.
 [toolchain]
 channel = "1.97.0"
 components = ["rustfmt", "clippy"]
-targets = ["wasm32-unknown-unknown"]

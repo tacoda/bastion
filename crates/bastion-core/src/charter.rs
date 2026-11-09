@@ -1,6 +1,6 @@
-//! What a repository's own `.claude/settings.json` asks of a turn (PLAN.md
-//! A5): its `permissions` become constraints from the charter, and its hook
-//! matchers map onto the sandbox functions a turn calls here.
+//! What a repository's own `.claude/settings.json` asks of a turn: its
+//! `permissions` become constraints from the charter, and its hook matchers
+//! map onto the sandbox functions a turn calls here.
 
 use crate::govern::{Constraint, Enforcement, Source};
 

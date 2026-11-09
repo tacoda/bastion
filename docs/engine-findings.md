@@ -1,8 +1,10 @@
-# Levels
+# Engine findings
 
-What each spike proved, with the versions it ran on. This is a record: the
-sections name the phases of the plan that built Bastion until 2026-11-09,
-which git history keeps, and a spike's notes describe the code of its day.
+What each check against the engine proved, with the versions it ran on. The
+checks were spikes, removed on 2026-11-09 once their findings were in the
+code. This is a record: its sections name the phases of the plan that built
+Bastion until that day, and each note describes the code of its day. Git
+history keeps the spikes and the old plan.
 
 Versions when the spikes ran: `iii` 0.25.0, `iii-sdk` 0.25.0, Tauri 2.12.5,
 Leptos 0.8.22, Trunk 0.22.1, rustc 1.92.0, macOS on Apple Silicon. Tauri,

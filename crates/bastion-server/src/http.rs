@@ -260,7 +260,7 @@ fn refused(why: Refusal) -> Response {
 
 /// Who the token belongs to, and their role.
 async fn me(Extension(person): Extension<Person>) -> Response {
-    Json(person).into_response()
+    Json(api::people::view(&person)).into_response()
 }
 
 /// Run `then` if `person` may act on job `id`.
@@ -835,7 +835,7 @@ mod tests {
         (status, String::from_utf8_lossy(&body).into_owned())
     }
 
-    /// Every command the page routes reaches a handler here: no 404 for a
+    /// Every command a client routes reaches a handler here: no 404 for a
     /// path that does not exist, no 405 for the wrong method.
     #[test]
     fn every_route_the_page_uses_exists() {

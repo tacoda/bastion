@@ -1,4 +1,4 @@
-//! The factory's rules (PLAN.md D18, §6.1). Everything here is a pure
+//! The factory's rules (PLAN.md D18). Everything here is a pure
 //! function: an event and the current job go in, the next job and the effects
 //! to run come out. No I/O, no clock, no engine.
 
@@ -24,7 +24,7 @@ pub use workflow::results;
 
 /// How many failed turns in a row a stage gets before the job fails (D16).
 pub const MAX_TURN_FAILURES: u32 = 2;
-/// The longest a turn may run before it counts as failed (PLAN.md §9).
+/// The longest a turn may run before it counts as failed.
 // ponytail: one cap for every stage; give each stage its own when a stage needs longer.
 pub const TURN_CAP_SECS: u64 = 60 * 60;
 
@@ -42,7 +42,7 @@ pub enum Stage {
     Review,
     /// The change lands on the workspace's branch.
     Land,
-    // The full pipeline's own stages (A8), after wipp's.
+    // The full pipeline's own stages, after wipp's.
     /// The workspace's setup steps run in the VM.
     Prepare,
     /// An agent judges whether the request is one change or several.
@@ -257,7 +257,7 @@ pub struct Job {
     pub node: Option<String>,
     /// The results its steps gave, by name.
     pub results: BTreeMap<String, String>,
-    /// The job this one is a part of, when scope split it (A8 step 6).
+    /// The job this one is a part of, when scope split it.
     pub parent: Option<String>,
     /// The part that must land before this one is admitted.
     pub after: Option<String>,
@@ -348,7 +348,7 @@ pub enum Level {
 #[serde(default)]
 pub struct Dials {
     pub steps: BTreeMap<Stage, Dial>,
-    /// An eval's run (A6): its plan goes on at once, and it stops after the
+    /// An eval's run: its plan goes on at once, and it stops after the
     /// build with its diff, so nothing lands.
     pub trial: bool,
 }
@@ -1098,7 +1098,7 @@ pub fn steps(job: &Job) -> Vec<(Stage, StepState)> {
         .collect()
 }
 
-/// What the owner may do with a job now. The view shows only these.
+/// What a person may do with a job now. A client offers only these.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Action {

@@ -1,4 +1,4 @@
-//! The Engine seam (PLAN.md §6.2). This module is the only code in the app that
+//! The Engine seam. This module is the only code in the server that
 //! imports `iii-sdk` (D19). Everything else holds an `Arc<dyn Engine>`.
 
 #[cfg(test)]
@@ -33,7 +33,7 @@ pub type Bytes<'a> = Pin<Box<dyn Future<Output = Result<Vec<u8>, String>> + Send
 pub const CALL_TIMEOUT_MS: u64 = 5_000;
 
 pub trait Engine: Send + Sync {
-    /// The engine's address, as the profile gave it.
+    /// The engine's address, as the server was started with it.
     fn url(&self) -> &str;
     /// The link as it is now. The SDK reconnects by itself.
     fn link(&self) -> Link;

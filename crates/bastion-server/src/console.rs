@@ -1,4 +1,4 @@
-//! The engine console (PLAN.md A2): containers from compose, functions and
+//! The engine console: containers from compose, functions and
 //! trigger types from the engine, queues with their depth, and one container's
 //! logs. Each read goes through the Engine seam.
 
@@ -174,7 +174,7 @@ mod tests {
             )
             .answer(
                 "engine::queue::list_topics",
-                Ok(json!([{ "name": "bastion-steps" }])),
+                Ok(json!([{ "name": "bastion-tasks" }])),
             )
             .answer(
                 "engine::queue::topic_stats",
@@ -203,7 +203,7 @@ mod tests {
         assert_eq!(
             console.queues,
             vec![Queue {
-                name: "bastion-steps".into(),
+                name: "bastion-tasks".into(),
                 depth: 3,
                 delivered: 10,
                 failed: 1,

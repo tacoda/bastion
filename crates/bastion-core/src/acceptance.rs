@@ -1,4 +1,4 @@
-//! Acceptance tests (PLAN.md A8 step 3, after wipp): what each run of a
+//! Acceptance tests: what each run of a
 //! spec's checks means. The adapter reads the spec and runs the commands;
 //! this module decides what their exit codes say.
 

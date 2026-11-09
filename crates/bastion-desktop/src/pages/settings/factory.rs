@@ -1,4 +1,4 @@
-//! The factory's settings (A7, D33): the oversight presets, the model per
+//! The factory's settings (D33): the oversight presets, the model per
 //! stage, where a change goes and where requests come from; each step's
 //! dial; and every version of the settings with Restore.
 

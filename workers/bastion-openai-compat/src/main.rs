@@ -1,4 +1,4 @@
-//! Bastion's worker for OpenAI-compatible hosts (PLAN.md K3): Together,
+//! Bastion's worker for OpenAI-compatible hosts: Together,
 //! Fireworks, Qwen through DashScope, a local Ollama. Each host the admin
 //! lists is one llm-router provider; its key, if it needs one, is set like
 //! any provider's (D34).

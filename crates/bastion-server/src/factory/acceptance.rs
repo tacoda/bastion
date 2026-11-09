@@ -1,4 +1,4 @@
-//! The acceptance-test steps the factory runs itself (A8 step 3): baseline,
+//! The acceptance-test steps the factory runs itself: baseline,
 //! verify and acceptance. Each runs the spec's checks in the job's VM, and
 //! `bastion_core::acceptance` decides what the exit codes say.
 
@@ -13,7 +13,7 @@ use crate::store::Record;
 
 /// The VM tag on the tree the baseline approved. Verify compares the spec's
 /// files against it.
-// ponytail: the tag lives in the VM, so a VM rebuilt by revive (A8 step 5) has none.
+// ponytail: the tag lives in the VM, so a VM rebuilt by revive has none.
 const SPEC_TAG: &str = "bastion-spec";
 /// How long one check may run.
 const CHECK_SECS: u64 = 15 * 60;

@@ -1,6 +1,6 @@
 //! `bastion-server`, headless (D27): starts or attaches to the stack in
 //! `--checkout`, runs the factory on it, and serves the API: on loopback by
-//! default, or on `--listen` over TLS (P5).
+//! default, or on `--listen` over TLS.
 //!
 //! `bastion-server [--checkout DIR] [--data DIR] [--port N] [--engine URL] [--owner NAME]
 //!                 [--listen IP --tls-cert PEM --tls-key PEM]`

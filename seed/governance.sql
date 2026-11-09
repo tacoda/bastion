@@ -15,7 +15,7 @@ INSERT OR IGNORE INTO constraints (id, rule, function, contains, rung, source) V
 -- runs commands, and asks before it writes a file. A build may use the whole
 -- sandbox. The full pipeline's read-only turns read and run commands, and may
 -- not write a file; its turns that write code may use the whole sandbox, as a
--- build does (A8).
+-- build does.
 INSERT OR IGNORE INTO capabilities (stage, function, rung) VALUES
   ('plan', 'sandbox::*', 'allowed'),
   ('plan', 'sandbox::fs::write', 'ask'),

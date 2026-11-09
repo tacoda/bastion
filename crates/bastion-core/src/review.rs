@@ -1,4 +1,4 @@
-//! Constraints that bind a build's diff at review, not a call (PLAN.md A5).
+//! Constraints that bind a build's diff at review, not a call.
 //! A rule on a call cannot see a test the agent deleted by rewriting its
 //! file; the diff can.
 

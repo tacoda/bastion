@@ -1,4 +1,4 @@
-//! The governance pages (PLAN.md A5): Constraints and Capabilities, each on
+//! The governance pages: Constraints and Capabilities, each on
 //! its ladder with promote and demote, and the Audit Log with its check.
 
 use bastion_protocol::{

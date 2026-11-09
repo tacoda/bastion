@@ -3,7 +3,7 @@ name = "bastion-openai-compat"
 version = "0.1.0"
 edition = "2024"
 publish = false
-description = "One llm-router provider per OpenAI-compatible host the admin lists (PLAN.md K3)."
+description = "One llm-router provider per OpenAI-compatible host the admin lists."
 
 [dependencies]
 iii-sdk = "=0.25.0"

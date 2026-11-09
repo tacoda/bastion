@@ -1,4 +1,4 @@
-//! Serving beyond loopback (PLAN.md P5). A Bastion server listens on
+//! Serving beyond loopback. A Bastion server listens on
 //! loopback by default; any other address needs a certificate and key, so
 //! tokens never cross a network in the clear.
 

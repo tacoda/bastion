@@ -1,4 +1,4 @@
-//! Workflows (PLAN.md D35, W1): graphs of steps, kept as versions. The
+//! Workflows (PLAN.md D35): graphs of steps, kept as versions. The
 //! built-in workflows are not kept here: they are the pipelines as chains,
 //! under the settings' dials, and cannot be changed or deleted, only copied.
 //! `Store` extends this trait.

@@ -126,7 +126,7 @@ If you cannot go on without the owner, reply with one line that starts with
 INTERRUPT: and then your question, and nothing else.";
 
 /// What a stage's turn is for, and the reply it gives.
-// ponytail: every other new stage reads the plan brief until its A8 step writes its own.
+// ponytail: every other new stage reads the plan brief until it has a brief of its own.
 fn intro(stage: Stage) -> &'static str {
     match stage {
         Stage::Scope => SCOPE,

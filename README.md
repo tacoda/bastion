@@ -48,10 +48,12 @@ fix it. A failed required check stops the start.
 | Engine adapter | `crates/bastion-server/src/engine/` | The only server code that imports `iii-sdk`. |
 | Desktop client | `crates/bastion-desktop` | The pages, on iced. |
 | Workers | `workers/` | Bastion's own iii workers. |
-| Spikes | `crates/bastion-spikes` | Checks that proved an engine feature, results in `docs/levels.md`. |
 
 `scripts/check-seams.sh` fails the build when code crosses a seam (PLAN.md
 D19).
+
+What the engine was found to do, and on which versions, is in
+`docs/engine-findings.md`.
 
 ## Checks
 

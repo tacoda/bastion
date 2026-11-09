@@ -1,5 +1,5 @@
-//! The factory loop (PLAN.md §6.1): load a job, step it with `bastion-core`,
-//! save it with its `rev`, run the effects on iii, and tell the page. Every
+//! The factory loop: load a job, step it with `bastion-core`,
+//! save it with its `rev`, run the effects on iii, and tell the clients. Every
 //! factory rule lives in the core; this file only does what an effect says.
 
 use std::collections::HashMap;
@@ -32,10 +32,6 @@ use crate::workflow_store;
 const NS: &str = "bastion";
 /// At most this many jobs hold a VM (iii-sandbox's `max_concurrent_sandboxes`).
 const MAX_VMS: usize = 8;
-/// Every turn's model until A7 lets the owner pick one per stage.
-// ponytail: one fixed model; A7 moves it into settings.
-pub const PROVIDER: &str = "openai";
-pub const MODEL: &str = "gpt-5-mini";
 const MAX_TURN_STEPS: u64 = 40;
 /// The tools a turn may call. A pre-trigger hook pins each to the job's VM.
 const TOOLS: [&str; 4] = [
@@ -278,10 +274,10 @@ impl Factory {
                 match self.store.save(&record).await {
                     Ok(rev) => {
                         record.rev = rev;
-                        // Artifacts are written before the page hears of the
+                        // Artifacts are written before a client hears of the
                         // change, so a page that reads at once sees them. Dark
                         // decisions go in the audit log in the order they fell,
-                        // and a split's parts are kept before the page hears.
+                        // and a split's parts are kept before a client hears.
                         let (artifacts, rest): (Vec<Effect>, Vec<Effect>) =
                             effects.into_iter().partition(|e| {
                                 matches!(
@@ -461,7 +457,7 @@ impl Factory {
         }
     }
 
-    /// A worktree on the host, a VM, and the worktree's branch cloned into it (N7).
+    /// A worktree on the host, a VM, and the worktree's branch cloned into it.
     /// On a revive the job keeps its worktree, which holds its commits.
     async fn provision(&self, record: &Record) -> Result<(), String> {
         let job = &record.job;
@@ -503,7 +499,7 @@ impl Factory {
             ],
         )?;
         let bytes = self.machine.read_bytes(&bundle)?;
-        // ponytail: content_b64 suits small repos; a channel upload lifts the limit (docs/levels.md N7).
+        // ponytail: content_b64 suits small repos; a channel upload lifts the limit (docs/engine-findings.md).
         self.engine
             .call_for(DEFAULT_NAMESPACE, "sandbox::fs::write", json!({ "sandbox_id": sandbox, "path": "/work/in.bundle", "content_b64": base64::engine::general_purpose::STANDARD.encode(&bytes), "parents": true }), SLOW_MS)
             .await?;
@@ -724,7 +720,7 @@ impl Factory {
     }
 
     /// Run a step the factory runs itself, and report how it went.
-    // ponytail: a workspace has no setup steps until A9, so prepare passes at
+    // ponytail: a workspace has no setup steps until F2, so prepare passes at
     // once; any other step fails until it has a runner.
     async fn run_step(self: &Arc<Self>, record: &Record, stage: Stage) -> Option<String> {
         let event = match stage {
@@ -791,7 +787,7 @@ impl Factory {
         final_reply(&*self.engine, session).await
     }
 
-    /// The VM's commits come back to the worktree (N7), then `worktree::land`
+    /// The VM's commits come back to the worktree, then `worktree::land`
     /// merges them, and its trigger reports the outcome.
     async fn land(self: &Arc<Self>, record: &Record) -> Result<(), String> {
         let (path, target) = self.bring_back(record).await?;
@@ -805,7 +801,7 @@ impl Factory {
         }
     }
 
-    /// Ship (A8 step 5): bring the commits back, then push them and open the
+    /// Ship: bring the commits back, then push them and open the
     /// pull request, or, with the local forge, go on with them in the worktree.
     async fn ship(&self, record: &Record) -> Result<Event, String> {
         let (path, target) = self.bring_back(record).await?;
@@ -1176,7 +1172,7 @@ impl Factory {
                 record.runtime.session.clone(),
             ) {
                 (State::Provisioning, ..) => {
-                    let error = "the app quit while the job was provisioning".into();
+                    let error = "the server stopped while the job was provisioning".into();
                     let _ = self.apply(&id, Event::ProvisionFailed { error }).await;
                 }
                 // A pull request already up waits on its CI again.
@@ -1189,7 +1185,7 @@ impl Factory {
                     let factory = self.clone();
                     crate::rt::spawn(async move { factory.run(record, effect).await });
                 }
-                // The turn may have ended while the app was closed.
+                // The turn may have ended while the server was down.
                 (State::Running, _, Some(session))
                     if self.listen_for_turn(&id, &session).is_ok() =>
                 {
@@ -1219,7 +1215,7 @@ fn writes_code(stage: Stage) -> bool {
     )
 }
 
-/// A specify reply the app cannot read as a spec goes back to the core as
+/// A specify reply the server cannot read as a spec goes back to the core as
 /// unusable, so the turn gets one more try with the reason.
 fn usable(stage: Stage, outcome: Outcome) -> Outcome {
     match outcome {

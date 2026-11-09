@@ -1,4 +1,4 @@
-//! The owner's settings as versions (PLAN.md A7). Each change writes a whole
+//! The owner's settings as versions. Each change writes a whole
 //! new version with a note; restoring writes an old version's values again
 //! as the newest. `Store` extends this trait.
 
@@ -28,7 +28,7 @@ pub trait SettingsStore {
 }
 
 /// The settings in force: the newest version, or, before the first one, the
-/// defaults with the checkpoint dials as they were kept before A7.
+/// defaults with the checkpoint dials as they were kept before settings had versions.
 pub async fn current(store: &dyn Store) -> Result<Settings, String> {
     match store.versions().await?.first() {
         Some(v) => Ok(store.settings_at(v.version).await?.unwrap_or_default()),

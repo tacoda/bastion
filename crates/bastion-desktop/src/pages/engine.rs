@@ -1,4 +1,4 @@
-//! The Engine page (PLAN.md A1, A2): the link, the stack with Start and Stop,
+//! The Engine page: the link, the stack with Start and Stop,
 //! Doctor, then the console: containers with stop, start and logs,
 //! functions and trigger types, and queues.
 

@@ -1,4 +1,4 @@
-//! The GitHub forge and tracker adapter (PLAN.md A7, D23). Branches are
+//! The GitHub forge and tracker adapter (PLAN.md D23). Branches are
 //! pushed from the job's worktree with the owner's own git; pull requests,
 //! CI checks, merges and issues go through the stock `github` worker's `gh`.
 //! A new forge is a new adapter beside this one; the core only sees

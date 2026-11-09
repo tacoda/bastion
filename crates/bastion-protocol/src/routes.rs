@@ -1,4 +1,4 @@
-//! Each server command's HTTP method and path (D28). The page sends a call
+//! Each server command's HTTP method and path (D28). A client sends a call
 //! by this table, and the server's tests check every row has a route.
 
 use crate::command;

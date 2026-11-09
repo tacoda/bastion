@@ -1,4 +1,4 @@
-//! The shell (PLAN.md G1): the sidebar, the page it shows, the server
+//! The shell: the sidebar, the page it shows, the server
 //! picker, each server's pushes, and the question on quit while the stack
 //! runs.
 

@@ -1,4 +1,4 @@
-//! Commands for the engine console (PLAN.md A2).
+//! Commands for the engine console.
 
 use std::sync::Arc;
 

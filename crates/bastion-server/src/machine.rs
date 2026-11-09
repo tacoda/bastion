@@ -1,4 +1,4 @@
-//! The Machine seam (PLAN.md §6.2): the programs, files and platform of this
+//! The Machine seam: the programs, files and platform of this
 //! machine. Doctor and the stack routine reach the OS only through it.
 
 use std::fs::{self, OpenOptions};
@@ -17,7 +17,7 @@ pub struct Output {
 pub trait Machine: Send + Sync {
     /// Run a program to its end. `Err` means it could not start at all.
     fn run(&self, program: &str, args: &[&str], dir: Option<&Path>) -> Result<Output, String>;
-    /// Start a program that outlives the app, with its output appended to `log`.
+    /// Start a program that outlives the server, with its output appended to `log`.
     fn spawn(&self, program: &str, args: &[&str], dir: &Path, log: &Path) -> Result<u32, String>;
     fn read(&self, path: &Path) -> Result<String, String>;
     fn read_bytes(&self, path: &Path) -> Result<Vec<u8>, String>;
@@ -47,7 +47,7 @@ impl Machine for ThisMachine {
         })
     }
 
-    // ponytail: the child is never waited on, so if it exits while the app runs it stays a zombie until the app quits.
+    // ponytail: the child is never waited on, so if it exits while the server runs it stays a zombie until the server stops.
     fn spawn(&self, program: &str, args: &[&str], dir: &Path, log: &Path) -> Result<u32, String> {
         if let Some(parent) = log.parent() {
             fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
@@ -64,7 +64,7 @@ impl Machine for ThisMachine {
             .stdin(Stdio::null())
             .stdout(file)
             .stderr(err)
-            // Its own process group, so a signal to the app does not reach it.
+            // Its own process group, so a signal to the server does not reach it.
             .process_group(0)
             .spawn()
             .map(|child| child.id())

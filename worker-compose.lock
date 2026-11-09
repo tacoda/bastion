@@ -58,41 +58,6 @@ containers:
         x86_64-unknown-linux-musl:
           sha256: a6111bedff9ded0340b734443c0fb7edc75c00cb02b35be95a1dfe47f4bd6c67
           url: https://api.workers.iii.dev/download/context-manager/1.1.25/x86_64-unknown-linux-musl
-  cron:
-    worker: package://cron
-    requested: 0.21.27
-    resolved:
-      name: cron
-      version: 0.21.27
-      type: binary
-      artifacts:
-        aarch64-apple-darwin:
-          sha256: 5b5c348b46f08d8247520e235c847877c416c80990ff432afa8828951363a12d
-          url: https://api.workers.iii.dev/download/cron/0.21.27/aarch64-apple-darwin
-        aarch64-pc-windows-msvc:
-          sha256: 39bf6764eb7323426cc0398ef97531bf7ae8d1952598bc9b03038a080bfb3ea9
-          url: https://api.workers.iii.dev/download/cron/0.21.27/aarch64-pc-windows-msvc
-        aarch64-unknown-linux-gnu:
-          sha256: c3ae17747f4823a60dfd0943d623e936753feaa02ffe3d4d4f40e97e45ba97b6
-          url: https://api.workers.iii.dev/download/cron/0.21.27/aarch64-unknown-linux-gnu
-        armv7-unknown-linux-gnueabihf:
-          sha256: f4838b37c35ff0e16557eeea24e8cef5da367a97d7403ef444c8f66e4840a6f2
-          url: https://api.workers.iii.dev/download/cron/0.21.27/armv7-unknown-linux-gnueabihf
-        x86_64-apple-darwin:
-          sha256: 5e87f3f6b9f3eb0b461503fb43446b95dc38953c28be7e118a101431a4367fab
-          url: https://api.workers.iii.dev/download/cron/0.21.27/x86_64-apple-darwin
-        x86_64-pc-windows-msvc:
-          sha256: fe817ea9ce7b9cf8762f260b905231fb6e7e9bd591bf2d0a9eac5354ab384627
-          url: https://api.workers.iii.dev/download/cron/0.21.27/x86_64-pc-windows-msvc
-        x86_64-unknown-linux-gnu:
-          sha256: 5c6bdac43fb68d0479111b7ac86690abd0251e2db090f3e7919243f3f7b4a895
-          url: https://api.workers.iii.dev/download/cron/0.21.27/x86_64-unknown-linux-gnu
-        x86_64-unknown-linux-musl:
-          sha256: 914b2d634e955c9ecc838054ed9fcdedc972b9fd9a4647e81ffc638bb0c1f6c9
-          url: https://api.workers.iii.dev/download/cron/0.21.27/x86_64-unknown-linux-musl
-      default_config:
-        adapter:
-          name: local
   database:
     worker: package://database
     requested: 0.5.25
@@ -125,38 +90,6 @@ containers:
         x86_64-unknown-linux-musl:
           sha256: f47570d7fae31c285a82461d7015e7eb93e0d118f61590fe6c5442867e2850e5
           url: https://api.workers.iii.dev/download/database/0.5.25/x86_64-unknown-linux-musl
-  eval:
-    worker: package://eval
-    requested: 0.2.24
-    resolved:
-      name: eval
-      version: 0.2.24
-      type: binary
-      artifacts:
-        aarch64-apple-darwin:
-          sha256: 5312d05a028aa76c220a92be5e6ae77b87f77b41a64261dc5912cd3075920dc4
-          url: https://api.workers.iii.dev/download/eval/0.2.24/aarch64-apple-darwin
-        aarch64-pc-windows-msvc:
-          sha256: cd5fdec19ed9053f57471a0416b600bd64151b52d4e4af3ff1ec04912564e13f
-          url: https://api.workers.iii.dev/download/eval/0.2.24/aarch64-pc-windows-msvc
-        aarch64-unknown-linux-gnu:
-          sha256: 16e9561af1e4f42bc45d051421109a47cb0cec09f29f17132c3da26f0b363737
-          url: https://api.workers.iii.dev/download/eval/0.2.24/aarch64-unknown-linux-gnu
-        armv7-unknown-linux-gnueabihf:
-          sha256: 1083cf8b8cafbb1603d66d0f80e9b6888ca2befa77a91084fcedb3c0c2e863c5
-          url: https://api.workers.iii.dev/download/eval/0.2.24/armv7-unknown-linux-gnueabihf
-        x86_64-apple-darwin:
-          sha256: a6c0cd886ead7935444e25cb1b3655ad548c3de92cfce35d9c95cc66bd750e7e
-          url: https://api.workers.iii.dev/download/eval/0.2.24/x86_64-apple-darwin
-        x86_64-pc-windows-msvc:
-          sha256: 2c1d8ae19b524327b09a394993c3273e25991bb901ae0eb1e50df949ff123603
-          url: https://api.workers.iii.dev/download/eval/0.2.24/x86_64-pc-windows-msvc
-        x86_64-unknown-linux-gnu:
-          sha256: 379884d8eb700e6a771b412a7b3cfb1ad2ce8332002ca1b0347b41fe747c54b7
-          url: https://api.workers.iii.dev/download/eval/0.2.24/x86_64-unknown-linux-gnu
-        x86_64-unknown-linux-musl:
-          sha256: 8f8c226ad6e016c33b31b68f05752f8a465b6dfd9a40ab7b58ee3072f289f12d
-          url: https://api.workers.iii.dev/download/eval/0.2.24/x86_64-unknown-linux-musl
   fp:
     worker: package://fp
     requested: 0.2.24
@@ -274,101 +207,6 @@ containers:
         x86_64-unknown-linux-musl:
           sha256: b99d5481160d4d91f313c431ca288be9f922f10ecaf364ced8813829c647c167
           url: https://api.workers.iii.dev/download/harness/1.8.64/x86_64-unknown-linux-musl
-  ide:
-    worker: package://ide
-    requested: 0.12.36
-    resolved:
-      name: ide
-      version: 0.12.36
-      type: binary
-      artifacts:
-        aarch64-apple-darwin:
-          sha256: 5c3d334b2a60689c747b3e769f75cf57ad1eee7211ab6d4e2bc9ea414571203f
-          url: https://api.workers.iii.dev/download/ide/0.12.36/aarch64-apple-darwin
-        aarch64-unknown-linux-gnu:
-          sha256: 9610af39b9b7d450ec29b9c9d87da8be80a7464175bd073d0b3b36a30008e818
-          url: https://api.workers.iii.dev/download/ide/0.12.36/aarch64-unknown-linux-gnu
-        armv7-unknown-linux-gnueabihf:
-          sha256: d6bb55305a41506a18d725118adceb10f0096779eb7c34b3956e6ef55bb443be
-          url: https://api.workers.iii.dev/download/ide/0.12.36/armv7-unknown-linux-gnueabihf
-        x86_64-apple-darwin:
-          sha256: 17f0a0324663b69d2b5698cf4f740061ebc805676d0af4bfaf38fb1af5b4e7b4
-          url: https://api.workers.iii.dev/download/ide/0.12.36/x86_64-apple-darwin
-        x86_64-unknown-linux-gnu:
-          sha256: 90e6dc5a7ecc8536d6dba7ae9c4446570a49dacf56fbe5ed46e1ff2eee12e92b
-          url: https://api.workers.iii.dev/download/ide/0.12.36/x86_64-unknown-linux-gnu
-        x86_64-unknown-linux-musl:
-          sha256: c9ff3b1dc0a1b70f0c4a50184c5fbc29dc9e8bf4723a6892332004eae41cfcd8
-          url: https://api.workers.iii.dev/download/ide/0.12.36/x86_64-unknown-linux-musl
-      default_config:
-        code:
-          default_exclude_globs:
-          - '**/.git/**'
-          - '**/node_modules/**'
-          - '**/target/**'
-          - '**/dist/**'
-          - '**/.venv/**'
-          - '**/__pycache__/**'
-          non_accessible_globs:
-          - '**/.env'
-          - '**/.env.*'
-          - '**/*.pem'
-          - '**/*.key'
-          - '**/secrets/**'
-          templates:
-            cache_dir: data/shell/templates
-            dir: null
-            ref: main
-            refresh_secs: 600
-            url: https://github.com/iii-hq/templates.git
-        commit_messages:
-          instructions: ''
-          model: null
-          thinking: low
-        default_timeout_ms: 30000
-        denylist_patterns:
-        - rm\s+-rf\s+/
-        - :\(\)\s*\{\s*:\|
-        - (?i)^(?:(?:\S*/)?env(?:\s+\S+=\S*)*\s+|(?:\S*/)?(?:sudo|doas|nohup)\s+|(?:\S*/)?timeout(?:\s+\S+)?\s+)*(\S*/)?mkfs
-        - (?i)^(?:(?:\S*/)?env(?:\s+\S+=\S*)*\s+|(?:\S*/)?(?:sudo|doas|nohup)\s+|(?:\S*/)?timeout(?:\s+\S+)?\s+)*(\S*/)?dd\s+if=
-        - (?i)^(?:(?:\S*/)?env(?:\s+\S+=\S*)*\s+|(?:\S*/)?(?:sudo|doas|nohup)\s+|(?:\S*/)?timeout(?:\s+\S+)?\s+)*(\S*/)?shutdown\b
-        - (?i)^(?:(?:\S*/)?env(?:\s+\S+=\S*)*\s+|(?:\S*/)?(?:sudo|doas|nohup)\s+|(?:\S*/)?timeout(?:\s+\S+)?\s+)*(\S*/)?reboot\b
-        - /etc/shadow
-        env:
-          allow:
-          - PATH
-          - HOME
-          - LANG
-          - LC_ALL
-          - TERM
-          inherit: true
-        fs:
-          allow_unjailed: true
-          denylist_paths:
-          - /etc/passwd
-          - /etc/shadow
-          exec_confinement: off
-          exec_writable:
-          - /tmp
-          - /dev
-          - ~/.cache
-          - ~/.cargo
-          - ~/.local/share/pnpm
-          - ~/.gnupg
-          host_roots: []
-          max_read_bytes: 16777216
-          max_write_bytes: 16777216
-        job_retention_secs: 3600
-        max_bg_timeout_ms: 0
-        max_concurrent_jobs: 16
-        max_output_bytes: 1048576
-        max_timeout_ms: 120000
-        sandbox:
-          enabled: true
-        turns:
-          data_dir: data/shell/turns
-          max_blob_bytes: 268435456
-        working_dir: null
   iii-directory:
     worker: package://iii-directory
     requested: 1.2.44
@@ -467,38 +305,6 @@ containers:
         x86_64-unknown-linux-musl:
           sha256: d0abeab3a114f160539f7b83a910c336804863157fcbba1e41ba6117b09da013
           url: https://api.workers.iii.dev/download/llm-router/1.4.41/x86_64-unknown-linux-musl
-  memory:
-    worker: package://memory
-    requested: 0.2.22
-    resolved:
-      name: memory
-      version: 0.2.22
-      type: binary
-      artifacts:
-        aarch64-apple-darwin:
-          sha256: df0d68ba05272d046271b718307224e73cf21823cbd345ff0cbdf5f7b54832a1
-          url: https://api.workers.iii.dev/download/memory/0.2.22/aarch64-apple-darwin
-        aarch64-pc-windows-msvc:
-          sha256: 234baa8bf07c32f26e026992d0e1ba9cb3626ff5e1c8846c446436330bd97bdc
-          url: https://api.workers.iii.dev/download/memory/0.2.22/aarch64-pc-windows-msvc
-        aarch64-unknown-linux-gnu:
-          sha256: 1b29c338c2e68984075212b058141edf44d414c1a14112f357d3162f23b661f8
-          url: https://api.workers.iii.dev/download/memory/0.2.22/aarch64-unknown-linux-gnu
-        armv7-unknown-linux-gnueabihf:
-          sha256: 9445cf281642a7551d0297ad6a28eb22088c331f3619bceec9984bfa2a04722b
-          url: https://api.workers.iii.dev/download/memory/0.2.22/armv7-unknown-linux-gnueabihf
-        x86_64-apple-darwin:
-          sha256: ea8c720bb47818d65d58da9b6dea40ef8fd31f0a958355dc1720c47b69b6671a
-          url: https://api.workers.iii.dev/download/memory/0.2.22/x86_64-apple-darwin
-        x86_64-pc-windows-msvc:
-          sha256: 45af931ef46ef361b183712a20d8a106bbf8fca197e06a390f0ce7bd8e0701b2
-          url: https://api.workers.iii.dev/download/memory/0.2.22/x86_64-pc-windows-msvc
-        x86_64-unknown-linux-gnu:
-          sha256: 7f73660e34f4c287598034dee9e8b325cb8c2f39c38d5c680575297ad2be8bed
-          url: https://api.workers.iii.dev/download/memory/0.2.22/x86_64-unknown-linux-gnu
-        x86_64-unknown-linux-musl:
-          sha256: 3626564e98fe1dbe139e3ffb0c4556b1f2718f8028eca8b4f6ebcd95635d135a
-          url: https://api.workers.iii.dev/download/memory/0.2.22/x86_64-unknown-linux-musl
   opengantry:
     worker: package://opengantry
     requested: 0.1.13
@@ -910,73 +716,6 @@ containers:
           config:
             store_method: file_based
           name: kv
-  storage:
-    worker: package://storage
-    requested: 0.1.27
-    resolved:
-      name: storage
-      version: 0.1.27
-      type: binary
-      artifacts:
-        aarch64-apple-darwin:
-          sha256: 57d6c81b9fdb4c30af5312dcd803600b75c1a7eb53621fafdfdef2df49dc7ffa
-          url: https://api.workers.iii.dev/download/storage/0.1.27/aarch64-apple-darwin
-        aarch64-pc-windows-msvc:
-          sha256: ca59b50a601d9f6410a2e3baaeb0f08f9629956bb37fee1118349c8e13bb09c4
-          url: https://api.workers.iii.dev/download/storage/0.1.27/aarch64-pc-windows-msvc
-        aarch64-unknown-linux-gnu:
-          sha256: be79d59822d935499f17b1976643d4ae5aa321a8ac665ba471a22510508a1c8e
-          url: https://api.workers.iii.dev/download/storage/0.1.27/aarch64-unknown-linux-gnu
-        armv7-unknown-linux-gnueabihf:
-          sha256: 85c79b315cec9dd17a316b27fa8927e0d29a60e33c7b79bccc0b8d015335805b
-          url: https://api.workers.iii.dev/download/storage/0.1.27/armv7-unknown-linux-gnueabihf
-        x86_64-apple-darwin:
-          sha256: 3244254b90a4028ce2ad7d6f4b3a6905c27efdfc9e457dde122c1c0e07e262cc
-          url: https://api.workers.iii.dev/download/storage/0.1.27/x86_64-apple-darwin
-        x86_64-pc-windows-msvc:
-          sha256: e2b6aa34ce912b67063fedc50472c5a150551bdc4c155952827c87c5ea722660
-          url: https://api.workers.iii.dev/download/storage/0.1.27/x86_64-pc-windows-msvc
-        x86_64-unknown-linux-gnu:
-          sha256: 856521f9c5d74dbb519d16525bbf0b54f3eaa0b5b3fa4927884d6f4a762e3e65
-          url: https://api.workers.iii.dev/download/storage/0.1.27/x86_64-unknown-linux-gnu
-        x86_64-unknown-linux-musl:
-          sha256: d0bb7a2c64653823cc77457b29fb61ba61e6aa4fc4c1155a28fb3b7756b78e45
-          url: https://api.workers.iii.dev/download/storage/0.1.27/x86_64-unknown-linux-musl
-      default_config:
-        buckets:
-          scratch:
-            provider: local
-        providers:
-          local:
-            data_dir: data/storage
-            http:
-              bind_address: 127.0.0.1:0
-  workflow:
-    worker: package://workflow
-    requested: 0.1.9
-    resolved:
-      name: workflow
-      version: 0.1.9
-      type: binary
-      artifacts:
-        aarch64-apple-darwin:
-          sha256: ea3cf54fb0e7b0d586d5e05d78dc0302e80ead8fc442ee06fdc3809d3dbdeebc
-          url: https://api.workers.iii.dev/download/workflow/0.1.9/aarch64-apple-darwin
-        aarch64-unknown-linux-gnu:
-          sha256: acef072ed4117c72ce77648e75a2f6f5fda015a09ff25c7bd9a4a81de04c4ea3
-          url: https://api.workers.iii.dev/download/workflow/0.1.9/aarch64-unknown-linux-gnu
-        armv7-unknown-linux-gnueabihf:
-          sha256: bfd19593de055b3ca28e885b3a4af4e780df7acd885f15ed0eee8fd28b493e1f
-          url: https://api.workers.iii.dev/download/workflow/0.1.9/armv7-unknown-linux-gnueabihf
-        x86_64-apple-darwin:
-          sha256: 3b38e8c344cbdfeaec9fe2e5557c0b49c27b7995074df24953287b783db655f7
-          url: https://api.workers.iii.dev/download/workflow/0.1.9/x86_64-apple-darwin
-        x86_64-unknown-linux-gnu:
-          sha256: 833b2ceb5fc5f49ad062f7201df73f34ab4af94b246b92cdad70e473ffcdb48f
-          url: https://api.workers.iii.dev/download/workflow/0.1.9/x86_64-unknown-linux-gnu
-        x86_64-unknown-linux-musl:
-          sha256: d09693182e655acf17e9dadfe90c722fae2ac8dbfe966ba7ee564318ea97ba80
-          url: https://api.workers.iii.dev/download/workflow/0.1.9/x86_64-unknown-linux-musl
   worktree:
     worker: package://worktree
     requested: 0.3.16

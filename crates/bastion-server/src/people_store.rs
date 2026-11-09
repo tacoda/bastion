@@ -3,22 +3,13 @@
 //! `Store` extends this trait.
 
 use bastion_core::people::{Person, Role};
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::store::{Answer, SqlStore, name, parse};
 
 /// A token as the server shows it: never the token, only what names it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TokenInfo {
-    /// The first 12 characters of its hash, which name it for revoking.
-    pub id: String,
-    pub person: String,
-    pub label: String,
-    pub created_at: u64,
-    pub last_used: Option<u64>,
-}
+pub use bastion_protocol::TokenView as TokenInfo;
 
 /// A token to keep: whose it is, its hash, a label, and when it was made.
 pub struct NewToken<'a> {

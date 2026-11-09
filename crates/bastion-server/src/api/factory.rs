@@ -1,4 +1,4 @@
-//! Commands for the floor, the inbox and the job view (PLAN.md A3).
+//! Commands for the floor, the inbox and the job view.
 
 use std::path::Path;
 use std::sync::{Arc, OnceLock};

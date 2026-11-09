@@ -1,5 +1,5 @@
 //! What each client may do, one module per resource (D28). The HTTP routes
-//! and, until S3, the Tauri commands both call these.
+//! call these.
 
 pub mod console;
 pub mod doctor;

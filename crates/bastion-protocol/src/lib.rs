@@ -1,12 +1,12 @@
-//! The Commands seam (PLAN.md §6.2): every command the view calls and every
-//! event the app emits, with their types. The view and the app both depend on
-//! this crate, and on nothing of each other's.
+//! The API's contract (PLAN.md D28): every command a client calls and every
+//! change the server pushes, with their types. The server and each client
+//! depend on this crate, and on nothing of each other's.
 
 pub mod routes;
 
 use serde::{Deserialize, Serialize};
 
-/// Command names, so the view and the app cannot drift apart.
+/// Command names, so a client and the server cannot drift apart.
 pub mod command {
     pub const ENGINE_STATUS: &str = "engine_status";
     pub const DOCTOR: &str = "doctor";
@@ -31,7 +31,7 @@ pub mod command {
     /// Takes `{ login_id }`; answers `pending`, `ok`, `expired` or `canceled`.
     pub const CODEX_SIGN_IN_POLL: &str = "codex_sign_in_poll";
     pub const CODEX_SIGN_OUT: &str = "codex_sign_out";
-    /// The OpenAI-compatible hosts (K3).
+    /// The OpenAI-compatible hosts.
     pub const HOSTS: &str = "hosts";
     /// Takes `{ hosts }`, the whole list.
     pub const HOSTS_SET: &str = "hosts_set";
@@ -105,7 +105,7 @@ pub mod command {
     pub const AUDIT_EXPORT: &str = "audit_export";
 }
 
-/// A change the server pushes (D10, D29). The page reads the named
+/// A change the server pushes (D10, D29). A client reads the named
 /// resource again; only the engine's status rides along whole.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -121,8 +121,8 @@ pub enum Change {
     Console,
 }
 
-/// A Bastion server the app talks to (D28, D30): its name, its base URL and
-/// its bearer token. `local` is the one the app starts on this machine.
+/// A Bastion server a client talks to (D28, D30): its name, its base URL and
+/// its bearer token. `local` is the one the client starts on this machine.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Server {
     pub name: String,
@@ -196,8 +196,8 @@ pub struct ProviderView {
     pub ready: bool,
 }
 
-/// An OpenAI-compatible host that serves models as its own provider
-/// (PLAN.md K3). `api_url` is its full `/chat/completions` URL; its key, if
+/// An OpenAI-compatible host that serves models as its own provider.
+/// `api_url` is its full `/chat/completions` URL; its key, if
 /// it needs one, is set like any provider's.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HostView {
@@ -218,10 +218,10 @@ pub struct SignIn {
     pub interval: u64,
 }
 
-/// The name of the Bastion server the app starts on this machine.
+/// The name of the Bastion server a client starts on this machine.
 pub const LOCAL: &str = "local";
 
-/// The app's link to the engine.
+/// The server's link to the engine.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Link {
@@ -231,7 +231,7 @@ pub enum Link {
     Down,
 }
 
-/// What the page shows about the engine.
+/// What a client shows about the engine.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EngineStatus {
     pub url: String,
@@ -277,13 +277,13 @@ impl DoctorReport {
     }
 }
 
-/// The stack this profile runs, as `iii ps` sees it.
+/// The server's stack, as `iii ps` sees it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "state")]
 pub enum StackState {
     Stopped,
     Running,
-    /// Another engine holds the profile's port.
+    /// Another engine holds the stack's port.
     Taken {
         pid: u32,
         compose_file: Option<String>,
@@ -294,7 +294,7 @@ pub enum StackState {
 pub struct StackStatus {
     pub state: StackState,
     pub compose_file: String,
-    /// Where the compose daemon's output goes when the app started it.
+    /// Where the compose daemon's output goes when the server started it.
     pub log: String,
 }
 
@@ -315,7 +315,7 @@ pub enum StartRefused {
     },
 }
 
-/// One container of the compose project (PLAN.md A2).
+/// One container of the compose project.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Container {
     pub name: String,
@@ -418,7 +418,7 @@ pub struct JobSummary {
     /// Who asked for the job (D31).
     #[serde(default)]
     pub requester: Option<String>,
-    /// The job this one is a part of, when scope split it (A8 step 6).
+    /// The job this one is a part of, when scope split it.
     #[serde(default)]
     pub parent: Option<String>,
     /// The part of the request this job does.
@@ -456,7 +456,7 @@ pub struct JobDetail {
     pub artifacts: Vec<ArtifactView>,
     /// The latest turn's messages.
     pub transcript: Vec<TranscriptLine>,
-    /// Calls the gate holds for the owner (PLAN.md A5).
+    /// Calls the gate holds for the owner.
     pub held: Vec<HeldCallView>,
     /// The repository's charter as the job's last turn read it.
     pub charter: Option<CharterView>,
@@ -466,7 +466,7 @@ pub struct JobDetail {
     pub results: std::collections::BTreeMap<String, String>,
 }
 
-/// A workspace's charter for one job (PLAN.md A5). No files means the job
+/// A workspace's charter for one job. No files means the job
 /// runs on the owner's defaults.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CharterView {
@@ -564,7 +564,7 @@ pub struct StepDial {
     pub dial: String,
 }
 
-/// An eval to run (PLAN.md A6): its requests, and the one rung its two arms
+/// An eval to run: its requests, and the one rung its two arms
 /// set differently. `target` is `constraint:<id>` or
 /// `capability:<stage>:<function>`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -633,7 +633,7 @@ pub struct EvalView {
     pub differences: Vec<String>,
 }
 
-/// The owner's settings (PLAN.md A7), each value as its word.
+/// The owner's settings, each value as its word.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SettingsView {
     pub plan_provider: String,

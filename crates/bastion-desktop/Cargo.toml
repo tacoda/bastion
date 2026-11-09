@@ -3,7 +3,7 @@ name = "bastion-desktop"
 version = "0.1.0"
 edition = "2024"
 publish = false
-description = "Bastion's native client on iced (PLAN.md D37, G): the window, its pages, and the Bastion servers it talks to."
+description = "Bastion's native client on iced (PLAN.md D37): the window, its pages, and the Bastion servers it talks to."
 
 [dependencies]
 iced = { version = "=0.14.0", features = ["canvas", "svg", "tokio"] }

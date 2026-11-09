@@ -1,4 +1,4 @@
-//! OpenAI-compatible hosts (PLAN.md K3). The `bastion-openai-compat` worker
+//! OpenAI-compatible hosts. The `bastion-openai-compat` worker
 //! keeps the list and makes each host a router provider; a host's key is
 //! set like any provider's, in `providers`.
 

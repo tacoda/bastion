@@ -1,4 +1,4 @@
-//! The rows A/B evals keep (PLAN.md A6): each eval, the rungs its two arms
+//! The rows A/B evals keep: each eval, the rungs its two arms
 //! set, the job that ran each request under each arm, and the metered usage
 //! of every turn of every job. `Store` extends this trait, so the factory
 //! keeps one store.

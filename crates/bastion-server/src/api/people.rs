@@ -1,14 +1,24 @@
-//! Managing the people on this Bastion server (PLAN.md D31, P4). Only an
+//! Managing the people on this Bastion server (PLAN.md D31). Only an
 //! admin reaches these; `access` checks that before any of them runs.
 
 use bastion_core::people::{Person, Role};
+use bastion_protocol::PersonView;
 
 use super::factory::{FactoryCell, factory};
 use crate::factory::now;
 use crate::people_store::{NewToken, TokenInfo, hash, new_token};
 
-pub async fn people(cell: &FactoryCell) -> Result<Vec<Person>, String> {
-    factory(cell)?.store().people().await
+/// A person as the API carries them.
+pub fn view(p: &Person) -> PersonView {
+    PersonView {
+        name: p.name.clone(),
+        role: p.role.word().into(),
+    }
+}
+
+pub async fn people(cell: &FactoryCell) -> Result<Vec<PersonView>, String> {
+    let all = factory(cell)?.store().people().await?;
+    Ok(all.iter().map(view).collect())
 }
 
 pub async fn add(cell: &FactoryCell, person: Person) -> Result<(), String> {

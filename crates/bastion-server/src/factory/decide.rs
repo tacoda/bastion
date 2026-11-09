@@ -1,4 +1,4 @@
-//! A decision on the step a job waits on goes in the audit log (D33, O2): a
+//! A decision on the step a job waits on goes in the audit log (D33): a
 //! person's with their name, and a dark step's as its dial's.
 
 use std::sync::Arc;

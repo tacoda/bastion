@@ -1,6 +1,5 @@
 //! Bastion's server (PLAN.md D27): the factory and everything it runs on,
-//! reached through the Engine seam. S1 moved it out of the app unchanged;
-//! S2 puts the HTTP API in front of it.
+//! reached through the Engine seam, with the HTTP API in front of it.
 
 pub mod access;
 pub mod api;

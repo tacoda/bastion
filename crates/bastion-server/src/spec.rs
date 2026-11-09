@@ -1,4 +1,4 @@
-//! The spec a specify turn writes (A8 step 3): per criterion, the command
+//! The spec a specify turn writes: per criterion, the command
 //! that runs only its acceptance tests, and the files that hold them. The
 //! app reads the reply's JSON; `bastion_core::acceptance` judges the runs.
 

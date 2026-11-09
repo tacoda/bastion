@@ -1,4 +1,4 @@
-//! The Evals pages (PLAN.md A6): every eval with its progress, a form to run
+//! The Evals pages: every eval with its progress, a form to run
 //! one, and one eval as A against B per request and in total, each refused
 //! call listed with a link to its job.
 

@@ -1,5 +1,4 @@
-//! D4's theme: one dark theme, purple as the main color. The same tokens as
-//! the Leptos pages' `styles.css`, as iced styles.
+//! D4's theme: one dark theme, purple as the main color, as iced styles.
 
 use iced::theme::Palette;
 use iced::widget::{button, container, pick_list, text_input};

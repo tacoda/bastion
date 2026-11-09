@@ -1,4 +1,4 @@
-//! Commands for settings and integrations (PLAN.md A7): the settings with
+//! Commands for settings and integrations: the settings with
 //! their history, the models to choose from, the owner's accounts, and
 //! tracker issues as requests.
 
@@ -34,7 +34,7 @@ fn view_of(s: &Settings) -> SettingsView {
     }
 }
 
-/// The settings the page sent, with `was`'s dials, which it sets apart.
+/// The settings a client sent, with `was`'s dials, which it sets apart.
 fn settings_of(v: &SettingsView, was: Settings) -> Result<Settings, String> {
     let model = |provider: &str, model: &str| Model {
         provider: provider.trim().into(),

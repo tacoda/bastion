@@ -1,4 +1,4 @@
-//! A unified diff, one block per changed file (PLAN.md A4). Clicking a line
+//! A unified diff, one block per changed file. Clicking a line
 //! starts a comment on it, as `file:line: `.
 
 use iced::widget::{Column, button, column, container, row, text};
@@ -88,7 +88,7 @@ fn split(diff: &str) -> (&str, Option<&str>) {
     }
 }
 
-// ponytail: every line is a widget; draw only the visible lines when a diff of a few thousand lines starts slowly (N14).
+// ponytail: every line is a widget; draw only the visible lines when a diff of a few thousand lines starts slowly.
 fn file_view<'a, M: Clone + 'a>(file: File, comment: fn(String) -> M) -> Element<'a, M> {
     let lines = file.lines.into_iter().map(|line| {
         let number = text(line.new.map(|n| n.to_string()).unwrap_or_default())

@@ -1,4 +1,4 @@
-//! Commands for A/B evals (PLAN.md A6).
+//! Commands for A/B evals.
 
 use std::sync::Arc;
 

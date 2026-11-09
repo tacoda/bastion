@@ -10,7 +10,7 @@ use crate::local;
 use crate::servers::{self, Keychain, Servers};
 
 /// The checkout this build came from, which holds `worker-compose.yaml`.
-// ponytail: a build-time path; packaging the stack replaces it (PLAN.md F10).
+// ponytail: a build-time path; packaging the stack replaces it.
 const CHECKOUT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
 const IDENTIFIER: &str = "dev.tacoda.bastion";
 

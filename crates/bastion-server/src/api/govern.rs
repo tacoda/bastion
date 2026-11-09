@@ -1,4 +1,4 @@
-//! Commands for held calls, the two ladders and the audit (PLAN.md A5).
+//! Commands for held calls, the two ladders and the audit.
 
 use std::sync::Arc;
 

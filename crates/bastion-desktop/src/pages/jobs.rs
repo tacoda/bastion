@@ -1,4 +1,4 @@
-//! The Jobs page (PLAN.md A3): every job on every Bastion server, the ones
+//! The Jobs page: every job on every Bastion server, the ones
 //! waiting on the owner first, after wipp's Jobs page and GitHub Actions'
 //! runs list.
 

@@ -1,4 +1,4 @@
-//! New request (PLAN.md A3, A7, D35): a request for a workspace on one
+//! New request (PLAN.md D35): a request for a workspace on one
 //! Bastion server, run by the workflow picked, or started from a GitHub
 //! issue.
 

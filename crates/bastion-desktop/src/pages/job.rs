@@ -1,4 +1,4 @@
-//! The job page (PLAN.md A3): one job as a run. The request and its badges,
+//! The job page: one job as a run. The request and its badges,
 //! the owner's actions when it waits, what governs it, its workflow, then
 //! its steps, each opening to its artifacts and turn.
 
@@ -392,7 +392,7 @@ fn waiting<'a>(state: &'a State, d: &'a JobDetail) -> Element<'a, Message> {
         .into()
 }
 
-/// One call the gate holds (PLAN.md A5): allow exactly it once, or refuse it
+/// One call the gate holds: allow exactly it once, or refuse it
 /// with a note the agent reads as the call's result.
 fn held_call<'a>(state: &'a State, call: &'a HeldCallView) -> Element<'a, Message> {
     let typed = state.feedback.get(&call.id).cloned().unwrap_or_default();

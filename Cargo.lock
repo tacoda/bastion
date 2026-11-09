@@ -81,12 +81,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "anyhow"
-version = "1.0.104"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
-
-[[package]]
 name = "arc-swap"
 version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -386,22 +380,6 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tower",
- "uuid",
-]
-
-[[package]]
-name = "bastion-spikes"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "base64 0.22.1",
- "futures-util",
- "iii-sdk",
- "serde_json",
- "sha2",
- "tokio",
- "tower-http",
  "uuid",
 ]
 
@@ -4275,7 +4253,6 @@ dependencies = [
  "bytes",
  "libc",
  "mio",
- "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
  "socket2",

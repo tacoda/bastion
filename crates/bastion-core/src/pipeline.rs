@@ -1,5 +1,4 @@
-//! The pipelines a job can run, and where a failing step sends the work
-//! (PLAN.md A8, after wipp's stage graph in `stages.py` at `f7c7e02`).
+//! The pipelines a job can run, and where a failing step sends the work.
 
 use serde::{Deserialize, Serialize};
 

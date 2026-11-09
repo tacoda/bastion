@@ -1,4 +1,4 @@
-//! A/B evals in the factory (PLAN.md A6, D22). An eval submits each request
+//! A/B evals in the factory (PLAN.md D22). An eval submits each request
 //! once per arm as a trial job from the same commit; the gate judges each
 //! trial under its arm's rungs. Every turn's usage is metered, and each run
 //! that reaches review is graded by a turn with no tools. The comparison
@@ -65,11 +65,18 @@ pub async fn grade(engine: &dyn Engine, store: &dyn Store, run: &EvalRun) -> Res
         .ok_or("the run has no diff to grade")?;
     let session = format!("{}-grade-{}", run.job, short_id());
     let brief = eval::grading_brief(&run.request, &diff);
+    // ponytail: the judge runs on the default model; read it from settings when graders get their own (PLAN.md F6).
+    let judge = bastion_core::settings::Model::default();
     engine
-        .call_for(NS, "harness::send", json!({
-            "session_id": session, "provider": crate::factory::PROVIDER, "model": crate::factory::MODEL,
-            "message": brief, "options": { "max_turns": 1, "functions": { "allow": [] } },
-        }), 60_000)
+        .call_for(
+            NS,
+            "harness::send",
+            json!({
+                "session_id": session, "provider": judge.provider, "model": judge.model,
+                "message": brief, "options": { "max_turns": 1, "functions": { "allow": [] } },
+            }),
+            60_000,
+        )
         .await?;
     for _ in 0..GRADE_SECS / 3 {
         tokio::time::sleep(Duration::from_secs(3)).await;

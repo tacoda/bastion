@@ -1,4 +1,4 @@
-//! Model providers (D34) and OpenAI-compatible hosts (K3). A key is sent
+//! Model providers (D34) and OpenAI-compatible hosts. A key is sent
 //! once, to the stack's vault, and never shown again. OpenAI Codex signs in
 //! with a ChatGPT plan by a device code the page polls until it ends.
 

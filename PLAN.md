@@ -103,12 +103,11 @@ crates/
                        gate, audit, stack; src/engine/ is the iii seam
   bastion-client/      the client library (D38), from phase I
   bastion-desktop/     the iced client (D37)
-  bastion-spikes/      checks that prove an engine feature, as examples
 workers/
   bastion-openai-compat/   OpenAI-compatible hosts as router providers
 seed/                  first-run rules, grants and workflows (D26)
 worker-compose.yaml    the stack the local server starts
-docs/levels.md         the record of each spike and what it proved
+docs/engine-findings.md   what the engine was found to do, and on which versions
 ```
 
 Code in another language (D1): `.pi/extensions/entire/index.ts`, generated
@@ -150,13 +149,14 @@ document says what is true.
 - **C5, documents.** Rewrite `README.md` (what it is, how to run the server
   and the client, the checks) and `CLAUDE.md` (the layout, the seams, every
   CI step before a push, the CodeScene gate). Mark the version line in
-  `docs/levels.md` historical, and add spike N10.
+  the spike record historical, and add spike N10. Then remove the spikes
+  crate, whose findings are in the code, and keep their record as
+  `docs/engine-findings.md`.
 - **C6, local leftovers.** Delete the untracked `floyd` data and config, the
   observability dump in `data/`, `agents/`, and `skills/provider-claude-code`.
-  Ignore `/spikes/*/target/`.
 
 **Exit:** CI passes with no Tauri, Leptos or wasm step; `rg -i
-"tauri|leptos|trunk|profile"` finds nothing but history in `docs/levels.md`;
+"tauri|leptos|trunk|profile"` finds nothing but history in `docs/engine-findings.md`;
 the desktop client and the server run a short workflow to Approve.
 
 ### R — Robustness
@@ -285,7 +285,7 @@ value; each is a phase of its own when it starts.
 
 | Phase | State | Evidence |
 |---|---|---|
-| C | in progress | C1 retired the old client; C2 removed the protocol and server parts only it used, and the client's profiles; C3 removed the fixed grading model, the dead queue, spikes N2, N12's server half and N14, the people and token type duplicates, every citation of an old plan phase, and the old client's words in server code. C4 removed the stack's `cron`, `storage`, `ide`, `workflow`, `memory` and `eval`, which nothing calls; `harness` calls `session-manager`, `context-manager`, `iii-directory`, `fp`, `judge` and `approval-gate` (from its binary), so they stay; `opengantry` stays for F4. |
+| C | in progress | C1 retired the old client; C2 removed the protocol and server parts only it used, and the client's profiles; C3 removed the fixed grading model, the dead queue, spikes N2, N12's server half and N14, the people and token type duplicates, every citation of an old plan phase, and the old client's words in server code. C4 removed the stack's `cron`, `storage`, `ide`, `workflow`, `memory` and `eval`, which nothing calls; `harness` calls `session-manager`, `context-manager`, `iii-directory`, `fp`, `judge` and `approval-gate` (from its binary), so they stay; `opengantry` stays for F4. C5 rewrote the README and CLAUDE.md, and the spikes crate went: its findings are in the code, and their record is `docs/engine-findings.md`. Exit, live (2026-11-09): the server and the stack restarted on the trimmed stack file, a short workflow's plan turn reached Approve, and the desktop client listed it; CI's steps pass with no Tauri, Leptos or wasm step. C6 waits on the owner, as it deletes local data git cannot restore. |
 | R | not started | |
 | I | not started | |
 | F | not started | |

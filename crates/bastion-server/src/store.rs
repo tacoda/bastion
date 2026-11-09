@@ -1,6 +1,6 @@
-//! The Store seam (PLAN.md §6.2): workspaces, jobs and artifacts as rows in
+//! The Store seam: workspaces, jobs and artifacts as rows in
 //! the `database` worker, each job with a `rev` so a stale write is refused
-//! (D8), and the governance rows of A5: constraints, capabilities, held
+//! (D8), and the governance rows: constraints, capabilities, held
 //! calls and the audit chain. `SqlStore` is the only code that writes SQL.
 
 use std::future::Future;
@@ -192,7 +192,7 @@ fn staged_tables() -> [(&'static str, &'static str, String); 4] {
     ]
 }
 
-/// `turns` (A6), under the stage check `stage`.
+/// `turns`, under the stage check `stage`.
 fn turns_table(stage: &str) -> (&'static str, &'static str, String) {
     (
         "turns",
@@ -211,7 +211,7 @@ fn turns_table(stage: &str) -> (&'static str, &'static str, String) {
     )
 }
 
-/// The columns of `turns` (A6), which named only the short pipeline's
+/// The columns of `turns`, which named only the short pipeline's
 /// stages until migration 2.
 const TURN_COLUMNS: &str = "session, job, stage, turns, calls, call_errors, cost_micros, ended_at";
 
@@ -335,7 +335,7 @@ const ALTERS: [&str; 11] = [
 
 /// Numbered migrations, each run once in order; `PRAGMA user_version` is the
 /// last one applied. Migration 1 rebuilds the tables that name a stage, for
-/// the full pipeline (A8); migration 2 rebuilds `turns`, which it missed;
+/// the full pipeline; migration 2 rebuilds `turns`, which it missed;
 /// migration 3 rebuilds them all for a workflow's own steps (D35).
 fn migrations() -> Vec<Vec<String>> {
     let staged = staged_tables();
@@ -1332,7 +1332,7 @@ mod tests {
     }
 }
 
-/// The SQL against this machine's `database` worker: `cargo test -p bastion -- --ignored --nocapture live_store`.
+/// The SQL against this machine's `database` worker: `cargo test -p bastion-server -- --ignored --nocapture live_store`.
 #[cfg(test)]
 mod live {
     use super::*;

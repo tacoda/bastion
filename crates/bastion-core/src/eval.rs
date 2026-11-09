@@ -1,4 +1,4 @@
-//! A/B evals (PLAN.md A6, D22): the same requests on the same snapshot under
+//! A/B evals (PLAN.md D22): the same requests on the same snapshot under
 //! two harness configurations. Each configuration is the owner's policy with
 //! some rungs moved. A run is tallied from its audit record and its turns, and
 //! the two arms are compared per request and in total.

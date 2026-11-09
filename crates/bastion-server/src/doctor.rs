@@ -1,4 +1,4 @@
-//! Doctor (PLAN.md A1): what must be true before the stack starts, each failed
+//! Doctor: what must be true before the stack starts, each failed
 //! check with its fix. The machine checks run with the engine down; the
 //! provider check needs it up.
 
@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use crate::engine::Engine;
 use crate::machine::Machine;
 
-/// The `iii` this stack is pinned to (PLAN.md A0, `docs/levels.md`).
+/// The `iii` this stack is pinned to.
 pub const III_VERSION: &str = "0.25.0";
 pub const COMPOSE_FILE: &str = "worker-compose.yaml";
 
@@ -78,7 +78,7 @@ fn pins(machine: &dyn Machine, checkout: &Path) -> Check {
     let text = match machine.read(&path) {
         Ok(text) => text,
         Err(e) => {
-            let fix = Some("Point the profile's `checkout` at a Bastion checkout.".into());
+            let fix = Some("Start the server with `--checkout` at a Bastion checkout.".into());
             return check("Pins", true, CheckState::Fail, e, fix);
         }
     };
@@ -135,7 +135,7 @@ fn exact(version: &str) -> bool {
             .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
 }
 
-/// Sandbox VMs need Apple Silicon, or Linux with `/dev/kvm` (PLAN.md §2).
+/// Sandbox VMs need Apple Silicon, or Linux with `/dev/kvm`.
 fn sandbox(machine: &dyn Machine) -> Check {
     match machine.platform() {
         ("macos", "aarch64") => check("Sandbox VMs", true, CheckState::Pass, "Apple Silicon", None),
@@ -351,7 +351,7 @@ mod tests {
     }
 }
 
-/// Doctor against this machine and the engine on 49160: `cargo test -p bastion -- --ignored --nocapture live_doctor`.
+/// Doctor against this machine and the engine on 49160: `cargo test -p bastion-server -- --ignored --nocapture live_doctor`.
 #[cfg(test)]
 mod live {
     use super::*;

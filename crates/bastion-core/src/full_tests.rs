@@ -1,4 +1,4 @@
-//! The full pipeline's transitions (A8 step 1), as plain function calls.
+//! The full pipeline's transitions, as plain function calls.
 //! `go` runs with every dial dark, so a test sees the flow; `judge` runs
 //! with every dial lights-on, so a test sees the waits (D33).
 

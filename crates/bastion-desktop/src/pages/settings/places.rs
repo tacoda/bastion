@@ -1,5 +1,5 @@
 //! Where jobs run: the Bastion servers this window knows (D30), the
-//! workspaces on the server shown (A3), and the accounts it uses (A7).
+//! workspaces on the server shown, and the accounts it uses.
 
 use bastion_protocol::{AccountView, LOCAL, Server, Workspace, command};
 use iced::widget::{Column, button, column, row, text, text_input};

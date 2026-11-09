@@ -1,5 +1,5 @@
-//! The stack routine (PLAN.md A1, D13): start, attach to, and stop the compose
-//! project in the profile's checkout. `iii ps --json` is the source of truth.
+//! The stack routine (PLAN.md D13): start, attach to, and stop the compose
+//! project in the server's checkout. `iii ps --json` is the source of truth.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -15,11 +15,11 @@ use crate::machine::Machine;
 const START_WAIT: Duration = Duration::from_secs(10);
 const START_POLL: Duration = Duration::from_millis(250);
 
-/// Where this profile's stack lives.
+/// Where this server's stack lives.
 #[derive(Clone, Debug)]
 pub struct Stack {
     pub checkout: PathBuf,
-    /// The engine port the profile points at.
+    /// The engine port the stack listens on.
     pub port: u16,
     pub log: PathBuf,
 }
@@ -223,7 +223,7 @@ mod tests {
     }
 }
 
-/// Attach to this machine's running stack: `cargo test -p bastion -- --ignored --nocapture live_attach`.
+/// Attach to this machine's running stack: `cargo test -p bastion-server -- --ignored --nocapture live_attach`.
 #[cfg(test)]
 mod live {
     use super::*;

@@ -72,7 +72,7 @@ impl Engine for IiiEngine {
     }
 
     // `engine::functions-available` is a trigger type, and `observe` only
-    // watches functions, so this binds it the deprecated way (as N3 did).
+    // watches functions, so this binds it the deprecated way.
     #[allow(deprecated)]
     fn on_functions_changed(&self, on_push: OnPush) -> Result<(), String> {
         self.client.register_function(

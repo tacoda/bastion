@@ -1,4 +1,4 @@
-//! Scope split a request (A8 step 6): keep each later part as a queued job,
+//! Scope split a request: keep each later part as a queued job,
 //! asked for by the same person on the same workflow. Admission holds each
 //! part until the one before it lands.
 

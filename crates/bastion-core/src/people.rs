@@ -27,6 +27,15 @@ pub enum Act {
 }
 
 impl Role {
+    /// The role's word, as the API and the records carry it.
+    pub fn word(self) -> &'static str {
+        match self {
+            Role::Viewer => "viewer",
+            Role::Member => "member",
+            Role::Admin => "admin",
+        }
+    }
+
     pub fn may(self, act: Act) -> bool {
         match (self, act) {
             (_, Act::Read) => true,

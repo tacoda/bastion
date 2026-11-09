@@ -1,5 +1,5 @@
-//! Lucide icons (https://lucide.dev, v1.66.0, ISC licence), the same as the
-//! Leptos pages', drawn as SVG and tinted to the text's color.
+//! Lucide icons (https://lucide.dev, v1.66.0, ISC licence), drawn as SVG and
+//! tinted to the text's color.
 
 use iced::widget::svg;
 use iced::{Color, Element, Length};

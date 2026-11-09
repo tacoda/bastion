@@ -1,4 +1,4 @@
-//! A workspace's charter as read from its worktree (PLAN.md A5): the files
+//! A workspace's charter as read from its worktree: the files
 //! the brief carries, and the repository's own `.claude/settings.json`, whose
 //! permissions become constraints and whose hooks run in the job's VM.
 

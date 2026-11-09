@@ -1,4 +1,4 @@
-//! The gate in the factory (PLAN.md A5, D20, D21). Every `sandbox::*` call a
+//! The gate in the factory (PLAN.md D20, D21). Every `sandbox::*` call a
 //! turn makes reaches `judge` through a `pre-trigger` hook, and
 //! `bastion_core::govern::gate` decides it. The hook reads the policy from
 //! memory and hands every record to the audit writer, so a slow store never
@@ -49,7 +49,7 @@ pub struct Gate {
     approved: Mutex<HashMap<String, Vec<String>>>,
 }
 
-/// The factory's rule for one approved acceptance test (A8): enforced, so
+/// The factory's rule for one approved acceptance test: enforced, so
 /// a turn that writes it is refused.
 fn approved_test(file: &str) -> Constraint {
     Constraint {
@@ -463,7 +463,7 @@ impl Gate {
     }
 
     /// Run exactly this call once, in the job's VM, and deliver its result.
-    /// The hold dropped the VM pin, so the app pins it again here (N8).
+    /// The hold dropped the VM pin, so the server pins it again here.
     pub async fn allow_once(&self, job: &str, id: &str) -> Result<(), String> {
         let held = self.find(job, id).await?;
         self.run_held(&held, "allow-once").await

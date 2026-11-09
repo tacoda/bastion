@@ -478,14 +478,7 @@ fn flow<'a>(d: &'a JobDetail, marks: &'a BTreeMap<String, String>) -> Element<'a
         .size(13)
         .font(theme::BOLD)
         .color(theme::MUTED);
-    let mut body = column![
-        title,
-        drawing::view(Drawing {
-            workflow: &d.workflow,
-            marks
-        })
-    ]
-    .spacing(8);
+    let mut body = column![title, drawing::view(Drawing::read_only(&d.workflow, marks))].spacing(8);
     for (name, result) in &d.results {
         let head = text(format!("Result · {name}"))
             .size(12)

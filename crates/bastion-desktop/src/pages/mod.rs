@@ -3,6 +3,7 @@
 
 pub mod diff;
 pub mod drawing;
+pub mod edit;
 pub mod engine;
 pub mod evals;
 pub mod govern;
@@ -10,6 +11,7 @@ pub mod job;
 pub mod jobs;
 pub mod new_request;
 pub mod settings;
+pub mod workflows;
 
 use std::collections::BTreeSet;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -164,6 +166,7 @@ pub enum Page {
     Evals(Box<evals::List>),
     Eval(Box<evals::One>),
     Settings(Box<settings::State>),
+    Workflows(Box<workflows::State>),
     /// A page G2 has not built yet.
     Pending,
 }
@@ -182,7 +185,7 @@ impl Page {
             Route::Evals => Page::Evals(Box::default()),
             Route::Eval(id) => Page::Eval(Box::new(evals::One::new(id.clone()))),
             Route::Settings => Page::Settings(Box::default()),
-            _ => Page::Pending,
+            Route::Workflows => Page::Workflows(Box::default()),
         };
         let first = page.reload(ctx, Push::All);
         (page, first)
@@ -210,6 +213,7 @@ impl Page {
             Page::Evals(_) => evals::load_list(ctx),
             Page::Eval(s) => evals::load_one(s, ctx),
             Page::Settings(_) => settings::load(ctx),
+            Page::Workflows(_) => workflows::load(ctx),
             Page::Pending => Task::none(),
         }
     }
@@ -235,6 +239,7 @@ impl Page {
             (Page::Evals(s), Message::Evals(m)) => return evals::update_list(s, m, ctx),
             (Page::Eval(s), Message::Evals(m)) => return evals::update_one(s, m, ctx),
             (Page::Settings(s), Message::Settings(m)) => return settings::update(s, m, ctx),
+            (Page::Workflows(s), Message::Workflows(m)) => return workflows::update(s, m, ctx),
             _ => {}
         }
         Task::none()
@@ -250,6 +255,7 @@ impl Page {
             Page::Evals(s) => evals::view_list(s),
             Page::Eval(s) => evals::view_one(s, ctx),
             Page::Settings(s) => settings::view(s, ctx),
+            Page::Workflows(s) => workflows::view(s),
             Page::Pending => {
                 let title = text(route.title()).size(24).font(theme::BOLD);
                 column![title, text("This page is built in G2.").color(theme::MUTED)]

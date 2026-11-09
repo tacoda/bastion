@@ -5,9 +5,10 @@
 use std::collections::BTreeMap;
 
 use bastion_protocol::{NodeView, WorkflowView};
-use iced::widget::canvas::{self, Canvas, Frame, Geometry, Path, Stroke, Text};
+use iced::widget::canvas::{self, Canvas, Frame, Geometry, LineDash, Path, Stroke, Text};
 use iced::{Element, Point, Rectangle, Renderer, Size, Theme, mouse};
 
+use super::edit::{Drag, Pick, curve, node};
 use super::mark;
 use crate::theme;
 
@@ -55,31 +56,21 @@ fn corner(n: &NodeView) -> Point {
 }
 
 /// The curve from `from`'s right edge to `to`'s left, with its arrowhead.
-fn link(frame: &mut Frame, from: &NodeView, to: &NodeView) {
-    let (a, b) = (corner(from), corner(to));
-    let (start, end) = (
-        Point::new(a.x + W, a.y + H / 2.0),
-        Point::new(b.x, b.y + H / 2.0),
-    );
-    let curve = Path::new(|p| {
+fn link(frame: &mut Frame, from: &NodeView, to: &NodeView, picked: bool) {
+    let [start, c1, c2, end] = curve(from, to);
+    let color = if picked { theme::PRIMARY } else { theme::MUTED };
+    let line = Path::new(|p| {
         p.move_to(start);
-        p.bezier_curve_to(
-            Point::new(start.x + 60.0, start.y),
-            Point::new(end.x - 60.0, end.y),
-            end,
-        );
+        p.bezier_curve_to(c1, c2, end);
     });
-    frame.stroke(
-        &curve,
-        Stroke::default().with_width(2.0).with_color(theme::MUTED),
-    );
+    frame.stroke(&line, Stroke::default().with_width(2.0).with_color(color));
     let head = Path::new(|p| {
         p.move_to(end);
         p.line_to(Point::new(end.x - 8.0, end.y - 4.0));
         p.line_to(Point::new(end.x - 8.0, end.y + 4.0));
         p.close();
     });
-    frame.fill(&head, theme::MUTED);
+    frame.fill(&head, color);
 }
 
 fn caption(content: String, position: Point, color: iced::Color, size: f32) -> Text {
@@ -93,17 +84,27 @@ fn caption(content: String, position: Point, color: iced::Color, size: f32) -> T
     }
 }
 
+/// How a step's box is drawn: its run state, whether it is picked, and
+/// whether it shows the port a link starts from.
+struct Look<'a> {
+    state: Option<&'a String>,
+    picked: bool,
+    port: bool,
+}
+
 /// One step's box: its state mark and title, then its dial and results.
-fn step(frame: &mut Frame, n: &NodeView, state: Option<&String>) {
+fn step(frame: &mut Frame, n: &NodeView, look: Look) {
     let at = corner(n);
     let body = Path::rounded_rectangle(at, Size::new(W, H), 8.0.into());
     frame.fill(&body, theme::BG);
-    frame.stroke(
-        &body,
-        Stroke::default().with_width(2.0).with_color(theme::LINE),
-    );
+    let edge = if look.picked {
+        theme::PRIMARY
+    } else {
+        theme::LINE
+    };
+    frame.stroke(&body, Stroke::default().with_width(2.0).with_color(edge));
     let mut x = at.x + 10.0;
-    if let Some((symbol, color)) = state.map(|s| mark(s)) {
+    if let Some((symbol, color)) = look.state.map(|s| mark(s)) {
         frame.fill_text(caption(
             symbol.into(),
             Point::new(x, at.y + 10.0),
@@ -124,16 +125,75 @@ fn step(frame: &mut Frame, n: &NodeView, state: Option<&String>) {
         theme::MUTED,
         12.0,
     ));
+    if look.port {
+        frame.fill(
+            &Path::circle(Point::new(at.x + W, at.y + H / 2.0), 7.0),
+            theme::PRIMARY,
+        );
+    }
 }
 
-/// A workflow drawn read-only, each step marked with its state by node id.
-pub struct Drawing<'a> {
+/// The canvas's pointer, as the page hears it, in canvas coordinates.
+#[derive(Clone, Copy, Debug)]
+pub enum Pointer {
+    Press(Point),
+    Move(Point),
+    Release(Point),
+}
+
+/// A workflow on the canvas, each step marked with its state by node id.
+/// With `on`, the pointer picks, moves and links; without it, it is drawn
+/// read-only.
+pub struct Drawing<'a, M> {
     pub workflow: &'a WorkflowView,
     pub marks: &'a BTreeMap<String, String>,
+    pub picked: &'a Pick,
+    pub editable: bool,
+    pub drag: Option<&'a Drag>,
+    pub on: Option<fn(Pointer) -> M>,
 }
 
-impl<M> canvas::Program<M> for Drawing<'_> {
+impl<'a, M> Drawing<'a, M> {
+    pub fn read_only(workflow: &'a WorkflowView, marks: &'a BTreeMap<String, String>) -> Self {
+        Drawing {
+            workflow,
+            marks,
+            picked: &Pick::Nothing,
+            editable: false,
+            drag: None,
+            on: None,
+        }
+    }
+}
+
+/// The pointer event a canvas event is, at `at`.
+fn pointer(event: &canvas::Event, at: Option<Point>, dragging: bool) -> Option<Pointer> {
+    use iced::mouse::{Button, Event as Mouse};
+    match event {
+        canvas::Event::Mouse(Mouse::ButtonPressed(Button::Left)) => at.map(Pointer::Press),
+        canvas::Event::Mouse(Mouse::CursorMoved { .. }) if dragging => at.map(Pointer::Move),
+        canvas::Event::Mouse(Mouse::ButtonReleased(Button::Left)) if dragging => {
+            Some(Pointer::Release(at.unwrap_or_default()))
+        }
+        _ => None,
+    }
+}
+
+impl<M> canvas::Program<M> for Drawing<'_, M> {
     type State = ();
+
+    // iced's trait fixes this signature.
+    fn update(
+        &self,
+        _: &mut (),
+        event: &canvas::Event,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> Option<canvas::Action<M>> {
+        let on = self.on?;
+        let p = pointer(event, cursor.position_in(bounds), self.drag.is_some())?;
+        Some(canvas::Action::publish(on(p)).and_capture())
+    }
 
     // iced's trait fixes this signature.
     fn draw(
@@ -145,28 +205,52 @@ impl<M> canvas::Program<M> for Drawing<'_> {
         _: mouse::Cursor,
     ) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
-        let node = |id: &str| self.workflow.nodes.iter().find(|n| n.id == id);
-        for l in &self.workflow.links {
-            if let (Some(from), Some(to)) = (node(&l.from), node(&l.to)) {
-                link(&mut frame, from, to);
+        let w = self.workflow;
+        for l in &w.links {
+            if let (Some(from), Some(to)) = (node(w, &l.from), node(w, &l.to)) {
+                link(
+                    &mut frame,
+                    from,
+                    to,
+                    *self.picked == Pick::Link(l.from.clone(), l.to.clone()),
+                );
             }
         }
-        for n in &self.workflow.nodes {
-            step(&mut frame, n, self.marks.get(&n.id));
+        for n in &w.nodes {
+            let look = Look {
+                state: self.marks.get(&n.id),
+                picked: *self.picked == Pick::Step(n.id.clone()),
+                port: self.editable,
+            };
+            step(&mut frame, n, look);
+        }
+        if let Some(d) = self.drag.filter(|d| d.linking) {
+            let dash = Stroke {
+                line_dash: LineDash {
+                    segments: &[4.0, 4.0],
+                    offset: 0,
+                },
+                ..Stroke::default()
+            };
+            frame.stroke(
+                &Path::line(d.origin, d.now),
+                dash.with_width(2.0).with_color(theme::PRIMARY),
+            );
         }
         vec![frame.into_geometry()]
     }
 }
 
-pub fn view<'a, M: 'a>(drawing: Drawing<'a>) -> Element<'a, M> {
+pub fn view<'a, M: 'a>(drawing: Drawing<'a, M>) -> Element<'a, M> {
     let size = extent(drawing.workflow);
     let canvas = Canvas::new(drawing).width(size.width).height(size.height);
-    let scroll =
-        iced::widget::scrollable(canvas).direction(iced::widget::scrollable::Direction::Both {
-            vertical: Default::default(),
-            horizontal: Default::default(),
-        });
-    iced::widget::container(scroll).style(theme::panel).into()
+    let both = iced::widget::scrollable::Direction::Both {
+        vertical: Default::default(),
+        horizontal: Default::default(),
+    };
+    iced::widget::container(iced::widget::scrollable(canvas).direction(both))
+        .style(theme::panel)
+        .into()
 }
 
 #[cfg(test)]

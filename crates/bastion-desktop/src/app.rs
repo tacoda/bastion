@@ -42,6 +42,7 @@ pub enum Message {
     Engine(engine::Msg),
     Evals(evals::Msg),
     Settings(pages::settings::Msg),
+    Workflows(pages::workflows::Msg),
     /// Read the servers again, after Settings added or removed one.
     ReadServers,
     /// Open a link, such as a pull request, in the browser.
@@ -160,7 +161,8 @@ impl App {
             | Message::Govern(_)
             | Message::Engine(_)
             | Message::Evals(_)
-            | Message::Settings(_)) => {
+            | Message::Settings(_)
+            | Message::Workflows(_)) => {
                 let ctx = self.ctx();
                 return self.page.update(page, &ctx);
             }

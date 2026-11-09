@@ -1,2 +1,0 @@
-RUn a cargo clean, uninstall gtk4, push the commits
-Then start on G1

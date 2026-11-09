@@ -1,0 +1,11 @@
+yes
+
+---
+
+<task-notification>
+<task-id>bwrjnmcnq</task-id>
+<tool-use-id>toolu_019XwtpXS272mYVFhATxR4xL</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/bwrjnmcnq.output</output-file>
+<status>completed</status>
+<summary>Background command "Run the live store tests with a 90 second limit" completed (exit code 0)</summary>
+</task-notification>

@@ -1,0 +1,7 @@
+{
+  "tool_use_id": "toolu_01AbHfh6kWzENe2A7UHgWYgN",
+  "agent_id": "ae5d789f694754ba5",
+  "subagent_type": "general-purpose",
+  "task_description": "Find stale code and plans",
+  "started_at": "2026-11-09T15:48:16.907088-06:00"
+}

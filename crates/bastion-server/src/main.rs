@@ -129,7 +129,8 @@ async fn serve(a: &Args, app: axum::Router) -> Result<(), String> {
         None => axum::serve(tcp, app).await,
         Some((cert, key)) => {
             let acceptor = tls::acceptor(cert, key)?;
-            axum::serve(TlsListener { tcp, acceptor }, app).await
+            let listener = TlsListener::start(tcp, acceptor).map_err(|e| e.to_string())?;
+            axum::serve(listener, app).await
         }
     };
     served.map_err(|e| e.to_string())

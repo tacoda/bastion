@@ -5,14 +5,13 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine as _;
 use bastion_core::govern::Enforcement;
 use bastion_core::review;
-use bastion_core::settings::Forge;
 use bastion_core::{
-    BASE_TAG, Dials, Effect, Event, Job, Outcome, Pipeline, Stage, State, admit, outcome, step,
+    BASE_TAG, Dials, Effect, Event, Job, Outcome, Pipeline, Stage, admit, outcome, step,
 };
 use serde_json::{Value, json};
 
@@ -21,11 +20,9 @@ use crate::charter;
 use crate::engine::{DEFAULT_NAMESPACE, Engine};
 use crate::eval_store::{Eval, EvalRun};
 use crate::evals;
-use crate::forge;
 use crate::gate::Gate;
 use crate::machine::Machine;
 use crate::settings_store;
-use crate::spec;
 use crate::store::{Artifact, Record, Runtime, STALE, Store};
 use crate::workflow_store;
 
@@ -73,6 +70,8 @@ const SAVE_TRIES: usize = 3;
 const CI_POLLS: u32 = 90;
 
 pub type OnChange = Arc<dyn Fn(&str) + Send + Sync>;
+/// A condition on a job, checked in the same save as a change.
+pub type Holds = Arc<dyn Fn(&Record) -> bool + Send + Sync>;
 type BoxFuture<T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send>>;
 
 pub struct Factory {
@@ -84,30 +83,10 @@ pub struct Factory {
     scratch: PathBuf,
     /// The trigger bindings each running turn or land holds, by job.
     bindings: Mutex<HashMap<String, Vec<String>>>,
+    /// The turns being finished now, so a turn that ends twice (its event
+    /// and its cap, or its event and a resume) is finished once.
+    finishing: Mutex<std::collections::HashSet<String>>,
     gate: Arc<Gate>,
-}
-
-/// The text of a session's last assistant message.
-pub async fn final_reply(engine: &dyn Engine, session: &str) -> Result<String, String> {
-    let out = engine
-        .call(NS, "session::messages", json!({ "session_id": session }))
-        .await?;
-    out["messages"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .rev()
-        .find(|m| m["message"]["role"] == "assistant")
-        .map(|m| {
-            m["message"]["content"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|part| part["text"].as_str())
-                .collect::<Vec<_>>()
-                .join("\n")
-        })
-        .ok_or_else(|| format!("session {session} has no reply"))
 }
 
 pub fn now() -> u64 {
@@ -165,6 +144,7 @@ impl Factory {
             on_change,
             scratch: dirs.scratch,
             bindings: Mutex::new(HashMap::new()),
+            finishing: Mutex::default(),
             gate,
         })
     }
@@ -195,7 +175,7 @@ impl Factory {
             if let Err(e) = factory.gate.reload().await {
                 eprintln!("the gate has no policy, so it refuses every call: {e}");
             }
-            factory.resume().await
+            factory.keep_resuming();
         });
         Ok(())
     }
@@ -281,14 +261,33 @@ impl Factory {
 
     /// Step one job with one event, save it, and run its effects.
     pub async fn apply(self: &Arc<Self>, id: &str, event: Event) -> Result<(), String> {
-        self.clone().apply_owned(id.to_string(), event).await
+        self.apply_when(id, event, Arc::new(|_| true)).await
+    }
+
+    /// Apply `event` only if `holds` is true of the job as it is saved, so a
+    /// check and the change it allows cannot be split by another change.
+    pub async fn apply_when(
+        self: &Arc<Self>,
+        id: &str,
+        event: Event,
+        holds: Holds,
+    ) -> Result<(), String> {
+        self.clone().apply_owned(id.to_string(), event, holds).await
     }
 
     // Boxed, because an effect it spawns can call it again.
-    fn apply_owned(self: Arc<Self>, id: String, event: Event) -> BoxFuture<Result<(), String>> {
+    fn apply_owned(
+        self: Arc<Self>,
+        id: String,
+        event: Event,
+        holds: Holds,
+    ) -> BoxFuture<Result<(), String>> {
         Box::pin(async move {
             for _ in 0..SAVE_TRIES {
                 let mut record = self.store.load(&id).await?;
+                if !holds(&record) {
+                    return Ok(());
+                }
                 let dials = self.dials_for(&id).await?;
                 let (job, effects) = step(&record.job, &event, now(), &dials);
                 if job == record.job && effects.is_empty() {
@@ -298,29 +297,7 @@ impl Factory {
                 match self.store.save(&record).await {
                     Ok(rev) => {
                         record.rev = rev;
-                        // Artifacts are written before a client hears of the
-                        // change, so a page that reads at once sees them. Dark
-                        // decisions go in the audit log in the order they fell,
-                        // and a split's parts are kept before a client hears.
-                        let (artifacts, rest): (Vec<Effect>, Vec<Effect>) =
-                            effects.into_iter().partition(|e| {
-                                matches!(
-                                    e,
-                                    Effect::RecordArtifact { .. }
-                                        | Effect::CaptureDiff
-                                        | Effect::DarkDecided { .. }
-                                        | Effect::Split { .. }
-                                )
-                            });
-                        for effect in artifacts {
-                            self.clone().run(record.clone(), effect).await;
-                        }
-                        (self.on_change)(&id);
-                        for effect in rest {
-                            let (factory, record) = (self.clone(), record.clone());
-                            crate::rt::spawn(factory.run(record, effect));
-                        }
-                        self.pump();
+                        self.after_save(record, effects).await;
                         return Ok(());
                     }
                     Err(e) if e == STALE => continue,
@@ -329,6 +306,32 @@ impl Factory {
             }
             Err(STALE.into())
         })
+    }
+
+    /// Run what a saved change asks for. Artifacts are written before a
+    /// client hears of the change, so a page that reads at once sees them.
+    /// Dark decisions go in the audit log in the order they fell, and a
+    /// split's parts are kept before a client hears.
+    async fn after_save(self: &Arc<Self>, record: Record, effects: Vec<Effect>) {
+        let in_order = |e: &Effect| {
+            matches!(
+                e,
+                Effect::RecordArtifact { .. }
+                    | Effect::CaptureDiff
+                    | Effect::DarkDecided { .. }
+                    | Effect::Split { .. }
+            )
+        };
+        let (first, rest): (Vec<Effect>, Vec<Effect>) = effects.into_iter().partition(in_order);
+        for effect in first {
+            self.clone().run(record.clone(), effect).await;
+        }
+        (self.on_change)(&record.job.id);
+        for effect in rest {
+            let (factory, record) = (self.clone(), record.clone());
+            crate::rt::spawn(factory.run(record, effect));
+        }
+        self.pump();
     }
 
     /// Admit queued jobs while VMs are free.
@@ -340,6 +343,10 @@ impl Factory {
                 return;
             };
             let jobs: Vec<Job> = records.into_iter().map(|r| r.job).collect();
+            for id in bastion_core::orphans(&jobs) {
+                let error = "the part before it ended without landing".into();
+                let _ = factory.apply(&id, Event::Abandoned { error }).await;
+            }
             for id in admit(&jobs, MAX_VMS) {
                 let _ = factory.apply(&id, Event::Admitted).await;
             }
@@ -558,22 +565,13 @@ impl Factory {
     }
 
     fn hold(&self, job: &str, binding: String) {
-        self.bindings
-            .lock()
-            .unwrap()
-            .entry(job.into())
-            .or_default()
-            .push(binding);
+        let mut bindings = self.bindings.lock().unwrap();
+        bindings.entry(job.into()).or_default().push(binding);
     }
 
     fn release(&self, job: &str) {
-        for binding in self
-            .bindings
-            .lock()
-            .unwrap()
-            .remove(job)
-            .unwrap_or_default()
-        {
+        let held = self.bindings.lock().unwrap().remove(job);
+        for binding in held.unwrap_or_default() {
             self.engine.unbind(&binding);
         }
     }
@@ -587,10 +585,11 @@ impl Factory {
     ) -> Result<(), String> {
         let job = &record.job;
         let sandbox = record.runtime.sandbox.clone().ok_or("no VM")?;
-        let session = format!("{}-{}", job.id, short_id());
+        let turn = turn::Turn::start(&job.id, stage);
+        let session = turn.session.clone();
         self.set_runtime(&job.id, |r| r.session = Some(session.clone()))
             .await?;
-        self.listen_for_turn(&job.id, &session)?;
+        self.listen_for_turn(&turn)?;
         // The owner may have edited the rows directly (D26).
         self.gate.reload().await?;
 
@@ -633,72 +632,8 @@ impl Factory {
                 "options": { "max_turns": MAX_TURN_STEPS, "functions": { "allow": TOOLS }, "metadata": { "sandbox_id": sandbox, "job": job.id, "stage": stage } },
             }), 60_000)
             .await?;
-        let factory = self.clone();
-        let (id, turn) = (job.id.clone(), session.clone());
-        crate::rt::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(cap_secs)).await;
-            factory.turn_done(&id, &turn, true).await;
-        });
+        self.arm_cap(&turn, cap_secs);
         Ok(())
-    }
-
-    fn listen_for_turn(self: &Arc<Self>, job: &str, session: &str) -> Result<(), String> {
-        let factory = self.clone();
-        let (id, turn) = (job.to_string(), session.to_string());
-        let binding = self.engine.bind(
-            "harness::turn-completed",
-            json!({ "session_id": session }),
-            Arc::new(move |_| {
-                let (factory, id, turn) = (factory.clone(), id.clone(), turn.clone());
-                crate::rt::spawn(async move { factory.turn_done(&id, &turn, false).await });
-                json!({})
-            }),
-        )?;
-        self.hold(job, binding);
-        Ok(())
-    }
-
-    /// A turn ended, or ran past its cap. Ignored when the job moved on.
-    async fn turn_done(self: &Arc<Self>, id: &str, session: &str, timed_out: bool) {
-        let Ok(record) = self.store.load(id).await else {
-            return;
-        };
-        if record.runtime.session.as_deref() != Some(session) || record.job.state != State::Running
-        {
-            return;
-        }
-        let result = if timed_out {
-            Outcome::Failed {
-                error: format!(
-                    "the turn ran past {} minutes",
-                    bastion_core::TURN_CAP_SECS / 60
-                ),
-            }
-        } else {
-            match self
-                .engine
-                .call(NS, "harness::status", json!({ "session_id": session }))
-                .await
-            {
-                Ok(status) if status["status"] != "completed" => return,
-                Ok(status) => match status["result_error"].as_str() {
-                    Some(error) => Outcome::Failed {
-                        error: error.into(),
-                    },
-                    None => match self.final_reply(session).await {
-                        Ok(reply) => usable(record.job.stage, outcome(&reply)),
-                        Err(error) => Outcome::Failed { error },
-                    },
-                },
-                Err(error) => Outcome::Failed { error },
-            }
-        };
-        self.release(id);
-        evals::meter(&*self.engine, &*self.store, &record.job, session).await;
-        self.tidy_after_turn(&record).await;
-        let _ = self
-            .apply(id, Event::TurnFinished { outcome: result })
-            .await;
     }
 
     /// When an effect failed, tell the core: the VM is gone, or `failed`.
@@ -805,157 +740,6 @@ impl Factory {
         Ok(body)
     }
 
-    /// The turn's last assistant message, whole. `harness::status` truncates
-    /// its `result` and encodes it as a JSON string.
-    async fn final_reply(&self, session: &str) -> Result<String, String> {
-        final_reply(&*self.engine, session).await
-    }
-
-    /// The VM's commits come back to the worktree, then `worktree::land`
-    /// merges them, and its trigger reports the outcome.
-    async fn land(self: &Arc<Self>, record: &Record) -> Result<(), String> {
-        let (path, target) = self.bring_back(record).await?;
-        let worktree = record.runtime.worktree.clone().ok_or("no worktree")?;
-        match settings_store::current(&*self.store).await?.forge {
-            Forge::Github => {
-                let url = self.pull_request(record, &path, &target).await?;
-                self.apply(&record.job.id, Event::PrOpened { url }).await
-            }
-            Forge::Local => self.land_here(record, &worktree, &target).await,
-        }
-    }
-
-    /// Ship: bring the commits back, then push them and open the
-    /// pull request, or, with the local forge, go on with them in the worktree.
-    async fn ship(&self, record: &Record) -> Result<Event, String> {
-        let (path, target) = self.bring_back(record).await?;
-        Ok(match settings_store::current(&*self.store).await?.forge {
-            Forge::Github => Event::PrOpened {
-                url: self.pull_request(record, &path, &target).await?,
-            },
-            Forge::Local => Event::StepPassed,
-        })
-    }
-
-    /// Bring the VM's commits back to the job's worktree. Returns the
-    /// worktree's path and the workspace branch the change goes into.
-    async fn bring_back(&self, record: &Record) -> Result<(PathBuf, String), String> {
-        let id = &record.job.id;
-        let sandbox = record.runtime.sandbox.clone().ok_or("no VM")?;
-        let worktree = record.runtime.worktree.clone().ok_or("no worktree")?;
-        let (path, branch) = self.worktree_path(&worktree).await?;
-        self.vm_exec(
-            &sandbox,
-            &[
-                "git",
-                "-C",
-                REPO,
-                "bundle",
-                "create",
-                "/work/out.bundle",
-                &format!("origin/{branch}..{branch}"),
-            ],
-        )
-        .await
-        .map_err(|e| format!("no new commits to land: {e}"))?;
-        let read = self
-            .engine
-            .call_for(
-                DEFAULT_NAMESPACE,
-                "sandbox::fs::read",
-                json!({ "sandbox_id": sandbox, "path": "/work/out.bundle" }),
-                SLOW_MS,
-            )
-            .await?;
-        let bytes = self.engine.read_channel(read["content"].clone()).await?;
-        let bundle = self.scratch.join(format!("{id}.out.bundle"));
-        self.machine.write_bytes(&bundle, &bytes)?;
-        self.git(
-            &path,
-            &[
-                "pull",
-                "-q",
-                "--ff-only",
-                &bundle.display().to_string(),
-                &branch,
-            ],
-        )?;
-        Ok((path, self.workspace_branch(record).await?))
-    }
-
-    /// Push the job's branch and open its pull request, or reuse the one a
-    /// fix turn pushes to. Returns the pull request's URL.
-    async fn pull_request(
-        &self,
-        record: &Record,
-        path: &Path,
-        base: &str,
-    ) -> Result<String, String> {
-        let job = &record.job;
-        let slug = forge::slug(&*self.machine, path)?;
-        forge::push(&*self.machine, path, &job.id)?;
-        let url = match &job.pr {
-            Some(url) => url.clone(),
-            None => {
-                let pr = forge::describe(job, base, record.runtime.issue.as_deref());
-                forge::GitHub {
-                    engine: &*self.engine,
-                    slug,
-                }
-                .open(&pr)
-                .await?
-            }
-        };
-        Ok(url)
-    }
-
-    /// Merge the worktree into the workspace's branch here, with `worktree::land`.
-    async fn land_here(
-        self: &Arc<Self>,
-        record: &Record,
-        worktree: &str,
-        target: &str,
-    ) -> Result<(), String> {
-        let id = &record.job.id;
-        for (trigger, landed) in [
-            ("worktree::landed", true),
-            ("worktree::land-blocked", false),
-        ] {
-            let (factory, job) = (self.clone(), id.clone());
-            let binding = self.engine.bind(
-                trigger,
-                json!({ "worktree_id": worktree }),
-                Arc::new(move |event: Value| {
-                    let (factory, job) = (factory.clone(), job.clone());
-                    crate::rt::spawn(async move {
-                        factory.release(&job);
-                        let event = if landed {
-                            Event::Landed
-                        } else {
-                            Event::LandFailed {
-                                error: format!(
-                                    "land blocked: {}",
-                                    event["reason"].as_str().unwrap_or("no reason given")
-                                ),
-                            }
-                        };
-                        let _ = factory.apply(&job, event).await;
-                    });
-                    json!({})
-                }),
-            )?;
-            self.hold(id, binding);
-        }
-        self.engine
-            .call(
-                NS,
-                "worktree::land",
-                json!({ "worktree_id": worktree, "target_branch": target }),
-            )
-            .await?;
-        Ok(())
-    }
-
     /// Stop the VM. The worktree stays for the owner to look at.
     async fn teardown(&self, record: &Record) -> Result<(), String> {
         self.release(&record.job.id);
@@ -1025,118 +809,6 @@ impl Factory {
             .ok_or(format!("worktree::create: {created}"))
     }
 
-    /// The repository a job's pull request lives in, from its worktree's origin.
-    async fn slug(&self, record: &Record) -> Result<String, String> {
-        let worktree = record.runtime.worktree.clone().ok_or("no worktree")?;
-        let (path, _) = self.worktree_path(&worktree).await?;
-        forge::slug(&*self.machine, &path)
-    }
-
-    /// Poll the pull request's checks until they pass or fail.
-    // ponytail: polls every 20 s for 30 min; the github worker's PR webhooks replace this once a tunnel is set up.
-    fn watch_ci(self: &Arc<Self>, record: &Record) {
-        let (factory, record) = (self.clone(), record.clone());
-        crate::rt::spawn(async move {
-            let id = record.job.id.clone();
-            let (Some(pr), Ok(slug)) = (record.job.pr.clone(), factory.slug(&record).await) else {
-                let error = "the pull request or its repository is unknown".into();
-                let _ = factory.apply(&id, Event::LandFailed { error }).await;
-                return;
-            };
-            for _ in 0..CI_POLLS {
-                tokio::time::sleep(Duration::from_secs(20)).await;
-                let hub = forge::GitHub {
-                    engine: &*factory.engine,
-                    slug: slug.clone(),
-                };
-                let event = match hub.checks(&pr).await {
-                    Ok(forge::Checks::Pending) => continue,
-                    Ok(forge::Checks::Passed) => Event::CiPassed,
-                    Ok(forge::Checks::Failed(log)) => Event::CiFailed { log },
-                    Err(error) => Event::LandFailed { error },
-                };
-                let _ = factory.apply(&id, event).await;
-                return;
-            }
-            let error = "CI did not finish within 30 minutes".into();
-            let _ = factory.apply(&id, Event::LandFailed { error }).await;
-        });
-    }
-
-    /// Watch CI on the job's pull request, or merge it.
-    async fn forge_effect(self: &Arc<Self>, record: &Record, effect: Effect) -> Option<String> {
-        if effect == Effect::WatchCi {
-            self.watch_ci(record);
-            return None;
-        }
-        // With the local forge there is no pull request: the merge lands here.
-        if record.job.pr.is_none() {
-            return self.merge_here(record).await.err();
-        }
-        let event = match self.merge(record).await {
-            Ok(()) => Event::Landed,
-            Err(error) => Event::LandFailed { error },
-        };
-        self.apply(&record.job.id, event).await.err()
-    }
-
-    /// Land the worktree into the workspace's branch, as the short pipeline does.
-    async fn merge_here(self: &Arc<Self>, record: &Record) -> Result<(), String> {
-        let worktree = record.runtime.worktree.clone().ok_or("no worktree")?;
-        let target = self.workspace_branch(record).await?;
-        self.land_here(record, &worktree, &target).await
-    }
-
-    /// The commit the job's branch forked from its workspace's branch, or the
-    /// branch's head when that cannot be read.
-    async fn fork_point(&self, record: &Record, path: &Path) -> String {
-        let Ok(target) = self.workspace_branch(record).await else {
-            return "HEAD".into();
-        };
-        self.git(path, &["merge-base", "HEAD", &target])
-            .map(|sha| sha.trim().to_string())
-            .ok()
-            .filter(|sha| !sha.is_empty())
-            .unwrap_or_else(|| "HEAD".into())
-    }
-
-    /// The branch of the job's workspace, which its change goes into.
-    async fn workspace_branch(&self, record: &Record) -> Result<String, String> {
-        self.store
-            .workspaces()
-            .await?
-            .into_iter()
-            .find(|w| w.name == record.job.workspace)
-            .map(|w| w.branch)
-            .ok_or(format!("no workspace {}", record.job.workspace))
-    }
-
-    /// Merge the pull request, then bring the workspace's branch up to date.
-    async fn merge(&self, record: &Record) -> Result<(), String> {
-        let pr = record.job.pr.clone().ok_or("the job has no pull request")?;
-        forge::GitHub {
-            engine: &*self.engine,
-            slug: self.slug(record).await?,
-        }
-        .merge(&pr)
-        .await?;
-        let ws = self
-            .store
-            .workspaces()
-            .await?
-            .into_iter()
-            .find(|w| w.name == record.job.workspace);
-        if let Some(ws) = ws {
-            // Best effort: a workspace with local changes keeps them and stays behind.
-            let _ = self.machine.run(
-                "git",
-                &["pull", "-q", "--ff-only", "origin", &ws.branch],
-                Some(Path::new(&ws.path)),
-            );
-        }
-        Ok(())
-    }
-
     /// Where a job's worktree starts: a trial from its eval's commit, so both
     /// arms see the same code; any other job from the workspace's branch.
     async fn base_of(&self, id: &str, branch: &str) -> Result<String, String> {
@@ -1186,8 +858,12 @@ impl Factory {
 
 mod acceptance;
 mod decide;
+mod land;
 mod resume;
 mod split;
+mod turn;
+
+pub use turn::final_reply;
 /// The sandbox worker's answer for a VM that no longer exists (S002).
 fn vm_lost(error: &str) -> bool {
     error.contains("sandbox not found")
@@ -1199,18 +875,6 @@ fn writes_code(stage: Stage) -> bool {
         stage,
         Stage::Build | Stage::Implement | Stage::CiFix | Stage::Specify
     )
-}
-
-/// A specify reply the server cannot read as a spec goes back to the core as
-/// unusable, so the turn gets one more try with the reason.
-fn usable(stage: Stage, outcome: Outcome) -> Outcome {
-    match outcome {
-        Outcome::Done { report } if stage == Stage::Specify => match spec::read(&report) {
-            Ok(_) => Outcome::Done { report },
-            Err(problem) => Outcome::Unusable { report, problem },
-        },
-        other => other,
-    }
 }
 
 #[cfg(test)]

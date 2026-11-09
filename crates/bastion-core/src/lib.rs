@@ -289,6 +289,10 @@ pub enum Event {
         error: String,
     },
     Stopped,
+    /// A queued part will never run: the part before it ended unlanded.
+    Abandoned {
+        error: String,
+    },
     /// The change went up as a pull request; CI runs on it now.
     PrOpened {
         url: String,
@@ -551,9 +555,11 @@ pub fn step(job: &Job, event: &Event, at: u64, dials: &Dials) -> (Job, Vec<Effec
         }
         (State::Provisioning, Event::Provisioned) => enter(&mut next, dials),
         (State::Provisioning, Event::ProvisionFailed { error }) => fail(&mut next, error),
-        (State::Running, Event::TurnFinished { outcome }) => {
+        // A turn's result counts only at a step that runs a turn.
+        (State::Running, Event::TurnFinished { outcome }) if job.stage.kind() == Kind::Turn => {
             turn_finished(&mut next, outcome, dials)
         }
+        (State::Queued, Event::Abandoned { error }) => fail(&mut next, error),
         (State::NeedsYou, event) if decides(&next, event) => approved(&mut next, dials),
         (State::NeedsYou, Event::Commented { text }) => commented(&mut next, text, dials),
         (State::Running, Event::VmLost) => revive(&mut next),
@@ -1156,6 +1162,33 @@ pub fn admit(jobs: &[Job], limit: usize) -> Vec<String> {
         .take(limit.saturating_sub(busy))
         .map(|j| j.id.clone())
         .collect()
+}
+
+/// The effects that start a running job's current step again, as after a
+/// restart lost them. None when the job is not running, or when starting
+/// it would move it to another step.
+pub fn restart(job: &Job, dials: &Dials) -> Vec<Effect> {
+    if job.state != State::Running {
+        return Vec::new();
+    }
+    let mut again = job.clone();
+    let effects = start(&mut again, dials);
+    if (again.stage, again.state) == (job.stage, job.state) {
+        effects
+    } else {
+        Vec::new()
+    }
+}
+
+/// Queued parts that will never run, because the part before them ended
+/// without landing.
+pub fn orphans(jobs: &[Job]) -> Vec<String> {
+    let unlanded = |id: &String| {
+        jobs.iter()
+            .any(|o| &o.id == id && o.state.finished() && o.state != State::Landed)
+    };
+    let orphaned = |j: &&Job| j.state == State::Queued && j.after.as_ref().is_some_and(unlanded);
+    jobs.iter().filter(orphaned).map(|j| j.id.clone()).collect()
 }
 
 #[cfg(test)]

@@ -559,3 +559,55 @@ fn a_failing_ci_run_sends_a_bounded_fix_turn_with_its_log() {
     );
     assert_eq!(j.state, State::Failed);
 }
+
+#[test]
+fn a_turns_result_at_a_step_that_runs_no_turn_is_ignored() {
+    let (mut verifying, _) = run(&[Event::Admitted, Event::Provisioned]);
+    verifying.stage = Stage::Verify;
+    let (after, effects) = step(
+        &verifying,
+        &done("an old build's reply"),
+        AT,
+        &Dials::default(),
+    );
+    assert_eq!(after, verifying);
+    assert!(effects.is_empty());
+}
+
+#[test]
+fn a_running_step_starts_again_without_moving() {
+    let (planning, _) = run(&[Event::Admitted, Event::Provisioned]);
+    let again = restart(&planning, &Dials::default());
+    assert!(matches!(
+        &again[..],
+        [Effect::StartTurn {
+            stage: Stage::Plan,
+            ..
+        }]
+    ));
+    let mut landing = planning.clone();
+    landing.stage = Stage::Land;
+    assert_eq!(restart(&landing, &Dials::default()), vec![Effect::Land]);
+    let (waiting, _) = run(&[Event::Admitted, Event::Provisioned, done("plan")]);
+    assert!(restart(&waiting, &Dials::default()).is_empty());
+}
+
+#[test]
+fn a_part_whose_earlier_part_failed_is_abandoned() {
+    let mut first = job();
+    first.state = State::Failed;
+    let mut part = job();
+    (part.id, part.after) = ("j1-2".into(), Some("j1".into()));
+    assert_eq!(orphans(&[first.clone(), part.clone()]), ["j1-2"]);
+    first.state = State::Landed;
+    assert!(orphans(&[first, part.clone()]).is_empty());
+    let (abandoned, _) = step(
+        &part,
+        &Event::Abandoned {
+            error: "the part before it failed".into(),
+        },
+        AT,
+        &Dials::default(),
+    );
+    assert_eq!(abandoned.state, State::Failed);
+}

@@ -167,12 +167,13 @@ record, stalls a job, or runs a call twice.
 - **R1, the audit writer keeps every record.** Keep the chain's tail in
   memory and read only the last entry at start, instead of the whole chain
   on each append. Retry a failed write with backoff instead of dropping it,
-  spool queued records to disk so they survive a restart, and use a bounded
-  channel. Keep the tail's hash outside the database, so deleting
-  the newest entries breaks verification.
-- **R2, resume is exact.** A turn's result names its session, and the core
-  applies it only to that session at a turn step; the record clears the
-  session when it applies it. Resume runs again whenever the engine link
+  spool queued records to disk so they survive a restart. Keep the tail's
+  hash outside the database, so deleting the newest entries breaks
+  verification.
+- **R2, resume is exact.** A turn's session names its job and its step, and
+  its result applies only while the job still runs that session at that
+  step, checked in the same save; the core ignores a turn's result at a step
+  that runs no turn. Resume runs again whenever the engine link
   comes back, re-arms each turn's time cap from `updated_at`, and starts again
   any factory step that was running. A part whose earlier part failed stops
   instead of waiting forever.
@@ -285,6 +286,6 @@ value; each is a phase of its own when it starts.
 | Phase | State | Evidence |
 |---|---|---|
 | C | done | C1 retired the old client; C2 removed the protocol and server parts only it used, and the client's profiles; C3 removed the fixed grading model, the dead queue, spikes N2, N12's server half and N14, the people and token type duplicates, every citation of an old plan phase, and the old client's words in server code. C4 removed the stack's `cron`, `storage`, `ide`, `workflow`, `memory` and `eval`, which nothing calls; `harness` calls `session-manager`, `context-manager`, `iii-directory`, `fp`, `judge` and `approval-gate` (from its binary), so they stay; `opengantry` stays for F4. C5 rewrote the README and CLAUDE.md, and the spikes crate went: its findings are in the code, and their record is `docs/engine-findings.md`. Exit, live (2026-11-09): the server and the stack restarted on the trimmed stack file, a short workflow's plan turn reached Approve, and the desktop client listed it; CI's steps pass with no Tauri, Leptos or wasm step. C6, with the owner's yes, deleted the untracked `floyd` data and config, 885 MB of engine telemetry, a database backup, `agents/` and `skills/provider-claude-code`. |
-| R | in progress | R1 (2026-11-09): the audit writer reads only the chain's tail, keeps each record in `audit-spool.jsonl` until it is written, tries a failed write again with backoff up to 30 s, and keeps the newest entry's sequence and hash in `audit-anchor`, so deleting entries from the end breaks the chain. Live: a stack stop's record waited in the spool while the stack was down and was written, with the start's, once it came back (entries 1347 and 1348), and the chain verified. The queue stays unbounded, as the spool keeps it on disk; a stop's record no longer needs writing before the stop. |
+| R | in progress | R1 (2026-11-09): the audit writer reads only the chain's tail, keeps each record in `audit-spool.jsonl` until it is written, tries a failed write again with backoff up to 30 s, and keeps the newest entry's sequence and hash in `audit-anchor`, so deleting entries from the end breaks the chain. Live: a stack stop's record waited in the spool while the stack was down and was written, with the start's, once it came back (entries 1347 and 1348), and the chain verified. The queue stays unbounded, as the spool keeps it on disk; a stop's record no longer needs writing before the stop. R2 (2026-11-09): a turn's session is `<job>-<step>-<random>`, and its result applies only when the record still owns that session at that step, checked inside the save (`apply_when`); a turn that ends twice counts once. Resume runs at start and each time the engine link comes back up, re-arms what is left of a turn's cap, starts a running factory step's work again (a land with its pull request up watches CI again), and a queued part whose earlier part failed is abandoned. Live: the server was restarted mid-turn and the job still reached needs_you. |
 | I | not started | |
 | F | not started | |

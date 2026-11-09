@@ -643,12 +643,15 @@ fn a_specify_reply_that_is_not_a_spec_is_unusable_and_other_replies_pass_through
     use bastion_core::Outcome;
     let done = |r: &str| Outcome::Done { report: r.into() };
     assert!(matches!(
-        super::usable(Stage::Specify, done("no json")),
+        super::turn::usable(Stage::Specify, done("no json")),
         Outcome::Unusable { .. }
     ));
     let spec = r#"{"checks": [{"criterion": "C1", "run": "x", "files": ["t.py"]}]}"#;
-    assert_eq!(super::usable(Stage::Specify, done(spec)), done(spec));
-    assert_eq!(super::usable(Stage::Plan, done("no json")), done("no json"));
+    assert_eq!(super::turn::usable(Stage::Specify, done(spec)), done(spec));
+    assert_eq!(
+        super::turn::usable(Stage::Plan, done("no json")),
+        done("no json")
+    );
 }
 
 #[test]
@@ -685,5 +688,48 @@ fn a_scope_that_names_parts_keeps_each_later_part_as_a_job_that_waits() {
             (State::Queued, Some(id.as_str()), Some("Add the endpoint"))
         );
         assert_eq!(second.runtime.requester.as_deref(), Some("ana"));
+    });
+}
+
+#[test]
+fn a_turn_that_ends_twice_counts_once_and_a_stale_one_changes_nothing() {
+    let rig = rig();
+    crate::rt::block_on(async {
+        let id = rig.factory.submit("w", "x").await.unwrap();
+        until(&rig, &id, Stage::Plan, State::Running).await;
+        // The turn's event and its cap (or a resume) end the same turn.
+        let plan = loop {
+            let record = rig.store.load(&id).await.unwrap();
+            if let Some(s) = record.runtime.session.filter(|s| s.contains("-plan-")) {
+                break s;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        };
+        let plan = super::turn::Turn {
+            job: id.clone(),
+            session: plan,
+        };
+        let (a, b) = (rig.factory.clone(), rig.factory.clone());
+        let (t1, t2) = (plan.clone(), plan.clone());
+        let first = tokio::spawn(async move { a.turn_done(&t1, false).await });
+        let second = tokio::spawn(async move { b.turn_done(&t2, false).await });
+        let _ = (first.await, second.await);
+        until(&rig, &id, Stage::Plan, State::NeedsYou).await;
+        let plans = |all: &[(String, crate::store::Artifact)]| {
+            all.iter()
+                .filter(|(j, a)| *j == id && a.stage == Stage::Plan)
+                .count()
+        };
+        assert_eq!(
+            plans(&rig.store.artifacts.lock().unwrap()),
+            1,
+            "one plan artifact"
+        );
+        rig.factory.apply(&id, Event::Approved).await.unwrap();
+        until(&rig, &id, Stage::Build, State::Running).await;
+        // The plan's session, found again later, does not finish the build.
+        rig.factory.turn_done(&plan, false).await;
+        let job = rig.store.load(&id).await.unwrap().job;
+        assert_eq!((job.stage, job.state), (Stage::Build, State::Running));
     });
 }

@@ -22,12 +22,10 @@ impl Factory {
     /// Apply a person's decision on the step a job waits on, and note it in
     /// the audit log with their name when it moved the job (D33).
     pub async fn decide(self: &Arc<Self>, id: &str, event: Event, by: &str) -> Result<(), String> {
-        let before = self.store.load(id).await?;
-        self.apply(id, event.clone()).await?;
-        if self.store.load(id).await?.rev == before.rev {
-            return Ok(());
+        let always = Arc::new(|_: &crate::store::Record| true);
+        if let Some(before) = self.apply_when(id, event.clone(), always).await? {
+            self.note_decision(id, decision(&before, &event, by));
         }
-        self.note_decision(id, decision(&before.job, &event, by));
         Ok(())
     }
 

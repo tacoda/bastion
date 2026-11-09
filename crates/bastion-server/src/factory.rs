@@ -261,17 +261,20 @@ impl Factory {
 
     /// Step one job with one event, save it, and run its effects.
     pub async fn apply(self: &Arc<Self>, id: &str, event: Event) -> Result<(), String> {
-        self.apply_when(id, event, Arc::new(|_| true)).await
+        self.apply_when(id, event, Arc::new(|_| true))
+            .await
+            .map(|_| ())
     }
 
     /// Apply `event` only if `holds` is true of the job as it is saved, so a
     /// check and the change it allows cannot be split by another change.
+    /// Returns the job as it was before `event` moved it, or none if it did not.
     pub async fn apply_when(
         self: &Arc<Self>,
         id: &str,
         event: Event,
         holds: Holds,
-    ) -> Result<(), String> {
+    ) -> Result<Option<Job>, String> {
         self.clone().apply_owned(id.to_string(), event, holds).await
     }
 
@@ -281,24 +284,24 @@ impl Factory {
         id: String,
         event: Event,
         holds: Holds,
-    ) -> BoxFuture<Result<(), String>> {
+    ) -> BoxFuture<Result<Option<Job>, String>> {
         Box::pin(async move {
             for _ in 0..SAVE_TRIES {
                 let mut record = self.store.load(&id).await?;
                 if !holds(&record) {
-                    return Ok(());
+                    return Ok(None);
                 }
                 let dials = self.dials_for(&id).await?;
                 let (job, effects) = step(&record.job, &event, now(), &dials);
                 if job == record.job && effects.is_empty() {
-                    return Ok(());
+                    return Ok(None);
                 }
-                record.job = job;
+                let before = std::mem::replace(&mut record.job, job);
                 match self.store.save(&record).await {
                     Ok(rev) => {
                         record.rev = rev;
                         self.after_save(record, effects).await;
-                        return Ok(());
+                        return Ok(Some(before));
                     }
                     Err(e) if e == STALE => continue,
                     Err(e) => return Err(e),

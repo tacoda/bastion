@@ -811,3 +811,20 @@ fn stopping_a_job_cancels_its_turn() {
         panic!("no harness::stop for {session}");
     });
 }
+
+#[test]
+fn an_event_reports_the_job_it_moved_and_none_when_it_moved_nothing() {
+    let rig = rig();
+    crate::rt::block_on(async {
+        let id = rig.factory.submit("w", "x").await.unwrap();
+        until(&rig, &id, Stage::Plan, State::Running).await;
+        let always = || Arc::new(|_: &Record| true);
+        let early = rig.factory.apply_when(&id, Event::Approved, always());
+        assert_eq!(early.await.unwrap(), None, "an approval before the plan");
+        finish_turn(&rig, &id).await;
+        until(&rig, &id, Stage::Plan, State::NeedsYou).await;
+        let moved = rig.factory.apply_when(&id, Event::Approved, always());
+        let before = moved.await.unwrap().expect("the approval moved the job");
+        assert_eq!((before.stage, before.state), (Stage::Plan, State::NeedsYou));
+    });
+}

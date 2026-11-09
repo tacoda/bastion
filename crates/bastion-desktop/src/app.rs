@@ -13,7 +13,7 @@ use serde_json::Value;
 
 use crate::client::{self, Ask};
 use crate::events::{self, Feed};
-use crate::pages::{self, Ctx, Page, Push, engine, govern, job, jobs, new_request};
+use crate::pages::{self, Ctx, Page, Push, engine, evals, govern, job, jobs, new_request};
 use crate::route::{PAGES, Route};
 use crate::{icons, start, theme};
 
@@ -40,6 +40,7 @@ pub enum Message {
     Job(job::Msg),
     Govern(govern::Msg),
     Engine(engine::Msg),
+    Evals(evals::Msg),
     /// Open a link, such as a pull request, in the browser.
     OpenUrl(String),
 }
@@ -143,34 +144,14 @@ impl App {
                 self.current = server;
                 return self.go(Route::Job(id));
             }
-            Message::Jobs(msg) => {
-                if let Page::Jobs(state) = &mut self.page {
-                    jobs::update(state, msg);
-                }
-            }
-            Message::NewRequest(msg) => {
+            page @ (Message::Jobs(_)
+            | Message::NewRequest(_)
+            | Message::Job(_)
+            | Message::Govern(_)
+            | Message::Engine(_)
+            | Message::Evals(_)) => {
                 let ctx = self.ctx();
-                if let Page::NewRequest(state) = &mut self.page {
-                    return new_request::update(state, msg, &ctx);
-                }
-            }
-            Message::Job(msg) => {
-                let ctx = self.ctx();
-                if let Page::Job(state) = &mut self.page {
-                    return job::update(state, msg, &ctx);
-                }
-            }
-            Message::Govern(msg) => {
-                let ctx = self.ctx();
-                if let Page::Govern(state) = &mut self.page {
-                    return govern::update(state, msg, &ctx);
-                }
-            }
-            Message::Engine(msg) => {
-                let ctx = self.ctx();
-                if let Page::Engine(state) = &mut self.page {
-                    return engine::update(state, msg, &ctx);
-                }
+                return self.page.update(page, &ctx);
             }
             Message::OpenUrl(url) => open(&url),
             Message::Feed((server, feed)) => return self.on_feed(server, feed),

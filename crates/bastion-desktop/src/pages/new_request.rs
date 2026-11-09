@@ -2,37 +2,19 @@
 //! Bastion server, run by the workflow picked, or started from a GitHub
 //! issue.
 
-use std::fmt;
-
 use bastion_protocol::{IssueView, LOCAL, WorkflowView, Workspace, command};
 use iced::widget::{Column, button, column, container, pick_list, row, text, text_editor};
 use iced::{Element, Fill, Task};
 use serde_json::json;
 
-use super::{Ctx, labeled};
+use super::{Choice, Ctx, labeled};
 use crate::app::Message;
 use crate::client::Ask;
 use crate::route::Route;
 use crate::theme;
 
-/// A workflow as the picker shows it; an empty id runs the server's default.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Choice {
-    id: String,
-    name: String,
-}
-
-impl fmt::Display for Choice {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.name)
-    }
-}
-
 fn default_workflow() -> Choice {
-    Choice {
-        id: String::new(),
-        name: "The server's default".into(),
-    }
+    Choice::new("", "The server's default")
 }
 
 pub struct State {

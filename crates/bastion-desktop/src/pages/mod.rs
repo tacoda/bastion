@@ -4,6 +4,7 @@
 pub mod diff;
 pub mod drawing;
 pub mod engine;
+pub mod evals;
 pub mod govern;
 pub mod job;
 pub mod jobs;
@@ -99,6 +100,28 @@ pub fn section<'a, M: 'a>(title: String, body: Element<'a, M>, accent: bool) -> 
         .into()
 }
 
+/// One option of a picker: the value it stands for and the words it shows.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Choice {
+    pub id: String,
+    pub name: String,
+}
+
+impl Choice {
+    pub fn new(id: &str, name: &str) -> Self {
+        Choice {
+            id: id.into(),
+            name: name.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for Choice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.name)
+    }
+}
+
 /// The id of every page's scroll area, so a new page starts at its top.
 pub const SCROLL: &str = "page";
 
@@ -137,6 +160,8 @@ pub enum Page {
     Job(Box<job::State>),
     Govern(govern::State),
     Engine(Box<engine::State>),
+    Evals(Box<evals::List>),
+    Eval(Box<evals::One>),
     /// A page G2 has not built yet.
     Pending,
 }
@@ -152,24 +177,62 @@ impl Page {
             Route::Capabilities => Page::Govern(govern::State::new(govern::Which::Capabilities)),
             Route::Audit => Page::Govern(govern::State::new(govern::Which::Audit)),
             Route::Engine => Page::Engine(Box::default()),
+            Route::Evals => Page::Evals(Box::default()),
+            Route::Eval(id) => Page::Eval(Box::new(evals::One::new(id.clone()))),
             _ => Page::Pending,
         };
         let first = page.reload(ctx, Push::All);
         (page, first)
     }
 
+    /// Whether `push` changed what the page shows.
+    fn wants(&self, push: Push) -> bool {
+        match self {
+            Page::Pending => false,
+            Page::NewRequest(_) => push == Push::All,
+            Page::Engine(_) => push != Push::Job,
+            // ponytail: any job's change reads a job or an eval again; pass the id when that costs.
+            _ => push != Push::Engine,
+        }
+    }
+
+    /// Read what the page shows.
+    fn load(&self, ctx: &Ctx) -> Task<Message> {
+        match self {
+            Page::Jobs(s) => jobs::load(s, ctx).map(Message::Jobs),
+            Page::NewRequest(s) => new_request::load(s, ctx),
+            Page::Job(s) => job::load(s, ctx),
+            Page::Govern(s) => govern::load(s, ctx),
+            Page::Engine(_) => engine::load(ctx),
+            Page::Evals(_) => evals::load_list(ctx),
+            Page::Eval(s) => evals::load_one(s, ctx),
+            Page::Pending => Task::none(),
+        }
+    }
+
     /// Read again after a push, when it changed what the page shows.
     pub fn reload(&self, ctx: &Ctx, push: Push) -> Task<Message> {
-        let jobs = push != Push::Engine;
-        match self {
-            Page::Jobs(s) if jobs => jobs::load(s, ctx).map(Message::Jobs),
-            Page::NewRequest(s) if push == Push::All => new_request::load(s, ctx),
-            // ponytail: any job's change reads this one again; pass the id when that costs.
-            Page::Job(s) if jobs => job::load(s, ctx),
-            Page::Govern(s) if jobs => govern::load(s, ctx),
-            Page::Engine(_) if push != Push::Job => engine::load(ctx),
-            _ => Task::none(),
+        if self.wants(push) {
+            self.load(ctx)
+        } else {
+            Task::none()
         }
+    }
+
+    /// Hand a page's message to the page it belongs to; one for a page no
+    /// longer shown is dropped.
+    pub fn update(&mut self, message: Message, ctx: &Ctx) -> Task<Message> {
+        match (self, message) {
+            (Page::Jobs(s), Message::Jobs(m)) => jobs::update(s, m),
+            (Page::NewRequest(s), Message::NewRequest(m)) => return new_request::update(s, m, ctx),
+            (Page::Job(s), Message::Job(m)) => return job::update(s, m, ctx),
+            (Page::Govern(s), Message::Govern(m)) => return govern::update(s, m, ctx),
+            (Page::Engine(s), Message::Engine(m)) => return engine::update(s, m, ctx),
+            (Page::Evals(s), Message::Evals(m)) => return evals::update_list(s, m, ctx),
+            (Page::Eval(s), Message::Evals(m)) => return evals::update_one(s, m, ctx),
+            _ => {}
+        }
+        Task::none()
     }
 
     pub fn view<'a>(&'a self, route: &Route, ctx: &Ctx) -> Element<'a, Message> {
@@ -179,6 +242,8 @@ impl Page {
             Page::Job(s) => job::view(s, ctx),
             Page::Govern(s) => govern::view(s),
             Page::Engine(s) => engine::view(s),
+            Page::Evals(s) => evals::view_list(s),
+            Page::Eval(s) => evals::view_one(s, ctx),
             Page::Pending => {
                 let title = text(route.title()).size(24).font(theme::BOLD);
                 column![title, text("This page is built in G2.").color(theme::MUTED)]

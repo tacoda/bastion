@@ -253,9 +253,35 @@ pub fn files(dir: &Path) -> [PathBuf; 2] {
     [dir.join("audit-spool.jsonl"), dir.join("audit-anchor")]
 }
 
-/// The chain's key from the macOS Keychain, made on first use.
+/// The chain's key, made on first use: in the macOS Keychain, or where
+/// there is none, in `audit-key` in the data folder, readable only by its
+/// owner.
+pub fn key(machine: &dyn Machine, dir: Option<&Path>) -> Result<Vec<u8>, String> {
+    if machine.platform().0 == "macos" {
+        return keychain_key(machine);
+    }
+    let dir = dir.ok_or("no Keychain and no data folder for the audit key")?;
+    let path = dir.join("audit-key");
+    if let Ok(text) = machine.read(&path) {
+        return unhex(text.trim());
+    }
+    let (key, hex) = new_key();
+    machine.write_secret(&path, hex.as_bytes())?;
+    Ok(key)
+}
+
+/// A new key, and the same as hex.
+fn new_key() -> (Vec<u8>, String) {
+    let key: Vec<u8> = [uuid::Uuid::new_v4(), uuid::Uuid::new_v4()]
+        .iter()
+        .flat_map(|u| *u.as_bytes())
+        .collect();
+    let hex = key.iter().map(|b| format!("{b:02x}")).collect();
+    (key, hex)
+}
+
 // ponytail: `security -w` takes the new key as an argument, so it shows in the process list for a moment; use the Keychain API if that matters.
-pub fn key(machine: &dyn Machine) -> Result<Vec<u8>, String> {
+fn keychain_key(machine: &dyn Machine) -> Result<Vec<u8>, String> {
     let account = ["-s", SERVICE, "-a", "bastion"];
     let found = machine.run(
         "security",
@@ -265,11 +291,7 @@ pub fn key(machine: &dyn Machine) -> Result<Vec<u8>, String> {
     if found.success {
         return unhex(found.text.trim());
     }
-    let key: Vec<u8> = [uuid::Uuid::new_v4(), uuid::Uuid::new_v4()]
-        .iter()
-        .flat_map(|u| *u.as_bytes())
-        .collect();
-    let hex: String = key.iter().map(|b| format!("{b:02x}")).collect();
+    let (key, hex) = new_key();
     let made = machine.run(
         "security",
         &[&["add-generic-password"][..], &account, &["-w", &hex]].concat(),
@@ -285,7 +307,7 @@ pub fn key(machine: &dyn Machine) -> Result<Vec<u8>, String> {
 }
 
 fn unhex(text: &str) -> Result<Vec<u8>, String> {
-    let bad = || "the audit key in the Keychain is not hex".to_string();
+    let bad = || "the audit key is not 64 hex digits".to_string();
     if text.len() != 64 {
         return Err(bad());
     }
@@ -402,8 +424,23 @@ mod tests {
     fn the_key_is_read_from_the_keychain_or_made() {
         let hex = "ab".repeat(32);
         let found = FakeMachine::new().run_ok("security", &hex);
-        assert_eq!(key(&found).unwrap(), vec![0xab; 32]);
+        assert_eq!(key(&found, None).unwrap(), vec![0xab; 32]);
         let refused = FakeMachine::new().run_fails("security", "no keychain");
-        assert!(key(&refused).is_err());
+        assert!(key(&refused, None).is_err());
+    }
+
+    #[test]
+    fn without_a_keychain_the_key_is_kept_in_a_private_file() {
+        let dir = Path::new("/data");
+        let mut linux = FakeMachine::new();
+        linux.platform = ("linux", "x86_64");
+        let made = key(&linux, Some(dir)).unwrap();
+        assert_eq!(made.len(), 32);
+        assert!(linux.called("write-secret /data/audit-key"));
+        assert!(!linux.called("security"));
+        let mut kept = FakeMachine::new().file("/data/audit-key", &"cd".repeat(32));
+        kept.platform = ("linux", "x86_64");
+        assert_eq!(key(&kept, Some(dir)).unwrap(), vec![0xcd; 32]);
+        assert!(key(&linux, None).is_err());
     }
 }

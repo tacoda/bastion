@@ -124,7 +124,7 @@ impl Factory {
         on_change: OnChange,
         dirs: Dirs,
     ) -> Arc<Self> {
-        let audit = audit_log::key(&*machine).map(|key| {
+        let audit = audit_log::key(&*machine, dirs.data.as_deref()).map(|key| {
             let (store, limit, dir) = (store.clone(), audit_log::WRITE_LIMIT, dirs.data);
             AuditLog::start(audit_log::Writer {
                 store,

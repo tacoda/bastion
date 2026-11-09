@@ -59,16 +59,7 @@ fn token(data: &Path) -> Result<String, String> {
         return Ok(kept.trim().to_string());
     }
     let made = uuid::Uuid::new_v4().simple().to_string();
-    // Made readable only by its owner from the start, never wider.
-    use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
-    std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(&path)
-        .and_then(|mut file| file.write_all(made.as_bytes()))
-        .map_err(|e| format!("{}: {e}", path.display()))?;
+    ThisMachine.write_secret(&path, made.as_bytes())?;
     Ok(made)
 }
 

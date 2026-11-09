@@ -24,6 +24,8 @@ pub trait Machine: Send + Sync {
     fn read(&self, path: &Path) -> Result<String, String>;
     fn read_bytes(&self, path: &Path) -> Result<Vec<u8>, String>;
     fn write_bytes(&self, path: &Path, bytes: &[u8]) -> Result<(), String>;
+    /// Make a new file only its owner can read. Refuses to replace one.
+    fn write_secret(&self, path: &Path, bytes: &[u8]) -> Result<(), String>;
     /// Make a folder and its parents, if missing.
     fn make_dir(&self, path: &Path) -> Result<(), String>;
     fn exists(&self, path: &Path) -> bool;
@@ -127,6 +129,18 @@ impl Machine for ThisMachine {
             fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
         }
         fs::write(path, bytes).map_err(|e| format!("{}: {e}", path.display()))
+    }
+
+    fn write_secret(&self, path: &Path, bytes: &[u8]) -> Result<(), String> {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(path)
+            .and_then(|mut file| file.write_all(bytes))
+            .map_err(|e| format!("{}: {e}", path.display()))
     }
 
     fn exists(&self, path: &Path) -> bool {
@@ -261,6 +275,14 @@ pub mod fake {
                 .lock()
                 .unwrap()
                 .push(format!("write {}", path.display()));
+            Ok(())
+        }
+
+        fn write_secret(&self, path: &Path, _bytes: &[u8]) -> Result<(), String> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("write-secret {}", path.display()));
             Ok(())
         }
 

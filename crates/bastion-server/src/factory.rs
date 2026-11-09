@@ -594,13 +594,11 @@ impl Factory {
         self.gate.reload().await?;
 
         let mut message = String::new();
-        if let Some(worktree) = &record.runtime.worktree {
-            let (path, _) = self.worktree_path(worktree).await?;
-            self.gate
-                .set_charter(&job.id, charter::read(&*self.machine, &path));
+        if let Some(file) = self.at_base(record).await {
+            self.gate.set_charter(&job.id, charter::read(&file));
             self.load_arm(&job.id).await?;
             for name in charter::BRIEF_FILES {
-                if let Ok(text) = self.machine.read(&path.join(name)) {
+                if let Some(text) = file(name) {
                     message.push_str(&format!(
                         "The repository's charter ({name}):\n<charter>\n{text}\n</charter>\n\n"
                     ));
@@ -847,12 +845,22 @@ impl Factory {
     /// Judge the job's calls by its charter, read again from its worktree.
     async fn read_charter(&self, record: &Record) {
         let _ = self.load_arm(&record.job.id).await;
-        if let Some(worktree) = &record.runtime.worktree
-            && let Ok((path, _)) = self.worktree_path(worktree).await
-        {
-            self.gate
-                .set_charter(&record.job.id, charter::read(&*self.machine, &path));
+        if let Some(file) = self.at_base(record).await {
+            self.gate.set_charter(&record.job.id, charter::read(&file));
         }
+    }
+
+    /// A file as the job's base commit has it, so nothing the agent writes
+    /// to its worktree changes the charter that binds it. An empty file says
+    /// nothing, so it reads as missing.
+    async fn at_base(&self, record: &Record) -> Option<impl Fn(&str) -> Option<String> + '_> {
+        let worktree = record.runtime.worktree.as_ref()?;
+        let (path, _) = self.worktree_path(worktree).await.ok()?;
+        let base = self.fork_point(record, &path).await;
+        Some(move |name: &str| {
+            let text = self.git(&path, &["show", &format!("{base}:{name}")]).ok()?;
+            (!text.trim().is_empty()).then_some(text)
+        })
     }
 }
 

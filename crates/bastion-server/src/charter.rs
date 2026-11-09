@@ -1,20 +1,16 @@
-//! A workspace's charter as read from its worktree: the files
+//! A workspace's charter as its base commit has it: the files
 //! the brief carries, and the repository's own `.claude/settings.json`, whose
 //! permissions become constraints and whose hooks run in the job's VM.
-
-use std::path::Path;
 
 use bastion_core::charter;
 use bastion_core::govern::Constraint;
 use serde_json::{Value, json};
 
 use crate::engine::{DEFAULT_NAMESPACE, Engine};
-use crate::machine::Machine;
 
 const HOOK_MS: u64 = 60_000;
 
-/// The charter files put before every brief, when present.
-pub const BRIEF_FILES: [&str; 2] = ["CLAUDE.md", "AGENTS.md"];
+pub use bastion_core::charter::BRIEF_FILES;
 pub const SETTINGS: &str = ".claude/settings.json";
 
 /// A repository hook: a command, and the sandbox functions its matcher covers.
@@ -38,14 +34,16 @@ pub struct Charter {
     pub allow: Vec<String>,
 }
 
-pub fn read(machine: &dyn Machine, worktree: &Path) -> Charter {
+/// The charter from `file`, which gives a file's text by its path in the
+/// repository, or none when it is missing.
+pub fn read(file: &dyn Fn(&str) -> Option<String>) -> Charter {
     let mut found = Charter::default();
     for name in BRIEF_FILES {
-        if machine.exists(&worktree.join(name)) {
+        if file(name).is_some() {
             found.files.push(name.into());
         }
     }
-    let Ok(text) = machine.read(&worktree.join(SETTINGS)) else {
+    let Some(text) = file(SETTINGS) else {
         return found;
     };
     match serde_json::from_str::<Value>(&text) {
@@ -152,7 +150,15 @@ pub async fn run(engine: &dyn Engine, sandbox: &str, command: &str, input: &Valu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::machine::fake::FakeMachine;
+    use std::collections::HashMap;
+
+    fn repo(files: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+        let files: HashMap<String, String> = files
+            .iter()
+            .map(|(p, t)| (p.to_string(), t.to_string()))
+            .collect();
+        move |path| files.get(path).cloned()
+    }
 
     const SETTINGS_JSON: &str = r#"{
         "permissions": { "deny": ["Bash(git push:*)"], "ask": ["Edit(./secrets/**)"] },
@@ -164,10 +170,10 @@ mod tests {
 
     #[test]
     fn settings_give_constraints_and_hooks() {
-        let machine = FakeMachine::new()
-            .file("/wt/CLAUDE.md", "# rules")
-            .file("/wt/.claude/settings.json", SETTINGS_JSON);
-        let charter = read(&machine, Path::new("/wt"));
+        let charter = read(&repo(&[
+            ("CLAUDE.md", "# rules"),
+            (SETTINGS, SETTINGS_JSON),
+        ]));
         assert_eq!(charter.files, ["CLAUDE.md", ".claude/settings.json"]);
         assert_eq!(charter.constraints.len(), 2);
         assert_eq!(charter.constraints[0].contains, "git push");
@@ -183,11 +189,8 @@ mod tests {
 
     #[test]
     fn no_charter_reads_as_empty_and_bad_json_says_so() {
-        assert_eq!(
-            read(&FakeMachine::new(), Path::new("/wt")),
-            Charter::default()
-        );
-        let bad = FakeMachine::new().file("/wt/.claude/settings.json", "{ nope");
-        assert!(read(&bad, Path::new("/wt")).files[0].contains("not valid JSON"));
+        assert_eq!(read(&repo(&[])), Charter::default());
+        let bad = repo(&[(SETTINGS, "{ nope")]);
+        assert!(read(&bad).files[0].contains("not valid JSON"));
     }
 }

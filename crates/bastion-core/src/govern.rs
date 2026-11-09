@@ -152,9 +152,12 @@ pub fn mentions(text: &str, words: &str) -> bool {
     words.split_whitespace().all(|w| said.any(|t| t == w))
 }
 
-/// Judge one call. An enforced constraint refuses it first. Then the most
-/// specific grant for the stage decides, and a call no grant covers is
-/// refused.
+/// The sandbox function that writes a file.
+const WRITE: &str = "sandbox::fs::write";
+
+/// Judge one call. A write to the charter is refused first, then any call
+/// an enforced constraint binds. Then the most specific grant for the stage
+/// decides, and a call no grant covers is refused.
 pub fn gate(
     call: &Call,
     stage: Stage,
@@ -170,7 +173,10 @@ pub fn gate(
         .filter(|c| c.rung == Enforcement::Checked)
         .map(|c| c.id.clone())
         .collect();
-    let decision = if let Some(c) = broken().find(|c| c.rung == Enforcement::Enforced) {
+    let charter = (call.function == WRITE).then(|| crate::charter::guards(&call.text));
+    let decision = if let Some(reason) = charter.flatten() {
+        Decision::Deny { reason }
+    } else if let Some(c) = broken().find(|c| c.rung == Enforcement::Enforced) {
         Decision::Deny {
             reason: format!("Refused by constraint {}: {}", c.id, c.rule),
         }

@@ -153,7 +153,8 @@ pub async fn charters(
     Ok(workspaces
         .into_iter()
         .map(|w| {
-            let c = crate::charter::read(machine.as_ref(), std::path::Path::new(&w.path));
+            let root = std::path::Path::new(&w.path);
+            let c = crate::charter::read(&|name| machine.read(&root.join(name)).ok());
             let before = c
                 .before
                 .iter()

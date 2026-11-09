@@ -46,6 +46,7 @@ struct Rig {
     factory: Arc<Factory>,
     engine: Arc<FakeEngine>,
     store: Arc<FakeStore>,
+    machine: Arc<FakeMachine>,
 }
 
 fn rig() -> Rig {
@@ -65,7 +66,7 @@ fn rig_on(engine: FakeEngine) -> Rig {
     let factory = Factory::new(
         engine.clone() as Arc<dyn Engine>,
         store.clone() as Arc<dyn Store>,
-        machine,
+        machine.clone(),
         Arc::new(|_| {}),
         "/scratch".into(),
     );
@@ -73,6 +74,7 @@ fn rig_on(engine: FakeEngine) -> Rig {
         factory,
         engine,
         store,
+        machine,
     }
 }
 
@@ -299,10 +301,11 @@ fn a_lost_vm_gets_a_new_one_on_the_same_worktree_and_one_that_keeps_dying_fails_
         branch: "main".into(),
         checks: String::new(),
     });
+    let machine = Arc::new(FakeMachine::new().run_ok("git", ""));
     let factory = Factory::new(
         engine.clone() as Arc<dyn Engine>,
         store.clone() as Arc<dyn Store>,
-        Arc::new(FakeMachine::new().run_ok("git", "")),
+        machine.clone(),
         Arc::new(|_| {}),
         "/scratch".into(),
     );
@@ -310,6 +313,7 @@ fn a_lost_vm_gets_a_new_one_on_the_same_worktree_and_one_that_keeps_dying_fails_
         factory,
         engine,
         store,
+        machine,
     };
     crate::rt::block_on(async {
         let mut job = Job::new("j1".into(), "w".into(), "r".into(), 1).on(Pipeline::Full);
@@ -433,10 +437,11 @@ fn a_failed_provision_fails_the_job_with_its_reason() {
         branch: "main".into(),
         checks: String::new(),
     });
+    let machine = Arc::new(FakeMachine::new());
     let factory = Factory::new(
         engine.clone() as Arc<dyn Engine>,
         store.clone() as Arc<dyn Store>,
-        Arc::new(FakeMachine::new()),
+        machine.clone(),
         Arc::new(|_| {}),
         "/s".into(),
     );
@@ -444,6 +449,7 @@ fn a_failed_provision_fails_the_job_with_its_reason() {
         factory,
         engine,
         store,
+        machine,
     };
     crate::rt::block_on(async {
         let id = rig.factory.submit("w", "x").await.unwrap();
@@ -564,7 +570,7 @@ fn github_rig(pr: &str) -> Rig {
     let factory = Factory::new(
         engine.clone() as Arc<dyn Engine>,
         store.clone() as Arc<dyn Store>,
-        machine,
+        machine.clone(),
         Arc::new(|_| {}),
         "/s".into(),
     );
@@ -572,6 +578,7 @@ fn github_rig(pr: &str) -> Rig {
         factory,
         engine,
         store,
+        machine,
     }
 }
 
@@ -731,5 +738,21 @@ fn a_turn_that_ends_twice_counts_once_and_a_stale_one_changes_nothing() {
         rig.factory.turn_done(&plan, false).await;
         let job = rig.store.load(&id).await.unwrap().job;
         assert_eq!((job.stage, job.state), (Stage::Build, State::Running));
+    });
+}
+
+#[test]
+fn a_turn_reads_the_charter_from_the_base_commit_not_the_worktree() {
+    let rig = rig();
+    crate::rt::block_on(async {
+        let id = rig.factory.submit("w", "x").await.unwrap();
+        until(&rig, &id, Stage::Plan, State::Running).await;
+        // The merge base is empty in the fake, so the base is HEAD.
+        for name in ["CLAUDE.md", "AGENTS.md", ".claude/settings.json"] {
+            assert!(
+                rig.machine.called(&format!("git show HEAD:{name}")),
+                "{name}"
+            );
+        }
     });
 }

@@ -100,8 +100,16 @@ impl Servers {
         if name.is_empty() || server.token.trim().is_empty() {
             return Err("a Bastion server needs a name, a URL and a token".into());
         }
-        if !(url.starts_with("http://") || url.starts_with("https://")) {
-            return Err(format!("{url} is not an http:// or https:// URL"));
+        match url.strip_prefix("http://") {
+            Some(rest) if !loopback(rest) => {
+                return Err(format!(
+                    "{url} sends the token in the clear: use https:// beyond this machine"
+                ));
+            }
+            None if !url.starts_with("https://") => {
+                return Err(format!("{url} is not an http:// or https:// URL"));
+            }
+            _ => {}
         }
         let mut file = self.read()?;
         if name == LOCAL || file.server.iter().any(|s| s.name == name) {
@@ -131,6 +139,19 @@ fn write_file(path: &Path, text: &str) -> Result<(), String> {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
     std::fs::write(path, text).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// Whether the host in `rest`, a URL after its scheme, is this machine.
+fn loopback(rest: &str) -> bool {
+    let authority = rest.split('/').next().unwrap_or_default();
+    let host = match authority.strip_prefix('[') {
+        Some(v6) => v6.split(']').next().unwrap_or_default(),
+        None => authority.split(':').next().unwrap_or_default(),
+    };
+    host == "localhost"
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
 }
 
 #[cfg(test)]
@@ -205,8 +226,15 @@ mod tests {
         assert!(s.add(server("box", "https://other.example")).is_err());
         assert!(s.add(server(LOCAL, "https://other.example")).is_err());
         assert!(s.add(server("ftp", "ftp://box.example")).is_err());
+        assert!(s.add(server("plain", "http://box.example")).is_err());
+        assert!(s.add(server("plain", "http://10.0.0.5:49190")).is_err());
+        s.add(server("here", "http://127.0.0.1:49190")).unwrap();
+        s.add(server("here6", "http://[::1]:49190/")).unwrap();
+        s.add(server("named", "http://localhost:49190")).unwrap();
         assert!(s.remove(LOCAL).is_err());
-        s.remove("box").unwrap();
+        for name in ["box", "here", "here6", "named"] {
+            s.remove(name).unwrap();
+        }
         assert_eq!(s.all().unwrap().len(), 1);
     }
 }

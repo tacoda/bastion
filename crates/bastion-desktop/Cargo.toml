@@ -1,0 +1,17 @@
+[package]
+name = "bastion-desktop"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Bastion's native client on iced (PLAN.md D37, G): the window, its pages, and the Bastion servers it talks to."
+
+[dependencies]
+iced = { version = "=0.14.0", features = ["canvas", "svg", "tokio"] }
+bastion-protocol = { path = "../bastion-protocol" }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["time"] }
+toml = "0.9"
+keyring = { version = "3", features = ["apple-native"] }

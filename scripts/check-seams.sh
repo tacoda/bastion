@@ -19,6 +19,11 @@ for banned in bastion-core bastion-server iii-sdk tauri; do
   if deps bastion-ui | grep -qx "$banned"; then echo "FAIL bastion-ui depends on $banned"; fail=1; fi
 done
 
+# The native client is a client of the server only (D37).
+for banned in bastion-core bastion-server iii-sdk tauri; do
+  if deps bastion-desktop | grep -qx "$banned"; then echo "FAIL bastion-desktop depends on $banned"; fail=1; fi
+done
+
 # The server runs with no window (D27).
 if deps bastion-server | grep -qx tauri; then echo "FAIL bastion-server depends on tauri"; fail=1; fi
 

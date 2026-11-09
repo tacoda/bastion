@@ -1,4 +1,4 @@
-# Bastion's stack on iii 0.25.0. `make up` is `iii compose --up` on this file.
+# Bastion's stack on iii 0.25.0. The local server starts it with `iii compose --up` (PLAN.md D13).
 #
 # The engine listens on loopback only, because it trusts the worker name a
 # connection declares. Port 49160 keeps a Bastion engine apart from iii's stock
@@ -56,23 +56,12 @@ containers:
     version: "0.21.26"
     config_override:
       queue_configs:
-        # `workflow` enqueues its run steps and notifications here.
+        # The engine's default queue.
         default: {}
         # `worktree::land` runs its lands through this queue. One at a
         # time serializes lands across every repository, not only per repository.
         worktree-land:
           concurrency: 1
-        # The factory's durable steps. One at a time, so two steps never move
-        # one job at once.
-        bastion-steps:
-          concurrency: 1
-          max_retries: 3
-  cron:
-    worker: package://cron
-    version: "0.21.27"
-  storage:
-    worker: package://storage
-    version: "0.1.27"
 
   # Agent turns.
   harness:
@@ -112,13 +101,15 @@ containers:
     worker: package://provider-openai-codex
     version: "0.4.30"
   # Bastion's own: one provider per OpenAI-compatible host listed in
-  # Settings (PLAN.md K3). `cargo run` builds it when the source changed.
+  # Settings. `cargo run` builds it when the source changed.
   bastion-openai-compat:
     worker: path://./workers/bastion-openai-compat
     working_dir: .
     start_after: [state, llm-router]
     scripts:
       run: cargo run -q -p bastion-openai-compat
+  # What `harness` calls: sessions, context, the function directory, `fp`,
+  # `judge` and `approval-gate` (found in its binary, 2026-11-09).
   session-manager:
     worker: package://session-manager
     version: "1.0.35"
@@ -136,9 +127,6 @@ containers:
     version: "0.2.12"
 
   # The factory's tools.
-  ide:
-    worker: package://ide
-    version: "0.12.36"
   worktree:
     worker: package://worktree
     version: "0.3.16"
@@ -151,18 +139,9 @@ containers:
   approval-gate:
     worker: package://approval-gate
     version: "1.0.26"
+  # Nothing calls it yet: a machine verdict on promotion comes with
+  # PLAN.md F4, through the governed listener above.
   opengantry:
     worker: package://opengantry
     version: "0.1.13"
-  workflow:
-    worker: package://workflow
-    version: "0.1.9"
-
-  # Learning.
-  memory:
-    worker: package://memory
-    version: "0.2.22"
-  eval:
-    worker: package://eval
-    version: "0.2.24"
 

@@ -140,7 +140,8 @@ document says what is true.
 - **C3, remove dead code and stale notes.** The fixed grading model in
   `factory.rs` (use the settings model), the dead `bastion-steps` queue and
   spike N2, `PersonView` and `TokenView` duplicates (the server returns the
-  protocol types), the `n14-iced` spike and its data once measured,
+  protocol types), the N14 spike crate and spike N12's server half (both
+  about the old client),
   references to old plan phases in comments, "profile", "app", "page" and
   "window" wording in server code, `cargo test -p bastion` (now
   `bastion-server`), and `make up` (no Makefile).
@@ -284,7 +285,7 @@ value; each is a phase of its own when it starts.
 
 | Phase | State | Evidence |
 |---|---|---|
-| C | in progress | |
+| C | in progress | C1 retired the old client; C2 removed the protocol and server parts only it used, and the client's profiles; C3 removed the fixed grading model, the dead queue, spikes N2, N12's server half and N14, the people and token type duplicates, every citation of an old plan phase, and the old client's words in server code. C4 removed the stack's `cron`, `storage`, `ide`, `workflow`, `memory` and `eval`, which nothing calls; `harness` calls `session-manager`, `context-manager`, `iii-directory`, `fp`, `judge` and `approval-gate` (from its binary), so they stay; `opengantry` stays for F4. |
 | R | not started | |
 | I | not started | |
 | F | not started | |

@@ -1,4 +1,4 @@
-//! One file per page (PLAN.md G2). A page keeps its state here, reads from
+//! One file per page. A page keeps its state here, reads from
 //! the servers through `Ctx`, and draws with the shared pieces below.
 
 pub mod diff;
@@ -167,7 +167,7 @@ pub enum Page {
     Eval(Box<evals::One>),
     Settings(Box<settings::State>),
     Workflows(Box<workflows::State>),
-    /// A page G2 has not built yet.
+    /// Nothing yet: the window has not reached its first server.
     Pending,
 }
 
@@ -258,9 +258,8 @@ impl Page {
             Page::Workflows(s) => workflows::view(s),
             Page::Pending => {
                 let title = text(route.title()).size(24).font(theme::BOLD);
-                column![title, text("This page is built in G2.").color(theme::MUTED)]
-                    .spacing(12)
-                    .into()
+                let note = text("Reaching the Bastion server…").color(theme::MUTED);
+                column![title, note].spacing(12).into()
             }
         }
     }

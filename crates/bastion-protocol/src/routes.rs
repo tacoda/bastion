@@ -13,7 +13,7 @@ pub enum Body {
 }
 
 /// Each server command's method and path. `{name}` takes the argument of
-/// that name. A command missing here is the window's own.
+/// that name.
 pub fn route(cmd: &str) -> Option<(&'static str, &'static str, Body)> {
     use crate::command;
     use Body::*;
@@ -155,17 +155,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_routed_command_has_a_route_and_the_window_commands_none() {
+    fn every_routed_command_has_a_route_and_a_stranger_none() {
         for cmd in ROUTED {
             assert!(route(cmd).is_some(), "{cmd}");
         }
-        for cmd in [
-            command::QUIT,
-            command::SERVERS,
-            command::SERVER_ADD,
-            command::SERVER_REMOVE,
-        ] {
-            assert!(route(cmd).is_none(), "{cmd}");
-        }
+        assert!(route("quit").is_none());
     }
 }

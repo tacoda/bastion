@@ -1,4 +1,4 @@
-//! The Bastion servers this app knows (D30): `local`, which the app starts,
+//! The Bastion servers this client knows (D30): `local`, which the client starts,
 //! and the ones the owner added. A server's name and URL live in
 //! `servers.toml`; its token lives in the Keychain.
 
@@ -117,7 +117,7 @@ impl Servers {
 
     pub fn remove(&self, name: &str) -> Result<(), String> {
         if name == LOCAL {
-            return Err("local is the server this app runs; it cannot be removed".into());
+            return Err("local is the server this client runs; it cannot be removed".into());
         }
         let mut file = self.read()?;
         file.server.retain(|s| s.name != name);

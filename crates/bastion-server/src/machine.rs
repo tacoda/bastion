@@ -99,7 +99,7 @@ impl Machine for ThisMachine {
     }
 }
 
-#[cfg(any(test, feature = "fakes"))]
+#[cfg(test)]
 pub mod fake {
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};

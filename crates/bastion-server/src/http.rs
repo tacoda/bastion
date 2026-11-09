@@ -6,7 +6,7 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 use axum::extract::{Extension, MatchedPath, Path, Request, State};
-use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
@@ -20,7 +20,6 @@ use futures_util::{Stream, stream};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::broadcast::error::RecvError;
-use tower_http::cors::CorsLayer;
 
 use bastion_core::people::{Act, Person, Role};
 
@@ -29,9 +28,6 @@ use crate::api::settings::FromIssue;
 use crate::api::{self, factory::NOT_STARTED};
 use crate::factory::Submission;
 use crate::server::Server;
-
-/// The origins of the app's window: Trunk's in development, Tauri's built.
-const ORIGINS: [&str; 2] = ["http://localhost:1420", "tauri://localhost"];
 
 #[derive(Clone)]
 struct App {
@@ -51,18 +47,9 @@ pub fn router(server: Arc<Server>, token: &str, owner: &str) -> Router {
             role: Role::Admin,
         },
     };
-    let cors = CorsLayer::new()
-        .allow_origin(ORIGINS.map(HeaderValue::from_static))
-        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
-        .allow_headers([
-            header::AUTHORIZATION,
-            header::CONTENT_TYPE,
-            "last-event-id".parse().unwrap(),
-        ]);
     routes()
         .route_layer(middleware::from_fn_with_state(app.clone(), authorized))
         .with_state(app)
-        .layer(cors)
 }
 
 fn routes() -> Router<App> {
@@ -1011,26 +998,6 @@ mod tests {
             let (status, body) = call(server(), get("/jobs", Some(TOKEN))).await;
             assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
             assert!(body.contains(NOT_STARTED), "{body}");
-        });
-    }
-
-    #[test]
-    fn the_windows_origin_may_call_the_api() {
-        crate::rt::block_on(async {
-            let preflight = Request::options("/jobs")
-                .header(header::ORIGIN, "tauri://localhost")
-                .header(header::ACCESS_CONTROL_REQUEST_METHOD, "GET")
-                .header(header::ACCESS_CONTROL_REQUEST_HEADERS, "authorization")
-                .body(Body::empty())
-                .unwrap();
-            let response = router(server(), TOKEN, "owner")
-                .oneshot(preflight)
-                .await
-                .unwrap();
-            assert_eq!(
-                response.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN],
-                "tauri://localhost"
-            );
         });
     }
 

@@ -947,7 +947,7 @@ impl Store for SqlStore {
     }
 }
 
-#[cfg(any(test, feature = "fakes"))]
+#[cfg(test)]
 pub mod fake {
     use std::collections::BTreeMap;
     use std::sync::Mutex;

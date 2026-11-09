@@ -7,7 +7,6 @@ mod events;
 mod icons;
 mod local;
 mod pages;
-mod profile;
 mod route;
 mod servers;
 mod start;

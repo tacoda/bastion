@@ -1,5 +1,5 @@
 //! The `local` Bastion server (D30): a `bastion-server` on this machine, started by the
-//! app, or the one already running. It outlives the app, so jobs go on.
+//! client, or the one already running. It outlives the client, so jobs go on.
 
 use std::fs::File;
 use std::net::TcpStream;
@@ -9,15 +9,15 @@ use std::time::{Duration, Instant};
 
 use bastion_protocol::{LOCAL, Server};
 
-use crate::profile::Profile;
-
+/// The engine the local server's stack runs.
+const ENGINE: &str = "ws://127.0.0.1:49160";
 /// The port the local server listens on.
 pub const PORT: u16 = 49190;
-/// How long a start may take before the app gives up on it.
+/// How long a start may take before the client gives up on it.
 const START_WAIT: Duration = Duration::from_secs(20);
 
 /// The server binary this build runs.
-// ponytail: the dev build's path; A13 ships it beside the app.
+// ponytail: the dev build's path; F10 ships it beside the client.
 const BINARY: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../target/debug/bastion-server"
@@ -25,9 +25,9 @@ const BINARY: &str = concat!(
 
 /// Attach to the local server, starting it first if nothing listens on its
 /// port. `data` holds its token and its log.
-pub fn start(profile: &Profile, data: &Path) -> Result<Server, String> {
+pub fn start(checkout: &Path, data: &Path) -> Result<Server, String> {
     if !listening() {
-        spawn(profile, data)?;
+        spawn(checkout, data)?;
     }
     let token = data.join("token");
     let since = Instant::now();
@@ -55,17 +55,17 @@ fn listening() -> bool {
     TcpStream::connect(("127.0.0.1", PORT)).is_ok()
 }
 
-/// Start the server in its own process group, so quitting the app leaves it running.
-fn spawn(profile: &Profile, data: &Path) -> Result<(), String> {
+/// Start the server in its own process group, so quitting the client leaves it running.
+fn spawn(checkout: &Path, data: &Path) -> Result<(), String> {
     std::fs::create_dir_all(data).map_err(|e| format!("{}: {e}", data.display()))?;
     let log = File::create(data.join("server.log")).map_err(|e| e.to_string())?;
     let mut command = Command::new(PathBuf::from(BINARY));
     command
-        .args(["--checkout", &profile.checkout.display().to_string()])
+        .args(["--checkout", &checkout.display().to_string()])
         .args(["--data", &data.display().to_string()])
         .args(["--port", &PORT.to_string()])
-        .args(["--engine", &profile.engine_url])
-        .current_dir(&profile.checkout)
+        .args(["--engine", ENGINE])
+        .current_dir(checkout)
         .stdin(Stdio::null())
         .stdout(log.try_clone().map_err(|e| e.to_string())?)
         .stderr(log);

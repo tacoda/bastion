@@ -261,7 +261,7 @@ impl EvalStore for SqlStore {
     }
 }
 
-#[cfg(any(test, feature = "fakes"))]
+#[cfg(test)]
 pub mod fake {
     use std::sync::Mutex;
 

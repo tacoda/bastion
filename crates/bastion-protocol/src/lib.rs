@@ -13,12 +13,6 @@ pub mod command {
     pub const STACK_STATUS: &str = "stack_status";
     pub const STACK_START: &str = "stack_start";
     pub const STACK_STOP: &str = "stack_stop";
-    /// Takes `{ stopStack: bool }`.
-    pub const QUIT: &str = "quit";
-    /// The Bastion servers this app knows, `local` first (D30).
-    pub const SERVERS: &str = "servers";
-    pub const SERVER_ADD: &str = "server_add";
-    pub const SERVER_REMOVE: &str = "server_remove";
     /// Who you are on a Bastion server, and the people an admin manages (D31).
     pub const ME: &str = "me";
     pub const PEOPLE: &str = "people";
@@ -109,19 +103,6 @@ pub mod command {
     pub const EVAL_APPLY: &str = "eval_apply";
     /// Returns the path of the JSON Lines file it wrote.
     pub const AUDIT_EXPORT: &str = "audit_export";
-}
-
-/// Event names the app emits to the page (D10).
-pub mod event {
-    /// Carries an [`EngineStatus`](super::EngineStatus) each time the link changes.
-    pub const ENGINE_CHANGED: &str = "engine-changed";
-    /// The owner asked to quit while the stack runs: the page asks whether to stop it.
-    pub const QUIT_REQUESTED: &str = "quit-requested";
-    /// A worker joined or left the engine: the page reads the console again.
-    pub const CONSOLE_CHANGED: &str = "console-changed";
-    /// Carries a job's id each time it changes: the page reads it again. An
-    /// empty id means the factory just started, so every page reads again.
-    pub const JOB_CHANGED: &str = "job-changed";
 }
 
 /// A change the server pushes (D10, D29). The page reads the named

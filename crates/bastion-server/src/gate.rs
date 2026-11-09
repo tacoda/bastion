@@ -369,11 +369,16 @@ impl Gate {
         });
     }
 
-    async fn find(&self, job: &str, id: &str) -> Result<HeldCall, String> {
+    /// Take a held call to settle it. Only one caller gets it, so a call
+    /// allowed twice at once runs once, and the other is told it is settled.
+    async fn take(&self, job: &str, id: &str) -> Result<HeldCall, String> {
         let held = self.store.held(job).await?;
-        held.into_iter()
-            .find(|h| h.id == id)
-            .ok_or_else(|| format!("no held call {id} on job {job}"))
+        let found = held.into_iter().find(|h| h.id == id);
+        let held = found.ok_or_else(|| format!("no held call {id} on job {job}"))?;
+        if !self.store.claim(&held.id).await? {
+            return Err(format!("held call {id} on job {job} is already settled"));
+        }
+        Ok(held)
     }
 
     /// Send a held call its result, so the parked turn goes on, and record
@@ -396,7 +401,6 @@ impl Gate {
         self.engine
             .call(NS, "harness::function::resolve", payload)
             .await?;
-        self.store.release(&held.id).await?;
         self.note(kind, &held.job, detail);
         (self.on_change)(&held.job);
         Ok(())
@@ -465,7 +469,7 @@ impl Gate {
     /// Run exactly this call once, in the job's VM, and deliver its result.
     /// The hold dropped the VM pin, so the server pins it again here.
     pub async fn allow_once(&self, job: &str, id: &str) -> Result<(), String> {
-        let held = self.find(job, id).await?;
+        let held = self.take(job, id).await?;
         self.run_held(&held, "allow-once").await
     }
 
@@ -492,7 +496,7 @@ impl Gate {
 
     /// Refuse a held call, and tell the agent why and what to do instead.
     pub async fn refuse(&self, job: &str, id: &str, feedback: &str) -> Result<(), String> {
-        let held = self.find(job, id).await?;
+        let held = self.take(job, id).await?;
         let text = format!("The owner refused this call: {feedback}");
         self.resolve(&held, text_result(&text, Value::Null, true), "refuse")
             .await
@@ -815,6 +819,23 @@ mod tests {
         assert!(r.store.held.lock().unwrap().is_empty());
 
         assert_eq!(r.gate.judge(&write())["decision"], "hold");
+    }
+
+    #[test]
+    fn a_held_call_settled_twice_at_once_runs_once() {
+        let r = rig();
+        r.gate.judge(&write());
+        settle();
+        let (a, b) = (r.gate.clone(), r.gate.clone());
+        let (first, second) = crate::rt::block_on(async move {
+            let first = tokio::spawn(async move { a.allow_once("j1", "fc1").await });
+            let second = tokio::spawn(async move { b.refuse("j1", "fc1", "no").await });
+            (first.await.unwrap(), second.await.unwrap())
+        });
+        assert!(first.is_ok() != second.is_ok(), "{first:?} {second:?}");
+        let calls = r.engine.calls.lock().unwrap().clone();
+        let resolves = calls.iter().filter(|c| c.1 == "harness::function::resolve");
+        assert_eq!(resolves.count(), 1);
     }
 
     #[test]

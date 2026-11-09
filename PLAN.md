@@ -196,6 +196,9 @@ record, stalls a job, or runs a call twice.
   engine failure, not 401 or 400. Compare tokens in constant time; create the
   token file with mode 0600. A client accepts `http://` only for loopback.
   The audit key falls back to a 0600 file where there is no Keychain.
+  Each worker VM gets only the environment it needs: `iii compose` today
+  passes the whole host environment to every worker, third-party ones
+  included.
 
 **Exit:** with a job at each kind of step, stopping and starting the stack
 and restarting the server loses no audit record and leaves no job stuck;

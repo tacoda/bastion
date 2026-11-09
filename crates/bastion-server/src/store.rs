@@ -100,7 +100,9 @@ pub trait Store: EvalStore + PeopleStore + SettingsStore + WorkflowStore + Send 
     fn hold<'a>(&'a self, call: &'a HeldCall) -> Answer<'a, ()>;
     /// The calls held for a job, oldest first.
     fn held<'a>(&'a self, job: &'a str) -> Answer<'a, Vec<HeldCall>>;
-    fn release<'a>(&'a self, id: &'a str) -> Answer<'a, ()>;
+    /// Take a held call off the list. True only for the one caller that
+    /// removed it, so two people settling the same call cannot both run it.
+    fn claim<'a>(&'a self, id: &'a str) -> Answer<'a, bool>;
     /// The whole audit chain, oldest first.
     fn audit(&self) -> Answer<'_, Vec<Entry>>;
     /// The newest entry, the one the next appends after.
@@ -921,11 +923,10 @@ impl Store for SqlStore {
         })
     }
 
-    fn release<'a>(&'a self, id: &'a str) -> Answer<'a, ()> {
+    fn claim<'a>(&'a self, id: &'a str) -> Answer<'a, bool> {
         Box::pin(async move {
-            self.execute("DELETE FROM held_calls WHERE id = ?", json!([id]))
-                .await
-                .map(|_| ())
+            let sql = "DELETE FROM held_calls WHERE id = ? RETURNING id";
+            Ok(!self.execute(sql, json!([id])).await?.is_empty())
         })
     }
 
@@ -1094,9 +1095,12 @@ pub mod fake {
             Box::pin(async move { Ok(found) })
         }
 
-        fn release<'a>(&'a self, id: &'a str) -> Answer<'a, ()> {
-            self.held.lock().unwrap().retain(|h| h.id != id);
-            Box::pin(async { Ok(()) })
+        fn claim<'a>(&'a self, id: &'a str) -> Answer<'a, bool> {
+            let mut held = self.held.lock().unwrap();
+            let before = held.len();
+            held.retain(|h| h.id != id);
+            let claimed = held.len() < before;
+            Box::pin(async move { Ok(claimed) })
         }
 
         fn audit(&self) -> Answer<'_, Vec<Entry>> {
@@ -1470,7 +1474,14 @@ mod live {
             };
             store.hold(&held).await.unwrap();
             let held_back = store.held(&tag).await.unwrap();
-            store.release(&held.id).await.unwrap();
+            assert!(
+                store.claim(&held.id).await.unwrap(),
+                "the first claim takes it"
+            );
+            assert!(
+                !store.claim(&held.id).await.unwrap(),
+                "a second claim finds it gone"
+            );
             let released = store.held(&tag).await.unwrap();
             println!(
                 "constraints {}, grants {}, promoted {promoted:?}, held {}",

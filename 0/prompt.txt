@@ -1,0 +1,1 @@
+Update the current plan. Now I want to add a new requirement. I don't like tauri and leptos - the app is sluggish. I want to swap out the GUI framework for something like gtk so it's much faster. I want the UI to look the same and I want it to use the server, just a completely new client.

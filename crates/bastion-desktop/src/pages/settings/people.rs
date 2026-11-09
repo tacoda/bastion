@@ -151,6 +151,12 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
     Task::none()
 }
 
+/// "an admin", "a member", "a viewer".
+fn with_article(role: &str) -> String {
+    let an = role.starts_with(['a', 'e', 'i', 'o', 'u']);
+    format!("{} {role}", if an { "an" } else { "a" })
+}
+
 fn roles() -> Vec<String> {
     ROLES.iter().map(|r| r.to_string()).collect()
 }
@@ -189,7 +195,13 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let who = state
         .me
         .as_ref()
-        .map(|p| format!("You are {}, a {} on this Bastion server.", p.name, p.role))
+        .map(|p| {
+            format!(
+                "You are {}, {} on this Bastion server.",
+                p.name,
+                with_article(&p.role)
+            )
+        })
         .unwrap_or_default();
     let mut body = column![text(who).size(13).color(theme::MUTED)];
     if manages(&ctx.current, state.me.as_ref()) {
@@ -243,5 +255,7 @@ mod tests {
         assert!(!manages(LOCAL, Some(&admin)));
         assert!(!manages("box", Some(&member)));
         assert!(!manages("box", None));
+        assert_eq!(with_article("admin"), "an admin");
+        assert_eq!(with_article("member"), "a member");
     }
 }

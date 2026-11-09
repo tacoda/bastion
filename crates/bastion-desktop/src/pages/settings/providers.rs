@@ -193,8 +193,10 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
 fn name<'a>(p: &ProviderView) -> Element<'a, Message> {
     let ok = p.ready || p.source != "none";
     let mark = text(if ok { "✓" } else { "!" }).color(if ok { theme::OK } else { theme::WARN });
+    // One width for every name and status, so the key fields line up.
     row![mark, text(p.name.clone()).font(theme::BOLD)]
         .spacing(6)
+        .width(160)
         .into()
 }
 
@@ -226,7 +228,7 @@ fn key_row<'a>(state: &State, p: &ProviderView) -> Element<'a, Message> {
     });
     row![
         name(p),
-        text(key_status(p)).size(13).color(theme::MUTED),
+        text(key_status(p)).size(13).color(theme::MUTED).width(240),
         field,
         set
     ]
@@ -253,9 +255,13 @@ fn codex_row<'a>(state: &State, p: &ProviderView) -> Element<'a, Message> {
             .style(theme::secondary)
             .on_press(wrap(Msg::SignIn))
     };
-    let line = row![name(p), text(status).size(13).color(theme::MUTED), action]
-        .spacing(10)
-        .align_y(iced::Center);
+    let line = row![
+        name(p),
+        text(status).size(13).color(theme::MUTED).width(240),
+        action
+    ]
+    .spacing(10)
+    .align_y(iced::Center);
     let Some(s) = &state.signing_in else {
         return line.into();
     };

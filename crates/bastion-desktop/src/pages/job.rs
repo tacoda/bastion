@@ -612,9 +612,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     if let Some(d) = &state.detail {
         page = page.push(flow(d, &state.marks)).push(steps(state, d));
     }
-    scrollable(page.padding(iced::Padding::ZERO.right(16)))
-        .height(Fill)
-        .into()
+    super::scrolled(page)
 }
 
 #[cfg(test)]

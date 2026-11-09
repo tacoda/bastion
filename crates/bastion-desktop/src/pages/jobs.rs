@@ -3,9 +3,7 @@
 //! runs list.
 
 use bastion_protocol::{JobSummary, command};
-use iced::widget::{
-    Column, button, column, container, pick_list, row, scrollable, text, text_input,
-};
+use iced::widget::{Column, button, column, container, pick_list, row, text, text_input};
 use iced::{Element, Fill, Task};
 
 use super::{Ctx, ago, labeled, mark, section};
@@ -287,9 +285,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let down: Vec<String> = ctx.down.iter().cloned().collect();
     let note = text(page_note(&down, &state.errors)).color(theme::BAD);
     let body = column![head, note, filters(state), groups(state, ctx)].spacing(16);
-    scrollable(body.padding(iced::Padding::ZERO.right(16)))
-        .height(Fill)
-        .into()
+    super::scrolled(body)
 }
 
 #[cfg(test)]

@@ -97,6 +97,18 @@ pub fn section<'a, M: 'a>(title: String, body: Element<'a, M>, accent: bool) -> 
         .into()
 }
 
+/// The id of every page's scroll area, so a new page starts at its top.
+pub const SCROLL: &str = "page";
+
+/// A page's body in its scroll area, clear of the scroll bar.
+pub fn scrolled<'a, M: 'a>(body: impl Into<Element<'a, M>>) -> Element<'a, M> {
+    let body = container(body).padding(iced::Padding::ZERO.right(16));
+    iced::widget::scrollable(body)
+        .id(SCROLL)
+        .height(Fill)
+        .into()
+}
+
 /// A label above a field, as the forms show them.
 pub fn labeled<'a, M: 'a>(label: &'a str, field: impl Into<Element<'a, M>>) -> Element<'a, M> {
     column![text(label).size(13).color(theme::MUTED), field.into()]

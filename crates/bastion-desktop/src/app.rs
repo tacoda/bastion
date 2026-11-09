@@ -13,13 +13,14 @@ use serde_json::Value;
 
 use crate::client::{self, Ask};
 use crate::events::{self, Feed};
-use crate::pages::{Ctx, Page, job, jobs, new_request};
+use crate::pages::{self, Ctx, Page, job, jobs, new_request};
 use crate::route::{PAGES, Route};
 use crate::{icons, start, theme};
 
 #[derive(Clone, Debug)]
 pub enum Message {
-    Started(Result<Vec<Server>, String>),
+    Started(Result<Server, String>),
+    Servers(Result<Vec<Server>, String>),
     Go(Route),
     Choose(String),
     Feed((String, Feed)),
@@ -103,15 +104,32 @@ impl App {
     fn go(&mut self, route: Route) -> Task<Message> {
         let (page, first) = Page::open(&route, &self.ctx());
         (self.route, self.page) = (route, page);
-        first
+        let top = iced::widget::scrollable::AbsoluteOffset { x: 0.0, y: 0.0 };
+        Task::batch([
+            first,
+            iced::widget::operation::scroll_to(pages::SCROLL, top),
+        ])
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::Started(Ok(all)) => {
-                self.servers = all;
-                return self.go(self.route.clone());
+            Message::Started(Ok(local)) => {
+                self.servers = vec![local.clone()];
+                let every = async move {
+                    tokio::task::spawn_blocking(move || start::every(local))
+                        .await
+                        .map_err(|e| e.to_string())?
+                };
+                return Task::batch([
+                    self.go(self.route.clone()),
+                    Task::perform(every, Message::Servers),
+                ]);
             }
+            Message::Servers(Ok(all)) => {
+                self.servers = all;
+                return self.page.reload(&self.ctx(), true);
+            }
+            Message::Servers(Err(why)) => self.problem = Some(why),
             Message::Started(Err(why)) => self.problem = Some(why),
             Message::Go(route) => return self.go(route),
             Message::Choose(name) => {

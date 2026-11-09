@@ -46,13 +46,18 @@ pub fn servers(local: Server) -> Servers {
     )
 }
 
-/// Start or attach to `local`, then list every server, `local` first.
-/// Blocks until `local` answers, so it runs off the window's thread.
-pub fn start() -> Result<Vec<Server>, String> {
+/// Start or attach to `local`. Blocks until it answers, so it runs off the
+/// window's thread.
+pub fn start() -> Result<Server, String> {
     let checkout = Path::new(CHECKOUT)
         .canonicalize()
         .map_err(|e| e.to_string())?;
     let profiles = Profiles::load_or_create(&config_dir().join(profile::FILE_NAME), checkout)?;
-    let local = local::start(profiles.active(), &data_dir().join("server"))?;
+    local::start(profiles.active(), &data_dir().join("server"))
+}
+
+/// Every server, `local` first. The added servers' tokens come from the
+/// Keychain, which can take seconds, so the window shows `local` first.
+pub fn every(local: Server) -> Result<Vec<Server>, String> {
     servers(local).all()
 }

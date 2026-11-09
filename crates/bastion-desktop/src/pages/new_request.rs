@@ -5,9 +5,7 @@
 use std::fmt;
 
 use bastion_protocol::{IssueView, LOCAL, WorkflowView, Workspace, command};
-use iced::widget::{
-    Column, button, column, container, pick_list, row, scrollable, text, text_editor,
-};
+use iced::widget::{Column, button, column, container, pick_list, row, text, text_editor};
 use iced::{Element, Fill, Task};
 use serde_json::json;
 
@@ -290,9 +288,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         .style(theme::link)
         .on_press(Message::Go(Route::Jobs));
     let title = text("New request").size(24).font(theme::BOLD);
-    scrollable(column![back, title, form(state, ctx), issues(state)].spacing(12))
-        .height(Fill)
-        .into()
+    super::scrolled(column![back, title, form(state, ctx), issues(state)].spacing(12))
 }
 
 #[cfg(test)]

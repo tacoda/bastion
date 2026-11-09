@@ -2,9 +2,11 @@
 //! machine. Doctor and the stack routine reach the OS only through it.
 
 use std::fs::{self, OpenOptions};
+use std::io::Read;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
+use std::time::{Duration, Instant};
 
 /// What a program printed and how it ended.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -31,20 +33,57 @@ pub trait Machine: Send + Sync {
 
 pub struct ThisMachine;
 
+/// How long a host command may run, such as a `git push` to a slow remote.
+const RUN_LIMIT: Duration = Duration::from_secs(300);
+
+/// Wait for `child` to end, reading its output as it runs. Past `limit`,
+/// kill it and say so.
+fn finish(mut child: Child, limit: Duration) -> Result<Output, String> {
+    let drain = |pipe: Option<Box<dyn Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut text = Vec::new();
+            if let Some(mut pipe) = pipe {
+                let _ = pipe.read_to_end(&mut text);
+            }
+            String::from_utf8_lossy(&text).into_owned()
+        })
+    };
+    let out = drain(child.stdout.take().map(|p| Box::new(p) as _));
+    let err = drain(child.stderr.take().map(|p| Box::new(p) as _));
+    let started = Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+            break status;
+        }
+        if started.elapsed() > limit {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!("stopped after {limit:?}"));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    let text = out.join().unwrap_or_default() + &err.join().unwrap_or_default();
+    Ok(Output {
+        success: status.success(),
+        text,
+    })
+}
+
 impl Machine for ThisMachine {
     fn run(&self, program: &str, args: &[&str], dir: Option<&Path>) -> Result<Output, String> {
         let mut command = Command::new(program);
-        command.args(args);
+        command
+            .args(args)
+            // Nothing may wait on a person: no stdin, and git asks no one.
+            .stdin(Stdio::null())
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
         if let Some(dir) = dir {
             command.current_dir(dir);
         }
-        let out = command.output().map_err(|e| format!("{program}: {e}"))?;
-        let text = String::from_utf8_lossy(&out.stdout).into_owned()
-            + &String::from_utf8_lossy(&out.stderr);
-        Ok(Output {
-            success: out.status.success(),
-            text,
-        })
+        let child = command.spawn().map_err(|e| format!("{program}: {e}"))?;
+        finish(child, RUN_LIMIT).map_err(|e| format!("{program} {}: {e}", args.join(" ")))
     }
 
     // ponytail: the child is never waited on, so if it exits while the server runs it stays a zombie until the server stops.
@@ -240,5 +279,27 @@ pub mod fake {
         fn platform(&self) -> (&'static str, &'static str) {
             self.platform
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sh(script: &str) -> Child {
+        Command::new("sh")
+            .args(["-c", script])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap()
+    }
+
+    #[test]
+    fn a_command_past_its_limit_is_stopped_and_one_within_it_keeps_its_output() {
+        let slow = finish(sh("sleep 5"), Duration::from_millis(100));
+        assert_eq!(slow, Err("stopped after 100ms".into()));
+        let done = finish(sh("echo out; echo err >&2"), Duration::from_secs(5)).unwrap();
+        assert_eq!((done.success, done.text.as_str()), (true, "out\nerr\n"));
     }
 }

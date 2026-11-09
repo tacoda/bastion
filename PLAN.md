@@ -7,8 +7,9 @@ and nothing merges itself. What
 Bastion adds is governance you can measure: constraints and capabilities built
 into the harness's hooks, a way to promote and demote each one, a
 tamper-evident audit record, and A/B evals that show what a change to the
-harness does. It is one app: a Tauri 2 window with a Leptos frontend and a Rust
-core, against a local engine that the app starts. A remote engine on the
+harness does. It is one app: a native Rust client (GTK 4 from phase G, D37; a Tauri 2
+window with a Leptos frontend until then) and a Rust core, against a local
+engine that the app starts. A remote engine on the
 owner's own box comes later (§10). Written 2026-10-30, revised the same day.
 
 It is general. The owner sets up their own accounts and settings so Bastion
@@ -98,8 +99,8 @@ code inside Bastion is the diff a job proposes.
 | # | Decision | Why |
 |---|---|---|
 | D1 | Rust for all Bastion code. TypeScript or JavaScript only where no Rust path exists, and each such file is named in §4 with its reason. | One language. |
-| D2 | Tauri 2, the stable line. `cargo search` shows 3.0.0-alpha.5 on 2026-10-30, so 3 waits. | A native app with a Rust core. |
-| D3 | The frontend is Leptos 0.8, client-side rendered to WASM and built by Trunk. | Rust pages in Tauri's webview. |
+| D2 | Replaced by D37 (2026-11-09), at G4. Tauri 2, the stable line. `cargo search` shows 3.0.0-alpha.5 on 2026-10-30, so 3 waits. | A native app with a Rust core. |
+| D3 | Replaced by D37 (2026-11-09), at G4. The frontend is Leptos 0.8, client-side rendered to WASM and built by Trunk. | Rust pages in Tauri's webview. |
 | D4 | One dark theme, purple as the main color (`--primary: #7c3aed`, `--primary-hover: #6d28d9`, `--link: #c4b5fd`). No light theme. Tailwind 4 runs as Trunk's standalone binary. | The owner's choice. No Node toolchain. |
 | D5 | One Cargo workspace: the frontend crate at the root, the app in `src-tauri/`, shared code in `crates/`, Bastion workers in `workers/` (§4). | One build, one lockfile, one CI. |
 | D6 | Every Bastion worker is a Rust binary on `iii-sdk` 0.25.0. Compose starts it through `scripts.run`. | The same engine, with no second runtime. |
@@ -132,16 +133,19 @@ code inside Bastion is the diff a job proposes.
 | D34 | Model provider keys are configuration, not environment. Bastion stores each key in the stack's `secrets` worker (store `vault`, readable only by `llm-router`) and points the router's provider entry at it as `secret://NAME`; the router resolves it at each request and reports whether a provider has a key without returning it. Providers with their own worker (Anthropic, OpenAI, DeepSeek, xAI, Z.AI for GLM, Kimi, OpenRouter) take their key that way; other OpenAI-compatible hosts (Together, Fireworks, Qwen through DashScope, a local Ollama) go through a Bastion provider worker that serves any number of them. | The owner's choice (2026-11-06): a key for any provider, with a spread wide enough that most people can use it, and no dependency on `ANTHROPIC_API_KEY` in the environment. |
 | D35 | A pipeline is a workflow: a graph of steps that a person edits on a canvas. Each node is a step: what runs (a skill, the preferred building block; a prompt; a command such as a bash command, a script or a task runner; or a Bastion stage), its oversight dial (D33), a note that the node expands to show and that the step's agent reads, and the results it declares, such as documents, kept in the database. A link sends one step's results to another. Links carry no conditions: a step's entry criteria are the results of the steps linked into it, and its exit criteria are the results it declares, and a code check, not a model, holds a step that lacks either. Bastion ships a few workflows, and people make their own for themselves and others to use. For now only an admin makes or changes a workflow; members and viewers use them. | The owner's choice (2026-11-06). |
 | D36 | Claude takes a key only: an Anthropic API key, or a cloud provider's credentials. Bastion offers no sign-in with a Claude subscription and does not run the `provider-claude-code` worker. | Anthropic's terms (code.claude.com, Legal and compliance) keep Claude subscription sign-in for Claude Code and Anthropic's own apps, and do not permit a third-party product to route requests through a Free, Pro, Max or Ultra plan. Checked 2026-11-06. |
+| D37 | The client is a native Rust app on GTK 4 (`gtk4-rs`), unless G0's numbers pick another native toolkit. It is a new client of the Bastion server and nothing more: it reaches a server only through D28's HTTP API and D29's events, with the types and the route table from `bastion-protocol`, and it holds no factory logic. It looks the same as the Leptos pages: the same sidebar, pages, layout and D4's theme, written as GTK CSS. The window's own jobs (the server list in the Keychain, starting the `local` server, quitting) move with it. Replaces D2 and D3 at G4, when Tauri, Leptos, Trunk and Tailwind leave the repository. | The owner's choice (2026-11-09): the Tauri and Leptos app is sluggish. |
 
 ## 4. The repository
 
 ```
 Cargo.toml  index.html  Trunk.toml  styles.css
-src/                  bastion-ui: the Leptos frontend (WASM)
-src-tauri/            bastion: Tauri, the window and its commands
+src/                  bastion-ui: the Leptos frontend (WASM), until G4
+src-tauri/            bastion: Tauri, the window and its commands, until G4
   src/commands/       one file per resource (D9, until S3)
   src/profile.rs      profiles (D12, until S4)
 crates/
+  bastion-desktop/    the native client (D37, G): pages, the server list,
+                      the HTTP client and the event stream
   bastion-server/     the server (D27): the factory and what it runs on
     src/engine/       the engine adapter: every iii call
     src/factory/      effects run, turns, the acceptance steps
@@ -755,6 +759,60 @@ but cannot edit it.
 merged change. Each stage leaves an artifact, the baseline tests fail before
 the build and pass after it, and each checkpoint obeys its dial.
 
+#### G — A native client (L)
+
+**Goal:** the owner works in a native app that looks the same as today's and
+is much faster, on the same Bastion servers (D37).
+
+Added 2026-11-09. It runs next, before A9. From G1 on, no new work goes into
+the Leptos pages: a page still to build, such as the rest of W, is built in
+the new client. A12 and A13 are about the new client, not Tauri.
+
+**Steps:**
+
+- **G0, spike N14: pick the toolkit by numbers.** Build the same three
+  screens in GTK 4 (`gtk4-rs`) and in one other native Rust toolkit (`iced`
+  is the candidate): the Jobs page with 200 jobs, the Workflows canvas with
+  20 steps to drag and link, and a 2,000-line diff. Each reads a live server
+  and follows its events. Measure each against a release build of today's
+  app: cold start to the first painted Jobs page, a pushed change to its
+  repaint, a drag frame on the canvas, scrolling the diff, and memory. Also
+  measure how much each toolkit needs bundled on macOS. GTK 4 is the
+  default; the other wins only on the numbers. Proposed targets, the
+  owner's to change: first paint under 500 ms, a repaint under 50 ms, and
+  60 frames a second on the canvas and the diff.
+- **G1, the shell.** The `bastion-desktop` crate: the window, the sidebar,
+  D4's theme as GTK CSS, the server list in the Keychain with `local` first
+  (D30), starting the `local` server when nothing listens, an HTTP client
+  driven by the route table in `bastion-protocol`, and one event stream per
+  server with `Last-Event-ID` (D29). The server picker for the pages about
+  one server, and the quit choice (D13).
+- **G2, the pages.** Each page, with the same layout and controls:
+  - Jobs, New request (with the workflow picker) and the job page, with
+    its steps, its workflow drawing, its results and the diff with line
+    comments.
+  - Workflows: the canvas, the palette, the step detail, copy and delete,
+    read-only for a person who is not an admin.
+  - Constraints, Capabilities and the Audit Log.
+  - Evals.
+  - Engine: the console, its containers, functions and logs.
+  - Settings: servers, people, model providers, OpenAI-compatible hosts,
+    the factory, oversight, history, workspaces and accounts.
+- **G3, parity.** Screenshot every page in both clients against the same
+  server, side by side. A difference is a defect unless the owner keeps it.
+  Each UI test moves with its page: what a page decides (a job's parts, a
+  draft workflow, a host list) stays a plain function with its test, and the
+  widgets only show it.
+- **G4, cutover.** `src/`, `src-tauri/`, `index.html`, `Trunk.toml` and
+  `styles.css` go. CI loses the wasm clippy and the `bastion-ui` tests and
+  gains `bastion-desktop`'s. `scripts/check-seams.sh` allows the client
+  only `bastion-protocol` among Bastion's crates. README says how to run it.
+
+**Exit, live:** from the new client, the owner adds a server, submits a
+request, approves each step of a short workflow, edits a workflow on the
+canvas, and sets a provider key. Every page matches its G3 screenshot, and
+G0's measurements, taken again on the finished client, meet the targets.
+
 #### A9 — Operations (M)
 
 **Goal:** the owner runs the factory day to day with the pages wipp has for it.
@@ -822,7 +880,8 @@ it, the approval moves the job on, and the tray count goes from 1 to 0.
 
 - A signed and notarized macOS build for Apple Silicon, and an AppImage and a
   `.deb` for Linux.
-- `tauri-plugin-updater` with a signed manifest from GitHub releases.
+- An updater for the native client (D37) with a signed manifest from GitHub
+  releases, and GTK's libraries bundled with the macOS build.
 - The app checks each Bastion worker's version, and refuses a stack it does not
   know, with the fix.
 - A release workflow in CI, from a tag.
@@ -883,7 +942,10 @@ starts until the owner asks.
 | Jobs stop when the app quits (D18). | The adapter resumes every active job on start, and A12 keeps the app running in the tray. |
 | CDP screencasts may be hard to turn into a playable recording. | A11's spike. The fallback is a frame sequence shown as a slideshow. |
 | A large diff may be slow to render in the webview. | A4 renders one file at a time, and collapses files over a set size. |
-| App checks have no driver on macOS. | Linux CI runs `tauri-driver`. |
+| App checks have no driver on macOS. | Linux CI runs `tauri-driver`. Under D37, a page's decisions are plain functions with tests, and G3's screenshots check the look. |
+| GTK 4 on macOS needs its libraries bundled, and its look on macOS may need more CSS. | G0 measures what the bundle needs. If GTK cannot be packaged or themed, G0 picks the other toolkit. |
+| A rewrite of 4,674 lines of pages can drift from the old look and behavior. | G3 compares every page side by side, and the Leptos client stays until G4. |
+| The sluggishness may come partly from today's debug build. | G0 measures a release build of today's app as the baseline. |
 
 ## 12. Progress
 
@@ -903,6 +965,7 @@ starts until the owner asks.
 | O | done | Added 2026-11-06 (D33). Takes over A8 step 7's dial per checkpoint. O1 (9c52028): a step is lights-on or dark; the hold timer is gone; a workflow is lights-on when every step has a person's gate, dim when one up to the merge does, dark when none does; the checkpoints fold into the steps they judged; ship, land, merge and deploy wait before they act; stored jobs and settings map onto the steps. O2 (b176981): a step the factory runs keeps what it reported as its artifact; every decision is a `decide` record, a person's with their name and the step, a dark step's as its dial's. O3 (22331e0): Settings shows each pipeline's steps, each a lights-on or dark button, and the level they make; `PUT /dials/{stage}` sets one; the presets are the three levels. Found live and fixed: `turns` still checked for the short pipeline's stages, so full-pipeline turns kept no usage (migration 2); dark decisions logged out of order. Exit, live (2026-11-06), on the short pipeline of `demo-local` with the local forge: with every step lights-on, `j459f405e` waited at plan, build and land and landed after three approvals; with every step dark, `j5ba1f381` and `j2ab6822e` landed with no person, `multiply`, `subtract` and `divide` are in `calc.py`; the audit log has `plan: approved by Ian Johnson` and the like for the first, and `plan`, `build`, `land: approved by its dark dial`, in order, for the last. Jobs kept at approve and review before O wait on plan and build. Not shown: the full pipeline, as this server grants `sandbox::*` only at plan and build, so scope's calls were refused; the full pipeline's grants are A8's. `eval_arms` still checks for the short stages, so an eval of a capability at a full stage would be refused. 203 tests. |
 | W | in progress | Added 2026-11-06 (D35). Builds on O's steps and dials. W1 (a0cf9e9): a workflow is a graph of steps linked by results, kept as versions, with the built-in pipelines as chains. W1b (ef68e86): a step is a skill, a prompt, a command or a Bastion stage. W2 (ebc266d): the Workflows page draws each workflow on a canvas; an admin drags a step, links two from a step's right edge, adds and removes steps and links, opens a step to set what it runs, its dial, note and results, and saves a version; a built-in can only be copied. W3 (917681c): New request picks a workflow, and the job page draws the job's workflow version with each step's state and each result as a document; a workflow job's current step is its node. W4 (0bcbb3d, 85a1bcf): eleven seeded workflows. Live (2026-11-06), in the page against the local server: the database seeded the eleven; Short was copied as `Short with design notes`, plan given a `design-notes` result and a note, its link to build removed and drawn again (which found and fixed a bug: the link's preview took the pointer's release), and version 2 saved; `j73499b5a` ran on it from New request, plan kept `design-notes`, build's brief carried it as `<result name="design-notes">`, and the job page showed it as a document. Not shown: removing a step, because Short has no step to spare and the full pipelines need A8's grants; a viewer's read-only view, because `local` has only its owner; the land, which waits on this server's GitHub forge and `demo-local` has no `origin` remote. The window's webview stayed blank to screen capture, so the page was driven in Chrome with the window's server. |
 | S | in progress | Added 2026-11-06 (D27 to D30). Runs before A8 step 4. S0, spike N12, passes (docs/levels.md): the page follows a server's events over `fetch` with the token, reconnects with `Last-Event-ID` after a server restart, and a second stack runs beside the first with its own data. The window's CSP gained `connect-src` for `127.0.0.1`. S1, the split: `crates/bastion-server` holds the engine adapter, the store, the factory, the gate, the forge, evals, settings, the audit log, charter, spec, Doctor, the stack and the console; the app links it as a library and keeps its commands, profiles and the window. `tauri::async_runtime` became `bastion_server::rt`, one `tokio` runtime; the fakes sit behind a `fakes` feature. `scripts/check-seams.sh` now fails if the server depends on Tauri or the page on the server. 86 core, 64 server, 9 app tests (2181a86). S2, the API: each command's body moved into `bastion_server::api` (de6861c), and the Tauri commands call it until S3. A `Server` holds the engine, the machine, the stack, a data directory, the factory, and a `Bus` of numbered changes (`Change` in `bastion-protocol`, the latest 256 kept for a reconnect). `bastion_server::http` serves one route per function behind the bearer token, with CORS for the window's origins: 400 for a refused action, 409 for the stack's typed refusal, 503 while the factory waits for the engine, 401 without the token. `GET /events` streams the bus as server-sent events, replays after `Last-Event-ID`, and sends `resync` when it cannot. The `bastion-server` binary takes `--checkout`, `--data`, `--port` and `--engine`, keeps its token in `data/token` (mode 0600), starts or attaches to the stack, and serves on loopback. Live (2026-11-06) against the second stack: the server started the stack, opened the store on the third try once `database` registered, ran migration 1 through the worker (`user_version` 1, the seed's 5 constraints and 3 grants), refused a request with no token, answered `/engine`, `/jobs` and `/constraints`, pushed a change on `/events` when a preset was set, answered a stale `Last-Event-ID` with `resync`, refused a bad preset with 400, and stopped the stack through `/stack/stop`. 86 core, 77 server, 3 app tests (62ea1a5). S3, the view on the API: the page sends each server command over HTTP by a route table in `bastion-protocol` (a server test sends every row and fails on a 404 or 405), with the token from the window's `target` command, and follows `GET /events` with `fetch`, reconnecting with `Last-Event-ID`; a resync, a reconnect or the window's focus makes every page read again, the engine status included. The app keeps three commands (`profile`, `target`, `quit`), no longer links the server, and starts `bastion-server` in its own process group, or attaches to the one on port 49190. The page decides a quit: it asks only while the stack runs, and the server outlives the app. Live (2026-11-06), on the owner's stack after backing up `data/bastion.db`: the app started the local server, migration 1 ran through the `database` worker and kept the 15 jobs and 83 artifacts; the Jobs page showed them and the Engine page the link up; with the server killed the Link card said `Down: http://127.0.0.1:49190 does not answer.`, and after a restart the open page came back up with no reload; a relaunched app attached to the running server instead of starting another. Not confirmed: the quit question (after its close button, screenshots of the window came back blank), and ⌘Q quits without asking, as Tauri's Quit menu item exits with a code; a stale error stays on the stack card after an outage. The sidebar's server label is gone (D30). 86 core, 78 server, 3 app, 3 view, 1 protocol tests (8004bb8). S4, Bastion servers, built: the app keeps the servers the owner added in `servers.toml`, each token in the Keychain (`keyring`), with `local` always first; the page follows every server's events and calls any of them (`call_on`). The Jobs page lists every server's jobs, each row naming its server, and the filter offers each server and workspace that has jobs. New request picks a Bastion server, `local` by default, then one of its workspaces; opening a job makes its server the current one, and the job page names it. The pages about one server have a Bastion server picker at their top, and Settings lists the servers with add and remove. The `profile` command is gone from the page; `profiles.toml` only tells the app how to start `local`. 86 core, 78 server, 5 app, 3 view, 1 protocol tests (fe68813). Exit, live (2026-11-06), with `local` and a second Bastion server on a second stack on this machine: Two was added in Settings, its token went to the Keychain and not to `servers.toml`; New request on `local` with `demo-local` started `j7df1a6c2`, and New request with Two picked showed only Two's workspace and started `jcbf97e51`; the Jobs page listed both under their servers, and each reached Approve with one plan. Closing the window with the stack running asked the quit question (S3's open item), Keep it running quit the app with both servers and both stacks up, and the reopened app listed both jobs where they were. Killing only Two's server left its stack running, and the restarted server attached to it. Found, and open: the Jobs page does not say when a server cannot be reached, and keeps showing its last read; stopping the background task that ran Two's server took its stack down too, and the job waiting at Approve lost its VM (`sandbox not found` at stop), so a job that waits across a stack restart cannot go on; whether a plan turn survives a kill mid-turn is not shown, because the plan finished too fast to tell; the add-server form keeps its values after Add. Then the Jobs page's unreachable server: the page now marks a server whose event stream is down, names it above the list, keeps that server's jobs as last read and marks them unreachable, and still says why a reachable server's jobs did not read; checked live by killing only Two's server, which put up the note, and restarting it, which cleared the note and brought Two's job back with no reload. Next: A8 step 4. |
+| G | not started | Added 2026-11-09 (D37). Runs next, before A9. |
 | A9 to A13 | — | — |
 | Later (§10) | on hold | — |
 

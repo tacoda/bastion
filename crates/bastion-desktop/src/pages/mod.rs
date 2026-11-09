@@ -3,6 +3,7 @@
 
 pub mod diff;
 pub mod drawing;
+pub mod engine;
 pub mod govern;
 pub mod job;
 pub mod jobs;
@@ -117,12 +118,25 @@ pub fn labeled<'a, M: 'a>(label: &'a str, field: impl Into<Element<'a, M>>) -> E
         .into()
 }
 
+/// What a push says changed, so a page reads again only what it shows.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Push {
+    /// Read everything: a page just opened, changes were missed, or a
+    /// change reached every job (a setting, say).
+    All,
+    /// One job changed.
+    Job,
+    /// The engine or its console changed.
+    Engine,
+}
+
 /// The page the window shows, with its state.
 pub enum Page {
     Jobs(jobs::State),
     NewRequest(new_request::State),
     Job(Box<job::State>),
     Govern(govern::State),
+    Engine(Box<engine::State>),
     /// A page G2 has not built yet.
     Pending,
 }
@@ -137,21 +151,23 @@ impl Page {
             Route::Constraints => Page::Govern(govern::State::new(govern::Which::Constraints)),
             Route::Capabilities => Page::Govern(govern::State::new(govern::Which::Capabilities)),
             Route::Audit => Page::Govern(govern::State::new(govern::Which::Audit)),
+            Route::Engine => Page::Engine(Box::default()),
             _ => Page::Pending,
         };
-        let first = page.reload(ctx, true);
+        let first = page.reload(ctx, Push::All);
         (page, first)
     }
 
-    /// Read again after a push. `everything` is a change to every job or a
-    /// resync, which also reaches what a page reads besides jobs.
-    pub fn reload(&self, ctx: &Ctx, everything: bool) -> Task<Message> {
+    /// Read again after a push, when it changed what the page shows.
+    pub fn reload(&self, ctx: &Ctx, push: Push) -> Task<Message> {
+        let jobs = push != Push::Engine;
         match self {
-            Page::Jobs(s) => jobs::load(s, ctx).map(Message::Jobs),
-            Page::NewRequest(s) if everything => new_request::load(s, ctx),
+            Page::Jobs(s) if jobs => jobs::load(s, ctx).map(Message::Jobs),
+            Page::NewRequest(s) if push == Push::All => new_request::load(s, ctx),
             // ponytail: any job's change reads this one again; pass the id when that costs.
-            Page::Job(s) => job::load(s, ctx),
-            Page::Govern(s) => govern::load(s, ctx),
+            Page::Job(s) if jobs => job::load(s, ctx),
+            Page::Govern(s) if jobs => govern::load(s, ctx),
+            Page::Engine(_) if push != Push::Job => engine::load(ctx),
             _ => Task::none(),
         }
     }
@@ -162,6 +178,7 @@ impl Page {
             Page::NewRequest(s) => new_request::view(s, ctx),
             Page::Job(s) => job::view(s, ctx),
             Page::Govern(s) => govern::view(s),
+            Page::Engine(s) => engine::view(s),
             Page::Pending => {
                 let title = text(route.title()).size(24).font(theme::BOLD);
                 column![title, text("This page is built in G2.").color(theme::MUTED)]

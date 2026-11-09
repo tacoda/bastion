@@ -13,7 +13,7 @@ use serde_json::Value;
 
 use crate::client::{self, Ask};
 use crate::events::{self, Feed};
-use crate::pages::{self, Ctx, Page, govern, job, jobs, new_request};
+use crate::pages::{self, Ctx, Page, Push, engine, govern, job, jobs, new_request};
 use crate::route::{PAGES, Route};
 use crate::{icons, start, theme};
 
@@ -39,6 +39,7 @@ pub enum Message {
     NewRequest(new_request::Msg),
     Job(job::Msg),
     Govern(govern::Msg),
+    Engine(engine::Msg),
     /// Open a link, such as a pull request, in the browser.
     OpenUrl(String),
 }
@@ -128,7 +129,7 @@ impl App {
             }
             Message::Servers(Ok(all)) => {
                 self.servers = all;
-                return self.page.reload(&self.ctx(), true);
+                return self.page.reload(&self.ctx(), Push::All);
             }
             Message::Servers(Err(why)) => self.problem = Some(why),
             Message::Started(Err(why)) => self.problem = Some(why),
@@ -165,6 +166,12 @@ impl App {
                     return govern::update(state, msg, &ctx);
                 }
             }
+            Message::Engine(msg) => {
+                let ctx = self.ctx();
+                if let Page::Engine(state) = &mut self.page {
+                    return engine::update(state, msg, &ctx);
+                }
+            }
             Message::OpenUrl(url) => open(&url),
             Message::Feed((server, feed)) => return self.on_feed(server, feed),
             Message::CloseRequested => return self.on_close(),
@@ -181,18 +188,21 @@ impl App {
     /// from every server, because the Jobs page lists them all; the rest
     /// only from the server the page shows.
     fn on_feed(&mut self, server: String, feed: Feed) -> Task<Message> {
-        let everything = match feed {
-            Feed::Up => !self.down.remove(&server),
+        let push = match feed {
+            // A server back from down may have missed changes.
+            Feed::Up if self.down.remove(&server) => Push::All,
+            Feed::Up => return Task::none(),
             Feed::Down => {
                 self.down.insert(server);
                 return Task::none();
             }
-            Feed::Resync => true,
-            Feed::Change(Change::Job { id }) => id.is_empty(),
+            Feed::Resync => Push::All,
+            Feed::Change(Change::Job { id }) if id.is_empty() => Push::All,
+            Feed::Change(Change::Job { .. }) => Push::Job,
             Feed::Change(_) if server != self.current => return Task::none(),
-            Feed::Change(_) => false,
+            Feed::Change(_) => Push::Engine,
         };
-        self.page.reload(&self.ctx(), everything)
+        self.page.reload(&self.ctx(), push)
     }
 
     /// The stack belongs to the server (D27), so a quit asks only while it runs.

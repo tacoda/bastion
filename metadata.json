@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.12.2",
+  "checkpoint_id": "01M718B5XR0XESCX1829P81SHQ",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/bastion-server/src/factory.rs",
+    "crates/bastion-server/src/factory/acceptance.rs",
+    "crates/bastion-server/src/gate.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 60,
+    "cache_creation_tokens": 33292,
+    "cache_read_tokens": 3386516,
+    "output_tokens": 11842,
+    "api_call_count": 30
+  },
+  "redaction": {
+    "replacements": 756,
+    "layers": {
+      "betterleaks": 55,
+      "connection_string": 0,
+      "credential_key": 646,
+      "credential_value": 66,
+      "credentialed_uri": 0,
+      "entropy": 72,
+      "key_context": 0,
+      "provider_token": 4,
+      "shell_stdin": 0
+    }
+  }
+}

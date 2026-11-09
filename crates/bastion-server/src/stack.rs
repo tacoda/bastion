@@ -235,7 +235,7 @@ mod live {
     fn live_attach() {
         let stack = Stack {
             checkout: std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("..")
+                .join("../..")
                 .canonicalize()
                 .unwrap(),
             port: 49160,

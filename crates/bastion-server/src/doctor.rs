@@ -369,7 +369,7 @@ mod live {
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             }
-            let checkout = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+            let checkout = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
             let report = run(&ThisMachine, &engine, &checkout).await;
             for c in &report.checks {
                 println!(

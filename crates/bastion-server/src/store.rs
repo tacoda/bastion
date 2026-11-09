@@ -1465,9 +1465,13 @@ mod live {
     /// named `tag`.
     async fn open_with_job(tag: &str) -> (SqlStore, Record) {
         let engine: Arc<dyn Engine> = Arc::new(IiiEngine::connect("ws://127.0.0.1:49160"));
-        while engine.link() != Link::Up {
+        for _ in 0..150 {
+            if engine.link() == Link::Up {
+                break;
+            }
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
+        assert_eq!(engine.link(), Link::Up, "no engine link in 15 s");
         let store = SqlStore::open(engine, SEED).await.unwrap();
         let w = Workspace {
             name: tag.into(),

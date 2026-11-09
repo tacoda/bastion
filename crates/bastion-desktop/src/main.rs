@@ -27,6 +27,8 @@ fn main() -> iced::Result {
     iced::application(app::App::new, app::App::update, app::App::view)
         .title("Bastion")
         .subscription(app::App::subscription)
+        .theme(|_: &app::App| theme::bastion())
+        .default_font(theme::FONT)
         .window(window)
         .run()
 }

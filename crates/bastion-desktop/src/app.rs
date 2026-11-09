@@ -158,7 +158,7 @@ impl App {
 
     fn sidebar(&self) -> Element<'_, Message> {
         let here = self.route.section();
-        let mut items = vec![text("Bastion").size(18).font(bold()).into()];
+        let mut items = vec![text("Bastion").size(18).font(theme::BOLD).into()];
         for (route, label, glyph) in PAGES {
             let on = route == here;
             let color = if on { iced::Color::WHITE } else { theme::INK };
@@ -212,20 +212,13 @@ impl App {
     }
 
     fn page(&self) -> Element<'_, Message> {
-        let title = text(self.route.title()).size(24).font(bold());
+        let title = text(self.route.title()).size(24).font(theme::BOLD);
         let note = match (&self.problem, &self.last_push) {
             (Some(why), _) => text(why.clone()).color(theme::BAD),
             (None, Some(push)) => text(format!("Last push: {push}")).color(theme::MUTED),
             (None, None) => text("This page is built in G2.").color(theme::MUTED),
         };
         column![title, note].spacing(12).into()
-    }
-}
-
-fn bold() -> iced::Font {
-    iced::Font {
-        weight: iced::font::Weight::Bold,
-        ..iced::Font::DEFAULT
     }
 }
 
@@ -255,7 +248,7 @@ fn quit_dialog<'a>() -> Element<'a, Message> {
     ]
     .spacing(8);
     let body = column![
-        text("The stack is running").size(18).font(bold()),
+        text("The stack is running").size(18).font(theme::BOLD),
         text("Stop it with the app, or keep it running for the next start to attach to?")
             .color(theme::MUTED),
         buttons,

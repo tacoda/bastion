@@ -1,8 +1,9 @@
 //! D4's theme: one dark theme, purple as the main color. The same tokens as
 //! the Leptos pages' `styles.css`, as iced styles.
 
+use iced::theme::Palette;
 use iced::widget::{button, container, pick_list, text_input};
-use iced::{Background, Border, Color, Theme};
+use iced::{Background, Border, Color, Font, Theme, font};
 
 const fn byte(rgb: u32, shift: u32) -> f32 {
     ((rgb >> shift) & 0xff) as f32 / 255.0
@@ -28,6 +29,29 @@ pub const LINK: Color = hex(0xc4b5fd);
 pub const OK: Color = hex(0x4ade80);
 pub const BAD: Color = hex(0xf87171);
 pub const WARN: Color = hex(0xfbbf24);
+
+/// The app's theme, so a widget with no style of its own still reads
+/// light on dark.
+pub fn bastion() -> Theme {
+    let palette = Palette {
+        background: BG,
+        text: INK,
+        primary: PRIMARY,
+        success: OK,
+        warning: WARN,
+        danger: BAD,
+    };
+    Theme::custom("Bastion".to_string(), palette)
+}
+
+/// The text face. macOS's system face is variable, and iced draws no bold
+/// from it, so the client uses a face with a real bold.
+// ponytail: Helvetica Neue on macOS; other systems fall back to their own sans.
+pub const FONT: Font = Font::with_name("Helvetica Neue");
+pub const BOLD: Font = Font {
+    weight: font::Weight::Bold,
+    ..FONT
+};
 
 fn rounded(radius: f32) -> Border {
     Border {

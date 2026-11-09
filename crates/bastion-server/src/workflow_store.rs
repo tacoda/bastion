@@ -208,7 +208,7 @@ impl WorkflowStore for SqlStore {
     fn workflows(&self) -> Answer<'_, Vec<(String, String, u64)>> {
         Box::pin(async move {
             let sql = "SELECT id, name, version FROM workflows ORDER BY name";
-            self.rows(sql, json!([]), |r| {
+            self.listed(sql, json!([]), |r| {
                 Ok((parse(r, "id")?, parse(r, "name")?, parse(r, "version")?))
             })
             .await

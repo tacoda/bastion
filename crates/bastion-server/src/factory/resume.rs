@@ -38,7 +38,7 @@ impl Factory {
     async fn active(&self) -> Vec<Record> {
         let mut wait = Duration::from_millis(500);
         for _ in 0..READ_TRIES {
-            match self.store.jobs().await {
+            match self.store.active().await {
                 Ok(all) => {
                     return all
                         .into_iter()

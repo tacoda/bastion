@@ -5,7 +5,7 @@
 use std::convert::Infallible;
 use std::sync::Arc;
 
-use axum::extract::{Extension, MatchedPath, Path, Request, State};
+use axum::extract::{Extension, MatchedPath, Path, Query, Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -351,8 +351,12 @@ async fn workspace_add(State(app): State<App>, Json(w): Json<Workspace>) -> Resp
     answer(api::factory::workspace_add(&s.factory, &s.machine, w).await)
 }
 
-async fn jobs(State(app): State<App>, Extension(person): Extension<Person>) -> Response {
-    let jobs = api::factory::jobs(&app.server.factory).await;
+async fn jobs(
+    State(app): State<App>,
+    Extension(person): Extension<Person>,
+    Query(page): Query<api::Page>,
+) -> Response {
+    let jobs = api::factory::jobs(&app.server.factory, page).await;
     answer(jobs.map(|all| {
         all.into_iter()
             .map(|j| access::as_seen_by(&person, j))
@@ -550,8 +554,8 @@ async fn charters(State(app): State<App>) -> Response {
     answer(api::govern::charters(&app.server.factory, &app.server.machine).await)
 }
 
-async fn audit(State(app): State<App>) -> Response {
-    answer(api::govern::audit(&app.server.factory).await)
+async fn audit(State(app): State<App>, Query(page): Query<api::Page>) -> Response {
+    answer(api::govern::audit(&app.server.factory, page).await)
 }
 
 async fn audit_export(State(app): State<App>) -> Response {

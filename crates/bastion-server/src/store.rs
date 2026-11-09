@@ -85,8 +85,10 @@ pub trait Store: EvalStore + PeopleStore + SettingsStore + WorkflowStore + Send 
     fn workspaces(&self) -> Answer<'_, Vec<Workspace>>;
     fn insert<'a>(&'a self, record: &'a Record) -> Answer<'a, ()>;
     fn load<'a>(&'a self, id: &'a str) -> Answer<'a, Record>;
-    /// Every job, newest first.
-    fn jobs(&self) -> Answer<'_, Vec<Record>>;
+    /// Up to `limit` jobs, newest first, after skipping `offset`.
+    fn jobs(&self, limit: usize, offset: usize) -> Answer<'_, Vec<Record>>;
+    /// The unfinished jobs, and each job a queued part waits on, newest first.
+    fn active(&self) -> Answer<'_, Vec<Record>>;
     /// Write `record` if its `rev` is still current. Returns the new `rev`.
     fn save<'a>(&'a self, record: &'a Record) -> Answer<'a, i64>;
     fn add_artifact<'a>(&'a self, job: &'a str, artifact: &'a Artifact) -> Answer<'a, ()>;
@@ -325,6 +327,10 @@ pub fn seed_statements(sql: &str) -> Vec<Value> {
 }
 
 const JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue, pipeline, back_to, last_refusal, done_tasks, criteria, falsify_tried, requester, workflow, workflow_version, node, parent, after_job, part, approved";
+/// The jobs the admission pump and resume need: every unfinished one, and
+/// every job a queued part waits on, so a part whose earlier part failed
+/// is seen as abandoned rather than admitted.
+const ACTIVE: &str = "state NOT IN ('landed','failed','stopped') OR id IN (SELECT after_job FROM jobs WHERE state = 'queued')";
 /// The job columns before migration 1, which its rebuild copies.
 const LEGACY_JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue";
 
@@ -490,6 +496,24 @@ impl SqlStore {
         row: fn(&Value) -> Result<T, String>,
     ) -> Result<Vec<T>, String> {
         self.query(sql, params).await?.iter().map(row).collect()
+    }
+
+    /// Like `rows`, for a list a person browses: a row that does not parse
+    /// is logged and left out, so one bad row does not hide the rest. Never
+    /// for the audit chain or the rules the gate judges by, where a missing
+    /// row would change the answer.
+    pub(crate) async fn listed<T>(
+        &self,
+        sql: &str,
+        params: Value,
+        row: fn(&Value) -> Result<T, String>,
+    ) -> Result<Vec<T>, String> {
+        let all = self.query(sql, params).await?;
+        let parsed = all.iter().map(row).filter_map(|r| {
+            r.map_err(|e| eprintln!("a row left out of a list: {e}"))
+                .ok()
+        });
+        Ok(parsed.collect())
     }
 
     /// Fill each job's tasks, results and revision counts from their tables. `filter`
@@ -809,11 +833,24 @@ impl Store for SqlStore {
         })
     }
 
-    fn jobs(&self) -> Answer<'_, Vec<Record>> {
+    fn jobs(&self, limit: usize, offset: usize) -> Answer<'_, Vec<Record>> {
         Box::pin(async move {
-            let sql = format!("SELECT {JOB_COLUMNS} FROM jobs ORDER BY created_at DESC, id");
-            let all = self.rows(&sql, json!([]), record).await?;
-            self.with_lists(all, "", json!([])).await
+            let page = "ORDER BY created_at DESC, id LIMIT ? OFFSET ?";
+            let sql = format!("SELECT {JOB_COLUMNS} FROM jobs {page}");
+            let some = self.listed(&sql, json!([limit, offset]), record).await?;
+            let filter = format!("WHERE job IN (SELECT id FROM jobs {page})");
+            self.with_lists(some, &filter, json!([limit, offset])).await
+        })
+    }
+
+    fn active(&self) -> Answer<'_, Vec<Record>> {
+        Box::pin(async move {
+            let sql = format!(
+                "SELECT {JOB_COLUMNS} FROM jobs WHERE {ACTIVE} ORDER BY created_at DESC, id"
+            );
+            let some = self.listed(&sql, json!([]), record).await?;
+            let filter = format!("WHERE job IN (SELECT id FROM jobs WHERE {ACTIVE})");
+            self.with_lists(some, &filter, json!([])).await
         })
     }
 
@@ -1042,10 +1079,27 @@ pub mod fake {
             Box::pin(async move { found })
         }
 
-        fn jobs(&self) -> Answer<'_, Vec<Record>> {
+        fn jobs(&self, limit: usize, offset: usize) -> Answer<'_, Vec<Record>> {
             let mut all: Vec<Record> = self.jobs.lock().unwrap().values().cloned().collect();
             all.sort_by_key(|r| std::cmp::Reverse(r.created_at));
-            Box::pin(async move { Ok(all) })
+            let some = all.into_iter().skip(offset).take(limit).collect();
+            Box::pin(async move { Ok(some) })
+        }
+
+        fn active(&self) -> Answer<'_, Vec<Record>> {
+            let all = self.jobs.lock().unwrap();
+            let waited_on: Vec<String> = all
+                .values()
+                .filter(|r| r.job.state == State::Queued)
+                .filter_map(|r| r.job.after.clone())
+                .collect();
+            let mut some: Vec<Record> = all
+                .values()
+                .filter(|r| !r.job.state.finished() || waited_on.contains(&r.job.id))
+                .cloned()
+                .collect();
+            some.sort_by_key(|r| std::cmp::Reverse(r.created_at));
+            Box::pin(async move { Ok(some) })
         }
 
         fn save<'a>(&'a self, r: &'a Record) -> Answer<'a, i64> {
@@ -1356,6 +1410,7 @@ mod tests {
         r.runtime.sandbox = Some("vm-1".into());
         r.runtime.workflow = Some("w1".into());
         r.runtime.workflow_version = Some(3);
+        r.runtime.approved = vec!["tests/a.py".into(), "tests/b.py".into()];
         let columns: Vec<&str> = JOB_COLUMNS.split(", ").collect();
         let values = job_params(&r);
         let row: serde_json::Map<String, Value> = columns
@@ -1366,6 +1421,30 @@ mod tests {
         let mut folded = r;
         folded.job.stage = Stage::Plan;
         assert_eq!(super::record(&Value::Object(row)).unwrap(), folded);
+    }
+
+    #[test]
+    fn a_job_row_that_does_not_parse_is_left_out_of_the_list() {
+        let columns = JOB_COLUMNS.split(", ");
+        let mut good: serde_json::Map<String, Value> = columns
+            .zip(job_params(&record()).as_array().unwrap().clone())
+            .map(|(c, v)| (c.to_string(), v))
+            .collect();
+        // `open` reads the schema version from the same answer.
+        good.insert("user_version".into(), json!(99));
+        let bad = json!({ "id": "j2", "state": "nonsense", "user_version": 99 });
+        let engine = Arc::new(
+            FakeEngine::new(Link::Up)
+                .answer("database::transaction", Ok(json!({ "committed": true })))
+                .answer("database::query", Ok(json!({ "rows": [good, bad] })))
+                .answer("database::execute", Ok(json!({ "returned_rows": [] }))),
+        );
+        crate::rt::block_on(async {
+            let store = SqlStore::open(engine, SEED).await.unwrap();
+            let listed = store.jobs(10, 0).await.unwrap();
+            assert_eq!(listed.len(), 1);
+            assert_eq!(listed[0].job.id, "j1");
+        });
     }
 }
 

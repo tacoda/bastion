@@ -196,7 +196,7 @@ impl EvalStore for SqlStore {
     fn evals(&self) -> Answer<'_, Vec<Eval>> {
         Box::pin(async move {
             let sql = "SELECT id, name, workspace, base, created_at FROM evals ORDER BY created_at DESC, id";
-            self.rows(sql, json!([]), eval_of).await
+            self.listed(sql, json!([]), eval_of).await
         })
     }
 

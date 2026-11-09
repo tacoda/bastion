@@ -342,7 +342,7 @@ impl Factory {
     fn pump(self: &Arc<Self>) {
         let factory = self.clone();
         crate::rt::spawn(async move {
-            let Ok(records) = factory.store.jobs().await else {
+            let Ok(records) = factory.store.active().await else {
                 return;
             };
             let jobs: Vec<Job> = records.into_iter().map(|r| r.job).collect();

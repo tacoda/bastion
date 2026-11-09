@@ -101,9 +101,11 @@ pub async fn workspace_add(
     factory(cell)?.store().add_workspace(&row).await
 }
 
-pub async fn jobs(cell: &FactoryCell) -> Result<Vec<JobSummary>, String> {
+pub async fn jobs(cell: &FactoryCell, page: super::Page) -> Result<Vec<JobSummary>, String> {
     let factory = factory(cell)?;
-    Ok(factory.store().jobs().await?.iter().map(summary).collect())
+    let (limit, offset) = page.bounds();
+    let some = factory.store().jobs(limit, offset).await?;
+    Ok(some.iter().map(summary).collect())
 }
 
 /// The latest turn's messages, or none when the job has no turn or the

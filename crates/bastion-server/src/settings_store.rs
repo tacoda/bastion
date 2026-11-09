@@ -93,7 +93,7 @@ impl SettingsStore for SqlStore {
     fn versions(&self) -> Answer<'_, Vec<Version>> {
         Box::pin(async move {
             let sql = "SELECT version, at, note FROM settings_versions ORDER BY version DESC";
-            self.rows(sql, json!([]), version_of).await
+            self.listed(sql, json!([]), version_of).await
         })
     }
 

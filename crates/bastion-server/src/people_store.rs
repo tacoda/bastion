@@ -84,7 +84,7 @@ impl PeopleStore for SqlStore {
     fn people(&self) -> Answer<'_, Vec<Person>> {
         Box::pin(async move {
             let sql = "SELECT name, role FROM people ORDER BY name";
-            self.rows(sql, json!([]), person_of).await
+            self.listed(sql, json!([]), person_of).await
         })
     }
 

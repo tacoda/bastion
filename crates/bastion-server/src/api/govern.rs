@@ -97,14 +97,19 @@ pub async fn capability_move(
 
 /// The whole chain, verified under its key as it is read, and the writer's
 /// state, so a stalled audit shows.
-pub async fn audit(cell: &FactoryCell) -> Result<AuditView, String> {
+/// One page of the audit log, counted back from its newest entry and kept
+/// in chain order. The whole chain is still read, as verifying it needs
+/// every entry.
+pub async fn audit(cell: &FactoryCell, page: super::Page) -> Result<AuditView, String> {
     let factory = factory(cell)?;
     let log = factory.gate().audit()?;
     let read = log.read().await?;
     let (pending, last_error) = log.status();
-    let entries = read
-        .chain
-        .into_iter()
+    let (limit, offset) = page.bounds();
+    let newest = read.chain.len().saturating_sub(offset);
+    let entries = read.chain[newest.saturating_sub(limit)..newest]
+        .iter()
+        .cloned()
         .map(|e| AuditEntryView {
             seq: e.seq,
             at: e.at,

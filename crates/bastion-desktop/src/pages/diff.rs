@@ -92,9 +92,14 @@ fn split(diff: &str) -> (&str, Option<&str>) {
 fn file_view<'a, M: Clone + 'a>(file: File, comment: fn(String) -> M) -> Element<'a, M> {
     let lines = file.lines.into_iter().map(|line| {
         let number = text(line.new.map(|n| n.to_string()).unwrap_or_default())
+            .font(theme::MONO)
+            .size(13)
             .width(40)
             .color(theme::MUTED);
-        let body = text(line.text.clone()).color(line_color(&line.text));
+        let body = text(line.text.clone())
+            .font(theme::MONO)
+            .size(13)
+            .color(line_color(&line.text));
         let at = line.new.map(|n| comment(format!("{}:{n}: ", file.path)));
         let line = button(row![number, body].spacing(8))
             .padding([0, 4])

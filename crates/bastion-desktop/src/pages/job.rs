@@ -9,6 +9,7 @@ use bastion_protocol::{
     ArtifactView, CharterView, HeldCallRef, HeldCallView, JobDetail, JobSummary, StepView,
     TranscriptLine,
 };
+use iced::widget::markdown;
 use iced::widget::{
     Column, button, column, container, row, scrollable, text, text_editor, text_input,
 };
@@ -32,6 +33,8 @@ pub struct State {
     turn_open: bool,
     /// Each step's state by its node id, for the drawing.
     marks: BTreeMap<String, String>,
+    /// Each artifact's body, parsed as markdown, by its text.
+    docs: BTreeMap<String, markdown::Content>,
 }
 
 impl State {
@@ -45,6 +48,7 @@ impl State {
             toggled: BTreeSet::new(),
             turn_open: false,
             marks: BTreeMap::new(),
+            docs: BTreeMap::new(),
         }
     }
 
@@ -151,6 +155,7 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
                 .iter()
                 .map(|s| (s.id.clone(), s.state.clone()))
                 .collect();
+            state.docs = parsed(&d.artifacts);
             state.detail = Some(*d);
         }
         Msg::Read(Err(e)) | Msg::Acted(Err(e)) => state.error = e,
@@ -247,6 +252,37 @@ fn block<'a>(body: String) -> Element<'a, Message> {
     let body = container(text(body).font(theme::MONO).size(13))
         .padding(12)
         .width(Fill);
+    container(scrollable(body).height(iced::Length::Shrink))
+        .max_height(384)
+        .style(theme::code)
+        .into()
+}
+
+/// Each artifact's body as markdown, by its text.
+fn parsed(artifacts: &[ArtifactView]) -> BTreeMap<String, markdown::Content> {
+    artifacts
+        .iter()
+        .map(|a| (a.body.clone(), markdown::Content::parse(&a.body)))
+        .collect()
+}
+
+/// An agent's text, rendered as markdown, in a block like [`block`]'s.
+/// Text not parsed yet shows as it is.
+fn doc<'a>(state: &'a State, body: String) -> Element<'a, Message> {
+    let Some(content) = state.docs.get(&body) else {
+        return block(body);
+    };
+    let style = markdown::Style {
+        inline_code_font: theme::MONO,
+        code_block_font: theme::MONO,
+        ..markdown::Style::from(&theme::bastion())
+    };
+    let shown = markdown::view(
+        content.items(),
+        markdown::Settings::with_text_size(14, style),
+    )
+    .map(Message::OpenUrl);
+    let body = container(shown).padding(12).width(Fill);
     container(scrollable(body).height(iced::Length::Shrink))
         .max_height(384)
         .style(theme::code)
@@ -421,7 +457,7 @@ fn waiting<'a>(state: &'a State, d: &'a JobDetail) -> Element<'a, Message> {
     if state.allows("approve") {
         body = body.push(text(what_approve_does(d)).size(13).color(theme::MUTED));
         let (report, change) = judged(d);
-        body = body.extend(report.map(block));
+        body = body.extend(report.map(|r| doc(state, r)));
         if let Some(change) = change {
             body = body.push(
                 text("The change (click a line to comment on it)")
@@ -542,12 +578,12 @@ fn flow<'a>(d: &'a JobDetail, marks: &'a BTreeMap<String, String>) -> Element<'a
     body.into()
 }
 
-fn artifact<'a>(a: &ArtifactView) -> Element<'a, Message> {
+fn artifact<'a>(state: &'a State, a: &ArtifactView) -> Element<'a, Message> {
     let head = text(format!("{} artifact · {}", a.stage, ago(a.created_at)))
         .size(12)
         .font(theme::BOLD)
         .color(theme::MUTED);
-    column![head, block(a.body.clone())].spacing(4).into()
+    column![head, doc(state, a.body.clone())].spacing(4).into()
 }
 
 fn turn<'a>(lines: &'a [TranscriptLine], open: bool) -> Element<'a, Message> {
@@ -602,7 +638,7 @@ fn step_row<'a>(
             .iter()
             .rev()
             .filter(|a| a.stage == step.stage)
-            .map(artifact),
+            .map(|a| artifact(state, a)),
     );
     if turn_step == Some(step.stage.as_str()) && !d.transcript.is_empty() {
         body = body.push(turn(&d.transcript, state.turn_open));
@@ -685,6 +721,19 @@ mod tests {
             ..job
         };
         assert_eq!(still_working(&waiting, 1_000 + 25 * 60), None);
+    }
+
+    #[test]
+    fn an_artifact_reads_as_markdown() {
+        let a = ArtifactView {
+            stage: "build".into(),
+            body: "**What I changed**\n- `calc.py`: a docstring\n".into(),
+            created_at: 0,
+        };
+        let docs = parsed(&[a]);
+        let items = docs.values().next().unwrap().items();
+        assert!(matches!(items[0], markdown::Item::Paragraph(_)));
+        assert!(matches!(items[1], markdown::Item::List { .. }));
     }
 
     #[test]

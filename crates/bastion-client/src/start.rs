@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use bastion_protocol::Server;
 
 use crate::local;
-use crate::servers::{self, Keychain, Servers};
+use crate::servers::{self, Servers};
 
 /// The checkout this build came from, which holds `worker-compose.yaml`.
 // ponytail: a build-time path; packaging the stack replaces it.
@@ -41,7 +41,7 @@ pub fn servers(local: Server) -> Servers {
     Servers::new(
         config_dir().join(servers::FILE_NAME),
         local,
-        Box::new(Keychain),
+        servers::vault(config_dir().join("tokens")),
     )
 }
 

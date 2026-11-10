@@ -1,6 +1,7 @@
 //! The Bastion servers this client knows (D30): `local`, which the client starts,
 //! and the ones the owner added. A server's name and URL live in
-//! `servers.toml`; its token lives in the Keychain.
+//! `servers.toml`; its token lives in the Keychain on macOS, and in a file
+//! only its owner can read elsewhere.
 
 use std::path::{Path, PathBuf};
 
@@ -9,22 +10,39 @@ use serde::{Deserialize, Serialize};
 
 pub const FILE_NAME: &str = "servers.toml";
 /// The Keychain service each server's token is kept under.
+#[cfg(target_os = "macos")]
 const SERVICE: &str = "dev.tacoda.bastion.server";
 
 /// Where the tokens are kept.
 pub trait Vault: Send + Sync {
     fn get(&self, name: &str) -> Result<String, String>;
-    fn set(&self, name: &str, token: &str) -> Result<(), String>;
+    /// Keep `server`'s token under its name.
+    fn set(&self, server: &Server) -> Result<(), String>;
     fn remove(&self, name: &str) -> Result<(), String>;
 }
 
+/// Where this machine keeps tokens: the Keychain on macOS, else files in
+/// `dir`.
+pub fn vault(dir: PathBuf) -> Box<dyn Vault> {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = dir;
+        Box::new(Keychain)
+    }
+    #[cfg(not(target_os = "macos"))]
+    Box::new(TokenFiles { dir })
+}
+
 /// The macOS Keychain.
+#[cfg(target_os = "macos")]
 pub struct Keychain;
 
+#[cfg(target_os = "macos")]
 fn entry(name: &str) -> Result<keyring::Entry, String> {
     keyring::Entry::new(SERVICE, name).map_err(|e| e.to_string())
 }
 
+#[cfg(target_os = "macos")]
 impl Vault for Keychain {
     fn get(&self, name: &str) -> Result<String, String> {
         entry(name)?
@@ -32,14 +50,57 @@ impl Vault for Keychain {
             .map_err(|e| format!("{name}'s token: {e}"))
     }
 
-    fn set(&self, name: &str, token: &str) -> Result<(), String> {
-        entry(name)?.set_password(token).map_err(|e| e.to_string())
+    fn set(&self, server: &Server) -> Result<(), String> {
+        let entry = entry(&server.name)?;
+        entry.set_password(&server.token).map_err(|e| e.to_string())
     }
 
     fn remove(&self, name: &str) -> Result<(), String> {
         match entry(name)?.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(e) => Err(e.to_string()),
+        }
+    }
+}
+
+/// One file per token in `dir`, each readable only by its owner, where
+/// there is no Keychain.
+pub struct TokenFiles {
+    pub dir: PathBuf,
+}
+
+impl TokenFiles {
+    fn file(&self, name: &str) -> PathBuf {
+        self.dir.join(name)
+    }
+}
+
+impl Vault for TokenFiles {
+    fn get(&self, name: &str) -> Result<String, String> {
+        let text =
+            std::fs::read_to_string(self.file(name)).map_err(|e| format!("{name}'s token: {e}"))?;
+        Ok(text.trim().into())
+    }
+
+    fn set(&self, server: &Server) -> Result<(), String> {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        std::fs::create_dir_all(&self.dir).map_err(|e| e.to_string())?;
+        let path = self.file(&server.name);
+        let _ = std::fs::remove_file(&path);
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)
+            .and_then(|mut f| f.write_all(server.token.as_bytes()))
+            .map_err(|e| format!("{}: {e}", path.display()))
+    }
+
+    fn remove(&self, name: &str) -> Result<(), String> {
+        match std::fs::remove_file(self.file(name)) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
+            _ => Ok(()),
         }
     }
 }
@@ -81,10 +142,12 @@ impl Servers {
     }
 
     /// `local` first, then the added servers in the order they were added.
+    /// A server whose token cannot be read is listed with none, and a call
+    /// to it says so.
     pub fn all(&self) -> Result<Vec<Server>, String> {
         let mut all = vec![self.local.clone()];
         for a in self.read()?.server {
-            let token = self.vault.get(&a.name)?;
+            let token = self.vault.get(&a.name).unwrap_or_default();
             all.push(Server {
                 name: a.name,
                 url: a.url,
@@ -115,7 +178,12 @@ impl Servers {
         if name == LOCAL || file.server.iter().any(|s| s.name == name) {
             return Err(format!("there is already a Bastion server named {name}"));
         }
-        self.vault.set(name, server.token.trim())?;
+        let kept = Server {
+            name: name.into(),
+            url: url.into(),
+            token: server.token.trim().into(),
+        };
+        self.vault.set(&kept)?;
         file.server.push(Added {
             name: name.into(),
             url: url.into(),
@@ -173,8 +241,9 @@ mod tests {
                 .cloned()
                 .ok_or("none".into())
         }
-        fn set(&self, name: &str, token: &str) -> Result<(), String> {
-            self.0.lock().unwrap().insert(name.into(), token.into());
+        fn set(&self, server: &Server) -> Result<(), String> {
+            let (name, token) = (server.name.clone(), server.token.clone());
+            self.0.lock().unwrap().insert(name, token);
             Ok(())
         }
         fn remove(&self, name: &str) -> Result<(), String> {
@@ -219,6 +288,34 @@ mod tests {
         assert!(!file.contains("box-token"), "{file}");
     }
 
+    #[test]
+    fn a_server_whose_token_is_gone_is_still_listed_without_one() {
+        let s = servers(&scratch("gone"));
+        s.add(server("box", "https://box.example")).unwrap();
+        s.vault.remove("box").unwrap();
+        let all = s.all().unwrap();
+        assert_eq!((all[1].name.as_str(), all[1].token.as_str()), ("box", ""));
+    }
+
+    #[test]
+    fn a_token_file_is_readable_only_by_its_owner() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = scratch("files");
+        let files = TokenFiles { dir: dir.clone() };
+        let mut token = server("box", "https://box.example");
+        files.set(&token).unwrap();
+        token.token = "t2".into();
+        files.set(&token).unwrap();
+        assert_eq!(files.get("box").unwrap(), "t2");
+        let mode = std::fs::metadata(dir.join("box"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+        files.remove("box").unwrap();
+        files.remove("box").unwrap();
+        assert!(files.get("box").is_err());
+    }
     #[test]
     fn a_name_taken_a_bad_url_or_removing_local_is_refused() {
         let s = servers(&scratch("refuse"));

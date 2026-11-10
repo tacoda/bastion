@@ -41,6 +41,12 @@ pub async fn send<R: Request>(
     server: &Server,
     request: &R,
 ) -> Result<R::Answer, String> {
+    if server.token.is_empty() {
+        return Err(format!(
+            "There is no token for the Bastion server {}. Remove it and add it again with a token.",
+            server.name
+        ));
+    }
     let url = format!("{}{}", server.url.trim_end_matches('/'), request.path());
     let method = reqwest::Method::from_bytes(R::METHOD.as_bytes()).map_err(|e| e.to_string())?;
     let mut sent = http.request(method, url).bearer_auth(&server.token);

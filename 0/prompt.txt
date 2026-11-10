@@ -1,0 +1,11 @@
+<task-notification>
+<task-id>b8lo8nmwr</task-id>
+<tool-use-id>toolu_01RpfB7Ph9gmGiMw4xPNYz9B</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/b8lo8nmwr.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the CI run to finish and print each job's result" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+yes

@@ -327,12 +327,21 @@ fn failure<'a>(state: &State, d: &JobDetail) -> Option<Element<'a, Message>> {
     )
 }
 
+/// Approving a stuck step goes on without it.
+fn approve_label(state: &State) -> &'static str {
+    if state.allows("retry") {
+        "Ship anyway"
+    } else {
+        "Approve"
+    }
+}
+
 fn actions(state: &State) -> Element<'_, Message> {
     let answer = state.allows("answer");
     let mut buttons = row![].spacing(8);
     if state.allows("approve") {
         buttons = buttons.push(
-            button("Approve")
+            button(approve_label(state))
                 .padding([8, 12])
                 .style(theme::primary)
                 .on_press(Message::Job(Msg::Act(Action::Approve))),

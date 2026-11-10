@@ -15,9 +15,27 @@ fn decision(job: &Job, event: &Event, by: &str) -> String {
         (Event::Commented { text }, None) => format!("sent back by {by}: {text}"),
         (Event::Retried, _) => format!("retried by {by}"),
         (Event::Extended, _) => format!("extended by {by}"),
+        _ if stuck(job) => format!("shipped anyway by {by}, waiving: {}", waived(job)),
         _ => format!("approved by {by}"),
     };
     format!("{}: {verdict}", name(job.stage))
+}
+
+/// The job waits at a step that failed, which approve goes on without.
+fn stuck(job: &Job) -> bool {
+    bastion_core::actions(job).contains(&bastion_core::Action::Retry)
+}
+
+/// The first line of what failed, short enough for one audit line.
+fn waived(job: &Job) -> String {
+    let error = job.error.as_deref().unwrap_or_default();
+    error
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .chars()
+        .take(200)
+        .collect()
 }
 
 impl Factory {
@@ -51,6 +69,7 @@ impl Factory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bastion_core::State;
 
     #[test]
     fn a_persons_decision_names_the_step_and_the_person() {
@@ -71,6 +90,18 @@ mod tests {
             decision(&job, &Event::Retried, "ada"),
             "code_review: retried by ada"
         );
+        job.state = State::NeedsYou;
+        job.error = Some("2 tests failed\nlong output".into());
+        assert_eq!(
+            decision(&job, &Event::Approved, "ada"),
+            "code_review: shipped anyway by ada, waiving: 2 tests failed"
+        );
+        job.stage = Stage::Land;
+        assert_eq!(
+            decision(&job, &Event::Approved, "ada"),
+            "land: approved by ada"
+        );
+        (job.stage, job.error) = (Stage::CodeReview, None);
         job.question = Some("Which port?".into());
         assert_eq!(
             decision(&job, &note, "ada"),

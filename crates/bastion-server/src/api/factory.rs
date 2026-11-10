@@ -167,6 +167,36 @@ fn prefix(machine: &Arc<dyn Machine>, typed: &str) -> Result<String, String> {
     }
 }
 
+/// What a person types before the onboarding turn drafts the rest.
+#[derive(Deserialize)]
+pub struct DraftRequest {
+    pub path: String,
+    pub branch: String,
+}
+
+/// Draft a new workspace's settings by the onboarding turn. Nothing is saved.
+pub async fn workspace_draft(
+    cell: &FactoryCell,
+    machine: &Arc<dyn Machine>,
+    r: DraftRequest,
+) -> Result<Workspace, String> {
+    let (path, branch) = (r.path.trim(), r.branch.trim());
+    has_branch(machine, path, branch)?;
+    let draft = factory(cell)?.draft(Path::new(path), branch).await?;
+    Ok(Workspace {
+        name: String::new(),
+        path: path.into(),
+        branch: branch.into(),
+        checks: draft.checks,
+        max_jobs: None,
+        revision_budget: None,
+        branch_prefix: bastion_protocol::branch_prefix(),
+        setup: draft.setup,
+        cleanup: draft.cleanup,
+        env: draft.env,
+    })
+}
+
 /// Refuse a path that is not a git repository with `branch`.
 fn has_branch(machine: &Arc<dyn Machine>, path: &str, branch: &str) -> Result<(), String> {
     let verify = format!("refs/heads/{branch}");

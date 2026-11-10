@@ -148,6 +148,7 @@ async fn workflow_delete(State(app): State<App>, Path(id): Path<String>) -> Resp
 fn factory_routes() -> Router<App> {
     Router::new()
         .route("/workspaces", get(workspaces).post(workspace_add))
+        .route("/workspaces/draft", post(workspace_draft))
         .route("/workspaces/{name}", put(workspace_edit))
         .route("/jobs", get(jobs).post(job_submit))
         .route("/jobs/{id}", get(job))
@@ -366,6 +367,14 @@ async fn workspaces(State(app): State<App>) -> Response {
 async fn workspace_add(State(app): State<App>, Json(w): Json<Workspace>) -> Response {
     let s = &app.server;
     answer(api::factory::workspace_add(&s.factory, &s.machine, w).await)
+}
+
+async fn workspace_draft(
+    State(app): State<App>,
+    Json(r): Json<api::factory::DraftRequest>,
+) -> Response {
+    let s = &app.server;
+    answer(api::factory::workspace_draft(&s.factory, &s.machine, r).await)
 }
 
 async fn workspace_edit(
@@ -1002,6 +1011,10 @@ mod tests {
             setup: s("make deps"),
             cleanup: s(""),
             env: s("CI=1"),
+        });
+        reads::<crate::api::factory::DraftRequest>(api::WorkspaceDraft {
+            path: s("/repo"),
+            branch: s("main"),
         });
         reads::<LoginId>(api::CodexSignInPoll { login_id: s("l") });
         reads::<CopyWorkflow>(api::WorkflowCopy {

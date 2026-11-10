@@ -16,6 +16,8 @@ pub struct State {
     workspace: Workspace,
     /// The form holds a workspace already added, to change it.
     editing: bool,
+    /// The onboarding turn is drafting the form's settings.
+    drafting: bool,
     /// The form's cap on running jobs, as typed; empty is none.
     max_jobs: String,
     /// The form's revision budget, as typed; empty is none.
@@ -48,6 +50,7 @@ impl Default for State {
             server,
             workspace,
             editing: false,
+            drafting: false,
             max_jobs: String::new(),
             budget: String::new(),
             workspaces: vec![],
@@ -85,6 +88,8 @@ pub enum Msg {
     ServersChanged(Result<(), String>),
     EditWorkspace(String),
     SaveWorkspace,
+    DraftWorkspace,
+    Drafted(Result<Workspace, String>),
     Done(Result<(), String>),
 }
 
@@ -199,6 +204,19 @@ fn save(state: &mut State, ctx: &Ctx) -> Task<Message> {
     task(ctx, edit, Msg::Done)
 }
 
+/// Put the onboarding turn's draft in the form; nothing is saved until a
+/// person adds the workspace.
+fn drafted_into(state: &mut State, drafted: Result<Workspace, String>) {
+    state.drafting = false;
+    let d = match drafted {
+        Ok(d) => d,
+        Err(e) => return state.note = e,
+    };
+    let w = &mut state.workspace;
+    (w.checks, w.setup, w.cleanup, w.env) = (d.checks, d.setup, d.cleanup, d.env);
+    state.note.clear();
+}
+
 pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
     match msg {
         Msg::Workspaces(Ok(all)) => state.workspaces = all,
@@ -219,6 +237,16 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         }
         Msg::EditWorkspace(name) => open(state, &name),
         Msg::SaveWorkspace => return save(state, ctx),
+        Msg::DraftWorkspace => {
+            state.drafting = true;
+            let w = &state.workspace;
+            let draft = api::WorkspaceDraft {
+                path: w.path.clone(),
+                branch: w.branch.clone(),
+            };
+            return task(ctx, draft, Msg::Drafted);
+        }
+        Msg::Drafted(drafted) => drafted_into(state, drafted),
         Msg::Done(Ok(_)) => {
             state.note.clear();
             return load(ctx);
@@ -326,7 +354,12 @@ fn workspace_form(state: &State) -> Column<'_, Message> {
             "Add",
         ),
     };
-    let place = row![name, path, field("Branch", "", &w.branch, Field::Branch)];
+    let draft = match state.drafting {
+        true => small("Drafting…", None),
+        false => small("Draft settings", Some(wrap(Msg::DraftWorkspace))),
+    };
+    let place = row![name, path, field("Branch", "", &w.branch, Field::Branch)]
+        .extend((!state.editing).then_some(draft));
     let settings = row![
         field("Checks", "pytest -q", &w.checks, Field::Checks),
         field("Branch prefix", "", &w.branch_prefix, Field::BranchPrefix),
@@ -399,5 +432,25 @@ mod tests {
         assert!(state.editing);
         assert_eq!(state.workspace, state.workspaces[0]);
         assert_eq!((state.max_jobs.as_str(), state.budget.as_str()), ("2", "4"));
+    }
+
+    #[test]
+    fn a_draft_fills_the_settings_and_keeps_what_was_typed() {
+        let mut state = State {
+            drafting: true,
+            ..State::default()
+        };
+        state.workspace.name = "demo".into();
+        let draft = Workspace {
+            name: String::new(),
+            checks: "cargo test".into(),
+            setup: "cargo fetch".into(),
+            ..state.workspace.clone()
+        };
+        drafted_into(&mut state, Ok(draft));
+        assert!(!state.drafting);
+        assert_eq!(state.workspace.name, "demo");
+        assert_eq!(state.workspace.checks, "cargo test");
+        assert_eq!(state.workspace.setup, "cargo fetch");
     }
 }

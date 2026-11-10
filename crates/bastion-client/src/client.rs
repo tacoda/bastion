@@ -53,6 +53,9 @@ pub async fn send<R: Request>(
     if R::BODY {
         sent = sent.json(request);
     }
+    if let Some(secs) = R::WAIT_SECS {
+        sent = sent.timeout(Duration::from_secs(secs));
+    }
     let unreachable = |_| {
         format!(
             "The Bastion server {} at {} cannot be reached.",

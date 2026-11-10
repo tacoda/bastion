@@ -16,6 +16,9 @@ pub trait Request: Serialize {
     /// the path.
     const ROUTE: &'static str;
     const BODY: bool = false;
+    /// How long the answer may take, in seconds, when longer than a call's
+    /// usual limit.
+    const WAIT_SECS: Option<u64> = None;
     type Answer: DeserializeOwned;
 
     /// The path this request goes to.
@@ -132,6 +135,23 @@ impl Request for WorkspaceEdit {
     fn path(&self) -> String {
         fill(Self::ROUTE, "name", &self.name)
     }
+}
+/// Draft a new workspace's settings: an agent reads the repository at
+/// `path` on `branch`. Answers with the workspace as drafted; nothing is
+/// saved.
+#[derive(Clone, Debug, Serialize)]
+pub struct WorkspaceDraft {
+    pub path: String,
+    pub branch: String,
+}
+
+impl Request for WorkspaceDraft {
+    const METHOD: &'static str = "POST";
+    const ROUTE: &'static str = "/workspaces/draft";
+    const BODY: bool = true;
+    /// The onboarding turn's limit, and a minute more.
+    const WAIT_SECS: Option<u64> = Some(360);
+    type Answer = Workspace;
 }
 bare!(Jobs, "GET", "/jobs", Vec<JobSummary>);
 at!(Job, "GET", "/jobs/{id}", id, JobDetail);
@@ -519,6 +539,7 @@ fn factory_requests() -> Vec<(&'static str, &'static str)> {
         Workspaces,
         WorkspaceAdd,
         WorkspaceEdit,
+        WorkspaceDraft,
         Jobs,
         Job,
         JobSubmit,
@@ -599,6 +620,6 @@ mod tests {
         assert_eq!(comment.path(), "/jobs/j1/comment");
         let spaced = WorkflowDelete { id: "a b/c".into() };
         assert_eq!(spaced.path(), "/workflows/a%20b%2Fc");
-        assert_eq!(every().len(), 65);
+        assert_eq!(every().len(), 66);
     }
 }

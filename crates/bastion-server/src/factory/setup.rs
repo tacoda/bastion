@@ -69,7 +69,7 @@ impl Factory {
 
     /// Clone the job's branch into the VM's repository, committing as the
     /// agent.
-    async fn clone_into(&self, vm: &str, repo: &Repo<'_>) -> Result<(), String> {
+    pub(super) async fn clone_into(&self, vm: &str, repo: &Repo<'_>) -> Result<(), String> {
         self.put(vm, "/work/in.bundle", repo.bundle.clone()).await?;
         let clone = [
             "git",

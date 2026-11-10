@@ -68,7 +68,7 @@ retired with the old plan.
 | D7 | A stock iii worker comes first. Bastion writes a worker only for what no pinned worker does. |
 | D8 | Records live in the `database` worker as typed columns. Each row carries a `rev`, and a stale write is refused. |
 | D10 | Updates are pushed, never polled: the server observes the engine, and clients follow the server's events (D29). |
-| D13 | The local server starts the stack (`iii compose`) and attaches to one that already runs. Quitting a client never stops it unasked. |
+| D13 | The local server starts the stack (`iii compose`) and attaches to one that already runs. The stack goes down when the server stops. A client attaches to the local server or starts it, and quitting a client leaves both running. |
 | D14 | Every agent turn runs in an `iii-sandbox` VM on its job's worktree. No credential enters the VM; pushes and pull requests happen on the host. |
 | D16 | A note on a step goes to the agent word for word as its next brief. A fix loop stops after a set count, or sooner when a refusal repeats word for word. |
 | D17 | Every job runs a workflow. A free-form task is a short workflow, not a second mode. |

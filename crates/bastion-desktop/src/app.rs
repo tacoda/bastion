@@ -26,9 +26,7 @@ pub enum Message {
     Feed((String, Feed)),
     CloseRequested,
     StackRunning(bool),
-    Quit {
-        stop_stack: bool,
-    },
+    Quit,
     Stay,
     /// A job's page, on the server it runs on.
     OpenJob {
@@ -171,7 +169,10 @@ impl App {
             Message::CloseRequested => return self.on_close(),
             Message::StackRunning(true) => self.asking = true,
             Message::StackRunning(false) => return iced::exit(),
-            Message::Quit { stop_stack } => return self.quit(stop_stack),
+            Message::Quit => {
+                println!("bastion: the local Bastion server keeps running, and its stack with it");
+                return iced::exit();
+            }
             Message::Stay => self.asking = false,
         }
         Task::none()
@@ -199,7 +200,8 @@ impl App {
         self.page.reload(&self.ctx(), push)
     }
 
-    /// The stack belongs to the server (D27), so a quit asks only while it runs.
+    /// The server and its stack outlive the client (D13), so a quit says
+    /// so while they run.
     fn on_close(&self) -> Task<Message> {
         if self.server(LOCAL).is_none() {
             return iced::exit();
@@ -209,15 +211,6 @@ impl App {
                 .ok()
                 .and_then(|v| serde_json::from_value::<StackStatus>(v).ok());
             Message::StackRunning(status.is_some_and(|s| s.state == StackState::Running))
-        })
-    }
-
-    fn quit(&self, stop_stack: bool) -> Task<Message> {
-        if !stop_stack {
-            return iced::exit();
-        }
-        self.call(LOCAL, Ask::bare(command::STACK_STOP), |_| {
-            Message::StackRunning(false)
         })
     }
 
@@ -323,14 +316,10 @@ fn open(url: &str) {
 
 fn quit_dialog<'a>() -> Element<'a, Message> {
     let buttons = row![
-        button("Keep it running")
+        button("Quit")
             .padding([8, 12])
             .style(theme::primary)
-            .on_press(Message::Quit { stop_stack: false }),
-        button("Stop the stack")
-            .padding([8, 12])
-            .style(theme::secondary)
-            .on_press(Message::Quit { stop_stack: true }),
+            .on_press(Message::Quit),
         button("Cancel")
             .padding([8, 12])
             .style(theme::quiet)
@@ -338,8 +327,8 @@ fn quit_dialog<'a>() -> Element<'a, Message> {
     ]
     .spacing(8);
     let body = column![
-        text("The stack is running").size(18).font(theme::BOLD),
-        text("Stop it with the app, or keep it running for the next start to attach to?")
+        text("The Bastion server keeps running").size(18).font(theme::BOLD),
+        text("It and its stack go on after you quit, so jobs keep running. The next start attaches to it. Stopping the server stops the stack too.")
             .color(theme::MUTED),
         buttons,
     ]

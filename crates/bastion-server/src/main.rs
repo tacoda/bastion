@@ -97,8 +97,14 @@ fn main() -> Result<(), String> {
             .clone()
             .unwrap_or_else(|| git_user(&*server.machine));
         server.start_factory(seed, a.data.join("bundles"), owner.clone());
-        let app = http::router(server, &token, &owner);
-        serve(&a, app).await
+        let app = http::router(server.clone(), &token, &owner);
+        let served = serve(&a, app).await;
+        // The stack is the server's (D13): it goes down with it.
+        match api::stack::stack_stop(&server.stack, &server.machine).await {
+            Ok(_) => println!("bastion-server: stopped, and its stack with it"),
+            Err(e) => eprintln!("bastion-server: stopped, but the stack did not: {e}"),
+        }
+        served
     })
 }
 
@@ -119,15 +125,49 @@ async fn serve(a: &Args, app: axum::Router) -> Result<(), String> {
         at.1,
         a.data.join("token").display()
     );
-    let served = match &a.serving.tls {
-        None => axum::serve(tcp, app).await,
-        Some((cert, key)) => {
-            let acceptor = tls::acceptor(cert, key)?;
-            let listener = TlsListener::start(tcp, acceptor).map_err(|e| e.to_string())?;
-            axum::serve(listener, app).await
+    let (signalled, rx) = tokio::sync::watch::channel(false);
+    tokio::spawn(async move {
+        stopped().await;
+        let _ = signalled.send(true);
+    });
+    let when = |mut rx: tokio::sync::watch::Receiver<bool>| async move {
+        let _ = rx.wait_for(|s| *s).await;
+    };
+    let shutdown = when(rx.clone());
+    let serving = async {
+        match &a.serving.tls {
+            None => axum::serve(tcp, app).with_graceful_shutdown(shutdown).await,
+            Some((cert, key)) => {
+                let acceptor = tls::acceptor(cert, key).map_err(std::io::Error::other)?;
+                let listener = TlsListener::start(tcp, acceptor)?;
+                axum::serve(listener, app)
+                    .with_graceful_shutdown(shutdown)
+                    .await
+            }
         }
     };
-    served.map_err(|e| e.to_string())
+    // An event stream stays open, so a graceful stop gets a few seconds.
+    let grace = async {
+        when(rx).await;
+        tokio::time::sleep(GRACE).await;
+    };
+    tokio::select! {
+        served = serving => served.map_err(|e| e.to_string()),
+        _ = grace => Ok(()),
+    }
+}
+
+/// How long open connections get to finish once the server is told to stop.
+const GRACE: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Ends on Ctrl-C or SIGTERM, whichever comes first.
+async fn stopped() {
+    use tokio::signal::unix::{SignalKind, signal};
+    let mut term = signal(SignalKind::terminate()).expect("a SIGTERM handler");
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {}
+        _ = term.recv() => {}
+    }
 }
 
 #[cfg(test)]

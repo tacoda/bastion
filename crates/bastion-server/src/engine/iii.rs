@@ -16,6 +16,34 @@ use super::{Bytes, Call, Engine, OnEvent, OnPush};
 
 const FUNCTIONS_CHANGED: &str = "bastion::app::functions-changed";
 
+/// The waits before each new try of a call that never reached the engine.
+const BACKOFF_MS: [u64; 4] = [500, 1_000, 2_000, 4_000];
+
+/// Whether a call failed before the engine got it, as while the link is
+/// down, so trying it again cannot run it twice. A timed-out call may have
+/// run, so it is not one.
+fn never_sent(error: &str) -> bool {
+    error == "iii is not connected" || error.starts_with("websocket error")
+}
+
+/// Make the call, and again after each wait in `BACKOFF_MS` while it
+/// failed before the engine got it.
+async fn retried<F, Fut>(mut call: F) -> Result<Value, String>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<Value, String>>,
+{
+    for wait in BACKOFF_MS {
+        match call().await {
+            Err(e) if never_sent(&e) => {
+                tokio::time::sleep(std::time::Duration::from_millis(wait)).await;
+            }
+            done => return done,
+        }
+    }
+    call().await
+}
+
 pub struct IiiEngine {
     url: String,
     client: IIIClient,
@@ -61,14 +89,16 @@ impl Engine for IiiEngine {
         payload: Value,
         timeout_ms: u64,
     ) -> Call<'a> {
-        Box::pin(async move {
-            let mut request = TriggerRequest::new(function_id, payload);
+        Box::pin(retried(move || {
+            let mut request = TriggerRequest::new(function_id, payload.clone());
             request.timeout_ms = Some(timeout_ms);
-            self.client
-                .trigger(request.namespace(namespace))
-                .await
-                .map_err(|e| e.to_string())
-        })
+            async move {
+                self.client
+                    .trigger(request.namespace(namespace))
+                    .await
+                    .map_err(|e| e.to_string())
+            }
+        }))
     }
 
     // `engine::functions-available` is a trigger type, and `observe` only
@@ -127,5 +157,36 @@ impl Engine for IiiEngine {
                 .await
                 .map_err(|e| e.to_string())
         })
+    }
+}
+
+#[cfg(test)]
+mod retry_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    /// A call that fails with `error` the first `fails` times.
+    async fn failing(tries: &AtomicU32, fails: u32, error: &str) -> Result<Value, String> {
+        if tries.fetch_add(1, Ordering::SeqCst) < fails {
+            Err(error.into())
+        } else {
+            Ok(json!({ "ok": true }))
+        }
+    }
+
+    #[test]
+    fn a_call_that_never_reached_the_engine_is_tried_again() {
+        let tries = AtomicU32::new(0);
+        let out = crate::rt::block_on(retried(|| failing(&tries, 1, "iii is not connected")));
+        assert_eq!(out, Ok(json!({ "ok": true })));
+        assert_eq!(tries.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn a_timed_out_call_is_not_tried_again() {
+        let tries = AtomicU32::new(0);
+        let out = crate::rt::block_on(retried(|| failing(&tries, 1, "invocation timed out")));
+        assert_eq!(out, Err("invocation timed out".into()));
+        assert_eq!(tries.load(Ordering::SeqCst), 1);
     }
 }

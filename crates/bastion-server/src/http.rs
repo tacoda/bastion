@@ -1011,6 +1011,8 @@ mod tests {
             setup: s("make deps"),
             cleanup: s(""),
             env: s("CI=1"),
+            gates: s("lint: ruff check {files}"),
+            autofix: s(""),
         });
         reads::<crate::api::factory::DraftRequest>(api::WorkspaceDraft {
             path: s("/repo"),

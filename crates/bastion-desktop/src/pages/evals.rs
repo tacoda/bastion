@@ -543,6 +543,8 @@ mod tests {
                 setup: String::new(),
                 cleanup: String::new(),
                 env: String::new(),
+                gates: String::new(),
+                autofix: String::new(),
             }],
             targets: vec![Choice::new("constraint:no-curl", "no-curl (told)")],
             requests: text_editor::Content::with_text("Add add.\n\n  Add sub.  "),

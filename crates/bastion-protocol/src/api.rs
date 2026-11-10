@@ -125,6 +125,8 @@ pub struct WorkspaceEdit {
     pub setup: String,
     pub cleanup: String,
     pub env: String,
+    pub gates: String,
+    pub autofix: String,
 }
 
 impl Request for WorkspaceEdit {

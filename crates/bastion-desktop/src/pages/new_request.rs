@@ -277,6 +277,8 @@ mod tests {
             setup: String::new(),
             cleanup: String::new(),
             env: String::new(),
+            gates: String::new(),
+            autofix: String::new(),
         }];
         assert_eq!(state.chosen().as_deref(), Some("calc"));
         state.request = text_editor::Content::with_text("  ");

@@ -67,6 +67,8 @@ fn rig_on(engine: FakeEngine) -> Rig {
         setup: String::new(),
         cleanup: String::new(),
         env: String::new(),
+        gates: String::new(),
+        autofix: String::new(),
     });
     let machine = Arc::new(FakeMachine::new().run_ok("git", ""));
     let factory = Factory::new(
@@ -313,6 +315,8 @@ fn dying_vms() -> Rig {
         setup: String::new(),
         cleanup: String::new(),
         env: String::new(),
+        gates: String::new(),
+        autofix: String::new(),
     });
     let machine = Arc::new(FakeMachine::new().run_ok("git", ""));
     let factory = Factory::new(
@@ -548,6 +552,8 @@ fn a_failed_provision_fails_the_job_with_its_reason() {
         setup: String::new(),
         cleanup: String::new(),
         env: String::new(),
+        gates: String::new(),
+        autofix: String::new(),
     });
     let machine = Arc::new(FakeMachine::new());
     let factory = Factory::new(
@@ -683,6 +689,8 @@ fn github_rig(pr: &str) -> Rig {
         setup: String::new(),
         cleanup: String::new(),
         env: String::new(),
+        gates: String::new(),
+        autofix: String::new(),
     });
     let machine = Arc::new(FakeMachine::new().run_ok("git", "git@github.com:o/r.git\n"));
     let factory = Factory::new(

@@ -3,7 +3,7 @@
 
 use bastion_protocol::api::{self, Request};
 use bastion_protocol::{AccountView, LOCAL, Server, Workspace, branch_prefix};
-use iced::widget::{Column, button, column, row, text, text_input};
+use iced::widget::{Column, button, column, row, text, text_editor, text_input};
 use iced::{Element, Task};
 
 use super::{card, small};
@@ -22,6 +22,8 @@ pub struct State {
     max_jobs: String,
     /// The form's revision budget, as typed; empty is none.
     budget: String,
+    /// The form's quality gates, one `name: command` per line.
+    gates: text_editor::Content,
     workspaces: Vec<Workspace>,
     accounts: Vec<AccountView>,
     note: String,
@@ -45,6 +47,8 @@ impl Default for State {
             setup: String::new(),
             cleanup: String::new(),
             env: String::new(),
+            gates: String::new(),
+            autofix: String::new(),
         };
         State {
             server,
@@ -53,6 +57,7 @@ impl Default for State {
             drafting: false,
             max_jobs: String::new(),
             budget: String::new(),
+            gates: text_editor::Content::new(),
             workspaces: vec![],
             accounts: vec![],
             note: String::new(),
@@ -76,6 +81,7 @@ pub enum Field {
     Setup,
     Cleanup,
     Env,
+    Autofix,
 }
 
 #[derive(Clone, Debug)]
@@ -89,7 +95,8 @@ pub enum Msg {
     EditWorkspace(String),
     SaveWorkspace,
     DraftWorkspace,
-    Drafted(Result<Workspace, String>),
+    Drafted(Box<Result<Workspace, String>>),
+    Gates(text_editor::Action),
     Done(Result<(), String>),
 }
 
@@ -144,6 +151,7 @@ fn edit(state: &mut State, field: Field, value: String) {
         Field::Setup => state.workspace.setup = value,
         Field::Cleanup => state.workspace.cleanup = value,
         Field::Env => state.workspace.env = value,
+        Field::Autofix => state.workspace.autofix = value,
     }
 }
 
@@ -154,6 +162,7 @@ fn open(state: &mut State, name: &str) {
     };
     let typed = |n: Option<u32>| n.map(|n| n.to_string()).unwrap_or_default();
     (state.max_jobs, state.budget) = (typed(w.max_jobs), typed(w.revision_budget));
+    state.gates = text_editor::Content::with_text(&w.gates);
     (state.workspace, state.editing) = (w.clone(), true);
 }
 
@@ -182,9 +191,11 @@ fn save(state: &mut State, ctx: &Ctx) -> Task<Message> {
     let blank = State::default();
     let editing = std::mem::replace(&mut state.editing, false);
     (state.max_jobs, state.budget) = (blank.max_jobs, blank.budget);
+    let gates = std::mem::replace(&mut state.gates, blank.gates).text();
     let w = Workspace {
         max_jobs,
         revision_budget,
+        gates,
         ..std::mem::replace(&mut state.workspace, blank.workspace)
     };
     if !editing {
@@ -200,6 +211,8 @@ fn save(state: &mut State, ctx: &Ctx) -> Task<Message> {
         setup: w.setup,
         cleanup: w.cleanup,
         env: w.env,
+        gates: w.gates,
+        autofix: w.autofix,
     };
     task(ctx, edit, Msg::Done)
 }
@@ -244,9 +257,10 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
                 path: w.path.clone(),
                 branch: w.branch.clone(),
             };
-            return task(ctx, draft, Msg::Drafted);
+            return task(ctx, draft, |r| Msg::Drafted(Box::new(r)));
         }
-        Msg::Drafted(drafted) => drafted_into(state, drafted),
+        Msg::Drafted(drafted) => drafted_into(state, *drafted),
+        Msg::Gates(action) => state.gates.perform(action),
         Msg::Done(Ok(_)) => {
             state.note.clear();
             return load(ctx);
@@ -309,7 +323,7 @@ fn servers<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
 }
 
 fn workspaces(state: &State) -> Element<'_, Message> {
-    let lede = "The repositories jobs run against on this Bastion server. Checks run the tests at the checks step. A job pushes to its branch prefix and its id, the job limit caps how many run at once, and the revision budget caps how often its steps send work back before you decide. Setup runs with the network in a VM of its own, before the agent starts; the agent's VM stays offline. The environment is visible to the agent, so keep secrets out of it.";
+    let lede = "The repositories jobs run against on this Bastion server. Checks run the tests at the checks step. A job pushes to its branch prefix and its id, the job limit caps how many run at once, and the revision budget caps how often its steps send work back before you decide. Setup runs with the network in a VM of its own, before the agent starts; the agent's VM stays offline. The environment is visible to the agent, so keep secrets out of it. Before a push, each gate runs over the change's files, where {files} names them; a failing gate gets the autofix once, then stops the push.";
     let rows = state.workspaces.iter().map(|w| {
         let checks = (!w.checks.is_empty())
             .then(|| text(w.checks.clone()).font(theme::MONO).color(theme::MUTED));
@@ -375,9 +389,30 @@ fn workspace_form(state: &State) -> Column<'_, Message> {
     column![
         place.spacing(8).align_y(iced::Bottom),
         settings.spacing(8).align_y(iced::Bottom),
-        vm.spacing(8).align_y(iced::Bottom)
+        vm.spacing(8).align_y(iced::Bottom),
+        gates_row(state)
     ]
     .spacing(8)
+}
+
+/// The quality gates, run over a change's files before a push, and the
+/// autofix run once when one fails.
+fn gates_row(state: &State) -> Element<'_, Message> {
+    let gates = text_editor(&state.gates)
+        .placeholder("lint: ruff check {files}")
+        .on_action(|a| wrap(Msg::Gates(a)))
+        .height(80)
+        .width(416);
+    let autofix = field(
+        "Autofix",
+        "ruff check --fix {files}",
+        &state.workspace.autofix,
+        Field::Autofix,
+    );
+    row![labeled("Gates, one name: command per line", gates), autofix]
+        .spacing(8)
+        .align_y(iced::Top)
+        .into()
 }
 
 fn accounts(state: &State) -> Element<'_, Message> {
@@ -425,6 +460,8 @@ mod tests {
                 setup: "pip install -e .".into(),
                 cleanup: String::new(),
                 env: "CI=1".into(),
+                gates: "lint: ruff check {files}".into(),
+                autofix: "ruff check --fix {files}".into(),
             }],
             ..State::default()
         };
@@ -432,6 +469,7 @@ mod tests {
         assert!(state.editing);
         assert_eq!(state.workspace, state.workspaces[0]);
         assert_eq!((state.max_jobs.as_str(), state.budget.as_str()), ("2", "4"));
+        assert_eq!(state.gates.text().trim(), "lint: ruff check {files}");
     }
 
     #[test]

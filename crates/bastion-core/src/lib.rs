@@ -7,6 +7,7 @@ pub mod audit;
 mod brief;
 pub mod charter;
 pub mod eval;
+pub mod gates;
 pub mod govern;
 pub mod people;
 mod pipeline;

@@ -69,6 +69,8 @@ pub async fn workspaces(cell: &FactoryCell) -> Result<Vec<Workspace>, String> {
             setup: w.setup,
             cleanup: w.cleanup,
             env: w.env,
+            gates: w.gates,
+            autofix: w.autofix,
         })
         .collect())
 }
@@ -97,6 +99,8 @@ pub async fn workspace_add(
         setup: w.setup,
         cleanup: w.cleanup,
         env: w.env,
+        gates: w.gates,
+        autofix: w.autofix,
     };
     settle(machine, &mut row, settings)?;
     factory(cell)?.store().add_workspace(&row).await
@@ -113,6 +117,8 @@ pub struct WorkspaceSettings {
     pub setup: String,
     pub cleanup: String,
     pub env: String,
+    pub gates: String,
+    pub autofix: String,
 }
 
 /// Change a workspace's settings. Its name and its path stay.
@@ -156,6 +162,7 @@ fn settle(
     row.max_jobs = s.max_jobs.filter(|n| *n > 0);
     row.revision_budget = s.revision_budget.filter(|n| *n > 0);
     (row.setup, row.cleanup) = (s.setup.trim().into(), s.cleanup.trim().into());
+    (row.gates, row.autofix) = (s.gates.trim().into(), s.autofix.trim().into());
     Ok(())
 }
 
@@ -197,6 +204,8 @@ pub async fn workspace_draft(
         setup: draft.setup,
         cleanup: draft.cleanup,
         env: draft.env,
+        gates: String::new(),
+        autofix: String::new(),
     })
 }
 

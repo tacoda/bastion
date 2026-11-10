@@ -258,7 +258,7 @@ fn lines(out: &str) -> Vec<String> {
         .collect()
 }
 
-fn tail(text: &str) -> String {
+pub(super) fn tail(text: &str) -> String {
     let start = text.len().saturating_sub(TAIL);
     let start = (start..=text.len())
         .find(|i| text.is_char_boundary(*i))

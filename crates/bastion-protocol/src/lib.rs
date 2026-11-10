@@ -317,6 +317,13 @@ pub struct Workspace {
     /// read it, so it holds no secrets.
     #[serde(default)]
     pub env: String,
+    /// Quality gates run in the VM over a change's files before a push,
+    /// one `name: command` per line; `{files}` stands for the files.
+    #[serde(default)]
+    pub gates: String,
+    /// A command run once when a gate fails, before the gates run again.
+    #[serde(default)]
+    pub autofix: String,
 }
 
 /// The branch prefix a workspace starts with.

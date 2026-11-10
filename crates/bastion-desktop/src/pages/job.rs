@@ -283,8 +283,16 @@ fn still_working(job: &JobSummary, now: u64) -> Option<String> {
 
 fn header<'a>(d: &JobDetail, server: &str) -> Element<'a, Message> {
     let (symbol, color) = mark(&d.job.state);
+    let state = d.job.state.replace('_', " ");
+    let state = match super::IN_PROGRESS.contains(&d.job.state.as_str()) {
+        true => row![super::mark_view(&d.job.state, 16.0), chip(state, color)]
+            .spacing(6)
+            .align_y(iced::Center)
+            .into(),
+        false => chip(format!("{symbol} {state}"), color),
+    };
     let mut badges = vec![
-        chip(format!("{symbol} {}", d.job.state.replace('_', " ")), color),
+        state,
         chip(server.into(), theme::MUTED),
         chip(d.job.workspace.clone(), theme::MUTED),
         chip(d.job.id.clone(), theme::MUTED),
@@ -572,11 +580,10 @@ fn step_row<'a>(
     step: &'a StepView,
     turn_step: Option<&str>,
 ) -> Element<'a, Message> {
-    let (symbol, color) = mark(&step.state);
     let open = matches!(step.state.as_str(), "running" | "waiting" | "failed")
         != state.toggled.contains(&step.id);
     let summary = row![
-        text(symbol).color(color).width(16),
+        container(super::mark_view(&step.state, 16.0)).width(16),
         text(step_name(step)).font(theme::BOLD),
         text(step.state.clone()).size(12).color(theme::MUTED)
     ]

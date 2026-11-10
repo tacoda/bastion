@@ -104,7 +104,14 @@ fn step(frame: &mut Frame, n: &NodeView, look: Look) {
     };
     frame.stroke(&body, Stroke::default().with_width(2.0).with_color(edge));
     let mut x = at.x + 10.0;
-    if let Some((symbol, color)) = look.state.map(|s| mark(s)) {
+    if let Some(s) = look
+        .state
+        .filter(|s| super::IN_PROGRESS.contains(&s.as_str()))
+    {
+        let center = Point::new(x + 6.0, at.y + 18.0);
+        super::spinner::ring(frame, center, 6.0, mark(s).1);
+        x += 16.0;
+    } else if let Some((symbol, color)) = look.state.map(|s| mark(s)) {
         frame.fill_text(caption(
             symbol.into(),
             Point::new(x, at.y + 10.0),

@@ -6,7 +6,7 @@ use bastion_protocol::{JobSummary, api};
 use iced::widget::{Column, button, column, container, pick_list, row, text, text_input};
 use iced::{Element, Fill, Task};
 
-use super::{Ctx, ago, labeled, mark, section};
+use super::{Ctx, ago, labeled, section};
 use crate::app::Message;
 use crate::route::Route;
 use crate::theme;
@@ -169,7 +169,6 @@ fn line(job: &JobSummary, server: &str, down: bool) -> String {
 }
 
 fn job_row<'a>(sj: ServerJob, down: bool) -> Element<'a, Message> {
-    let (symbol, color) = mark(&sj.job.state);
     let mut about = column![text(sj.job.request.clone()).font(theme::BOLD)].spacing(2);
     if let Some(p) = &sj.job.part {
         about = about.push(text(format!("Part: {p}")).size(13));
@@ -183,7 +182,7 @@ fn job_row<'a>(sj: ServerJob, down: bool) -> Element<'a, Message> {
         .padding([2, 8])
         .style(theme::chip);
     let body = row![
-        text(symbol).size(18).color(color).width(24),
+        container(super::mark_view(&sj.job.state, 18.0)).width(24),
         about.width(Fill),
         stage
     ]

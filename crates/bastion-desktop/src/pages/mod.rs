@@ -11,6 +11,7 @@ pub mod job;
 pub mod jobs;
 pub mod new_request;
 pub mod settings;
+pub mod spinner;
 pub mod workflows;
 
 use std::collections::BTreeSet;
@@ -68,30 +69,30 @@ impl Ctx {
 
 /// The states of a job or step still on its way; their marks turn.
 pub const IN_PROGRESS: [&str; 3] = ["queued", "provisioning", "running"];
-/// How long each frame of a turning mark shows.
-pub const SPIN_MS: u64 = 150;
+/// How often a turning mark is drawn again.
+pub const SPIN_MS: u64 = 30;
 
-/// The frame of a turning mark at `ms` since the epoch.
-fn spin(ms: u128) -> &'static str {
-    const FRAMES: [&str; 4] = ["◜", "◝", "◞", "◟"];
-    FRAMES[(ms / SPIN_MS as u128 % 4) as usize]
-}
-
-/// A status mark and its color, as a run of steps shows them.
+/// A status mark and its color, as a run of steps shows them. A mark in
+/// progress is drawn turning by [`mark_view`]; its glyph stands still.
 pub fn mark(state: &str) -> (&'static str, Color) {
-    let now = || {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| d.as_millis())
-    };
     match state {
         "done" | "landed" => ("✓", theme::OK),
-        "running" | "provisioning" => (spin(now()), theme::LINK),
+        "running" | "provisioning" => ("◌", theme::LINK),
         "waiting" | "needs_you" => ("!", theme::WARN),
         "failed" => ("✕", theme::BAD),
         "stopped" => ("■", theme::MUTED),
-        "queued" => (spin(now()), theme::MUTED),
+        "queued" => ("◌", theme::MUTED),
         _ => ("○", theme::MUTED),
+    }
+}
+
+/// A state's mark as a widget, `size` across: a turning dashed circle while
+/// in progress.
+pub fn mark_view<'a, M: 'a>(state: &str, size: f32) -> Element<'a, M> {
+    let (symbol, color) = mark(state);
+    match IN_PROGRESS.contains(&state) {
+        true => spinner::spinner(size * 0.8, color),
+        false => text(symbol).size(size).color(color).into(),
     }
 }
 
@@ -292,19 +293,5 @@ impl Page {
                 column![title, note].spacing(12).into()
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_mark_in_progress_turns_one_frame_each_spin() {
-        let ms = SPIN_MS as u128;
-        assert_ne!(spin(0), spin(ms));
-        assert_eq!(spin(0), spin(4 * ms));
-        assert_eq!(spin(ms - 1), spin(0));
-        assert_eq!(mark("done").0, "✓");
     }
 }

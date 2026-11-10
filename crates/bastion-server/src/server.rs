@@ -59,25 +59,42 @@ impl Server {
     pub fn start_factory(self: &Arc<Self>, seed: String, scratch: PathBuf, owner: String) {
         let server = self.clone();
         crate::rt::spawn(async move {
-            loop {
-                if server.engine.link() == Link::Up {
-                    match SqlStore::open(server.engine.clone(), &seed).await {
-                        Ok(store) => {
-                            let admin = Person {
-                                name: owner,
-                                role: Role::Admin,
-                            };
-                            if let Err(e) = store.add_person(&admin).await {
-                                eprintln!("the owner was not added: {e}");
-                            }
-                            return server.run(store, scratch);
-                        }
-                        Err(e) => eprintln!("the store did not open: {e}"),
-                    }
+            let mut told = false;
+            let store = loop {
+                if server.engine.link() == Link::Up
+                    && let Some(store) = server.open_store(&seed, &mut told).await
+                {
+                    break store;
                 }
                 tokio::time::sleep(Duration::from_secs(1)).await;
+            };
+            let admin = Person {
+                name: owner,
+                role: Role::Admin,
+            };
+            if let Err(e) = store.add_person(&admin).await {
+                eprintln!("the owner was not added: {e}");
             }
+            server.run(store, scratch);
         });
+    }
+
+    /// The store, or none while it cannot open yet. The stack starts its
+    /// database a little after the engine; that wait is said once.
+    async fn open_store(&self, seed: &str, told: &mut bool) -> Option<SqlStore> {
+        match SqlStore::open(self.engine.clone(), seed).await {
+            Ok(store) => Some(store),
+            Err(e) if e.contains("function_not_found") => {
+                if !std::mem::replace(told, true) {
+                    eprintln!("the store waits for the database worker");
+                }
+                None
+            }
+            Err(e) => {
+                eprintln!("the store did not open: {e}");
+                None
+            }
+        }
     }
 
     fn run(&self, store: SqlStore, scratch: PathBuf) {

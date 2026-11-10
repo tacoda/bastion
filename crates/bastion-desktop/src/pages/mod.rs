@@ -66,15 +66,31 @@ impl Ctx {
     }
 }
 
+/// The states of a job or step still on its way; their marks turn.
+pub const IN_PROGRESS: [&str; 3] = ["queued", "provisioning", "running"];
+/// How long each frame of a turning mark shows.
+pub const SPIN_MS: u64 = 150;
+
+/// The frame of a turning mark at `ms` since the epoch.
+fn spin(ms: u128) -> &'static str {
+    const FRAMES: [&str; 4] = ["◜", "◝", "◞", "◟"];
+    FRAMES[(ms / SPIN_MS as u128 % 4) as usize]
+}
+
 /// A status mark and its color, as a run of steps shows them.
 pub fn mark(state: &str) -> (&'static str, Color) {
+    let now = || {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_millis())
+    };
     match state {
         "done" | "landed" => ("✓", theme::OK),
-        "running" | "provisioning" => ("●", theme::LINK),
+        "running" | "provisioning" => (spin(now()), theme::LINK),
         "waiting" | "needs_you" => ("!", theme::WARN),
         "failed" => ("✕", theme::BAD),
         "stopped" => ("■", theme::MUTED),
-        "queued" => ("◌", theme::MUTED),
+        "queued" => (spin(now()), theme::MUTED),
         _ => ("○", theme::MUTED),
     }
 }
@@ -177,6 +193,15 @@ pub enum Page {
 }
 
 impl Page {
+    /// Whether the page shows a job or step in progress, whose mark turns.
+    pub fn moving(&self) -> bool {
+        match self {
+            Page::Jobs(s) => s.moving(),
+            Page::Job(s) => s.moving(),
+            _ => false,
+        }
+    }
+
     /// The page for `route`, and its first read.
     pub fn open(route: &Route, ctx: &Ctx) -> (Page, Task<Message>) {
         let page = match route {
@@ -267,5 +292,19 @@ impl Page {
                 column![title, note].spacing(12).into()
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_mark_in_progress_turns_one_frame_each_spin() {
+        let ms = SPIN_MS as u128;
+        assert_ne!(spin(0), spin(ms));
+        assert_eq!(spin(0), spin(4 * ms));
+        assert_eq!(spin(ms - 1), spin(0));
+        assert_eq!(mark("done").0, "✓");
     }
 }

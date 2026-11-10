@@ -11,7 +11,6 @@ use crate::app::Message;
 use crate::route::Route;
 use crate::theme;
 
-const IN_PROGRESS: [&str; 3] = ["queued", "provisioning", "running"];
 const FINISHED: [&str; 3] = ["landed", "failed", "stopped"];
 const EVERY: &str = "Every workspace";
 
@@ -41,6 +40,14 @@ pub enum Msg {
 
 /// Read every server's jobs again. A server that cannot be read keeps the
 /// jobs last read from it, so they stay listed.
+impl State {
+    /// Whether any job here is in progress.
+    pub fn moving(&self) -> bool {
+        let busy = |sj: &ServerJob| super::IN_PROGRESS.contains(&sj.job.state.as_str());
+        self.jobs.iter().any(busy)
+    }
+}
+
 pub fn load(state: &State, ctx: &Ctx) -> Task<Msg> {
     Task::perform(read_all(ctx.clone(), state.jobs.clone()), Msg::Read)
 }
@@ -240,7 +247,11 @@ fn groups<'a>(state: &State, ctx: &Ctx) -> Element<'a, Message> {
             .cloned()
             .collect()
     };
-    let (waiting, active, done) = (pick(&["needs_you"]), pick(&IN_PROGRESS), pick(&FINISHED));
+    let (waiting, active, done) = (
+        pick(&["needs_you"]),
+        pick(&super::IN_PROGRESS),
+        pick(&FINISHED),
+    );
     let mut list = Column::new().spacing(16);
     if !waiting.is_empty() {
         list = list.push(group(

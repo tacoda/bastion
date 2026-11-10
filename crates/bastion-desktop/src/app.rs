@@ -204,7 +204,13 @@ impl App {
         let pushes = events::follow(&self.servers).map(Message::Feed);
         let closes = window::close_requests().map(|_| Message::CloseRequested);
         let ticks = iced::time::every(std::time::Duration::from_secs(60)).map(|_| Message::Tick);
-        Subscription::batch([pushes, closes, ticks])
+        // A job in progress has a turning mark, which needs frames.
+        let frames = match self.page.moving() {
+            true => iced::time::every(std::time::Duration::from_millis(pages::SPIN_MS))
+                .map(|_| Message::Tick),
+            false => Subscription::none(),
+        };
+        Subscription::batch([pushes, closes, ticks, frames])
     }
 
     pub fn view(&self) -> Element<'_, Message> {

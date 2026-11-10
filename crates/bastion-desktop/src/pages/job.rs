@@ -89,6 +89,14 @@ where
 }
 
 /// Read the job again from the server the page shows.
+impl State {
+    /// Whether the job is in progress.
+    pub fn moving(&self) -> bool {
+        let busy = |d: &JobDetail| super::IN_PROGRESS.contains(&d.job.state.as_str());
+        self.detail.as_ref().is_some_and(busy)
+    }
+}
+
 pub fn load(state: &State, ctx: &Ctx) -> Task<Message> {
     let read = api::Job {
         id: state.id.clone(),

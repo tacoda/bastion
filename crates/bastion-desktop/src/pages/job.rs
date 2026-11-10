@@ -6,7 +6,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use bastion_protocol::api::{self, Request};
 use bastion_protocol::{
-    ArtifactView, CharterView, HeldCallRef, HeldCallView, JobDetail, StepView, TranscriptLine,
+    ArtifactView, CharterView, HeldCallRef, HeldCallView, JobDetail, JobSummary, StepView,
+    TranscriptLine,
 };
 use iced::widget::{
     Column, button, column, container, row, scrollable, text, text_editor, text_input,
@@ -264,6 +265,14 @@ fn last_segment(url: &str) -> &str {
 }
 
 /// The request and its badges: state, Bastion server, workspace, id and age.
+/// How long a running turn has gone, once it is long. The turn counts
+/// from `updated_at`, its start or its last extend.
+fn still_working(job: &JobSummary, now: u64) -> Option<String> {
+    let minutes = now.saturating_sub(job.updated_at) / 60;
+    let turn = job.actions.iter().any(|a| a == "extend");
+    (turn && minutes >= 10).then(|| format!("still working, {minutes} min into this turn"))
+}
+
 fn header<'a>(d: &JobDetail, server: &str) -> Element<'a, Message> {
     let (symbol, color) = mark(&d.job.state);
     let mut badges = vec![
@@ -291,6 +300,10 @@ fn header<'a>(d: &JobDetail, server: &str) -> Element<'a, Message> {
             .iter()
             .map(|u| link_chip(format!("pull request {}", last_segment(u)), u.clone())),
     );
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    badges.extend(still_working(&d.job, now).map(|t| chip(t, theme::WARN)));
     let mut head = column![text(d.job.request.clone()).size(24).font(theme::BOLD)].spacing(8);
     if let Some(p) = &d.job.part {
         head = head.push(text(format!("Part: {p}")));
@@ -639,6 +652,25 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_long_running_turn_is_marked_still_working() {
+        let job = JobSummary {
+            updated_at: 1_000,
+            actions: vec!["extend".into(), "stop".into()],
+            ..JobSummary::default()
+        };
+        assert_eq!(still_working(&job, 1_000 + 9 * 60), None);
+        assert_eq!(
+            still_working(&job, 1_000 + 25 * 60).as_deref(),
+            Some("still working, 25 min into this turn")
+        );
+        let waiting = JobSummary {
+            actions: vec!["approve".into()],
+            ..job
+        };
+        assert_eq!(still_working(&waiting, 1_000 + 25 * 60), None);
+    }
 
     #[test]
     fn a_click_on_a_line_starts_a_comment_on_its_own_line() {

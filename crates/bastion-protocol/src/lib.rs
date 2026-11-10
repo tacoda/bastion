@@ -297,7 +297,7 @@ pub struct Workspace {
 }
 
 /// One job as the floor and the inbox show it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JobSummary {
     pub id: String,
     pub workspace: String,

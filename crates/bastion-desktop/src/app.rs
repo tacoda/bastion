@@ -27,6 +27,8 @@ pub enum Message {
     StackRunning(bool),
     Quit,
     Stay,
+    /// A minute passed: draw the page again, for its times.
+    Tick,
     /// A job's page, on the server it runs on.
     OpenJob {
         server: String,
@@ -160,6 +162,7 @@ impl App {
                 return iced::exit();
             }
             Message::Stay => self.asking = false,
+            Message::Tick => {}
         }
         Task::none()
     }
@@ -200,7 +203,8 @@ impl App {
     pub fn subscription(&self) -> Subscription<Message> {
         let pushes = events::follow(&self.servers).map(Message::Feed);
         let closes = window::close_requests().map(|_| Message::CloseRequested);
-        Subscription::batch([pushes, closes])
+        let ticks = iced::time::every(std::time::Duration::from_secs(60)).map(|_| Message::Tick);
+        Subscription::batch([pushes, closes, ticks])
     }
 
     pub fn view(&self) -> Element<'_, Message> {

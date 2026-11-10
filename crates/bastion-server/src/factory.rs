@@ -627,6 +627,7 @@ impl Factory {
         message.push_str(brief);
         let settings = settings_store::current(&*self.store).await?;
         let model = settings.model(stage);
+        turn::provider_ready(&*self.engine, &model.provider).await?;
         self.engine
             .call(
                 NS,

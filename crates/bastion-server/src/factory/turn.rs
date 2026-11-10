@@ -48,6 +48,30 @@ impl Turn {
     }
 }
 
+/// Refuse a turn whose provider the router has no key for, so it fails at
+/// its start, naming the provider, instead of waiting out its cap with no
+/// reply. Codex signs in instead of keeping a key, so it is not checked;
+/// nor is a provider the router does not list, or a list it cannot give.
+pub async fn provider_ready(engine: &dyn Engine, provider: &str) -> Result<(), String> {
+    if provider == "openai-codex" {
+        return Ok(());
+    }
+    let Ok(listed) = engine.call(NS, "router::provider::list", json!({})).await else {
+        return Ok(());
+    };
+    let found = listed["providers"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|p| p["id"] == provider);
+    match found {
+        Some(p) if p["configured"] != true => Err(format!(
+            "{provider} has no key: set one in Settings, or pick another model"
+        )),
+        _ => Ok(()),
+    }
+}
+
 /// Cancel a session's turn, if one is still out. Best effort: a turn that
 /// already ended has nothing to cancel.
 pub async fn stop(engine: &dyn Engine, session: &str) {
@@ -213,6 +237,24 @@ mod tests {
         assert!(!turn("j1-2-build-other").owns(&record(Stage::Build, &build.session)));
         let review = Turn::start("j1-2", Stage::CodeReview);
         assert!(review.owns(&record(Stage::CodeReview, &review.session)));
+    }
+
+    #[test]
+    fn a_turn_on_a_provider_without_a_key_is_refused_by_name() {
+        use crate::engine::fake::FakeEngine;
+        use bastion_protocol::Link;
+        let listed = json!({ "providers": [
+            { "id": "openai", "configured": false },
+            { "id": "deepseek", "configured": true },
+        ]});
+        let engine = FakeEngine::new(Link::Up).answer("router::provider::list", Ok(listed));
+        crate::rt::block_on(async {
+            let refused = provider_ready(&engine, "openai").await.unwrap_err();
+            assert!(refused.starts_with("openai has no key"), "{refused}");
+            assert!(provider_ready(&engine, "deepseek").await.is_ok());
+            assert!(provider_ready(&engine, "openai-codex").await.is_ok());
+            assert!(provider_ready(&engine, "unlisted").await.is_ok());
+        });
     }
 
     #[test]

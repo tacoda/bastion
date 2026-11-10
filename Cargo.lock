@@ -392,7 +392,6 @@ name = "bastion-server"
 version = "0.1.0"
 dependencies = [
  "axum",
- "base64 0.22.1",
  "bastion-core",
  "bastion-protocol",
  "futures-util",

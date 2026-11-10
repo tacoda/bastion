@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use base64::Engine as _;
 use bastion_core::govern::Enforcement;
 use bastion_core::review;
 use bastion_core::{
@@ -509,61 +508,12 @@ impl Factory {
                 made
             }
         };
-        let sandbox = self
-            .engine
-            .call_for(
-                DEFAULT_NAMESPACE,
-                "sandbox::create",
-                json!({ "image": "python", "network": false, "idle_timeout_secs": 3600 }),
-                SLOW_MS,
-            )
-            .await?["sandbox_id"]
-            .as_str()
-            .ok_or("sandbox::create gave no sandbox_id")?
-            .to_string();
+        let sandbox = self.create_vm().await?;
         self.set_runtime(&job.id, |r| r.sandbox = Some(sandbox.clone()))
             .await?;
-
         let (path, branch) = self.worktree_path(&worktree).await?;
-        self.machine.make_dir(&self.scratch)?;
-        let bundle = self.scratch.join(format!("{}.in.bundle", job.id));
-        self.git(
-            &path,
-            &[
-                "bundle",
-                "create",
-                &bundle.display().to_string(),
-                "HEAD",
-                &branch,
-            ],
-        )?;
-        let bytes = self.machine.read_bytes(&bundle)?;
-        // ponytail: content_b64 suits small repos; a channel upload lifts the limit (docs/engine-findings.md).
-        self.engine
-            .call_for(DEFAULT_NAMESPACE, "sandbox::fs::write", json!({ "sandbox_id": sandbox, "path": "/work/in.bundle", "content_b64": base64::engine::general_purpose::STANDARD.encode(&bytes), "parents": true }), SLOW_MS)
-            .await?;
-        self.vm_exec(
-            &sandbox,
-            &["git", "clone", "-q", "-b", &branch, "/work/in.bundle", REPO],
-        )
-        .await?;
-        self.vm_exec(
-            &sandbox,
-            &["git", "-C", REPO, "config", "user.name", "Bastion agent"],
-        )
-        .await?;
-        self.vm_exec(
-            &sandbox,
-            &[
-                "git",
-                "-C",
-                REPO,
-                "config",
-                "user.email",
-                "agent@bastion.local",
-            ],
-        )
-        .await?;
+        let bundle = self.bundle(&job.id, &path, &branch)?;
+        self.clone_into(&sandbox, bundle, &branch).await?;
         // What a review or refactor turn diffs against: where the job forked
         // from its workspace's branch, so a revived VM still sees the change.
         let base = self.fork_point(record, &path).await;
@@ -891,6 +841,7 @@ mod acceptance;
 mod decide;
 mod land;
 mod resume;
+mod setup;
 mod split;
 mod turn;
 

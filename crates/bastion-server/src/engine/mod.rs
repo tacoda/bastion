@@ -54,6 +54,10 @@ pub trait Engine: Send + Sync {
     fn unbind(&self, id: &str);
     /// Read every byte of a content channel, such as `sandbox::fs::read` returns.
     fn read_channel(&self, content: Value) -> Bytes<'_>;
+    /// A content channel that carries `bytes`, for a call such as
+    /// `sandbox::fs::write` to read. The bytes stream as the reader takes
+    /// them, so their size has no call's limit.
+    fn upload(&self, bytes: Vec<u8>) -> Call<'_>;
     /// Run `on_push` each time a worker joins or leaves, so its functions do.
     fn on_functions_changed(&self, on_push: OnPush) -> Result<(), String>;
 }

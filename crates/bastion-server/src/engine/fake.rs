@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use bastion_protocol::Link;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use super::{Bytes, Call, Engine, OnEvent, OnPush};
 
@@ -109,5 +109,9 @@ impl Engine for FakeEngine {
     fn read_channel(&self, _content: Value) -> Bytes<'_> {
         let bytes = self.channel_bytes.clone();
         Box::pin(async move { Ok(bytes) })
+    }
+
+    fn upload(&self, bytes: Vec<u8>) -> Call<'_> {
+        Box::pin(async move { Ok(json!({ "uploaded": bytes.len() })) })
     }
 }

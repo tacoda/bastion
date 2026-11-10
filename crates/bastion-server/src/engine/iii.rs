@@ -158,6 +158,26 @@ impl Engine for IiiEngine {
                 .map_err(|e| e.to_string())
         })
     }
+
+    fn upload(&self, bytes: Vec<u8>) -> Call<'_> {
+        Box::pin(async move {
+            let channel = iii_sdk::helpers::create_channel(&self.client, None)
+                .await
+                .map_err(|e| e.to_string())?;
+            let reader = serde_json::to_value(&channel.reader_ref).map_err(|e| e.to_string())?;
+            let writer = channel.writer;
+            tokio::spawn(async move {
+                let sent = match writer.write(&bytes).await {
+                    Ok(()) => writer.close().await,
+                    failed => failed,
+                };
+                if let Err(e) = sent {
+                    eprintln!("an upload stopped part way: {e}");
+                }
+            });
+            Ok(reader)
+        })
+    }
 }
 
 #[cfg(test)]
@@ -188,5 +208,53 @@ mod retry_tests {
         let out = crate::rt::block_on(retried(|| failing(&tries, 1, "invocation timed out")));
         assert_eq!(out, Err("invocation timed out".into()));
         assert_eq!(tries.load(Ordering::SeqCst), 1);
+    }
+}
+
+/// Against this machine's stack: `cargo test -p bastion-server -- --ignored --nocapture live_upload`.
+#[cfg(test)]
+mod live {
+    use super::*;
+    use crate::engine::DEFAULT_NAMESPACE;
+
+    #[test]
+    #[ignore = "needs this machine's stack"]
+    fn live_upload() {
+        crate::rt::block_on(async {
+            let engine = IiiEngine::connect("ws://127.0.0.1:49160");
+            for _ in 0..150 {
+                if engine.link() == Link::Up {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+            // Larger than one call may carry, and not text.
+            let sent: Vec<u8> = (0..3 << 20).map(|i: u32| (i * 7 % 251) as u8).collect();
+            let call = |f: &'static str, payload: Value| {
+                engine.call_for(DEFAULT_NAMESPACE, f, payload, 120_000)
+            };
+            let made = call(
+                "sandbox::create",
+                json!({ "image": "python", "network": false }),
+            );
+            let vm = made.await.unwrap()["sandbox_id"]
+                .as_str()
+                .unwrap()
+                .to_string();
+            let content = engine.upload(sent.clone()).await.unwrap();
+            let at = json!({ "sandbox_id": vm, "path": "/work/blob", "content": content, "parents": true });
+            let wrote = call("sandbox::fs::write", at).await;
+            let read = call(
+                "sandbox::fs::read",
+                json!({ "sandbox_id": vm, "path": "/work/blob" }),
+            );
+            let back = match read.await {
+                Ok(r) => engine.read_channel(r["content"].clone()).await,
+                Err(e) => Err(e),
+            };
+            let _ = call("sandbox::stop", json!({ "sandbox_id": vm, "wait": false })).await;
+            wrote.unwrap();
+            assert!(back.unwrap() == sent, "the bytes read back differ");
+        });
     }
 }

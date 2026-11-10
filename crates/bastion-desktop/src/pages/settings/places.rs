@@ -18,6 +18,8 @@ pub struct State {
     editing: bool,
     /// The form's cap on running jobs, as typed; empty is none.
     max_jobs: String,
+    /// The form's revision budget, as typed; empty is none.
+    budget: String,
     workspaces: Vec<Workspace>,
     accounts: Vec<AccountView>,
     note: String,
@@ -36,6 +38,7 @@ impl Default for State {
             branch: "main".into(),
             checks: String::new(),
             max_jobs: None,
+            revision_budget: None,
             branch_prefix: branch_prefix(),
             setup: String::new(),
             cleanup: String::new(),
@@ -46,6 +49,7 @@ impl Default for State {
             workspace,
             editing: false,
             max_jobs: String::new(),
+            budget: String::new(),
             workspaces: vec![],
             accounts: vec![],
             note: String::new(),
@@ -64,6 +68,7 @@ pub enum Field {
     Branch,
     Checks,
     MaxJobs,
+    Budget,
     BranchPrefix,
     Setup,
     Cleanup,
@@ -129,6 +134,7 @@ fn edit(state: &mut State, field: Field, value: String) {
         Field::Branch => w.branch = value,
         Field::Checks => w.checks = value,
         Field::MaxJobs => state.max_jobs = value,
+        Field::Budget => state.budget = value,
         Field::BranchPrefix => state.workspace.branch_prefix = value,
         Field::Setup => state.workspace.setup = value,
         Field::Cleanup => state.workspace.cleanup = value,
@@ -141,12 +147,13 @@ fn open(state: &mut State, name: &str) {
     let Some(w) = state.workspaces.iter().find(|w| w.name == name) else {
         return;
     };
-    state.max_jobs = w.max_jobs.map(|n| n.to_string()).unwrap_or_default();
+    let typed = |n: Option<u32>| n.map(|n| n.to_string()).unwrap_or_default();
+    (state.max_jobs, state.budget) = (typed(w.max_jobs), typed(w.revision_budget));
     (state.workspace, state.editing) = (w.clone(), true);
 }
 
-/// A typed cap: empty is none, otherwise a whole number above 0.
-fn cap(typed: &str) -> Result<Option<u32>, String> {
+/// A typed count: empty is none, otherwise a whole number above 0.
+fn count(typed: &str) -> Result<Option<u32>, String> {
     match typed.trim() {
         "" => Ok(None),
         n => n
@@ -154,35 +161,36 @@ fn cap(typed: &str) -> Result<Option<u32>, String> {
             .ok()
             .filter(|n| *n > 0)
             .map(Some)
-            .ok_or_else(|| format!("{n} is not a number of jobs above 0")),
+            .ok_or_else(|| format!("{n} is not a whole number above 0")),
     }
 }
 
 /// Add the form's workspace, or save the one it holds, then empty it.
 fn save(state: &mut State, ctx: &Ctx) -> Task<Message> {
-    let max_jobs = match cap(&state.max_jobs) {
-        Ok(n) => n,
-        Err(e) => {
+    let (max_jobs, revision_budget) = match (count(&state.max_jobs), count(&state.budget)) {
+        (Ok(jobs), Ok(budget)) => (jobs, budget),
+        (Err(e), _) | (_, Err(e)) => {
             state.note = e;
             return Task::none();
         }
     };
     let blank = State::default();
     let editing = std::mem::replace(&mut state.editing, false);
-    state.max_jobs.clear();
-    let w = std::mem::replace(&mut state.workspace, blank.workspace);
+    (state.max_jobs, state.budget) = (blank.max_jobs, blank.budget);
+    let w = Workspace {
+        max_jobs,
+        revision_budget,
+        ..std::mem::replace(&mut state.workspace, blank.workspace)
+    };
     if !editing {
-        return task(
-            ctx,
-            api::WorkspaceAdd(Workspace { max_jobs, ..w }),
-            Msg::Done,
-        );
+        return task(ctx, api::WorkspaceAdd(w), Msg::Done);
     }
     let edit = api::WorkspaceEdit {
         name: w.name,
         branch: w.branch,
         checks: w.checks,
         max_jobs,
+        revision_budget,
         branch_prefix: w.branch_prefix,
         setup: w.setup,
         cleanup: w.cleanup,
@@ -273,7 +281,7 @@ fn servers<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
 }
 
 fn workspaces(state: &State) -> Element<'_, Message> {
-    let lede = "The repositories jobs run against on this Bastion server. Checks run the tests at the checks step. A job pushes to its branch prefix and its id, and the job limit caps how many run at once. Setup runs with the network in a VM of its own, before the agent starts; the agent's VM stays offline. The environment is visible to the agent, so keep secrets out of it.";
+    let lede = "The repositories jobs run against on this Bastion server. Checks run the tests at the checks step. A job pushes to its branch prefix and its id, the job limit caps how many run at once, and the revision budget caps how often its steps send work back before you decide. Setup runs with the network in a VM of its own, before the agent starts; the agent's VM stays offline. The environment is visible to the agent, so keep secrets out of it.";
     let rows = state.workspaces.iter().map(|w| {
         let checks = (!w.checks.is_empty())
             .then(|| text(w.checks.clone()).font(theme::MONO).color(theme::MUTED));
@@ -323,6 +331,7 @@ fn workspace_form(state: &State) -> Column<'_, Message> {
         field("Checks", "pytest -q", &w.checks, Field::Checks),
         field("Branch prefix", "", &w.branch_prefix, Field::BranchPrefix),
         field("Job limit", "none", &state.max_jobs, Field::MaxJobs),
+        field("Revision budget", "none", &state.budget, Field::Budget),
     ];
     let vm = row![
         field("Setup", "pip install -e .", &w.setup, Field::Setup),
@@ -362,11 +371,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_typed_job_limit_is_none_or_a_whole_number_above_0() {
-        assert_eq!(cap(" "), Ok(None));
-        assert_eq!(cap("3"), Ok(Some(3)));
-        assert!(cap("0").is_err());
-        assert!(cap("two").is_err());
+    fn a_typed_count_is_none_or_a_whole_number_above_0() {
+        assert_eq!(count(" "), Ok(None));
+        assert_eq!(count("3"), Ok(Some(3)));
+        assert!(count("0").is_err());
+        assert!(count("two").is_err());
     }
 
     #[test]
@@ -378,6 +387,7 @@ mod tests {
                 branch: "main".into(),
                 checks: "make test".into(),
                 max_jobs: Some(2),
+                revision_budget: Some(4),
                 branch_prefix: "ian/".into(),
                 setup: "pip install -e .".into(),
                 cleanup: String::new(),
@@ -388,6 +398,6 @@ mod tests {
         open(&mut state, "demo");
         assert!(state.editing);
         assert_eq!(state.workspace, state.workspaces[0]);
-        assert_eq!(state.max_jobs, "2");
+        assert_eq!((state.max_jobs.as_str(), state.budget.as_str()), ("2", "4"));
     }
 }

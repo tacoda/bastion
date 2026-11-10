@@ -272,6 +272,7 @@ mod tests {
             branch: "main".into(),
             checks: String::new(),
             max_jobs: None,
+            revision_budget: None,
             branch_prefix: "bastion/".into(),
             setup: String::new(),
             cleanup: String::new(),

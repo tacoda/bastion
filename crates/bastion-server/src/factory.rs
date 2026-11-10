@@ -246,16 +246,23 @@ impl Factory {
         Ok(id)
     }
 
-    /// The dials a job runs under: a trial's own, or the owner's. A job on
-    /// a kept workflow takes each step's dial from the step.
-    async fn dials_for(&self, id: &str) -> Result<Dials, String> {
-        Ok(match self.store.eval_run_of(id).await? {
+    /// The dials a job runs under: a trial's own, or the owner's, with its
+    /// workspace's revision budget. A job on a kept workflow takes each
+    /// step's dial from the step.
+    async fn dials_for(&self, record: &Record) -> Result<Dials, String> {
+        let mut dials = match self.store.eval_run_of(&record.job.id).await? {
             Some(_) => Dials {
                 trial: true,
                 ..Dials::default()
             },
             None => settings_store::current(&*self.store).await?.dials,
-        })
+        };
+        dials.revision_budget = self
+            .workspace(record)
+            .await
+            .ok()
+            .and_then(|w| w.revision_budget);
+        Ok(dials)
     }
 
     /// Step one job with one event, save it, and run its effects.
@@ -290,7 +297,7 @@ impl Factory {
                 if !holds(&record) {
                     return Ok(None);
                 }
-                let dials = self.dials_for(&id).await?;
+                let dials = self.dials_for(&record).await?;
                 let (job, effects) = step(&record.job, &event, now(), &dials);
                 if job == record.job && effects.is_empty() {
                     return Ok(None);

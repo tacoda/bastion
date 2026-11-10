@@ -64,6 +64,7 @@ pub async fn workspaces(cell: &FactoryCell) -> Result<Vec<Workspace>, String> {
             branch: w.branch,
             checks: w.checks,
             max_jobs: w.max_jobs,
+            revision_budget: w.revision_budget,
             branch_prefix: w.branch_prefix,
             setup: w.setup,
             cleanup: w.cleanup,
@@ -91,6 +92,7 @@ pub async fn workspace_add(
         branch: w.branch,
         checks: w.checks,
         max_jobs: w.max_jobs,
+        revision_budget: w.revision_budget,
         branch_prefix: w.branch_prefix,
         setup: w.setup,
         cleanup: w.cleanup,
@@ -106,6 +108,7 @@ pub struct WorkspaceSettings {
     pub branch: String,
     pub checks: String,
     pub max_jobs: Option<u32>,
+    pub revision_budget: Option<u32>,
     pub branch_prefix: String,
     pub setup: String,
     pub cleanup: String,
@@ -148,6 +151,7 @@ fn settle(
     row.env_vars()?;
     row.checks = s.checks.trim().into();
     row.max_jobs = s.max_jobs.filter(|n| *n > 0);
+    row.revision_budget = s.revision_budget.filter(|n| *n > 0);
     (row.setup, row.cleanup) = (s.setup.trim().into(), s.cleanup.trim().into());
     Ok(())
 }

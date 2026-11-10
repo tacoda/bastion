@@ -359,6 +359,11 @@ pub struct Dials {
     /// An eval's run: its plan goes on at once, and it stops after the
     /// build with its diff, so nothing lands.
     pub trial: bool,
+    /// How many times in all the job's steps may send its work back by
+    /// themselves; past it, a failing step waits on the owner. It comes from
+    /// the job's workspace, so the owner's saved dials never hold it.
+    #[serde(skip)]
+    pub revision_budget: Option<u32>,
 }
 
 impl Dials {
@@ -829,6 +834,13 @@ fn step_failed(job: &mut Job, detail: &str, dials: &Dials) -> Vec<Effect> {
     let Some((fix, back_to, limit)) = pipeline::revise(job.stage) else {
         return stuck(job, detail);
     };
+    if budget_spent(job, dials) {
+        let budget = dials.revision_budget.unwrap_or_default();
+        return stuck(
+            job,
+            &format!("The revision budget of {budget} is spent.\n{detail}"),
+        );
+    }
     let tries = job.revisions.entry(job.stage).or_default();
     if *tries >= limit || job.last_refusal.as_deref() == Some(detail) {
         return stuck(job, detail);
@@ -839,6 +851,20 @@ fn step_failed(job: &mut Job, detail: &str, dials: &Dials) -> Vec<Effect> {
         "A step failed. Read its output, fix the cause, and commit.\n<output>\n{detail}\n</output>"
     ));
     rework(job, fix, back_to, dials)
+}
+
+/// Whether the job's steps have sent its work back as often as its
+/// workspace allows. A person's send-backs (`YourChecks`) do not count.
+fn budget_spent(job: &Job, dials: &Dials) -> bool {
+    let by_steps = job
+        .revisions
+        .iter()
+        .filter(|(stage, _)| **stage != Stage::YourChecks)
+        .map(|(_, n)| n)
+        .sum::<u32>();
+    dials
+        .revision_budget
+        .is_some_and(|budget| by_steps >= budget)
 }
 
 /// The job waits on the owner at a step that failed: approve goes on

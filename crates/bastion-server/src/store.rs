@@ -31,6 +31,8 @@ pub struct Workspace {
     pub checks: String,
     /// At most this many of its jobs hold a VM at once, when set.
     pub max_jobs: Option<u32>,
+    /// How many times in all a job's steps may send its work back, when set.
+    pub revision_budget: Option<u32>,
     /// What a job's branch starts with, before the job's id.
     pub branch_prefix: String,
     /// A shell command run, with the network, before a job's turns.
@@ -267,6 +269,7 @@ const SCHEMA: [&str; 8] = [
         created_at INTEGER NOT NULL,
         checks TEXT NOT NULL DEFAULT '',
         max_jobs INTEGER CHECK (max_jobs > 0),
+        revision_budget INTEGER CHECK (revision_budget > 0),
         branch_prefix TEXT NOT NULL DEFAULT 'bastion/',
         setup TEXT NOT NULL DEFAULT '',
         cleanup TEXT NOT NULL DEFAULT '',
@@ -366,7 +369,7 @@ const LEGACY_JOB_COLUMNS: &str = "id, workspace, request, stage, state, question
 /// Columns added after a table was first made. Each runs once; on a table
 /// that already has the column it fails, and that failure is expected.
 // They run before the numbered migrations, which need these columns to exist.
-const ALTERS: [&str; 17] = [
+const ALTERS: [&str; 18] = [
     "ALTER TABLE jobs ADD COLUMN pr TEXT",
     "ALTER TABLE jobs ADD COLUMN ci_fixes INTEGER NOT NULL DEFAULT 0 CHECK (ci_fixes >= 0)",
     "ALTER TABLE jobs ADD COLUMN issue TEXT",
@@ -384,6 +387,7 @@ const ALTERS: [&str; 17] = [
     "ALTER TABLE workspaces ADD COLUMN setup TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE workspaces ADD COLUMN cleanup TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE workspaces ADD COLUMN env TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE workspaces ADD COLUMN revision_budget INTEGER CHECK (revision_budget > 0)",
 ];
 
 /// Numbered migrations, each run once in order; `PRAGMA user_version` is the
@@ -814,8 +818,8 @@ impl Store for SqlStore {
     fn add_workspace<'a>(&'a self, w: &'a Workspace) -> Answer<'a, ()> {
         Box::pin(async move {
             self.execute(
-                "INSERT INTO workspaces (name, path, branch, checks, max_jobs, branch_prefix, setup, cleanup, env, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())",
-                json!([w.name, w.path, w.branch, w.checks, w.max_jobs, w.branch_prefix, w.setup, w.cleanup, w.env]),
+                "INSERT INTO workspaces (name, path, branch, checks, max_jobs, revision_budget, branch_prefix, setup, cleanup, env, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())",
+                json!([w.name, w.path, w.branch, w.checks, w.max_jobs, w.revision_budget, w.branch_prefix, w.setup, w.cleanup, w.env]),
             )
             .await
             .map(|_| ())
@@ -825,7 +829,7 @@ impl Store for SqlStore {
     fn workspaces(&self) -> Answer<'_, Vec<Workspace>> {
         Box::pin(async move {
             self.query(
-                "SELECT name, path, branch, checks, max_jobs, branch_prefix, setup, cleanup, env FROM workspaces ORDER BY name",
+                "SELECT name, path, branch, checks, max_jobs, revision_budget, branch_prefix, setup, cleanup, env FROM workspaces ORDER BY name",
                 json!([]),
             )
             .await?
@@ -837,6 +841,7 @@ impl Store for SqlStore {
                     branch: parse(r, "branch")?,
                     checks: parse(r, "checks")?,
                     max_jobs: parse(r, "max_jobs")?,
+                    revision_budget: parse(r, "revision_budget")?,
                     branch_prefix: parse(r, "branch_prefix")?,
                     setup: parse(r, "setup")?,
                     cleanup: parse(r, "cleanup")?,
@@ -851,8 +856,8 @@ impl Store for SqlStore {
         Box::pin(async move {
             let found = self
                 .execute(
-                    "UPDATE workspaces SET branch = ?, checks = ?, max_jobs = ?, branch_prefix = ?, setup = ?, cleanup = ?, env = ? WHERE name = ? RETURNING name",
-                    json!([w.branch, w.checks, w.max_jobs, w.branch_prefix, w.setup, w.cleanup, w.env, w.name]),
+                    "UPDATE workspaces SET branch = ?, checks = ?, max_jobs = ?, revision_budget = ?, branch_prefix = ?, setup = ?, cleanup = ?, env = ? WHERE name = ? RETURNING name",
+                    json!([w.branch, w.checks, w.max_jobs, w.revision_budget, w.branch_prefix, w.setup, w.cleanup, w.env, w.name]),
                 )
                 .await?;
             match found.is_empty() {
@@ -1539,6 +1544,7 @@ mod live {
             branch: "main".into(),
             checks: String::new(),
             max_jobs: None,
+            revision_budget: None,
             branch_prefix: "bastion/".into(),
             setup: String::new(),
             cleanup: String::new(),
@@ -1621,6 +1627,7 @@ mod live {
             w.retain(|w| w.name == tag);
             let mut edited = w.remove(0);
             (edited.checks, edited.max_jobs) = ("make test".into(), Some(2));
+            edited.revision_budget = Some(4);
             edited.branch_prefix = "ian/".into();
             (edited.setup, edited.env) = ("make deps".into(), "CI=1".into());
             store.edit_workspace(&edited).await.unwrap();

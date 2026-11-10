@@ -997,6 +997,7 @@ mod tests {
             branch: s("main"),
             checks: s(""),
             max_jobs: Some(2),
+            revision_budget: Some(4),
             branch_prefix: s("ian/"),
             setup: s("make deps"),
             cleanup: s(""),

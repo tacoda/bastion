@@ -298,6 +298,11 @@ pub struct Workspace {
     /// the server's own limit.
     #[serde(default)]
     pub max_jobs: Option<u32>,
+    /// How many times in all a job's steps may send its work back by
+    /// themselves before the job waits on the owner; none leaves each
+    /// step's own limit.
+    #[serde(default)]
+    pub revision_budget: Option<u32>,
     /// What a job's branch starts with, before the job's id.
     #[serde(default = "branch_prefix")]
     pub branch_prefix: String,

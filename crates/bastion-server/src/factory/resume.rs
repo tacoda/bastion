@@ -82,7 +82,7 @@ impl Factory {
         if let (Kind::Turn, Some(out)) = (record.job.stage.kind(), out) {
             return self.resume_turn(record, &out).await;
         }
-        let dials = match self.dials_for(&record.job.id).await {
+        let dials = match self.dials_for(&record).await {
             Ok(dials) => dials,
             Err(e) => return eprintln!("resume {}: {e}", record.job.id),
         };

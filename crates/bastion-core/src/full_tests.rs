@@ -805,3 +805,37 @@ fn implement_after_specify_is_told_the_acceptance_tests_are_fixed() {
     j.criteria = Some("C1. modulo works".into());
     assert!(crate::brief::brief(&j).contains("Do not create, change, move or delete them"));
 }
+
+#[test]
+fn a_spent_revision_budget_stops_the_steps_sending_work_back() {
+    let budget = Dials {
+        revision_budget: Some(2),
+        ..Dials::all(Dial::Dark)
+    };
+    let mut j = at(Stage::Checks, State::Running);
+    j.revisions = BTreeMap::from([(Stage::Verify, 1), (Stage::YourChecks, 5)]);
+    let (sent, _) = step(&j, &failed("1 failed"), AT + 1, &budget);
+    assert_eq!(
+        sent.stage,
+        Stage::Implement,
+        "1 of 2 used; a person's 5 do not count"
+    );
+    let mut again = sent.clone();
+    (again.stage, again.state) = (Stage::Checks, State::Running);
+    let (stopped, _) = step(&again, &failed("2 failed"), AT + 2, &budget);
+    assert_eq!(
+        (stopped.stage, stopped.state),
+        (Stage::Checks, State::NeedsYou)
+    );
+    let error = stopped.error.unwrap();
+    assert!(
+        error.starts_with("The revision budget of 2 is spent."),
+        "{error}"
+    );
+    let (unbudgeted, _) = go(&again, &failed("2 failed"));
+    assert_eq!(
+        unbudgeted.stage,
+        Stage::Implement,
+        "no budget: the step's own limit"
+    );
+}

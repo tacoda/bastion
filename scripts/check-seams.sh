@@ -13,9 +13,11 @@ for crate in bastion-protocol bastion-core; do
   if [ -n "$extra" ]; then echo "FAIL $crate depends on: $extra"; fail=1; fi
 done
 
-# A client reaches a server only through its API (D27, D37).
-for banned in bastion-core bastion-server iii-sdk; do
-  if deps bastion-desktop | grep -qx "$banned"; then echo "FAIL bastion-desktop depends on $banned"; fail=1; fi
+# A client reaches a server only through its API (D27, D37, D38).
+for client in bastion-client bastion-desktop; do
+  for banned in bastion-core bastion-server iii-sdk; do
+    if deps "$client" | grep -qx "$banned"; then echo "FAIL $client depends on $banned"; fail=1; fi
+  done
 done
 
 # In the server, only the engine adapter imports iii-sdk.

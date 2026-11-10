@@ -2,15 +2,14 @@
 //! on iced. It reaches a server only through its HTTP API and its events.
 
 mod app;
-mod client;
 mod events;
 mod icons;
-mod local;
 mod pages;
 mod route;
-mod servers;
-mod start;
 mod theme;
+
+// The client library (D38), under the names the pages use.
+use bastion_client::{client, servers, start};
 
 use iced::{Size, window};
 

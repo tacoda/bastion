@@ -4,6 +4,7 @@ members = [
     "crates/bastion-core",
     "crates/bastion-protocol",
     "crates/bastion-server",
+    "crates/bastion-client",
     "crates/bastion-desktop",
     "workers/bastion-openai-compat",
 ]

@@ -11,8 +11,11 @@ change.
 - `crates/bastion-protocol`: the API's types and routes. Only `serde`.
 - `crates/bastion-server`: the HTTP API, events, the factory adapter, the
   store, the gate, the audit, the stack. Only `src/engine/` imports `iii-sdk`.
+- `crates/bastion-client`: what every interface uses to reach a server: the
+  server list, the local server's start, the API calls, the event stream.
+  Never `bastion-core` or `iii-sdk`.
 - `crates/bastion-desktop`: the iced client. It reaches a server only through
-  the API; never through `bastion-core` or `iii-sdk`.
+  `bastion-client`; never through `bastion-core` or `iii-sdk`.
 - `workers/`: Bastion's own iii workers.
 
 ## Before a commit

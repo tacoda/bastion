@@ -1,0 +1,16 @@
+[package]
+name = "bastion-client"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "A client of Bastion servers (PLAN.md D38): the server list, the local server's start, the API calls and the event stream, for any interface."
+
+[dependencies]
+bastion-protocol = { path = "../bastion-protocol" }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+futures = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["time"] }
+toml = "0.9"
+keyring = { version = "3", features = ["apple-native"] }

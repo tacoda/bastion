@@ -65,6 +65,9 @@ pub async fn workspaces(cell: &FactoryCell) -> Result<Vec<Workspace>, String> {
             checks: w.checks,
             max_jobs: w.max_jobs,
             branch_prefix: w.branch_prefix,
+            setup: w.setup,
+            cleanup: w.cleanup,
+            env: w.env,
         })
         .collect())
 }
@@ -73,25 +76,27 @@ pub async fn workspaces(cell: &FactoryCell) -> Result<Vec<Workspace>, String> {
 pub async fn workspace_add(
     cell: &FactoryCell,
     machine: &Arc<dyn Machine>,
-    workspace: Workspace,
+    w: Workspace,
 ) -> Result<(), String> {
-    let (name, path, branch) = (
-        workspace.name.trim(),
-        workspace.path.trim(),
-        workspace.branch.trim(),
-    );
-    if name.is_empty() || path.is_empty() || branch.is_empty() {
+    let (name, path) = (w.name.trim(), w.path.trim());
+    if name.is_empty() || path.is_empty() {
         return Err("a workspace needs a name, a path and a branch".into());
     }
-    has_branch(machine, path, branch)?;
-    let row = store::Workspace {
+    let mut row = store::Workspace {
         name: name.into(),
         path: path.into(),
-        branch: branch.into(),
-        checks: workspace.checks.trim().into(),
-        max_jobs: workspace.max_jobs,
-        branch_prefix: prefix(machine, &workspace.branch_prefix)?,
+        ..store::Workspace::default()
     };
+    let settings = WorkspaceSettings {
+        branch: w.branch,
+        checks: w.checks,
+        max_jobs: w.max_jobs,
+        branch_prefix: w.branch_prefix,
+        setup: w.setup,
+        cleanup: w.cleanup,
+        env: w.env,
+    };
+    settle(machine, &mut row, settings)?;
     factory(cell)?.store().add_workspace(&row).await
 }
 
@@ -102,10 +107,12 @@ pub struct WorkspaceSettings {
     pub checks: String,
     pub max_jobs: Option<u32>,
     pub branch_prefix: String,
+    pub setup: String,
+    pub cleanup: String,
+    pub env: String,
 }
 
-/// Change a workspace's branch, checks, cap and branch prefix. The branch must exist in
-/// its repository.
+/// Change a workspace's settings. Its name and its path stay.
 pub async fn workspace_edit(
     cell: &FactoryCell,
     machine: &Arc<dyn Machine>,
@@ -118,15 +125,31 @@ pub async fn workspace_edit(
         .into_iter()
         .find(|w| w.name == name)
         .ok_or_else(|| format!("no workspace named {name}"))?;
-    let branch = edit.branch.trim();
+    settle(machine, &mut row, edit)?;
+    factory.store().edit_workspace(&row).await
+}
+
+/// Put `s` in `row`, trimmed, once each setting is one a job can use: the
+/// branch is in the repository, git takes the prefix, and the environment
+/// is `K=V` pairs.
+fn settle(
+    machine: &Arc<dyn Machine>,
+    row: &mut store::Workspace,
+    s: WorkspaceSettings,
+) -> Result<(), String> {
+    let branch = s.branch.trim();
     if branch.is_empty() {
         return Err("a workspace needs a branch".into());
     }
     has_branch(machine, &row.path, branch)?;
-    (row.branch, row.checks) = (branch.into(), edit.checks.trim().into());
-    row.max_jobs = edit.max_jobs.filter(|n| *n > 0);
-    row.branch_prefix = prefix(machine, &edit.branch_prefix)?;
-    factory.store().edit_workspace(&row).await
+    row.branch = branch.into();
+    row.branch_prefix = prefix(machine, &s.branch_prefix)?;
+    row.env = s.env.trim().into();
+    row.env_vars()?;
+    row.checks = s.checks.trim().into();
+    row.max_jobs = s.max_jobs.filter(|n| *n > 0);
+    (row.setup, row.cleanup) = (s.setup.trim().into(), s.cleanup.trim().into());
+    Ok(())
 }
 
 /// A branch prefix, trimmed, or why git would refuse a branch named with it.

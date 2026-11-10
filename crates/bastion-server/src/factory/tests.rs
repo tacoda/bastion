@@ -63,6 +63,9 @@ fn rig_on(engine: FakeEngine) -> Rig {
         checks: String::new(),
         max_jobs: None,
         branch_prefix: "bastion/".into(),
+        setup: String::new(),
+        cleanup: String::new(),
+        env: String::new(),
     });
     let machine = Arc::new(FakeMachine::new().run_ok("git", ""));
     let factory = Factory::new(
@@ -305,6 +308,9 @@ fn dying_vms() -> Rig {
         checks: String::new(),
         max_jobs: None,
         branch_prefix: "bastion/".into(),
+        setup: String::new(),
+        cleanup: String::new(),
+        env: String::new(),
     });
     let machine = Arc::new(FakeMachine::new().run_ok("git", ""));
     let factory = Factory::new(
@@ -467,6 +473,61 @@ fn a_request_runs_the_short_pipeline_to_landed() {
     });
 }
 
+/// The payload of each call to `function`, in order.
+fn payloads(rig: &Rig, function: &str) -> Vec<serde_json::Value> {
+    let calls = rig.engine.calls.lock().unwrap();
+    calls
+        .iter()
+        .filter(|c| c.1 == function)
+        .map(|c| c.2.clone())
+        .collect()
+}
+
+#[test]
+fn setup_runs_with_the_network_in_a_vm_of_its_own_and_cleanup_runs_at_the_end() {
+    let rig = rig();
+    {
+        let mut all = rig.store.workspaces.lock().unwrap();
+        all[0].setup = "pip install -e .".into();
+        (all[0].cleanup, all[0].env) = ("make clean".into(), "CI=1".into());
+    }
+    crate::rt::block_on(async {
+        let id = rig.factory.submit("w", "x").await.unwrap();
+        until(&rig, &id, Stage::Plan, State::Running).await;
+        let vms = payloads(&rig, "sandbox::create");
+        let nets: Vec<_> = vms.iter().map(|v| v["network"].clone()).collect();
+        assert_eq!(
+            nets,
+            [json!(false), json!(true)],
+            "the job's VM, then setup's"
+        );
+        assert!(vms.iter().all(|v| v["env"] == json!(["CI=1"])));
+        assert_eq!(payloads(&rig, "sandbox::stop").len(), 1, "setup's VM stops");
+        let ran = vm_commands(&rig);
+        let at = |c: &str| ran.iter().position(|r| r.starts_with(c));
+        let order = [
+            at("git -C /work/repo checkout -q HEAD"),
+            at("sh -c cd /work/repo && pip install -e ."),
+            at("tar czf /work/repo.tgz"),
+            at("tar xzf /work/repo.tgz -C /work"),
+            at("git -C /work/repo checkout -q -f iii/wt1"),
+        ];
+        assert!(order.iter().all(Option::is_some), "{ran:#?}");
+        assert!(order.is_sorted(), "{ran:#?}");
+        rig.factory.apply(&id, Event::Stopped).await.unwrap();
+        for _ in 0..200 {
+            if vm_commands(&rig)
+                .iter()
+                .any(|r| r.ends_with("&& make clean"))
+            {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("cleanup did not run: {:#?}", vm_commands(&rig));
+    });
+}
+
 #[test]
 fn a_failed_provision_fails_the_job_with_its_reason() {
     let engine = Arc::new(engine().answer(
@@ -481,6 +542,9 @@ fn a_failed_provision_fails_the_job_with_its_reason() {
         checks: String::new(),
         max_jobs: None,
         branch_prefix: "bastion/".into(),
+        setup: String::new(),
+        cleanup: String::new(),
+        env: String::new(),
     });
     let machine = Arc::new(FakeMachine::new());
     let factory = Factory::new(
@@ -612,6 +676,9 @@ fn github_rig(pr: &str) -> Rig {
         checks: String::new(),
         max_jobs: None,
         branch_prefix: "bastion/".into(),
+        setup: String::new(),
+        cleanup: String::new(),
+        env: String::new(),
     });
     let machine = Arc::new(FakeMachine::new().run_ok("git", "git@github.com:o/r.git\n"));
     let factory = Factory::new(

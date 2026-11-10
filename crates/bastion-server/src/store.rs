@@ -22,7 +22,7 @@ use crate::workflow_store::{self, WorkflowStore};
 pub type Answer<'a, T> = Pin<Box<dyn Future<Output = Result<T, String>> + Send + 'a>>;
 
 /// A registered repository.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Workspace {
     pub name: String,
     pub path: String,
@@ -33,6 +33,12 @@ pub struct Workspace {
     pub max_jobs: Option<u32>,
     /// What a job's branch starts with, before the job's id.
     pub branch_prefix: String,
+    /// A shell command run, with the network, before a job's turns.
+    pub setup: String,
+    /// A shell command run as a job's VM stops.
+    pub cleanup: String,
+    /// The VMs' environment, as `K=V` pairs split by spaces.
+    pub env: String,
 }
 
 /// What the adapter holds for a job besides the core's state: where it runs.
@@ -99,8 +105,7 @@ pub const STALE: &str = "stale: the job changed since it was read";
 pub trait Store: EvalStore + PeopleStore + SettingsStore + WorkflowStore + Send + Sync {
     fn add_workspace<'a>(&'a self, workspace: &'a Workspace) -> Answer<'a, ()>;
     fn workspaces(&self) -> Answer<'_, Vec<Workspace>>;
-    /// Save a workspace's branch, checks, cap and branch prefix; its name
-    /// finds it.
+    /// Save a workspace's settings; its name finds it, and its path stays.
     fn edit_workspace<'a>(&'a self, workspace: &'a Workspace) -> Answer<'a, ()>;
     fn insert<'a>(&'a self, record: &'a Record) -> Answer<'a, ()>;
     fn load<'a>(&'a self, id: &'a str) -> Answer<'a, Record>;
@@ -262,7 +267,10 @@ const SCHEMA: [&str; 8] = [
         created_at INTEGER NOT NULL,
         checks TEXT NOT NULL DEFAULT '',
         max_jobs INTEGER CHECK (max_jobs > 0),
-        branch_prefix TEXT NOT NULL DEFAULT 'bastion/')",
+        branch_prefix TEXT NOT NULL DEFAULT 'bastion/',
+        setup TEXT NOT NULL DEFAULT '',
+        cleanup TEXT NOT NULL DEFAULT '',
+        env TEXT NOT NULL DEFAULT '')",
     // Discovery's tasks for implement, in order.
     "CREATE TABLE IF NOT EXISTS tasks (
         job TEXT NOT NULL REFERENCES jobs(id),
@@ -358,7 +366,7 @@ const LEGACY_JOB_COLUMNS: &str = "id, workspace, request, stage, state, question
 /// Columns added after a table was first made. Each runs once; on a table
 /// that already has the column it fails, and that failure is expected.
 // They run before the numbered migrations, which need these columns to exist.
-const ALTERS: [&str; 14] = [
+const ALTERS: [&str; 17] = [
     "ALTER TABLE jobs ADD COLUMN pr TEXT",
     "ALTER TABLE jobs ADD COLUMN ci_fixes INTEGER NOT NULL DEFAULT 0 CHECK (ci_fixes >= 0)",
     "ALTER TABLE jobs ADD COLUMN issue TEXT",
@@ -373,6 +381,9 @@ const ALTERS: [&str; 14] = [
     "ALTER TABLE jobs ADD COLUMN approved TEXT",
     "ALTER TABLE workspaces ADD COLUMN max_jobs INTEGER CHECK (max_jobs > 0)",
     "ALTER TABLE workspaces ADD COLUMN branch_prefix TEXT NOT NULL DEFAULT 'bastion/'",
+    "ALTER TABLE workspaces ADD COLUMN setup TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE workspaces ADD COLUMN cleanup TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE workspaces ADD COLUMN env TEXT NOT NULL DEFAULT ''",
 ];
 
 /// Numbered migrations, each run once in order; `PRAGMA user_version` is the
@@ -803,8 +814,8 @@ impl Store for SqlStore {
     fn add_workspace<'a>(&'a self, w: &'a Workspace) -> Answer<'a, ()> {
         Box::pin(async move {
             self.execute(
-                "INSERT INTO workspaces (name, path, branch, checks, max_jobs, branch_prefix, created_at) VALUES (?, ?, ?, ?, ?, ?, unixepoch())",
-                json!([w.name, w.path, w.branch, w.checks, w.max_jobs, w.branch_prefix]),
+                "INSERT INTO workspaces (name, path, branch, checks, max_jobs, branch_prefix, setup, cleanup, env, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())",
+                json!([w.name, w.path, w.branch, w.checks, w.max_jobs, w.branch_prefix, w.setup, w.cleanup, w.env]),
             )
             .await
             .map(|_| ())
@@ -814,7 +825,7 @@ impl Store for SqlStore {
     fn workspaces(&self) -> Answer<'_, Vec<Workspace>> {
         Box::pin(async move {
             self.query(
-                "SELECT name, path, branch, checks, max_jobs, branch_prefix FROM workspaces ORDER BY name",
+                "SELECT name, path, branch, checks, max_jobs, branch_prefix, setup, cleanup, env FROM workspaces ORDER BY name",
                 json!([]),
             )
             .await?
@@ -827,6 +838,9 @@ impl Store for SqlStore {
                     checks: parse(r, "checks")?,
                     max_jobs: parse(r, "max_jobs")?,
                     branch_prefix: parse(r, "branch_prefix")?,
+                    setup: parse(r, "setup")?,
+                    cleanup: parse(r, "cleanup")?,
+                    env: parse(r, "env")?,
                 })
             })
             .collect()
@@ -837,8 +851,8 @@ impl Store for SqlStore {
         Box::pin(async move {
             let found = self
                 .execute(
-                    "UPDATE workspaces SET branch = ?, checks = ?, max_jobs = ?, branch_prefix = ? WHERE name = ? RETURNING name",
-                    json!([w.branch, w.checks, w.max_jobs, w.branch_prefix, w.name]),
+                    "UPDATE workspaces SET branch = ?, checks = ?, max_jobs = ?, branch_prefix = ?, setup = ?, cleanup = ?, env = ? WHERE name = ? RETURNING name",
+                    json!([w.branch, w.checks, w.max_jobs, w.branch_prefix, w.setup, w.cleanup, w.env, w.name]),
                 )
                 .await?;
             match found.is_empty() {
@@ -1526,6 +1540,9 @@ mod live {
             checks: String::new(),
             max_jobs: None,
             branch_prefix: "bastion/".into(),
+            setup: String::new(),
+            cleanup: String::new(),
+            env: String::new(),
         };
         store.add_workspace(&w).await.unwrap();
         let r = Record {
@@ -1605,6 +1622,7 @@ mod live {
             let mut edited = w.remove(0);
             (edited.checks, edited.max_jobs) = ("make test".into(), Some(2));
             edited.branch_prefix = "ian/".into();
+            (edited.setup, edited.env) = ("make deps".into(), "CI=1".into());
             store.edit_workspace(&edited).await.unwrap();
             let back = store.workspaces().await.unwrap();
             let unknown = Workspace {

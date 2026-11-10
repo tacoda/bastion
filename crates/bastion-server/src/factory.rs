@@ -450,14 +450,22 @@ impl Factory {
     }
 
     async fn vm_exec(&self, sandbox: &str, argv: &[&str]) -> Result<Value, String> {
+        self.vm_exec_for(sandbox, argv, 120_000).await
+    }
+
+    /// Run `argv` in the VM for up to `timeout_ms`; an exit other than 0 is
+    /// an error with what it printed.
+    async fn vm_exec_for(
+        &self,
+        sandbox: &str,
+        argv: &[&str],
+        timeout_ms: u64,
+    ) -> Result<Value, String> {
+        let exec = json!({ "sandbox_id": sandbox, "argv": argv, "timeout_ms": timeout_ms });
+        let wait = SLOW_MS.max(timeout_ms + 60_000);
         let out = self
             .engine
-            .call_for(
-                DEFAULT_NAMESPACE,
-                "sandbox::exec",
-                json!({ "sandbox_id": sandbox, "argv": argv, "timeout_ms": 120_000 }),
-                SLOW_MS,
-            )
+            .call_for(DEFAULT_NAMESPACE, "sandbox::exec", exec, wait)
             .await?;
         match out["exit_code"].as_i64() {
             Some(0) | None => Ok(out),
@@ -486,6 +494,15 @@ impl Factory {
         Ok((PathBuf::from(path), branch.to_string()))
     }
 
+    /// The worktree at `path` as a git bundle of `branch`.
+    fn bundle(&self, job: &str, path: &Path, branch: &str) -> Result<Vec<u8>, String> {
+        self.machine.make_dir(&self.scratch)?;
+        let bundle = self.scratch.join(format!("{job}.in.bundle"));
+        let file = bundle.display().to_string();
+        self.git(path, &["bundle", "create", &file, "HEAD", branch])?;
+        self.machine.read_bytes(&bundle)
+    }
+
     fn git(&self, dir: &Path, args: &[&str]) -> Result<String, String> {
         let out = self.machine.run("git", args, Some(dir))?;
         if out.success {
@@ -508,15 +525,21 @@ impl Factory {
                 made
             }
         };
-        let sandbox = self.create_vm().await?;
+        let ws = self.workspace(record).await?;
+        let sandbox = self.create_vm(false, &ws).await?;
         self.set_runtime(&job.id, |r| r.sandbox = Some(sandbox.clone()))
             .await?;
         let (path, branch) = self.worktree_path(&worktree).await?;
-        let bundle = self.bundle(&job.id, &path, &branch)?;
-        self.clone_into(&sandbox, bundle, &branch).await?;
         // What a review or refactor turn diffs against: where the job forked
         // from its workspace's branch, so a revived VM still sees the change.
         let base = self.fork_point(record, &path).await;
+        let bundle = self.bundle(&job.id, &path, &branch)?;
+        let repo = setup::Repo {
+            bundle,
+            branch: &branch,
+            base: &base,
+        };
+        self.fill(&ws, &sandbox, repo).await?;
         self.vm_exec(&sandbox, &["git", "-C", REPO, "tag", "-f", BASE_TAG, &base])
             .await?;
         Ok(())
@@ -711,15 +734,9 @@ impl Factory {
             turn::stop(&*self.engine, session).await;
         }
         self.gate.clear(&record.job.id).await;
+        self.clean_up(record).await;
         if let Some(sandbox) = &record.runtime.sandbox {
-            self.engine
-                .call_for(
-                    DEFAULT_NAMESPACE,
-                    "sandbox::stop",
-                    json!({ "sandbox_id": sandbox, "wait": false }),
-                    60_000,
-                )
-                .await?;
+            self.stop_vm(sandbox).await;
         }
         Ok(())
     }

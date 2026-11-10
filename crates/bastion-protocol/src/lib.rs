@@ -301,6 +301,17 @@ pub struct Workspace {
     /// What a job's branch starts with, before the job's id.
     #[serde(default = "branch_prefix")]
     pub branch_prefix: String,
+    /// A shell command run in the repository, with the network, before a
+    /// job's turns; what it makes there goes to the job's offline VM.
+    #[serde(default)]
+    pub setup: String,
+    /// A shell command run in the repository as the job's VM stops.
+    #[serde(default)]
+    pub cleanup: String,
+    /// The VMs' environment, as `K=V` pairs split by spaces. The agent can
+    /// read it, so it holds no secrets.
+    #[serde(default)]
+    pub env: String,
 }
 
 /// The branch prefix a workspace starts with.

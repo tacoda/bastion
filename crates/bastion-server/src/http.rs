@@ -998,6 +998,9 @@ mod tests {
             checks: s(""),
             max_jobs: Some(2),
             branch_prefix: s("ian/"),
+            setup: s("make deps"),
+            cleanup: s(""),
+            env: s("CI=1"),
         });
         reads::<LoginId>(api::CodexSignInPoll { login_id: s("l") });
         reads::<CopyWorkflow>(api::WorkflowCopy {

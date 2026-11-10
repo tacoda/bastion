@@ -118,6 +118,9 @@ pub struct WorkspaceEdit {
     pub checks: String,
     pub max_jobs: Option<u32>,
     pub branch_prefix: String,
+    pub setup: String,
+    pub cleanup: String,
+    pub env: String,
 }
 
 impl Request for WorkspaceEdit {

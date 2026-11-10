@@ -37,6 +37,9 @@ impl Default for State {
             checks: String::new(),
             max_jobs: None,
             branch_prefix: branch_prefix(),
+            setup: String::new(),
+            cleanup: String::new(),
+            env: String::new(),
         };
         State {
             server,
@@ -62,6 +65,9 @@ pub enum Field {
     Checks,
     MaxJobs,
     BranchPrefix,
+    Setup,
+    Cleanup,
+    Env,
 }
 
 #[derive(Clone, Debug)]
@@ -124,6 +130,9 @@ fn edit(state: &mut State, field: Field, value: String) {
         Field::Checks => w.checks = value,
         Field::MaxJobs => state.max_jobs = value,
         Field::BranchPrefix => state.workspace.branch_prefix = value,
+        Field::Setup => state.workspace.setup = value,
+        Field::Cleanup => state.workspace.cleanup = value,
+        Field::Env => state.workspace.env = value,
     }
 }
 
@@ -175,6 +184,9 @@ fn save(state: &mut State, ctx: &Ctx) -> Task<Message> {
         checks: w.checks,
         max_jobs,
         branch_prefix: w.branch_prefix,
+        setup: w.setup,
+        cleanup: w.cleanup,
+        env: w.env,
     };
     task(ctx, edit, Msg::Done)
 }
@@ -261,7 +273,7 @@ fn servers<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
 }
 
 fn workspaces(state: &State) -> Element<'_, Message> {
-    let lede = "The repositories jobs run against on this Bastion server. Each needs its branch; its checks command runs its tests at the checks step. A job pushes to its branch prefix and its id, and the job limit caps how many of its jobs run at once.";
+    let lede = "The repositories jobs run against on this Bastion server. Checks run the tests at the checks step. A job pushes to its branch prefix and its id, and the job limit caps how many run at once. Setup runs with the network in a VM of its own, before the agent starts; the agent's VM stays offline. The environment is visible to the agent, so keep secrets out of it.";
     let rows = state.workspaces.iter().map(|w| {
         let checks = (!w.checks.is_empty())
             .then(|| text(w.checks.clone()).font(theme::MONO).color(theme::MUTED));
@@ -311,11 +323,17 @@ fn workspace_form(state: &State) -> Column<'_, Message> {
         field("Checks", "pytest -q", &w.checks, Field::Checks),
         field("Branch prefix", "", &w.branch_prefix, Field::BranchPrefix),
         field("Job limit", "none", &state.max_jobs, Field::MaxJobs),
+    ];
+    let vm = row![
+        field("Setup", "pip install -e .", &w.setup, Field::Setup),
+        field("Cleanup", "", &w.cleanup, Field::Cleanup),
+        field("Environment", "CI=1 LANG=C", &w.env, Field::Env),
         small(label, Some(wrap(Msg::SaveWorkspace))),
     ];
     column![
         place.spacing(8).align_y(iced::Bottom),
-        settings.spacing(8).align_y(iced::Bottom)
+        settings.spacing(8).align_y(iced::Bottom),
+        vm.spacing(8).align_y(iced::Bottom)
     ]
     .spacing(8)
 }
@@ -361,6 +379,9 @@ mod tests {
                 checks: "make test".into(),
                 max_jobs: Some(2),
                 branch_prefix: "ian/".into(),
+                setup: "pip install -e .".into(),
+                cleanup: String::new(),
+                env: "CI=1".into(),
             }],
             ..State::default()
         };

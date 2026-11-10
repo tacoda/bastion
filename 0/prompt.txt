@@ -1,0 +1,38 @@
+Continue
+
+---
+
+<task-notification>
+<task-id>b1ek26z5c</task-id>
+<tool-use-id>toolu_01KKVipZmCnJcsRNNmhCncAb</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/b1ek26z5c.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the job to wait or fail" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>by0lyi3bw</task-id>
+<tool-use-id>toolu_014Z9MLiyMXpLL1LCMsmJKdX</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/by0lyi3bw.output</output-file>
+<status>completed</status>
+<summary>Background command "Approve the plan and wait for the build" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Cleaned and re-running
+
+---
+
+running
+
+---
+
+restarted, continue
+
+---
+
+Also getting these logs
+[Image #11]

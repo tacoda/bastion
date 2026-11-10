@@ -129,7 +129,10 @@ pub async fn workspace_edit(
         .find(|w| w.name == name)
         .ok_or_else(|| format!("no workspace named {name}"))?;
     settle(machine, &mut row, edit)?;
-    factory.store().edit_workspace(&row).await
+    factory.store().edit_workspace(&row).await?;
+    // A raised job limit can admit a queued job now.
+    factory.pump();
+    Ok(())
 }
 
 /// Put `s` in `row`, trimmed, once each setting is one a job can use: the

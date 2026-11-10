@@ -24,6 +24,7 @@ Read this repository and draft the settings Bastion needs to work in it.
 Do not change any file. Look at the build files, the CI configuration and the README.
 Reply with one JSON object and nothing after it:
 {\"checks\": \"...\", \"setup\": \"...\", \"cleanup\": \"...\", \"env\": \"...\"}
+Each command runs from the repository's root, so use paths relative to it, never /work/repo.
 - checks: one shell command that runs the tests and the linters, as CI does.
 - setup: one shell command that installs what the checks need, such as dependencies.
   It runs once per job, with the network. Leave it empty if nothing must be installed.

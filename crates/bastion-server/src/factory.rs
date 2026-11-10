@@ -345,7 +345,7 @@ impl Factory {
 
     /// Admit queued jobs while VMs are free.
     // ponytail: two pumps at once can each see a free slot; a per-app lock fixes it if the cap is ever overrun.
-    fn pump(self: &Arc<Self>) {
+    pub fn pump(self: &Arc<Self>) {
         let factory = self.clone();
         crate::rt::spawn(async move {
             let Ok(records) = factory.store.active().await else {

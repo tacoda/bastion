@@ -59,20 +59,29 @@ impl Factory {
         let sandbox = record.runtime.sandbox.clone().ok_or("no VM")?;
         let worktree = record.runtime.worktree.clone().ok_or("no worktree")?;
         let (path, branch) = self.worktree_path(&worktree).await?;
-        self.vm_exec(
-            &sandbox,
-            &[
-                "git",
-                "-C",
-                REPO,
-                "bundle",
-                "create",
-                "/work/out.bundle",
-                &format!("origin/{branch}..{branch}"),
-            ],
-        )
-        .await
-        .map_err(|e| format!("no new commits to land: {e}"))?;
+        let bundled = self
+            .vm_exec(
+                &sandbox,
+                &[
+                    "git",
+                    "-C",
+                    REPO,
+                    "bundle",
+                    "create",
+                    "/work/out.bundle",
+                    &format!("origin/{branch}..{branch}"),
+                ],
+            )
+            .await;
+        match bundled {
+            // A VM revived from the worktree has no commits the worktree
+            // lacks, so there is nothing to bring back.
+            Err(e) if e.contains("Refusing to create empty bundle") => {
+                return Ok((path, self.workspace(record).await?.branch));
+            }
+            Err(e) => return Err(format!("no new commits to land: {e}")),
+            Ok(_) => {}
+        }
         let read = self
             .engine
             .call_for(

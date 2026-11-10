@@ -1032,3 +1032,24 @@ fn a_cap_that_runs_out_after_an_extend_waits_out_the_new_one() {
         assert_eq!((job.state, job.failures), (State::Running, 0));
     });
 }
+
+#[test]
+fn a_revived_vm_with_no_new_commits_lands_what_the_worktree_holds() {
+    let empty = Err("exited 128: \"fatal: Refusing to create empty bundle.\\n\"".into());
+    let rig = rig_on(engine().answer("sandbox::exec", empty));
+    let record = Record {
+        job: Job::new("j1".into(), "w".into(), "r".into(), 1),
+        runtime: Runtime {
+            worktree: Some("wt1".into()),
+            sandbox: Some("vm1".into()),
+            ..Runtime::default()
+        },
+        rev: 1,
+        created_at: 1,
+    };
+    crate::rt::block_on(async {
+        let (path, target) = rig.factory.bring_back(&record).await.unwrap();
+        assert_eq!((path.to_str(), target.as_str()), (Some("/wt"), "main"));
+        assert!(!rig.engine.called("sandbox::fs::read"));
+    });
+}

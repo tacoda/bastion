@@ -828,3 +828,47 @@ fn an_event_reports_the_job_it_moved_and_none_when_it_moved_nothing() {
         assert_eq!((before.stage, before.state), (Stage::Plan, State::NeedsYou));
     });
 }
+
+#[test]
+fn a_turn_on_a_job_whose_vm_went_while_it_waited_gets_a_new_vm_first() {
+    let lost = Err("sandbox not found: vm-gone".into());
+    let rig = rig_on(engine().answer("sandbox::exec", lost));
+    crate::rt::block_on(async {
+        let mut job = Job::new("j1".into(), "w".into(), "r".into(), 1);
+        (job.stage, job.state) = (Stage::Build, State::NeedsYou);
+        let record = Record {
+            job,
+            runtime: Runtime {
+                worktree: Some("wt1".into()),
+                sandbox: Some("vm-gone".into()),
+                ..Runtime::default()
+            },
+            rev: 1,
+            created_at: 1,
+        };
+        rig.store.insert(&record).await.unwrap();
+        let sent_back = Event::Commented {
+            text: "again".into(),
+        };
+        rig.factory.apply("j1", sent_back).await.unwrap();
+        for _ in 0..200 {
+            if rig
+                .engine
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|c| c.1 == "sandbox::create")
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let calls = rig.engine.calls.lock().unwrap();
+        assert!(calls.iter().any(|c| c.1 == "sandbox::create"), "a new VM");
+        assert!(
+            !calls.iter().any(|c| c.1 == "harness::send"),
+            "no turn on the VM that went"
+        );
+    });
+}

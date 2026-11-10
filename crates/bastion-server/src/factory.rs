@@ -588,6 +588,10 @@ impl Factory {
     ) -> Result<(), String> {
         let job = &record.job;
         let sandbox = record.runtime.sandbox.clone().ok_or("no VM")?;
+        // A VM can go while the job waits, as when the stack restarts; a
+        // turn on it would have no shell and no files. "sandbox not found"
+        // here sends the job for a new VM.
+        self.vm_exec(&sandbox, &["true"]).await?;
         let turn = turn::Turn::start(&job.id, stage);
         let session = turn.session.clone();
         self.set_runtime(&job.id, |r| r.session = Some(session.clone()))

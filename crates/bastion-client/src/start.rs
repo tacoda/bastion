@@ -32,10 +32,6 @@ pub fn config_dir() -> PathBuf {
     dir("XDG_CONFIG_HOME", ".config")
 }
 
-fn data_dir() -> PathBuf {
-    dir("XDG_DATA_HOME", ".local/share")
-}
-
 /// The servers this client knows, around the `local` one.
 pub fn servers(local: Server) -> Servers {
     Servers::new(
@@ -51,7 +47,9 @@ pub fn start() -> Result<Server, String> {
     let checkout = Path::new(CHECKOUT)
         .canonicalize()
         .map_err(|e| e.to_string())?;
-    local::start(&checkout, &data_dir().join("server"))
+    // The server's own default, so a server started by hand and one started
+    // by a client share one token, spool and anchor.
+    local::start(&checkout, &checkout.join("data/server"))
 }
 
 /// Every server, `local` first. The added servers' tokens come from the

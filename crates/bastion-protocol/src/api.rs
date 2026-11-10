@@ -156,6 +156,7 @@ impl Request for WorkspaceDraft {
     type Answer = Workspace;
 }
 bare!(Jobs, "GET", "/jobs", Vec<JobSummary>);
+bare!(Costs, "GET", "/costs", CostsView);
 at!(Job, "GET", "/jobs/{id}", id, JobDetail);
 at!(JobApprove, "POST", "/jobs/{id}/approve", id, ());
 at!(JobStop, "POST", "/jobs/{id}/stop", id, ());
@@ -543,6 +544,7 @@ fn factory_requests() -> Vec<(&'static str, &'static str)> {
         WorkspaceEdit,
         WorkspaceDraft,
         Jobs,
+        Costs,
         Job,
         JobSubmit,
         JobApprove,
@@ -622,6 +624,6 @@ mod tests {
         assert_eq!(comment.path(), "/jobs/j1/comment");
         let spaced = WorkflowDelete { id: "a b/c".into() };
         assert_eq!(spaced.path(), "/workflows/a%20b%2Fc");
-        assert_eq!(every().len(), 66);
+        assert_eq!(every().len(), 67);
     }
 }

@@ -2,6 +2,7 @@
 //! call these.
 
 pub mod console;
+pub mod costs;
 pub mod doctor;
 pub mod engine;
 pub mod evals;

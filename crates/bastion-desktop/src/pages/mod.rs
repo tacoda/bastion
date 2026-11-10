@@ -1,6 +1,7 @@
 //! One file per page. A page keeps its state here, reads from
 //! the servers through `Ctx`, and draws with the shared pieces below.
 
+pub mod costs;
 pub mod diff;
 pub mod drawing;
 pub mod edit;
@@ -186,6 +187,7 @@ pub enum Page {
     Govern(govern::State),
     Engine(Box<engine::State>),
     Evals(Box<evals::List>),
+    Costs(Box<costs::State>),
     Eval(Box<evals::One>),
     Settings(Box<settings::State>),
     Workflows(Box<workflows::State>),
@@ -214,6 +216,7 @@ impl Page {
             Route::Audit => Page::Govern(govern::State::new(govern::Which::Audit)),
             Route::Engine => Page::Engine(Box::default()),
             Route::Evals => Page::Evals(Box::default()),
+            Route::Costs => Page::Costs(Box::default()),
             Route::Eval(id) => Page::Eval(Box::new(evals::One::new(id.clone()))),
             Route::Settings => Page::Settings(Box::default()),
             Route::Workflows => Page::Workflows(Box::default()),
@@ -242,6 +245,7 @@ impl Page {
             Page::Govern(s) => govern::load(s, ctx),
             Page::Engine(_) => engine::load(ctx),
             Page::Evals(_) => evals::load_list(ctx),
+            Page::Costs(_) => costs::load(ctx),
             Page::Eval(s) => evals::load_one(s, ctx),
             Page::Settings(_) => settings::load(ctx),
             Page::Workflows(_) => workflows::load(ctx),
@@ -268,6 +272,7 @@ impl Page {
             (Page::Govern(s), Message::Govern(m)) => return govern::update(s, m, ctx),
             (Page::Engine(s), Message::Engine(m)) => return engine::update(s, m, ctx),
             (Page::Evals(s), Message::Evals(m)) => return evals::update_list(s, m, ctx),
+            (Page::Costs(s), Message::Costs(m)) => costs::update(s, m),
             (Page::Eval(s), Message::Evals(m)) => return evals::update_one(s, m, ctx),
             (Page::Settings(s), Message::Settings(m)) => return settings::update(s, m, ctx),
             (Page::Workflows(s), Message::Workflows(m)) => return workflows::update(s, m, ctx),
@@ -284,6 +289,7 @@ impl Page {
             Page::Govern(s) => govern::view(s),
             Page::Engine(s) => engine::view(s),
             Page::Evals(s) => evals::view_list(s),
+            Page::Costs(s) => costs::view(s, ctx),
             Page::Eval(s) => evals::view_one(s, ctx),
             Page::Settings(s) => settings::view(s, ctx),
             Page::Workflows(s) => workflows::view(s),

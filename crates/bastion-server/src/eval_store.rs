@@ -45,6 +45,8 @@ pub struct Turn {
 pub trait EvalStore {
     fn add_turn<'a>(&'a self, turn: &'a Turn) -> Answer<'a, ()>;
     fn turns<'a>(&'a self, job: &'a str) -> Answer<'a, Vec<Turn>>;
+    /// Every turn, newest first, with its job's workspace.
+    fn all_turns(&self) -> Answer<'_, Vec<(Turn, String)>>;
     /// The eval and its arms' rungs, in one write.
     fn add_eval<'a>(
         &'a self,
@@ -171,6 +173,14 @@ impl EvalStore for SqlStore {
         Box::pin(async move {
             let sql = "SELECT session, job, stage, turns, calls, call_errors, cost_micros, ended_at FROM turns WHERE job = ? ORDER BY ended_at";
             self.rows(sql, json!([job]), turn_of).await
+        })
+    }
+
+    fn all_turns(&self) -> Answer<'_, Vec<(Turn, String)>> {
+        Box::pin(async move {
+            let sql = "SELECT t.session, t.job, t.stage, t.turns, t.calls, t.call_errors, t.cost_micros, t.ended_at, j.workspace FROM turns t JOIN jobs j ON j.id = t.job ORDER BY t.ended_at DESC";
+            let with_workspace = |r: &Value| Ok((turn_of(r)?, parse(r, "workspace")?));
+            self.rows(sql, json!([]), with_workspace).await
         })
     }
 
@@ -301,6 +311,19 @@ pub mod fake {
 
         fn turns<'a>(&'a self, job: &'a str) -> Answer<'a, Vec<Turn>> {
             ready(Ok(picked(&self.eval_rows.turns, |t| t.job == job)))
+        }
+
+        fn all_turns(&self) -> Answer<'_, Vec<(Turn, String)>> {
+            let jobs = self.jobs.lock().unwrap();
+            let mut all: Vec<(Turn, String)> = picked(&self.eval_rows.turns, |_| true)
+                .into_iter()
+                .filter_map(|t| {
+                    let ws = jobs.get(&t.job)?.job.workspace.clone();
+                    Some((t, ws))
+                })
+                .collect();
+            all.sort_by_key(|(t, _)| std::cmp::Reverse(t.ended_at));
+            ready(Ok(all))
         }
 
         fn add_eval<'a>(

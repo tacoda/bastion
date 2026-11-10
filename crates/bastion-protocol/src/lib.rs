@@ -331,6 +331,44 @@ pub fn branch_prefix() -> String {
     "bastion/".into()
 }
 
+/// One turn as the Costs page lists it: its job, its step and what it used.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionView {
+    pub session: String,
+    pub job: String,
+    pub workspace: String,
+    pub stage: String,
+    pub turns: u32,
+    pub calls: u32,
+    pub call_errors: u32,
+    /// Millionths of a US dollar.
+    pub cost_micros: u64,
+    pub ended_at: u64,
+}
+
+/// What some turns used in all, under one key such as a workspace or a day.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Tally {
+    pub key: String,
+    pub sessions: u32,
+    pub turns: u32,
+    pub calls: u32,
+    pub call_errors: u32,
+    pub cost_micros: u64,
+}
+
+/// What the turns on a server cost: in all, by workspace, by step and by
+/// day, and the newest turns themselves.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CostsView {
+    pub total: Tally,
+    pub by_workspace: Vec<Tally>,
+    pub by_stage: Vec<Tally>,
+    /// Newest day first, as `YYYY-MM-DD` in UTC.
+    pub by_day: Vec<Tally>,
+    pub sessions: Vec<SessionView>,
+}
+
 /// One job as the floor and the inbox show it.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JobSummary {

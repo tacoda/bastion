@@ -12,19 +12,21 @@ pub enum Route {
     Audit,
     Evals,
     Eval(String),
+    Costs,
     Engine,
     Workflows,
     Settings,
 }
 
 /// The sidebar's pages. A job and New request belong to Jobs.
-pub const PAGES: [(Route, &str, &str); 8] = [
+pub const PAGES: [(Route, &str, &str); 9] = [
     (Route::Jobs, "Jobs", icons::JOBS),
     (Route::Workflows, "Workflows", icons::WORKFLOWS),
     (Route::Constraints, "Constraints", icons::CONSTRAINTS),
     (Route::Capabilities, "Capabilities", icons::CAPABILITIES),
     (Route::Audit, "Audit Log", icons::AUDIT),
     (Route::Evals, "Evals", icons::EVALS),
+    (Route::Costs, "Costs", icons::COSTS),
     (Route::Engine, "Engine", icons::ENGINE),
     (Route::Settings, "Settings", icons::SETTINGS),
 ];

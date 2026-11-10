@@ -151,6 +151,7 @@ fn factory_routes() -> Router<App> {
         .route("/workspaces/draft", post(workspace_draft))
         .route("/workspaces/{name}", put(workspace_edit))
         .route("/jobs", get(jobs).post(job_submit))
+        .route("/costs", get(costs))
         .route("/jobs/{id}", get(job))
         .route("/jobs/{id}/approve", post(job_approve))
         .route("/jobs/{id}/comment", post(job_comment))
@@ -384,6 +385,10 @@ async fn workspace_edit(
 ) -> Response {
     let s = &app.server;
     answer(api::factory::workspace_edit(&s.factory, &s.machine, &name, edit).await)
+}
+
+async fn costs(State(app): State<App>) -> Response {
+    answer(api::costs::costs(&app.server.factory).await)
 }
 
 async fn jobs(

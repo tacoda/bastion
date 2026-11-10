@@ -40,6 +40,7 @@ pub enum Message {
     Govern(govern::Msg),
     Engine(engine::Msg),
     Evals(evals::Msg),
+    Costs(pages::costs::Msg),
     Settings(pages::settings::Msg),
     Workflows(pages::workflows::Msg),
     /// Read the servers again, after Settings added or removed one.
@@ -147,6 +148,7 @@ impl App {
             | Message::Govern(_)
             | Message::Engine(_)
             | Message::Evals(_)
+            | Message::Costs(_)
             | Message::Settings(_)
             | Message::Workflows(_)) => {
                 let ctx = self.ctx();

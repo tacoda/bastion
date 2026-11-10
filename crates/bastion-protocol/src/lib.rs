@@ -346,6 +346,26 @@ pub struct SessionView {
     pub ended_at: u64,
 }
 
+/// One step of a turn, in order: what the agent was asked, said or thought,
+/// a call it made with the gate's verdict on it, or what a call returned.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TurnStep {
+    /// `asked`, `said`, `thought`, `call` or `result`.
+    pub kind: String,
+    pub text: String,
+    /// The gate's decision on a call, such as `continue` or `deny (...)`;
+    /// empty for any other step, or a call the gate has no entry for.
+    pub verdict: String,
+}
+
+/// One turn, step by step.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionDetail {
+    pub session: String,
+    pub job: String,
+    pub steps: Vec<TurnStep>,
+}
+
 /// What some turns used in all, under one key such as a workspace or a day.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Tally {

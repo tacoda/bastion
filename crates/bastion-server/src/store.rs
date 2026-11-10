@@ -140,6 +140,8 @@ pub trait Store: EvalStore + PeopleStore + SettingsStore + WorkflowStore + Send 
     fn claim<'a>(&'a self, id: &'a str) -> Answer<'a, bool>;
     /// The whole audit chain, oldest first.
     fn audit(&self) -> Answer<'_, Vec<Entry>>;
+    /// The gate's entries for one job, oldest first.
+    fn gate_entries<'a>(&'a self, job: &'a str) -> Answer<'a, Vec<Entry>>;
     /// The newest entry, the one the next appends after.
     fn audit_tail(&self) -> Answer<'_, Option<Entry>>;
     /// Add the next entry. A second entry with the same `seq` is refused, so
@@ -1065,6 +1067,13 @@ impl Store for SqlStore {
         })
     }
 
+    fn gate_entries<'a>(&'a self, job: &'a str) -> Answer<'a, Vec<Entry>> {
+        Box::pin(async move {
+            let sql = "SELECT seq, at, kind, subject, detail, prev, hash FROM audit_log WHERE kind = 'gate' AND subject = ? ORDER BY seq";
+            self.rows(sql, json!([job]), entry).await
+        })
+    }
+
     fn audit_tail(&self) -> Answer<'_, Option<Entry>> {
         Box::pin(async move {
             let sql = "SELECT seq, at, kind, subject, detail, prev, hash FROM audit_log ORDER BY seq DESC LIMIT 1";
@@ -1253,6 +1262,15 @@ pub mod fake {
         fn audit(&self) -> Answer<'_, Vec<Entry>> {
             let all = self.audit.lock().unwrap().clone();
             Box::pin(async move { Ok(all) })
+        }
+
+        fn gate_entries<'a>(&'a self, job: &'a str) -> Answer<'a, Vec<Entry>> {
+            let all = self.audit.lock().unwrap().clone();
+            let of_job = all
+                .into_iter()
+                .filter(|e| e.record.kind == "gate" && e.record.subject == job)
+                .collect();
+            Box::pin(async move { Ok(of_job) })
         }
 
         fn audit_tail(&self) -> Answer<'_, Option<Entry>> {

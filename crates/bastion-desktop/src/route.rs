@@ -13,6 +13,7 @@ pub enum Route {
     Evals,
     Eval(String),
     Costs,
+    Session(String),
     Engine,
     Workflows,
     Settings,
@@ -37,6 +38,7 @@ impl Route {
         match self {
             Route::NewRequest | Route::Job(_) => Route::Jobs,
             Route::Eval(_) => Route::Evals,
+            Route::Session(_) => Route::Costs,
             other => other.clone(),
         }
     }

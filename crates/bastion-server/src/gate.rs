@@ -65,7 +65,7 @@ fn approved_test(file: &str) -> Constraint {
 /// What the rules read from a call: its command line in any of the shapes
 /// `sandbox::exec` takes (`argv`, or `cmd` with `args`), else its path, and
 /// what a write writes.
-fn call_of(call: &Value) -> Call {
+pub(crate) fn call_of(call: &Value) -> Call {
     let arguments = &call["arguments"];
     let words = |v: &Value| -> Vec<String> {
         v.as_array()

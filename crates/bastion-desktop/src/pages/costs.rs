@@ -8,6 +8,7 @@ use iced::{Element, Fill, Task};
 
 use super::{Ctx, ago, scrolled, section};
 use crate::app::Message;
+use crate::route::Route;
 use crate::theme;
 
 #[derive(Default)]
@@ -68,8 +69,12 @@ fn session_row<'a>(s: &SessionView, ctx: &Ctx) -> Element<'a, Message> {
     let job = button(text(s.job.clone()).size(13).font(theme::MONO))
         .style(theme::link)
         .on_press(open);
+    let steps = button(text("steps").size(13))
+        .style(theme::link)
+        .on_press(Message::Go(Route::Session(s.session.clone())));
     row![
         job,
+        steps,
         text(format!("{} · {}", s.workspace, s.stage.replace('_', " "))).width(Fill),
         text(dollars(s.cost_micros)).size(13).font(theme::MONO),
         text(format!("{} calls, {} failed", s.calls, s.call_errors)).size(13),

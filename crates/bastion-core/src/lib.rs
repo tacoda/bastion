@@ -321,6 +321,8 @@ pub enum Event {
     /// The job's VM is gone, as after its stack restarted. Its commits are
     /// in the worktree, so a new VM picks the job up where it was (revive).
     VmLost,
+    /// A person asked to run a failed job, or a stuck step, again.
+    Retried,
 }
 
 /// Whether a person oversees a step (D33). Stored `ask` and `hold` read as
@@ -544,6 +546,7 @@ pub fn step(job: &Job, event: &Event, at: u64, dials: &Dials) -> (Job, Vec<Effec
     let mut next = job.clone();
     next.updated_at = at;
     let effects = match (job.state, event) {
+        (State::Failed, Event::Retried) => requeue(&mut next),
         (state, _) if state.finished() => return (job.clone(), Vec::new()),
         (_, Event::Stopped) => {
             next.state = State::Stopped;
@@ -562,6 +565,10 @@ pub fn step(job: &Job, event: &Event, at: u64, dials: &Dials) -> (Job, Vec<Effec
         (State::Queued, Event::Abandoned { error }) => fail(&mut next, error),
         (State::NeedsYou, event) if decides(&next, event) => approved(&mut next, dials),
         (State::NeedsYou, Event::Commented { text }) => commented(&mut next, text, dials),
+        (State::NeedsYou, Event::Retried) if retries(job) => {
+            next.error = None;
+            start(&mut next, dials)
+        }
         (State::Running, Event::VmLost) => revive(&mut next),
         (State::Running, event) if kept(job, event).is_some() => {
             let Some(effects) = after_step(&mut next, event, dials) else {
@@ -622,6 +629,25 @@ fn revive(job: &mut Job) -> Vec<Effect> {
     }
     job.state = State::Provisioning;
     vec![Effect::Provision]
+}
+
+/// A failed job goes back to the queue at the step it failed at. Its
+/// worktree kept its commits, so a new VM picks the work up there.
+fn requeue(job: &mut Job) -> Vec<Effect> {
+    job.state = State::Queued;
+    job.error = None;
+    job.failures = 0;
+    Vec::new()
+}
+
+/// Whether a person may run the step the job waits on again: it failed or
+/// is stuck. A land or merge retries on approve instead.
+fn retries(job: &Job) -> bool {
+    job.state == State::Failed
+        || (job.state == State::NeedsYou
+            && job.error.is_some()
+            && job.question.is_none()
+            && !matches!(job.stage, Stage::Land | Stage::Merge))
 }
 
 /// Enter the current stage. A step that acts outside the job waits first.
@@ -1114,6 +1140,8 @@ pub enum Action {
     Comment,
     /// Answer the agent's question.
     Answer,
+    /// Run the failed job, or the stuck step, again.
+    Retry,
     Stop,
 }
 
@@ -1130,6 +1158,9 @@ pub fn actions(job: &Job) -> Vec<Action> {
                 allowed.push(Action::Comment);
             }
         }
+    }
+    if retries(job) {
+        allowed.push(Action::Retry);
     }
     if !job.state.finished() {
         allowed.push(Action::Stop);

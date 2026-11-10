@@ -13,6 +13,7 @@ fn decision(job: &Job, event: &Event, by: &str) -> String {
     let verdict = match (event, &job.question) {
         (Event::Commented { text }, Some(_)) => format!("answered by {by}: {text}"),
         (Event::Commented { text }, None) => format!("sent back by {by}: {text}"),
+        (Event::Retried, _) => format!("retried by {by}"),
         _ => format!("approved by {by}"),
     };
     format!("{}: {verdict}", name(job.stage))
@@ -64,6 +65,10 @@ mod tests {
         assert_eq!(
             decision(&job, &Event::Approved, "ada"),
             "code_review: approved by ada"
+        );
+        assert_eq!(
+            decision(&job, &Event::Retried, "ada"),
+            "code_review: retried by ada"
         );
         job.question = Some("Which port?".into());
         assert_eq!(

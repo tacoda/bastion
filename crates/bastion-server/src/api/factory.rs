@@ -216,6 +216,11 @@ pub async fn job_approve(cell: &FactoryCell, id: String, by: String) -> Result<(
     factory(cell)?.decide(&id, Event::Approved, &by).await
 }
 
+/// Run a failed job, or its stuck step, again.
+pub async fn job_retry(cell: &FactoryCell, id: String, by: String) -> Result<(), String> {
+    factory(cell)?.decide(&id, Event::Retried, &by).await
+}
+
 /// A note from `by`: an answer to the job's question, or the step sent back.
 pub async fn job_comment(
     cell: &FactoryCell,

@@ -111,6 +111,7 @@ bare!(Jobs, "GET", "/jobs", Vec<JobSummary>);
 at!(Job, "GET", "/jobs/{id}", id, JobDetail);
 at!(JobApprove, "POST", "/jobs/{id}/approve", id, ());
 at!(JobStop, "POST", "/jobs/{id}/stop", id, ());
+at!(JobRetry, "POST", "/jobs/{id}/retry", id, ());
 
 /// Submit a request: a new job. Answers with its id.
 #[derive(Clone, Debug, Serialize)]
@@ -465,11 +466,19 @@ impl Request for WorkflowSave {
 
 at!(WorkflowDelete, "DELETE", "/workflows/{id}", id, ());
 
+macro_rules! all {
+    ($($t:ty),* $(,)?) => { vec![$((<$t>::METHOD, <$t>::ROUTE)),*] };
+}
+
 /// The method and route of every request, for the server's router test.
 pub fn every() -> Vec<(&'static str, &'static str)> {
-    macro_rules! all {
-        ($($t:ty),* $(,)?) => { vec![$((<$t>::METHOD, <$t>::ROUTE)),*] };
-    }
+    let mut every = factory_requests();
+    every.extend(admin_requests());
+    every
+}
+
+/// The requests on the stack, workspaces, jobs, and how they are governed.
+fn factory_requests() -> Vec<(&'static str, &'static str)> {
     all![
         EngineStatus,
         Doctor,
@@ -488,6 +497,7 @@ pub fn every() -> Vec<(&'static str, &'static str)> {
         JobApprove,
         JobComment,
         JobStop,
+        JobRetry,
         Dials,
         DialsSet,
         HeldAllow,
@@ -501,6 +511,12 @@ pub fn every() -> Vec<(&'static str, &'static str)> {
         Charters,
         Audit,
         AuditExport,
+    ]
+}
+
+/// The requests on evals, settings, people, providers, hosts and workflows.
+fn admin_requests() -> Vec<(&'static str, &'static str)> {
+    all![
         Evals,
         EvalCreate,
         Eval,
@@ -554,6 +570,6 @@ mod tests {
         assert_eq!(comment.path(), "/jobs/j1/comment");
         let spaced = WorkflowDelete { id: "a b/c".into() };
         assert_eq!(spaced.path(), "/workflows/a%20b%2Fc");
-        assert_eq!(every().len(), 62);
+        assert_eq!(every().len(), 63);
     }
 }

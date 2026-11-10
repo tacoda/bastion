@@ -73,6 +73,7 @@ pub enum Msg {
 pub enum Action {
     Approve,
     Comment,
+    Retry,
     Stop,
 }
 
@@ -110,6 +111,7 @@ fn act(state: &State, ctx: &Ctx, action: Action) -> Task<Message> {
     let id = state.id.clone();
     match action {
         Action::Approve => ask(ctx, api::JobApprove { id }),
+        Action::Retry => ask(ctx, api::JobRetry { id }),
         Action::Stop => ask(ctx, api::JobStop { id }),
         Action::Comment => {
             let text = state.note.text().trim().to_string();
@@ -295,18 +297,25 @@ fn header<'a>(d: &JobDetail, server: &str) -> Element<'a, Message> {
 }
 
 /// Why the job failed, or why its land did.
-fn failure<'a>(d: &JobDetail) -> Option<Element<'a, Message>> {
+fn failure<'a>(state: &State, d: &JobDetail) -> Option<Element<'a, Message>> {
     let e = d.job.error.clone()?;
-    let title = if d.job.state == "failed" {
-        "This job failed"
-    } else {
-        "The land failed; the VM and its commits are kept"
+    let title = match (d.job.state.as_str(), d.job.stage.as_str()) {
+        ("failed", _) => "This job failed",
+        (_, "land" | "merge") => "The land failed; the VM and its commits are kept",
+        _ => "This step is stuck",
     };
-    let body = column![
+    let mut body = column![
         text(title).size(13).font(theme::BOLD).color(theme::BAD),
         block(e)
     ]
     .spacing(8);
+    if state.allows("retry") {
+        let retry = button(text("Retry").size(13))
+            .padding([8, 12])
+            .style(theme::secondary)
+            .on_press(Message::Job(Msg::Act(Action::Retry)));
+        body = body.push(retry);
+    }
     Some(
         container(body)
             .padding(16)
@@ -592,7 +601,7 @@ fn top(state: &State) -> Element<'_, Message> {
 pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let mut page = column![top(state)].spacing(16);
     if let Some(d) = &state.detail {
-        page = page.push(header(d, &ctx.current)).extend(failure(d));
+        page = page.push(header(d, &ctx.current)).extend(failure(state, d));
         if state.allows("approve") || state.allows("answer") {
             page = page.push(waiting(state, d));
         }

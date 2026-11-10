@@ -611,3 +611,51 @@ fn a_part_whose_earlier_part_failed_is_abandoned() {
     );
     assert_eq!(abandoned.state, State::Failed);
 }
+
+#[test]
+fn a_failed_job_retried_goes_back_to_the_queue_at_its_step() {
+    let (j, _) = run(&[Event::Admitted, Event::Provisioned, failed(), failed()]);
+    assert_eq!(actions(&j), vec![Action::Retry]);
+    let (again, effects) = step(&j, &Event::Retried, AT + 9, &Dials::default());
+    assert_eq!(
+        (again.state, again.stage, again.error, again.failures),
+        (State::Queued, Stage::Plan, None, 0)
+    );
+    assert!(effects.is_empty(), "the queue admits it when a VM is free");
+    let landed = Job {
+        state: State::Landed,
+        ..j
+    };
+    assert!(
+        step(&landed, &Event::Retried, AT, &Dials::default())
+            .1
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_stuck_step_retried_runs_again() {
+    let mut j = job();
+    (j.stage, j.state) = (Stage::Checks, State::Running);
+    let stuck = Event::StepStuck {
+        detail: "flaky".into(),
+    };
+    let (j, _) = step(&j, &stuck, AT, &Dials::default());
+    assert_eq!(
+        actions(&j),
+        vec![
+            Action::Approve,
+            Action::Comment,
+            Action::Retry,
+            Action::Stop
+        ]
+    );
+    let (j, effects) = step(&j, &Event::Retried, AT + 1, &Dials::default());
+    assert_eq!((j.state, j.error), (State::Running, None));
+    assert_eq!(
+        effects,
+        vec![Effect::RunStep {
+            stage: Stage::Checks
+        }]
+    );
+}

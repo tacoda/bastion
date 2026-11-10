@@ -153,6 +153,7 @@ fn factory_routes() -> Router<App> {
         .route("/jobs/{id}/approve", post(job_approve))
         .route("/jobs/{id}/comment", post(job_comment))
         .route("/jobs/{id}/stop", post(job_stop))
+        .route("/jobs/{id}/retry", post(job_retry))
         .route("/dials", get(dials))
         .route("/dials/{stage}", put(dials_set))
         .route("/evals", get(evals).post(eval_create))
@@ -447,6 +448,16 @@ async fn job_stop(
 ) -> Response {
     let stop = api::factory::job_stop(&app.server.factory, id.clone());
     on_job(&app, &person, &id, async { answer(stop.await) }).await
+}
+
+async fn job_retry(
+    State(app): State<App>,
+    Extension(person): Extension<Person>,
+    Path(id): Path<String>,
+) -> Response {
+    let by = person.name.clone();
+    let retry = api::factory::job_retry(&app.server.factory, id.clone(), by);
+    on_job(&app, &person, &id, async { answer(retry.await) }).await
 }
 
 async fn dials(State(app): State<App>) -> Response {

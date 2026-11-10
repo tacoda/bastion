@@ -290,8 +290,9 @@ fn with_the_local_forge_ship_brings_the_commits_back_and_prove_starts() {
     });
 }
 
-#[test]
-fn a_lost_vm_gets_a_new_one_on_the_same_worktree_and_one_that_keeps_dying_fails_the_job() {
+/// A rig whose every VM dies at the first turn, with one job that keeps
+/// its worktree.
+fn dying_vms() -> Rig {
     let engine =
         Arc::new(engine().answer("approval::set-mode", Err("sandbox not found: vm1".into())));
     let store = Arc::new(FakeStore::default());
@@ -309,34 +310,56 @@ fn a_lost_vm_gets_a_new_one_on_the_same_worktree_and_one_that_keeps_dying_fails_
         Arc::new(|_| {}),
         "/scratch".into(),
     );
-    let rig = Rig {
+    Rig {
         factory,
         engine,
         store,
         machine,
-    };
-    crate::rt::block_on(async {
-        let mut job = Job::new("j1".into(), "w".into(), "r".into(), 1).on(Pipeline::Full);
-        (job.stage, job.state) = (Stage::Implement, State::Provisioning);
-        let record = Record {
-            job,
-            runtime: Runtime {
-                worktree: Some("wt-kept".into()),
-                sandbox: Some("vm1".into()),
-                ..Runtime::default()
-            },
-            rev: 1,
-            created_at: 1,
-        };
-        rig.store.insert(&record).await.unwrap();
-        rig.factory.apply("j1", Event::Provisioned).await.unwrap();
-        for _ in 0..200 {
-            if rig.store.load("j1").await.unwrap().job.state == State::Failed {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
+    }
+}
+
+/// How many VMs the rig has made.
+fn vms_made(rig: &Rig) -> usize {
+    let calls = rig.engine.calls.lock().unwrap();
+    calls.iter().filter(|c| c.1 == "sandbox::create").count()
+}
+
+/// Wait until the job fails, after the rig has made at least `vms` VMs.
+async fn failed_after(rig: &Rig, vms: usize) -> Record {
+    for _ in 0..200 {
         let r = rig.store.load("j1").await.unwrap();
+        if vms_made(rig) >= vms && r.job.state == State::Failed {
+            return r;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    rig.store.load("j1").await.unwrap()
+}
+
+/// Start the job on a VM that dies, and wait until it fails.
+async fn lose_vms(rig: &Rig) -> Record {
+    let mut job = Job::new("j1".into(), "w".into(), "r".into(), 1).on(Pipeline::Full);
+    (job.stage, job.state) = (Stage::Implement, State::Provisioning);
+    let record = Record {
+        job,
+        runtime: Runtime {
+            worktree: Some("wt-kept".into()),
+            sandbox: Some("vm1".into()),
+            ..Runtime::default()
+        },
+        rev: 1,
+        created_at: 1,
+    };
+    rig.store.insert(&record).await.unwrap();
+    rig.factory.apply("j1", Event::Provisioned).await.unwrap();
+    failed_after(rig, 0).await
+}
+
+#[test]
+fn a_lost_vm_gets_a_new_one_on_the_same_worktree_and_one_that_keeps_dying_fails_the_job() {
+    let rig = dying_vms();
+    crate::rt::block_on(async {
+        let r = lose_vms(&rig).await;
         assert_eq!(r.job.state, State::Failed, "{:?}", r.job.error);
         assert_eq!(r.runtime.worktree.as_deref(), Some("wt-kept"));
         let calls = rig.engine.calls.lock().unwrap();
@@ -344,12 +367,28 @@ fn a_lost_vm_gets_a_new_one_on_the_same_worktree_and_one_that_keeps_dying_fails_
             !calls.iter().any(|c| c.1 == "worktree::create"),
             "the worktree is kept"
         );
-        let vms = calls.iter().filter(|c| c.1 == "sandbox::create").count();
+        drop(calls);
         assert_eq!(
-            vms,
+            vms_made(&rig),
             bastion_core::MAX_REVIVES as usize,
             "a new VM per revive"
         );
+    });
+}
+
+#[test]
+fn a_failed_job_retried_gets_a_new_vm_on_the_same_worktree() {
+    let rig = dying_vms();
+    crate::rt::block_on(async {
+        lose_vms(&rig).await;
+        let before = vms_made(&rig);
+        rig.factory
+            .decide("j1", Event::Retried, "ada")
+            .await
+            .unwrap();
+        let r = failed_after(&rig, before + 1).await;
+        assert_eq!(vms_made(&rig), 2 * before + 1, "a new VM, then its revives");
+        assert_eq!(r.runtime.worktree.as_deref(), Some("wt-kept"));
     });
 }
 

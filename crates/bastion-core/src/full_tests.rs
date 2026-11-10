@@ -492,10 +492,20 @@ fn a_list_reads_only_under_its_header() {
 fn prove_goes_on_on_yes_waits_on_partial_and_sends_no_back_once() {
     let (j, effects) = go(
         &at(Stage::Prove, State::Running),
-        &reply("tests pass\nVERDICT: yes"),
+        &reply("```\n7 passed\n```\nVERDICT: yes"),
     );
     assert_eq!(j.stage, Stage::Comprehend);
     assert!(starts_turn(&effects, Stage::Comprehend));
+
+    let (j, _) = go(
+        &at(Stage::Prove, State::Running),
+        &reply("tests pass\nVERDICT: yes"),
+    );
+    assert_eq!(
+        (j.stage, j.state),
+        (Stage::Prove, State::NeedsYou),
+        "a yes that quotes nothing is partial"
+    );
 
     let (j, _) = go(
         &at(Stage::Prove, State::Running),

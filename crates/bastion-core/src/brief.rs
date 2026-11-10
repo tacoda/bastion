@@ -100,7 +100,8 @@ Leave FINDINGS empty when you find nothing worth fixing.";
 const PROVE: &str = "\
 Prove that the change in the repository in /work/repo meets the request and
 its criteria. Do not change any file. Run the tests and anything else that shows
-it works, and quote what they print. Then end your reply with one line:
+it works, and quote what they print in a fenced code block. A yes with
+nothing quoted counts as partial. Then end your reply with one line:
 VERDICT: yes, VERDICT: partial, or VERDICT: no.";
 
 const COMPREHEND: &str = "\

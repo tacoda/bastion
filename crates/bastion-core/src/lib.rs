@@ -1039,13 +1039,24 @@ fn proved(job: &mut Job, report: &str, dials: &Dials) -> Vec<Effect> {
         .find_map(|l| l.trim().strip_prefix("VERDICT:"))
         .map(|v| v.trim().to_ascii_lowercase());
     match verdict.as_deref() {
-        Some("yes") => after_turn(job, dials),
+        Some("yes") if cites_evidence(report) => after_turn(job, dials),
+        Some("yes") => stuck(
+            job,
+            "The proof says yes but quotes no output. Read it, then approve to go on, or send it back with a note.",
+        ),
         Some("no") => step_failed(job, report, dials),
         _ => stuck(
             job,
             "The proof is partial. Read it, then approve to go on, or send it back with a note.",
         ),
     }
+}
+
+/// Whether a proof quotes output: a fenced code block or a quoted line.
+fn cites_evidence(report: &str) -> bool {
+    let fences = report.lines().filter(|l| l.trim_start().starts_with("```"));
+    let quoted = report.lines().any(|l| l.trim_start().starts_with("> "));
+    fences.count() >= 2 || quoted
 }
 
 /// Keep discovery's tasks for implement. Its questions wait with it, and

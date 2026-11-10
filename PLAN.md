@@ -189,6 +189,8 @@ record, stalls a job, or runs a call twice.
   `git pull`), on every client call and on the event stream (a half-open
   connection reads as down), and on the openai-compat worker's requests. The
   worker retries its state reads at start. TLS handshakes run concurrently.
+  A turn whose provider has no key fails at its start, naming the provider,
+  instead of waiting out its cap with no reply.
 - **R6, reads stay small.** The admission pump reads only active jobs. Page
   `GET /jobs` and `GET /audit`. A row that fails to parse is logged and skipped, not fatal to
   the list.

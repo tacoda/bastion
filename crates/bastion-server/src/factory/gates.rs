@@ -77,7 +77,7 @@ impl Factory {
 
     /// Run `command` by a shell in the VM's repository. An error is what it
     /// printed, stdout and stderr, when it exits other than 0.
-    async fn run_in_repo(&self, vm: &str, command: &str) -> Result<(), String> {
+    pub(super) async fn run_in_repo(&self, vm: &str, command: &str) -> Result<(), String> {
         let line = format!("cd {REPO} && {command}");
         let exec = json!({ "sandbox_id": vm, "argv": ["sh", "-c", line], "timeout_ms": GATE_MS });
         let out = self

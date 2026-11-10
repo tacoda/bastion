@@ -692,7 +692,13 @@ fn github_rig(pr: &str) -> Rig {
         gates: String::new(),
         autofix: String::new(),
     });
-    let machine = Arc::new(FakeMachine::new().run_ok("git", "git@github.com:o/r.git\n"));
+    // The repository has a verify.yaml, so the push waits on a verdict;
+    // the verify package is already on the host.
+    let machine = Arc::new(
+        FakeMachine::new()
+            .run_ok("git", "git@github.com:o/r.git\n")
+            .file("/s/opengantry-verify-4.0.2/kit.tgz", "kit"),
+    );
     let factory = Factory::new(
         engine.clone() as Arc<dyn Engine>,
         store.clone() as Arc<dyn Store>,
@@ -742,6 +748,12 @@ fn with_github_as_the_forge_a_reviewed_change_goes_up_as_a_pull_request_and_merg
             "the pull request is up and CI runs"
         );
         assert!(!rig.engine.called("worktree::land"), "nothing merges here");
+        let calls = rig.engine.calls.lock().unwrap().clone();
+        let judge = calls
+            .iter()
+            .find(|c| c.1 == "sandbox::create" && c.2["image"] == "node")
+            .expect("the verdict ran in a VM of its own");
+        assert_eq!(judge.2["network"], false, "the verdict's VM is offline");
         let created = rig
             .engine
             .calls

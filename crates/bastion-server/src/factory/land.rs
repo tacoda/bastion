@@ -16,11 +16,12 @@ use crate::settings_store;
 use crate::store::{Record, Workspace};
 
 impl Factory {
-    /// The workspace's gates pass, the VM's commits come back to the
-    /// worktree, then `worktree::land` merges them, and its trigger reports
+    /// The workspace's gates pass, opengantry's verdict allows the change,
+    /// the VM's commits come back to the worktree, then `worktree::land` merges them, and its trigger reports
     /// the outcome.
     pub(super) async fn land(self: &Arc<Self>, record: &Record) -> Result<(), String> {
         self.gate_change(record).await?;
+        self.verdict(record).await?;
         let (path, target) = self.bring_back(record).await?;
         let worktree = record.runtime.worktree.clone().ok_or("no worktree")?;
         match self.forge_for(&path).await? {
@@ -36,6 +37,7 @@ impl Factory {
     /// pull request, or, with the local forge, go on with them in the worktree.
     pub(super) async fn ship(&self, record: &Record) -> Result<Event, String> {
         self.gate_change(record).await?;
+        self.verdict(record).await?;
         let (path, target) = self.bring_back(record).await?;
         Ok(match self.forge_for(&path).await? {
             Forge::Github => Event::PrOpened {

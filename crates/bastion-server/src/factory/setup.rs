@@ -15,7 +15,7 @@ const SETUP_MS: u64 = 20 * 60_000;
 /// How long any other command may run.
 const EXEC_MS: u64 = 120_000;
 /// The repository as a tarball, in a VM.
-const TREE: &str = "/work/repo.tgz";
+pub(super) const TREE: &str = "/work/repo.tgz";
 
 impl Workspace {
     /// The environment as a VM takes it, one `K=V` per entry.
@@ -35,9 +35,19 @@ impl Factory {
     /// A VM with the workspace's environment, and the network only when
     /// `network`. Returns its id.
     pub(super) async fn create_vm(&self, network: bool, ws: &Workspace) -> Result<String, String> {
+        self.create_vm_from("python", network, ws).await
+    }
+
+    /// A VM from `image`, as [`Factory::create_vm`] makes one.
+    pub(super) async fn create_vm_from(
+        &self,
+        image: &str,
+        network: bool,
+        ws: &Workspace,
+    ) -> Result<String, String> {
         let env = ws.env_vars()?;
         let vm =
-            json!({ "image": "python", "network": network, "env": env, "idle_timeout_secs": 3600 });
+            json!({ "image": image, "network": network, "env": env, "idle_timeout_secs": 3600 });
         let made = self
             .engine
             .call_for(DEFAULT_NAMESPACE, "sandbox::create", vm, SLOW_MS)
@@ -95,7 +105,7 @@ impl Factory {
     }
 
     /// Write `bytes` to `path` in the VM, streamed, so size has no limit.
-    async fn put(&self, vm: &str, path: &str, bytes: Vec<u8>) -> Result<(), String> {
+    pub(super) async fn put(&self, vm: &str, path: &str, bytes: Vec<u8>) -> Result<(), String> {
         let content = self.engine.upload(bytes).await?;
         let file = json!({ "sandbox_id": vm, "path": path, "content": content, "parents": true });
         let wrote = self
@@ -135,6 +145,11 @@ impl Factory {
         let made = "git ls-files --others --directory --exclude-standard";
         self.sh(vm, &format!("{made} >> .git/info/exclude"), EXEC_MS)
             .await?;
+        self.tree(vm).await
+    }
+
+    /// The VM's repository as a tarball, streamed back.
+    pub(super) async fn tree(&self, vm: &str) -> Result<Vec<u8>, String> {
         self.vm_exec(vm, &["tar", "czf", TREE, "-C", "/work", "repo"])
             .await?;
         let read = json!({ "sandbox_id": vm, "path": TREE });

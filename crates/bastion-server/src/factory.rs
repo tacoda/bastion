@@ -870,6 +870,7 @@ mod resume;
 mod setup;
 mod split;
 mod turn;
+mod verdict;
 
 pub use turn::final_reply;
 /// The sandbox worker's answer for a VM that no longer exists (S002).

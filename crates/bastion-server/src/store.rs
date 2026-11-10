@@ -1217,7 +1217,7 @@ mod tests {
     use super::fake::FakeStore;
     use super::*;
     use crate::engine::fake::FakeEngine;
-    use bastion_core::State;
+    use bastion_core::{Kind, State};
     use bastion_protocol::Link;
 
     fn record() -> Record {
@@ -1226,6 +1226,15 @@ mod tests {
             runtime: Runtime::default(),
             rev: 1,
             created_at: 5,
+        }
+    }
+
+    #[test]
+    fn the_seed_grants_every_turn_stage_its_sandbox() {
+        let turns = Stage::ALL.into_iter().filter(|s| s.kind() == Kind::Turn);
+        for stage in turns {
+            let row = format!("('{}', 'sandbox::*', 'allowed')", name(stage));
+            assert!(SEED.contains(&row), "the seed grants nothing at {stage:?}");
         }
     }
 

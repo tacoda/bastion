@@ -15,7 +15,8 @@ INSERT OR IGNORE INTO constraints (id, rule, function, contains, rung, source) V
 -- runs commands, and asks before it writes a file. A build may use the whole
 -- sandbox. The full pipeline's read-only turns read and run commands, and may
 -- not write a file; its turns that write code may use the whole sandbox, as a
--- build does.
+-- build does. A workflow's skill and prompt steps may change the tree, so
+-- they may too.
 INSERT OR IGNORE INTO capabilities (stage, function, rung) VALUES
   ('plan', 'sandbox::*', 'allowed'),
   ('plan', 'sandbox::fs::write', 'ask'),
@@ -39,7 +40,9 @@ INSERT OR IGNORE INTO capabilities (stage, function, rung) VALUES
   ('implement', 'sandbox::*', 'allowed'),
   ('specify', 'sandbox::*', 'allowed'),
   ('ci_fix', 'sandbox::*', 'allowed'),
-  ('falsify', 'sandbox::*', 'allowed');
+  ('falsify', 'sandbox::*', 'allowed'),
+  ('skill', 'sandbox::*', 'allowed'),
+  ('prompt', 'sandbox::*', 'allowed');
 
 -- Workflows (D35): starting points for engineers, managers, and platform
 -- and SRE teams. Each lands a reviewed change, a document under docs/ or code, and

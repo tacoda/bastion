@@ -14,6 +14,7 @@ change.
 - `crates/bastion-client`: what every interface uses to reach a server: the
   server list, the local server's start, the API calls, the event stream.
   Never `bastion-core` or `iii-sdk`.
+- `crates/bastion-cli`: the `bastion` command line, on `bastion-client`.
 - `crates/bastion-desktop`: the iced client. It reaches a server only through
   `bastion-client`; never through `bastion-core` or `iii-sdk`.
 - `workers/`: Bastion's own iii workers.

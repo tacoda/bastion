@@ -1,0 +1,6 @@
+[Image #6]
+FOr this view, the text ouptput should be rendered markdown and the diff should use a monospace font
+
+---
+
+Same for the artifacts - rendered markdown

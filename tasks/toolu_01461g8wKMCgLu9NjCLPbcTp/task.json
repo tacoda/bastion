@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01461g8wKMCgLu9NjCLPbcTp",
+  "agent_id": "a9dfb26ef9c2327ff",
+  "subagent_type": "Explore",
+  "task_description": "Map opengantry and promotion steps",
+  "token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 72599,
+    "cache_read_tokens": 827595,
+    "output_tokens": 199,
+    "api_call_count": 17
+  },
+  "started_at": "2026-11-10T16:16:27.909184-06:00",
+  "completed_at": "2026-11-10T16:17:59.055466-06:00"
+}

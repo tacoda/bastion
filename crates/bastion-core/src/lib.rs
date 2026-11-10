@@ -10,6 +10,7 @@ pub mod eval;
 pub mod govern;
 pub mod people;
 mod pipeline;
+pub mod publish;
 pub mod review;
 pub mod settings;
 pub mod workflow;

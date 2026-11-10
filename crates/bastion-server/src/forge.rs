@@ -72,12 +72,13 @@ pub fn push(machine: &dyn Machine, path: &Path, head: &str) -> Result<(), String
 }
 
 /// What a pull request says: the request's first line as its title, the
-/// request in full, and a line that closes the issue it came from.
+/// request in full, and a line that closes the issue it came from. It names
+/// no tool as its author.
 pub fn describe(job: &Job, base: &str, head: &str, issue: Option<&str>) -> PullRequest {
     let request = &job.request;
     let first = request.lines().next().unwrap_or_default();
     let title: String = first.chars().take(72).collect();
-    let mut body = format!("{request}\n\nOpened by Bastion.");
+    let mut body = request.clone();
     if let Some(number) = issue.and_then(|url| url.rsplit('/').next()) {
         body.push_str(&format!("\n\nCloses #{number}"));
     }
@@ -86,6 +87,19 @@ pub fn describe(job: &Job, base: &str, head: &str, issue: Option<&str>) -> PullR
         base: base.into(),
         title,
         body,
+    }
+}
+
+/// Refuse a pull request whose title or body credits an AI or holds a
+/// secret (F3).
+pub fn publishable(pr: &PullRequest) -> Result<(), String> {
+    let found = bastion_core::publish::findings(&format!("{}\n{}", pr.title, pr.body));
+    match found.is_empty() {
+        true => Ok(()),
+        false => Err(format!(
+            "The pull request's text cannot be published: {}. Change the request's text, then retry.",
+            found.join("; ")
+        )),
     }
 }
 
@@ -349,6 +363,15 @@ mod tests {
         );
         assert!(pr.body.ends_with("Closes #4"));
         assert!(!describe(&job, "main", head, None).body.contains("Closes"));
+        assert!(publishable(&pr).is_ok());
+    }
+
+    #[test]
+    fn a_pull_request_that_credits_an_ai_is_not_published() {
+        let request = "Fix it\n\nCo-Authored-By: Claude <noreply@anthropic.com>";
+        let job = Job::new("j1".into(), "w".into(), request.into(), 1);
+        let refused = publishable(&describe(&job, "main", "bastion/j1", None));
+        assert!(refused.unwrap_err().contains("credits an author"));
     }
 
     #[test]

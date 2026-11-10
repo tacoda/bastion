@@ -120,11 +120,13 @@ impl Factory {
         // ponytail: a prefix changed while the PR is open sends a fix to a new branch; keep the pushed branch on the job if that bites.
         // The branch a job's change goes up on: its workspace's prefix, then its id.
         let head = self.workspace(record).await?.branch_prefix + &job.id;
+        let pr = forge::describe(job, base, &head, record.runtime.issue.as_deref());
+        // Nothing leaves before its text passes the publishing gate.
+        forge::publishable(&pr)?;
         forge::push(&*self.machine, path, &head)?;
         let url = match &job.pr {
             Some(url) => url.clone(),
             None => {
-                let pr = forge::describe(job, base, &head, record.runtime.issue.as_deref());
                 forge::GitHub {
                     engine: &*self.engine,
                     slug,

@@ -537,6 +537,7 @@ mod tests {
                 path: "/c".into(),
                 branch: "main".into(),
                 checks: String::new(),
+                max_jobs: None,
             }],
             targets: vec![Choice::new("constraint:no-curl", "no-curl (told)")],
             requests: text_editor::Content::with_text("Add add.\n\n  Add sub.  "),

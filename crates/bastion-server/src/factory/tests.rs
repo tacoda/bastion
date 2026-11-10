@@ -61,6 +61,7 @@ fn rig_on(engine: FakeEngine) -> Rig {
         path: "/repo".into(),
         branch: "main".into(),
         checks: String::new(),
+        max_jobs: None,
     });
     let machine = Arc::new(FakeMachine::new().run_ok("git", ""));
     let factory = Factory::new(
@@ -301,6 +302,7 @@ fn dying_vms() -> Rig {
         path: "/repo".into(),
         branch: "main".into(),
         checks: String::new(),
+        max_jobs: None,
     });
     let machine = Arc::new(FakeMachine::new().run_ok("git", ""));
     let factory = Factory::new(
@@ -475,6 +477,7 @@ fn a_failed_provision_fails_the_job_with_its_reason() {
         path: "/repo".into(),
         branch: "main".into(),
         checks: String::new(),
+        max_jobs: None,
     });
     let machine = Arc::new(FakeMachine::new());
     let factory = Factory::new(
@@ -604,6 +607,7 @@ fn github_rig(pr: &str) -> Rig {
         path: "/repo".into(),
         branch: "main".into(),
         checks: String::new(),
+        max_jobs: None,
     });
     let machine = Arc::new(FakeMachine::new().run_ok("git", "git@github.com:o/r.git\n"));
     let factory = Factory::new(

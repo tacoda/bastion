@@ -14,6 +14,10 @@ use crate::{start, theme};
 pub struct State {
     server: Server,
     workspace: Workspace,
+    /// The form holds a workspace already added, to change it.
+    editing: bool,
+    /// The form's cap on running jobs, as typed; empty is none.
+    max_jobs: String,
     workspaces: Vec<Workspace>,
     accounts: Vec<AccountView>,
     note: String,
@@ -31,10 +35,13 @@ impl Default for State {
             path: String::new(),
             branch: "main".into(),
             checks: String::new(),
+            max_jobs: None,
         };
         State {
             server,
             workspace,
+            editing: false,
+            max_jobs: String::new(),
             workspaces: vec![],
             accounts: vec![],
             note: String::new(),
@@ -52,6 +59,7 @@ pub enum Field {
     Path,
     Branch,
     Checks,
+    MaxJobs,
 }
 
 #[derive(Clone, Debug)]
@@ -62,7 +70,8 @@ pub enum Msg {
     AddServer,
     RemoveServer(String),
     ServersChanged(Result<(), String>),
-    AddWorkspace,
+    EditWorkspace(String),
+    SaveWorkspace,
     Done(Result<(), String>),
 }
 
@@ -111,7 +120,59 @@ fn edit(state: &mut State, field: Field, value: String) {
         Field::Path => w.path = value,
         Field::Branch => w.branch = value,
         Field::Checks => w.checks = value,
+        Field::MaxJobs => state.max_jobs = value,
     }
+}
+
+/// Put a workspace in the form, to change it.
+fn open(state: &mut State, name: &str) {
+    let Some(w) = state.workspaces.iter().find(|w| w.name == name) else {
+        return;
+    };
+    state.max_jobs = w.max_jobs.map(|n| n.to_string()).unwrap_or_default();
+    (state.workspace, state.editing) = (w.clone(), true);
+}
+
+/// A typed cap: empty is none, otherwise a whole number above 0.
+fn cap(typed: &str) -> Result<Option<u32>, String> {
+    match typed.trim() {
+        "" => Ok(None),
+        n => n
+            .parse()
+            .ok()
+            .filter(|n| *n > 0)
+            .map(Some)
+            .ok_or_else(|| format!("{n} is not a number of jobs above 0")),
+    }
+}
+
+/// Add the form's workspace, or save the one it holds, then empty it.
+fn save(state: &mut State, ctx: &Ctx) -> Task<Message> {
+    let max_jobs = match cap(&state.max_jobs) {
+        Ok(n) => n,
+        Err(e) => {
+            state.note = e;
+            return Task::none();
+        }
+    };
+    let blank = State::default();
+    let editing = std::mem::replace(&mut state.editing, false);
+    state.max_jobs.clear();
+    let w = std::mem::replace(&mut state.workspace, blank.workspace);
+    if !editing {
+        return task(
+            ctx,
+            api::WorkspaceAdd(Workspace { max_jobs, ..w }),
+            Msg::Done,
+        );
+    }
+    let edit = api::WorkspaceEdit {
+        name: w.name,
+        branch: w.branch,
+        checks: w.checks,
+        max_jobs,
+    };
+    task(ctx, edit, Msg::Done)
 }
 
 pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
@@ -132,10 +193,8 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
             state.note.clear();
             return Task::done(Message::ReadServers);
         }
-        Msg::AddWorkspace => {
-            let workspace = std::mem::replace(&mut state.workspace, State::default().workspace);
-            return task(ctx, api::WorkspaceAdd(workspace), Msg::Done);
-        }
+        Msg::EditWorkspace(name) => open(state, &name),
+        Msg::SaveWorkspace => return save(state, ctx),
         Msg::Done(Ok(_)) => {
             state.note.clear();
             return load(ctx);
@@ -157,6 +216,11 @@ fn field<'a>(label: &'a str, hint: &'a str, value: &str, f: Field) -> Element<'a
             input
         },
     )
+}
+
+/// A field that cannot change: a saved workspace keeps its name and path.
+fn fixed<'a>(label: &'a str, value: &str) -> Element<'a, Message> {
+    labeled(label, text_input("", value).style(theme::field).width(200))
 }
 
 fn servers<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
@@ -193,34 +257,59 @@ fn servers<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
 }
 
 fn workspaces(state: &State) -> Element<'_, Message> {
-    let lede = "The repositories jobs run against on this Bastion server. Each needs its branch; its checks command runs its tests at the checks step.";
+    let lede = "The repositories jobs run against on this Bastion server. Each needs its branch; its checks command runs its tests at the checks step, and its job limit caps how many of its jobs run at once.";
     let rows = state.workspaces.iter().map(|w| {
         let checks = (!w.checks.is_empty())
             .then(|| text(w.checks.clone()).font(theme::MONO).color(theme::MUTED));
+        let cap = w
+            .max_jobs
+            .map(|n| text(format!("at most {n} at once")).color(theme::MUTED));
+        let edit = button(text("Edit").size(13))
+            .style(theme::link)
+            .on_press(wrap(Msg::EditWorkspace(w.name.clone())));
         row![
             text(w.name.clone()),
             text(format!("{} @ {}", w.path, w.branch)).color(theme::MUTED)
         ]
         .extend(checks.map(Element::from))
+        .extend(cap.map(Element::from))
+        .push(edit)
         .spacing(10)
         .into()
     });
-    let w = &state.workspace;
-    let form = row![
-        field("Name", "", &w.name, Field::Name),
-        field("Repository path", "", &w.path, Field::Path),
-        field("Branch", "", &w.branch, Field::Branch),
-        field("Checks", "pytest -q", &w.checks, Field::Checks),
-        small("Add", Some(wrap(Msg::AddWorkspace))),
-    ];
     card(
         "Workspaces",
         column![
             text(lede).size(13).color(theme::MUTED),
             Column::with_children(rows).spacing(4),
-            form.spacing(8).align_y(iced::Bottom)
+            workspace_form(state).spacing(8).align_y(iced::Bottom)
         ],
     )
+}
+
+/// The form that adds a workspace, or changes the one it holds.
+fn workspace_form(state: &State) -> iced::widget::Row<'_, Message> {
+    let w = &state.workspace;
+    let (name, path, label) = match state.editing {
+        true => (
+            fixed("Name", &w.name),
+            fixed("Repository path", &w.path),
+            "Save",
+        ),
+        false => (
+            field("Name", "", &w.name, Field::Name),
+            field("Repository path", "", &w.path, Field::Path),
+            "Add",
+        ),
+    };
+    row![
+        name,
+        path,
+        field("Branch", "", &w.branch, Field::Branch),
+        field("Checks", "pytest -q", &w.checks, Field::Checks),
+        field("Job limit", "none", &state.max_jobs, Field::MaxJobs),
+        small(label, Some(wrap(Msg::SaveWorkspace))),
+    ]
 }
 
 fn accounts(state: &State) -> Element<'_, Message> {
@@ -240,4 +329,35 @@ fn accounts(state: &State) -> Element<'_, Message> {
 /// The servers first, then the workspaces and accounts, as the page orders them.
 pub fn view<'a>(state: &'a State, ctx: &Ctx) -> (Element<'a, Message>, [Element<'a, Message>; 2]) {
     (servers(state, ctx), [workspaces(state), accounts(state)])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_typed_job_limit_is_none_or_a_whole_number_above_0() {
+        assert_eq!(cap(" "), Ok(None));
+        assert_eq!(cap("3"), Ok(Some(3)));
+        assert!(cap("0").is_err());
+        assert!(cap("two").is_err());
+    }
+
+    #[test]
+    fn editing_a_workspace_fills_the_form_with_it() {
+        let mut state = State {
+            workspaces: vec![Workspace {
+                name: "demo".into(),
+                path: "/r".into(),
+                branch: "main".into(),
+                checks: "make test".into(),
+                max_jobs: Some(2),
+            }],
+            ..State::default()
+        };
+        open(&mut state, "demo");
+        assert!(state.editing);
+        assert_eq!(state.workspace, state.workspaces[0]);
+        assert_eq!(state.max_jobs, "2");
+    }
 }

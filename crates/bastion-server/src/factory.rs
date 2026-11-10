@@ -350,7 +350,12 @@ impl Factory {
                 let error = "the part before it ended without landing".into();
                 let _ = factory.apply(&id, Event::Abandoned { error }).await;
             }
-            for id in admit(&jobs, MAX_VMS) {
+            let workspaces = factory.store.workspaces().await.unwrap_or_default();
+            let cap = |name: &str| {
+                let w = workspaces.iter().find(|w| w.name == name)?;
+                w.max_jobs.map(|n| n as usize)
+            };
+            for id in admit(&jobs, MAX_VMS, cap) {
                 let _ = factory.apply(&id, Event::Admitted).await;
             }
         });

@@ -294,6 +294,10 @@ pub struct Workspace {
     /// Empty runs nothing.
     #[serde(default)]
     pub checks: String,
+    /// At most this many of its jobs hold a VM at once; none leaves only
+    /// the server's own limit.
+    #[serde(default)]
+    pub max_jobs: Option<u32>,
 }
 
 /// One job as the floor and the inbox show it.

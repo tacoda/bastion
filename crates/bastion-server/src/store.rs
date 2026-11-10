@@ -29,6 +29,8 @@ pub struct Workspace {
     pub branch: String,
     /// The command that runs its tests at the checks step; empty runs nothing.
     pub checks: String,
+    /// At most this many of its jobs hold a VM at once, when set.
+    pub max_jobs: Option<u32>,
 }
 
 /// What the adapter holds for a job besides the core's state: where it runs.
@@ -95,6 +97,8 @@ pub const STALE: &str = "stale: the job changed since it was read";
 pub trait Store: EvalStore + PeopleStore + SettingsStore + WorkflowStore + Send + Sync {
     fn add_workspace<'a>(&'a self, workspace: &'a Workspace) -> Answer<'a, ()>;
     fn workspaces(&self) -> Answer<'_, Vec<Workspace>>;
+    /// Save a workspace's branch, checks and cap; its name finds it.
+    fn edit_workspace<'a>(&'a self, workspace: &'a Workspace) -> Answer<'a, ()>;
     fn insert<'a>(&'a self, record: &'a Record) -> Answer<'a, ()>;
     fn load<'a>(&'a self, id: &'a str) -> Answer<'a, Record>;
     /// Up to `limit` jobs, newest first, after skipping `offset`.
@@ -253,7 +257,8 @@ const SCHEMA: [&str; 8] = [
         path TEXT NOT NULL UNIQUE,
         branch TEXT NOT NULL CHECK (length(branch) > 0),
         created_at INTEGER NOT NULL,
-        checks TEXT NOT NULL DEFAULT '')",
+        checks TEXT NOT NULL DEFAULT '',
+        max_jobs INTEGER CHECK (max_jobs > 0))",
     // Discovery's tasks for implement, in order.
     "CREATE TABLE IF NOT EXISTS tasks (
         job TEXT NOT NULL REFERENCES jobs(id),
@@ -349,7 +354,7 @@ const LEGACY_JOB_COLUMNS: &str = "id, workspace, request, stage, state, question
 /// Columns added after a table was first made. Each runs once; on a table
 /// that already has the column it fails, and that failure is expected.
 // They run before the numbered migrations, which need these columns to exist.
-const ALTERS: [&str; 12] = [
+const ALTERS: [&str; 13] = [
     "ALTER TABLE jobs ADD COLUMN pr TEXT",
     "ALTER TABLE jobs ADD COLUMN ci_fixes INTEGER NOT NULL DEFAULT 0 CHECK (ci_fixes >= 0)",
     "ALTER TABLE jobs ADD COLUMN issue TEXT",
@@ -362,6 +367,7 @@ const ALTERS: [&str; 12] = [
     "ALTER TABLE jobs ADD COLUMN after_job TEXT",
     "ALTER TABLE jobs ADD COLUMN part TEXT",
     "ALTER TABLE jobs ADD COLUMN approved TEXT",
+    "ALTER TABLE workspaces ADD COLUMN max_jobs INTEGER CHECK (max_jobs > 0)",
 ];
 
 /// Numbered migrations, each run once in order; `PRAGMA user_version` is the
@@ -792,8 +798,8 @@ impl Store for SqlStore {
     fn add_workspace<'a>(&'a self, w: &'a Workspace) -> Answer<'a, ()> {
         Box::pin(async move {
             self.execute(
-                "INSERT INTO workspaces (name, path, branch, checks, created_at) VALUES (?, ?, ?, ?, unixepoch())",
-                json!([w.name, w.path, w.branch, w.checks]),
+                "INSERT INTO workspaces (name, path, branch, checks, max_jobs, created_at) VALUES (?, ?, ?, ?, ?, unixepoch())",
+                json!([w.name, w.path, w.branch, w.checks, w.max_jobs]),
             )
             .await
             .map(|_| ())
@@ -803,7 +809,7 @@ impl Store for SqlStore {
     fn workspaces(&self) -> Answer<'_, Vec<Workspace>> {
         Box::pin(async move {
             self.query(
-                "SELECT name, path, branch, checks FROM workspaces ORDER BY name",
+                "SELECT name, path, branch, checks, max_jobs FROM workspaces ORDER BY name",
                 json!([]),
             )
             .await?
@@ -814,9 +820,25 @@ impl Store for SqlStore {
                     path: parse(r, "path")?,
                     branch: parse(r, "branch")?,
                     checks: parse(r, "checks")?,
+                    max_jobs: parse(r, "max_jobs")?,
                 })
             })
             .collect()
+        })
+    }
+
+    fn edit_workspace<'a>(&'a self, w: &'a Workspace) -> Answer<'a, ()> {
+        Box::pin(async move {
+            let found = self
+                .execute(
+                    "UPDATE workspaces SET branch = ?, checks = ?, max_jobs = ? WHERE name = ? RETURNING name",
+                    json!([w.branch, w.checks, w.max_jobs, w.name]),
+                )
+                .await?;
+            match found.is_empty() {
+                true => Err(format!("no workspace named {}", w.name)),
+                false => Ok(()),
+            }
         })
     }
 
@@ -1070,6 +1092,15 @@ pub mod fake {
         fn workspaces(&self) -> Answer<'_, Vec<Workspace>> {
             let all = self.workspaces.lock().unwrap().clone();
             Box::pin(async move { Ok(all) })
+        }
+
+        fn edit_workspace<'a>(&'a self, w: &'a Workspace) -> Answer<'a, ()> {
+            let mut all = self.workspaces.lock().unwrap();
+            let found = all.iter_mut().find(|o| o.name == w.name);
+            let done = found
+                .map(|o| *o = w.clone())
+                .ok_or_else(|| format!("no workspace named {}", w.name));
+            Box::pin(async move { done })
         }
 
         fn insert<'a>(&'a self, r: &'a Record) -> Answer<'a, ()> {
@@ -1487,6 +1518,7 @@ mod live {
             path: format!("/tmp/{tag}"),
             branch: "main".into(),
             checks: String::new(),
+            max_jobs: None,
         };
         store.add_workspace(&w).await.unwrap();
         let r = Record {
@@ -1552,6 +1584,40 @@ mod live {
                 bad.is_err(),
                 "the CHECK constraint refuses an unknown state"
             );
+        });
+    }
+
+    #[test]
+    #[ignore = "needs this machine's stack"]
+    fn live_workspace_edit() {
+        crate::rt::block_on(async {
+            let tag = format!("live-ws-{}", std::process::id());
+            let (store, _) = open_with_job(&tag).await;
+            let mut w = store.workspaces().await.unwrap();
+            w.retain(|w| w.name == tag);
+            let mut edited = w.remove(0);
+            (edited.checks, edited.max_jobs) = ("make test".into(), Some(2));
+            store.edit_workspace(&edited).await.unwrap();
+            let back = store.workspaces().await.unwrap();
+            let unknown = Workspace {
+                name: format!("{tag}-none"),
+                ..edited.clone()
+            };
+            let missing = store.edit_workspace(&unknown).await;
+            let zero = Workspace {
+                max_jobs: Some(0),
+                ..edited.clone()
+            };
+            let refused = store.edit_workspace(&zero).await;
+            for sql in [
+                "DELETE FROM jobs WHERE id = ?",
+                "DELETE FROM workspaces WHERE name = ?",
+            ] {
+                store.execute(sql, json!([tag])).await.unwrap();
+            }
+            assert!(back.contains(&edited));
+            assert!(missing.is_err(), "no workspace by that name");
+            assert!(refused.is_err(), "the CHECK refuses a cap of 0");
         });
     }
 

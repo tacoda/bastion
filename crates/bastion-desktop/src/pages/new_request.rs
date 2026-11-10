@@ -271,6 +271,7 @@ mod tests {
             path: "/c".into(),
             branch: "main".into(),
             checks: String::new(),
+            max_jobs: None,
         }];
         assert_eq!(state.chosen().as_deref(), Some("calc"));
         state.request = text_editor::Content::with_text("  ");

@@ -1206,10 +1206,29 @@ fn redefined_enough(job: &Job) -> bool {
 }
 
 /// The queued jobs to admit, oldest first, so that at most `limit` jobs hold
-/// a VM at once.
-pub fn admit(jobs: &[Job], limit: usize) -> Vec<String> {
-    let busy = jobs.iter().filter(|j| j.state.holds_vm()).count();
-    // A part waits for the part before it to land.
+/// a VM at once, and at most `cap(workspace)` of them in one workspace when
+/// it has a cap.
+pub fn admit(jobs: &[Job], limit: usize, cap: impl Fn(&str) -> Option<usize>) -> Vec<String> {
+    let holding: Vec<&Job> = jobs.iter().filter(|j| j.state.holds_vm()).collect();
+    let busy = |w: &str| holding.iter().filter(|j| j.workspace == w).count();
+    let mut free = limit.saturating_sub(holding.len());
+    let mut taken: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut admitted = Vec::new();
+    for j in queued(jobs) {
+        let w = j.workspace.as_str();
+        let held = taken.entry(w).or_insert_with(|| busy(w));
+        if free == 0 || cap(w).is_some_and(|c| *held >= c) {
+            continue;
+        }
+        (free, *held) = (free - 1, *held + 1);
+        admitted.push(j.id.clone());
+    }
+    admitted
+}
+
+/// The queued jobs that may start, oldest first. A part waits for the part
+/// before it to land.
+fn queued(jobs: &[Job]) -> Vec<&Job> {
     let waiting = |j: &Job| {
         j.after
             .as_ref()
@@ -1221,10 +1240,6 @@ pub fn admit(jobs: &[Job], limit: usize) -> Vec<String> {
         .collect();
     queued.sort_by_key(|j| j.updated_at);
     queued
-        .into_iter()
-        .take(limit.saturating_sub(busy))
-        .map(|j| j.id.clone())
-        .collect()
 }
 
 /// The effects that start a running job's current step again, as after a

@@ -148,6 +148,7 @@ async fn workflow_delete(State(app): State<App>, Path(id): Path<String>) -> Resp
 fn factory_routes() -> Router<App> {
     Router::new()
         .route("/workspaces", get(workspaces).post(workspace_add))
+        .route("/workspaces/{name}", put(workspace_edit))
         .route("/jobs", get(jobs).post(job_submit))
         .route("/jobs/{id}", get(job))
         .route("/jobs/{id}/approve", post(job_approve))
@@ -365,6 +366,15 @@ async fn workspaces(State(app): State<App>) -> Response {
 async fn workspace_add(State(app): State<App>, Json(w): Json<Workspace>) -> Response {
     let s = &app.server;
     answer(api::factory::workspace_add(&s.factory, &s.machine, w).await)
+}
+
+async fn workspace_edit(
+    State(app): State<App>,
+    Path(name): Path<String>,
+    Json(edit): Json<api::factory::WorkspaceSettings>,
+) -> Response {
+    let s = &app.server;
+    answer(api::factory::workspace_edit(&s.factory, &s.machine, &name, edit).await)
 }
 
 async fn jobs(
@@ -903,19 +913,22 @@ mod tests {
         });
     }
 
-    /// Each typed request's body reads as the body its handler takes.
+    /// Fail unless `body`, as a client sends it, reads as `T`.
+    fn reads<T: serde::de::DeserializeOwned>(body: impl Serialize) {
+        let value = serde_json::to_value(body).unwrap();
+        if let Err(e) = serde_json::from_value::<T>(value.clone()) {
+            panic!(
+                "{value} does not read as {}: {e}",
+                std::any::type_name::<T>()
+            );
+        }
+    }
+
+    /// Each typed request's body on jobs and governance reads as the body
+    /// its handler takes.
     #[test]
     fn every_typed_body_reads_as_its_handlers_body() {
         use bastion_protocol::api;
-        fn reads<T: serde::de::DeserializeOwned>(body: impl Serialize) {
-            let value = serde_json::to_value(body).unwrap();
-            if let Err(e) = serde_json::from_value::<T>(value.clone()) {
-                panic!(
-                    "{value} does not read as {}: {e}",
-                    std::any::type_name::<T>()
-                );
-            }
-        }
         let held = HeldCallRef {
             job: "j1".into(),
             call: "c1".into(),
@@ -955,6 +968,14 @@ mod tests {
         });
         reads::<Preset>(api::SettingsPreset { preset: s("low") });
         reads::<Version>(api::SettingsRestore { version: 3 });
+    }
+
+    /// The same for the bodies of people, providers, workspaces and
+    /// workflows.
+    #[test]
+    fn every_admin_body_reads_as_its_handlers_body() {
+        use bastion_protocol::api;
+        let s = |v: &str| v.to_string();
         reads::<NewRole>(api::PersonRole {
             name: s("ana"),
             role: s("member"),
@@ -970,6 +991,12 @@ mod tests {
         reads::<Key>(api::ProviderKeySet {
             id: s("x"),
             key: s("k"),
+        });
+        reads::<crate::api::factory::WorkspaceSettings>(api::WorkspaceEdit {
+            name: s("w"),
+            branch: s("main"),
+            checks: s(""),
+            max_jobs: Some(2),
         });
         reads::<LoginId>(api::CodexSignInPoll { login_id: s("l") });
         reads::<CopyWorkflow>(api::WorkflowCopy {

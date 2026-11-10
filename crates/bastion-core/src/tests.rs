@@ -248,9 +248,13 @@ fn admission_fills_free_slots_oldest_first() {
     let mut a = Job::new("a".into(), "w".into(), "r".into(), 30);
     let b = Job::new("b".into(), "w".into(), "r".into(), 10);
     let c = Job::new("c".into(), "w".into(), "r".into(), 20);
-    assert_eq!(admit(&[a.clone(), b.clone(), c.clone()], 2), vec!["b", "c"]);
+    let none = |_: &str| None;
+    assert_eq!(
+        admit(&[a.clone(), b.clone(), c.clone()], 2, none),
+        vec!["b", "c"]
+    );
     a.state = State::Running;
-    assert_eq!(admit(&[a, b, c], 2), vec!["b"]);
+    assert_eq!(admit(&[a, b, c], 2, none), vec!["b"]);
 }
 
 #[test]

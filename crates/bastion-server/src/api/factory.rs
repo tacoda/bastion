@@ -8,7 +8,7 @@ use bastion_protocol::{
     ArtifactView, CharterView, DialsView, HeldCallView, JobDetail, JobSummary, PipelineDials,
     StepDial, StepView, TranscriptLine, Workspace,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::factory::{Factory, Submission};
@@ -63,6 +63,7 @@ pub async fn workspaces(cell: &FactoryCell) -> Result<Vec<Workspace>, String> {
             path: w.path,
             branch: w.branch,
             checks: w.checks,
+            max_jobs: w.max_jobs,
         })
         .collect())
 }
@@ -81,24 +82,63 @@ pub async fn workspace_add(
     if name.is_empty() || path.is_empty() || branch.is_empty() {
         return Err("a workspace needs a name, a path and a branch".into());
     }
+    has_branch(machine, path, branch)?;
+    let row = store::Workspace {
+        name: name.into(),
+        path: path.into(),
+        branch: branch.into(),
+        checks: workspace.checks.trim().into(),
+        max_jobs: workspace.max_jobs,
+    };
+    factory(cell)?.store().add_workspace(&row).await
+}
+
+/// What a person may change in a workspace.
+#[derive(Deserialize)]
+pub struct WorkspaceSettings {
+    pub branch: String,
+    pub checks: String,
+    pub max_jobs: Option<u32>,
+}
+
+/// Change a workspace's branch, checks and cap. The branch must exist in
+/// its repository.
+pub async fn workspace_edit(
+    cell: &FactoryCell,
+    machine: &Arc<dyn Machine>,
+    name: &str,
+    edit: WorkspaceSettings,
+) -> Result<(), String> {
+    let factory = factory(cell)?;
+    let all = factory.store().workspaces().await?;
+    let mut row = all
+        .into_iter()
+        .find(|w| w.name == name)
+        .ok_or_else(|| format!("no workspace named {name}"))?;
+    let branch = edit.branch.trim();
+    if branch.is_empty() {
+        return Err("a workspace needs a branch".into());
+    }
+    has_branch(machine, &row.path, branch)?;
+    (row.branch, row.checks) = (branch.into(), edit.checks.trim().into());
+    row.max_jobs = edit.max_jobs.filter(|n| *n > 0);
+    factory.store().edit_workspace(&row).await
+}
+
+/// Refuse a path that is not a git repository with `branch`.
+fn has_branch(machine: &Arc<dyn Machine>, path: &str, branch: &str) -> Result<(), String> {
     let verify = format!("refs/heads/{branch}");
     let out = machine.run(
         "git",
         &["rev-parse", "--verify", "--quiet", &verify],
         Some(Path::new(path)),
     )?;
-    if !out.success {
-        return Err(format!(
+    match out.success {
+        true => Ok(()),
+        false => Err(format!(
             "{path} is not a git repository with a branch {branch}"
-        ));
+        )),
     }
-    let row = store::Workspace {
-        name: name.into(),
-        path: path.into(),
-        branch: branch.into(),
-        checks: workspace.checks.trim().into(),
-    };
-    factory(cell)?.store().add_workspace(&row).await
 }
 
 pub async fn jobs(cell: &FactoryCell, page: super::Page) -> Result<Vec<JobSummary>, String> {

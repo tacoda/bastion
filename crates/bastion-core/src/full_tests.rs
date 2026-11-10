@@ -773,9 +773,28 @@ fn a_part_is_admitted_only_once_the_part_before_it_lands() {
     let mut second = job(Pipeline::Full);
     second.id = "j1-2".into();
     second.after = Some("j1".into());
-    assert!(crate::admit(&[first.clone(), second.clone()], 4).is_empty());
+    assert!(crate::admit(&[first.clone(), second.clone()], 4, |_| None).is_empty());
     first.state = State::Landed;
-    assert_eq!(crate::admit(&[first, second], 4), ["j1-2"]);
+    assert_eq!(crate::admit(&[first, second], 4, |_| None), ["j1-2"]);
+}
+
+#[test]
+fn a_workspace_with_a_cap_runs_no_more_jobs_than_its_cap() {
+    let mut a = Job::new("a".into(), "capped".into(), "r".into(), 10);
+    let b = Job::new("b".into(), "capped".into(), "r".into(), 20);
+    let c = Job::new("c".into(), "free".into(), "r".into(), 30);
+    let cap = |w: &str| (w == "capped").then_some(1);
+    assert_eq!(
+        crate::admit(&[a.clone(), b.clone(), c.clone()], 8, cap),
+        vec!["a", "c"]
+    );
+    a.state = State::Running;
+    assert_eq!(
+        crate::admit(&[a.clone(), b.clone(), c.clone()], 8, cap),
+        vec!["c"]
+    );
+    a.state = State::Landed;
+    assert_eq!(crate::admit(&[a, b, c], 8, cap), vec!["b", "c"]);
 }
 
 #[test]

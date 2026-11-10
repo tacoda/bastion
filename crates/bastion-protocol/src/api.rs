@@ -107,6 +107,27 @@ at!(ContainerStart, "POST", "/console/{name}/start", name, ());
 // Workspaces and jobs.
 bare!(Workspaces, "GET", "/workspaces", Vec<Workspace>);
 with!(WorkspaceAdd, "POST", "/workspaces", Workspace, ());
+
+/// Change a workspace's settings. Its name and its path stay; a repository
+/// somewhere else is a new workspace.
+#[derive(Clone, Debug, Serialize)]
+pub struct WorkspaceEdit {
+    #[serde(skip)]
+    pub name: String,
+    pub branch: String,
+    pub checks: String,
+    pub max_jobs: Option<u32>,
+}
+
+impl Request for WorkspaceEdit {
+    const METHOD: &'static str = "PUT";
+    const ROUTE: &'static str = "/workspaces/{name}";
+    const BODY: bool = true;
+    type Answer = ();
+    fn path(&self) -> String {
+        fill(Self::ROUTE, "name", &self.name)
+    }
+}
 bare!(Jobs, "GET", "/jobs", Vec<JobSummary>);
 at!(Job, "GET", "/jobs/{id}", id, JobDetail);
 at!(JobApprove, "POST", "/jobs/{id}/approve", id, ());
@@ -492,6 +513,7 @@ fn factory_requests() -> Vec<(&'static str, &'static str)> {
         ContainerStart,
         Workspaces,
         WorkspaceAdd,
+        WorkspaceEdit,
         Jobs,
         Job,
         JobSubmit,
@@ -572,6 +594,6 @@ mod tests {
         assert_eq!(comment.path(), "/jobs/j1/comment");
         let spaced = WorkflowDelete { id: "a b/c".into() };
         assert_eq!(spaced.path(), "/workflows/a%20b%2Fc");
-        assert_eq!(every().len(), 64);
+        assert_eq!(every().len(), 65);
     }
 }

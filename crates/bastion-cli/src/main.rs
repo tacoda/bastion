@@ -18,6 +18,7 @@ commands:
   approve JOB                  approve the step the job waits on
   comment JOB TEXT...          send the job back, or answer its question
   retry JOB                    run the failed job, or its stuck step, again
+  extend JOB                   give the running turn its full time again
   stop JOB                     stop the job
   follow                       print each change the server pushes";
 
@@ -36,6 +37,7 @@ enum Command {
     Approve(String),
     Comment { job: String, text: String },
     Retry(String),
+    Extend(String),
     Stop(String),
     Follow,
 }
@@ -67,6 +69,7 @@ fn command(name: &str, args: &[String]) -> Option<Command> {
         ("follow", true) => Some(Command::Follow),
         ("approve", _) => one().map(Command::Approve),
         ("retry", _) => one().map(Command::Retry),
+        ("extend", _) => one().map(Command::Extend),
         ("stop", _) => one().map(Command::Stop),
         ("comment", _) => then_text().map(|(job, text)| Command::Comment { job, text }),
         ("submit", _) => {
@@ -136,6 +139,7 @@ async fn act(command: Command, server: Server) -> Result<(), String> {
         }
         Command::Approve(id) => done(&http, &server, api::JobApprove { id }).await,
         Command::Retry(id) => done(&http, &server, api::JobRetry { id }).await,
+        Command::Extend(id) => done(&http, &server, api::JobExtend { id }).await,
         Command::Stop(id) => done(&http, &server, api::JobStop { id }).await,
         Command::Comment { job, text } => {
             done(&http, &server, api::JobComment { id: job, text }).await

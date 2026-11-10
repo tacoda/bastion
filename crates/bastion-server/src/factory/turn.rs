@@ -10,7 +10,8 @@ use std::time::Duration;
 use bastion_core::{Event, Outcome, Stage, State};
 use serde_json::json;
 
-use super::{Factory, NS, outcome, short_id};
+use super::resume::cap_left;
+use super::{Factory, NS, now, outcome, short_id};
 use crate::engine::Engine;
 use crate::evals;
 use crate::spec;
@@ -119,11 +120,19 @@ impl Factory {
         Ok(())
     }
 
-    /// End the turn as failed if it is still running after `secs`.
+    /// End the turn as failed if it is still running after `secs`. A turn
+    /// a person extended meanwhile waits out what is left of its new cap.
     pub(super) fn arm_cap(self: &Arc<Self>, turn: &Turn, secs: u64) {
         let (factory, turn) = (self.clone(), turn.clone());
         crate::rt::spawn(async move {
             tokio::time::sleep(Duration::from_secs(secs)).await;
+            let left = match factory.store.load(&turn.job).await {
+                Ok(r) if turn.owns(&r) => cap_left(&r.job, now()),
+                _ => 0,
+            };
+            if left > 0 {
+                return factory.arm_cap(&turn, left);
+            }
             factory.turn_done(&turn, true).await;
         });
     }

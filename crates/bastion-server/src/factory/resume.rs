@@ -115,7 +115,7 @@ fn again(job: &Job, dials: &bastion_core::Dials) -> Vec<Effect> {
 
 /// The seconds a turn has left of its cap, counted from when the job last
 /// changed, which is when the turn started.
-fn cap_left(job: &Job, at: u64) -> u64 {
+pub(super) fn cap_left(job: &Job, at: u64) -> u64 {
     TURN_CAP_SECS.saturating_sub(at.saturating_sub(job.updated_at))
 }
 

@@ -112,6 +112,7 @@ at!(Job, "GET", "/jobs/{id}", id, JobDetail);
 at!(JobApprove, "POST", "/jobs/{id}/approve", id, ());
 at!(JobStop, "POST", "/jobs/{id}/stop", id, ());
 at!(JobRetry, "POST", "/jobs/{id}/retry", id, ());
+at!(JobExtend, "POST", "/jobs/{id}/extend", id, ());
 
 /// Submit a request: a new job. Answers with its id.
 #[derive(Clone, Debug, Serialize)]
@@ -498,6 +499,7 @@ fn factory_requests() -> Vec<(&'static str, &'static str)> {
         JobComment,
         JobStop,
         JobRetry,
+        JobExtend,
         Dials,
         DialsSet,
         HeldAllow,
@@ -570,6 +572,6 @@ mod tests {
         assert_eq!(comment.path(), "/jobs/j1/comment");
         let spaced = WorkflowDelete { id: "a b/c".into() };
         assert_eq!(spaced.path(), "/workflows/a%20b%2Fc");
-        assert_eq!(every().len(), 63);
+        assert_eq!(every().len(), 64);
     }
 }

@@ -14,6 +14,7 @@ fn decision(job: &Job, event: &Event, by: &str) -> String {
         (Event::Commented { text }, Some(_)) => format!("answered by {by}: {text}"),
         (Event::Commented { text }, None) => format!("sent back by {by}: {text}"),
         (Event::Retried, _) => format!("retried by {by}"),
+        (Event::Extended, _) => format!("extended by {by}"),
         _ => format!("approved by {by}"),
     };
     format!("{}: {verdict}", name(job.stage))

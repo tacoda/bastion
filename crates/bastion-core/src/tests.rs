@@ -659,3 +659,21 @@ fn a_stuck_step_retried_runs_again() {
         }]
     );
 }
+
+#[test]
+fn an_extend_restarts_a_running_turns_cap_and_nothing_else() {
+    let (j, _) = run(&[Event::Admitted, Event::Provisioned]);
+    assert!(actions(&j).contains(&Action::Extend));
+    let (after, effects) = step(&j, &Event::Extended, AT + 99, &Dials::default());
+    assert!(effects.is_empty());
+    assert_eq!(after.updated_at, AT + 99, "the cap counts from now");
+    assert_eq!(
+        Job {
+            updated_at: j.updated_at,
+            ..after
+        },
+        j
+    );
+    let (waiting, _) = run(&[Event::Admitted, Event::Provisioned, done("plan")]);
+    assert!(!actions(&waiting).contains(&Action::Extend));
+}

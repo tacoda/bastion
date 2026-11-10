@@ -911,3 +911,45 @@ fn a_turn_on_a_job_whose_vm_went_while_it_waited_gets_a_new_vm_first() {
         );
     });
 }
+
+/// A job at a running plan turn whose step began at `at`.
+async fn planning(rig: &Rig, id: &str, at: u64) -> super::turn::Turn {
+    let mut job = Job::new(id.into(), "w".into(), "r".into(), at);
+    job.state = State::Running;
+    let session = format!("{id}-plan-abc");
+    let record = Record {
+        job,
+        runtime: Runtime {
+            session: Some(session.clone()),
+            ..Runtime::default()
+        },
+        rev: 1,
+        created_at: at,
+    };
+    rig.store.insert(&record).await.unwrap();
+    super::turn::Turn {
+        job: id.into(),
+        session,
+    }
+}
+
+#[test]
+fn a_cap_that_runs_out_after_an_extend_waits_out_the_new_one() {
+    let rig = rig();
+    crate::rt::block_on(async {
+        let extended = planning(&rig, "j1", super::now()).await;
+        let late = planning(&rig, "j2", 1).await;
+        rig.factory.arm_cap(&extended, 0);
+        rig.factory.arm_cap(&late, 0);
+        for _ in 0..200 {
+            if rig.store.load("j2").await.unwrap().job.failures > 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let timed_out = rig.store.load("j2").await.unwrap().job;
+        assert!(timed_out.failures > 0, "the late turn ran past its cap");
+        let job = rig.store.load("j1").await.unwrap().job;
+        assert_eq!((job.state, job.failures), (State::Running, 0));
+    });
+}

@@ -74,6 +74,7 @@ pub enum Action {
     Approve,
     Comment,
     Retry,
+    Extend,
     Stop,
 }
 
@@ -112,6 +113,7 @@ fn act(state: &State, ctx: &Ctx, action: Action) -> Task<Message> {
     match action {
         Action::Approve => ask(ctx, api::JobApprove { id }),
         Action::Retry => ask(ctx, api::JobRetry { id }),
+        Action::Extend => ask(ctx, api::JobExtend { id }),
         Action::Stop => ask(ctx, api::JobStop { id }),
         Action::Comment => {
             let text = state.note.text().trim().to_string();
@@ -588,7 +590,16 @@ fn top(state: &State) -> Element<'_, Message> {
     let back = button(text("← All jobs").size(13))
         .style(theme::link)
         .on_press(Message::Go(Route::Jobs));
-    let mut bar = row![back, iced::widget::space::horizontal()].align_y(iced::Center);
+    let mut bar = row![back, iced::widget::space::horizontal()]
+        .spacing(8)
+        .align_y(iced::Center);
+    if state.allows("extend") {
+        let extend = button(text("Extend turn").size(13))
+            .padding([8, 12])
+            .style(theme::secondary)
+            .on_press(Message::Job(Msg::Act(Action::Extend)));
+        bar = bar.push(extend);
+    }
     if state.allows("stop") {
         let stop = button(text("Stop").color(theme::BAD))
             .padding([8, 12])

@@ -323,6 +323,8 @@ pub enum Event {
     VmLost,
     /// A person asked to run a failed job, or a stuck step, again.
     Retried,
+    /// A person gave the running turn its full cap again, from now.
+    Extended,
 }
 
 /// Whether a person oversees a step (D33). Stored `ask` and `hold` read as
@@ -546,7 +548,10 @@ pub fn step(job: &Job, event: &Event, at: u64, dials: &Dials) -> (Job, Vec<Effec
     let mut next = job.clone();
     next.updated_at = at;
     let effects = match (job.state, event) {
-        (State::Failed, Event::Retried) => requeue(&mut next),
+        (_, Event::Retried | Event::Extended) => match by_person(&mut next, event, dials) {
+            Some(effects) => effects,
+            None => return (job.clone(), Vec::new()),
+        },
         (state, _) if state.finished() => return (job.clone(), Vec::new()),
         (_, Event::Stopped) => {
             next.state = State::Stopped;
@@ -565,10 +570,6 @@ pub fn step(job: &Job, event: &Event, at: u64, dials: &Dials) -> (Job, Vec<Effec
         (State::Queued, Event::Abandoned { error }) => fail(&mut next, error),
         (State::NeedsYou, event) if decides(&next, event) => approved(&mut next, dials),
         (State::NeedsYou, Event::Commented { text }) => commented(&mut next, text, dials),
-        (State::NeedsYou, Event::Retried) if retries(job) => {
-            next.error = None;
-            start(&mut next, dials)
-        }
         (State::Running, Event::VmLost) => revive(&mut next),
         (State::Running, event) if kept(job, event).is_some() => {
             let Some(effects) = after_step(&mut next, event, dials) else {
@@ -629,6 +630,26 @@ fn revive(job: &mut Job) -> Vec<Effect> {
     }
     job.state = State::Provisioning;
     vec![Effect::Provision]
+}
+
+/// A person's retry or extend. `None` means it does not fit, and nothing
+/// changes.
+fn by_person(job: &mut Job, event: &Event, dials: &Dials) -> Option<Vec<Effect>> {
+    match event {
+        Event::Retried if job.state == State::Failed => Some(requeue(job)),
+        Event::Retried if retries(job) => {
+            job.error = None;
+            Some(start(job, dials))
+        }
+        // The cap counts from `updated_at`, which `step` moved to now.
+        Event::Extended if extends(job) => Some(Vec::new()),
+        _ => None,
+    }
+}
+
+/// Whether the job runs a turn a person may give more time.
+fn extends(job: &Job) -> bool {
+    job.state == State::Running && job.stage.kind() == Kind::Turn
 }
 
 /// A failed job goes back to the queue at the step it failed at. Its
@@ -1142,30 +1163,41 @@ pub enum Action {
     Answer,
     /// Run the failed job, or the stuck step, again.
     Retry,
+    /// Give the running turn its full cap again.
+    Extend,
     Stop,
 }
 
 pub fn actions(job: &Job) -> Vec<Action> {
-    let mut allowed = Vec::new();
-    if job.state == State::NeedsYou && matches!(job.stage, Stage::Land | Stage::Merge) {
-        allowed.push(Action::Approve);
-    } else if job.state == State::NeedsYou {
-        if job.question.is_some() {
-            allowed.push(Action::Answer);
-        } else {
-            allowed.push(Action::Approve);
-            if !redefined_enough(job) {
-                allowed.push(Action::Comment);
-            }
-        }
-    }
+    let mut allowed = if job.state == State::NeedsYou {
+        decisions(job)
+    } else {
+        Vec::new()
+    };
     if retries(job) {
         allowed.push(Action::Retry);
+    }
+    if extends(job) {
+        allowed.push(Action::Extend);
     }
     if !job.state.finished() {
         allowed.push(Action::Stop);
     }
     allowed
+}
+
+/// What a person may do with a job that waits on them.
+fn decisions(job: &Job) -> Vec<Action> {
+    if matches!(job.stage, Stage::Land | Stage::Merge) {
+        return vec![Action::Approve];
+    }
+    if job.question.is_some() {
+        return vec![Action::Answer];
+    }
+    if redefined_enough(job) {
+        return vec![Action::Approve];
+    }
+    vec![Action::Approve, Action::Comment]
 }
 
 fn redefined_enough(job: &Job) -> bool {

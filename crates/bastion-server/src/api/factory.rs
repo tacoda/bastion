@@ -221,6 +221,11 @@ pub async fn job_retry(cell: &FactoryCell, id: String, by: String) -> Result<(),
     factory(cell)?.decide(&id, Event::Retried, &by).await
 }
 
+/// Give the job's running turn its full cap again, from now.
+pub async fn job_extend(cell: &FactoryCell, id: String, by: String) -> Result<(), String> {
+    factory(cell)?.decide(&id, Event::Extended, &by).await
+}
+
 /// A note from `by`: an answer to the job's question, or the step sent back.
 pub async fn job_comment(
     cell: &FactoryCell,

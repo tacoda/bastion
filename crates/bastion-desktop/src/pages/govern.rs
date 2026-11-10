@@ -1,9 +1,12 @@
 //! The governance pages: Constraints and Capabilities, each on
 //! its ladder with promote and demote, and the Audit Log with its check.
 
+use std::collections::BTreeMap;
+
 use bastion_protocol::api::{self, Request};
 use bastion_protocol::{
-    AuditView, CapabilityView, ConstraintView, FactoryCapabilityView, WorkspaceCharterView,
+    AuditEntryView, AuditView, CapabilityView, ConstraintView, FactoryCapabilityView,
+    WorkspaceCharterView,
 };
 use iced::widget::{Column, button, column, container, pick_list, row, text, text_input};
 use iced::{Color, Element, Fill, Task};
@@ -501,6 +504,22 @@ fn audit_status(a: &AuditView) -> (String, Color, Option<(String, Color)>) {
     (status, color, writer)
 }
 
+/// How many entries of each kind the chain holds, the gate's split by its
+/// decision, most first.
+fn tallies(entries: &[AuditEntryView]) -> Vec<(String, usize)> {
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    for e in entries {
+        let key = match e.kind.as_str() {
+            "gate" => format!("gate {}", e.detail.split(' ').next().unwrap_or_default()),
+            kind => kind.to_string(),
+        };
+        *counts.entry(key).or_default() += 1;
+    }
+    let mut all: Vec<_> = counts.into_iter().collect();
+    all.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+    all
+}
+
 fn audit(state: &State) -> Element<'_, Message> {
     let head = row![
         text("Audit")
@@ -521,6 +540,13 @@ fn audit(state: &State) -> Element<'_, Message> {
         body = body.push(container(text(status).font(theme::BOLD).color(color)).padding([8, 12]));
         body =
             body.extend(writer.map(|(t, c)| container(text(t).color(c)).padding([0, 12]).into()));
+        let counts: Vec<String> = tallies(&a.entries)
+            .into_iter()
+            .map(|(key, n)| format!("{key}: {n}"))
+            .collect();
+        body = body.push(
+            container(text(counts.join(" · ")).size(13).color(theme::MUTED)).padding([0, 12]),
+        );
         let rows = a.entries.iter().rev().map(|e| {
             let what = column![
                 text(format!("{} · {}", e.subject, e.detail)),
@@ -578,6 +604,32 @@ mod tests {
         assert_eq!(
             (c.id.as_str(), c.source.as_str(), c.rung.as_str()),
             ("no-curl", "owner", "checked")
+        );
+    }
+
+    #[test]
+    fn the_audit_is_tallied_by_kind_and_the_gate_by_decision() {
+        let entry = |kind: &str, detail: &str| AuditEntryView {
+            seq: 1,
+            at: 0,
+            kind: kind.into(),
+            subject: "j1".into(),
+            detail: detail.into(),
+            hash: String::new(),
+        };
+        let all = [
+            entry("gate", "continue sandbox::exec ls"),
+            entry("gate", "continue sandbox::fs::read a"),
+            entry("gate", "deny (no) sandbox::exec rm"),
+            entry("decide", "plan: approved by Ian"),
+        ];
+        assert_eq!(
+            tallies(&all),
+            [
+                ("gate continue".to_string(), 2),
+                ("decide".to_string(), 1),
+                ("gate deny".to_string(), 1)
+            ]
         );
     }
 

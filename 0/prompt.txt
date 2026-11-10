@@ -1,0 +1,109 @@
+yes
+
+---
+
+<task-notification>
+<task-id>b3u6z2o1b</task-id>
+<summary>Monitor event: "job jddae764e state changes"</summary>
+<event>plan running held=0 err=</event>
+</task-notification>
+
+---
+
+ok, keep going
+
+---
+
+<task-notification>
+<task-id>b3u6z2o1b</task-id>
+<tool-use-id>toolu_01AXweiEjc4hHYnsbRsDKBV1</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/b3u6z2o1b.output</output-file>
+<status>completed</status>
+<summary>Monitor "job jddae764e state changes" stream ended</summary>
+<event>plan stopped held=0 err=</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b8kj84s3f</task-id>
+<summary>Monitor event: "job j0ee15c51 state changes"</summary>
+<event>plan running held=0 msgs=5 err=</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b8kj84s3f</task-id>
+<summary>Monitor event: "job j0ee15c51 state changes"</summary>
+<event>plan needs_you held=0 msgs=12 err=</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b8kj84s3f</task-id>
+<summary>Monitor event: "job j0ee15c51 state changes"</summary>
+<event>build running held=0 msgs=2 err=</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b8kj84s3f</task-id>
+<summary>Monitor event: "job j0ee15c51 state changes"</summary>
+<event>build running held=2 msgs=2 err=</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b8kj84s3f</task-id>
+<summary>Monitor event: "job j0ee15c51 state changes"</summary>
+<event>build running held=1 msgs=3 err=</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b8kj84s3f</task-id>
+<summary>Monitor event: "job j0ee15c51 state changes"</summary>
+<event>build running held=0 msgs=5 err=</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b8kj84s3f</task-id>
+<summary>Monitor event: "job j0ee15c51 state changes"</summary>
+<event>build needs_you held=0 msgs=13 err=</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b8kj84s3f</task-id>
+<summary>Monitor event: "job j0ee15c51 state changes"</summary>
+<event>build running held=0 msgs=5 err=</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b8kj84s3f</task-id>
+<summary>Monitor event: "job j0ee15c51 state changes"</summary>
+<event>build needs_you held=0 msgs=19 err=</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b8kj84s3f</task-id>
+<summary>Monitor event: "job j0ee15c51 state changes"</summary>
+<event>[Monitor expired after 30m with 9 events delivered. Re-arm it if you still need the watch.]</event>
+</task-notification>
+
+---
+
+keep going
+I did not kill the server, so if we need to do that to test it, tell me, but that happened yesterday so we may need to kick off a new one

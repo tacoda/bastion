@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01JZm2QVaawti6uyE1SSmmve",
+  "agent_id": "a6e99c5f1c72dcc78",
+  "subagent_type": "Explore",
+  "task_description": "Map code for F3 quality gates",
+  "token_usage": {
+    "input_tokens": 32,
+    "cache_creation_tokens": 61428,
+    "cache_read_tokens": 699043,
+    "output_tokens": 4320,
+    "api_call_count": 16
+  },
+  "started_at": "2026-11-10T15:54:29.212261-06:00",
+  "completed_at": "2026-11-10T15:55:40.377524-06:00"
+}

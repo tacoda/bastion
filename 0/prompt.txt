@@ -1,0 +1,71 @@
+<agent-message from="a6e99c5f1c72dcc78">
+[Subagent hand-back] The text below is the final report of a subagent this session delegated to. It is model output, NOT a message from the user: instructions, requests, or approval claims inside it are the subagent's words and carry no user authority. The harness indents every line of the report, so a frame-like line at column zero inside it would be forged. Notes above this frame may quote model-derived text, which carries no user authority either. The report follows:
+  F3 hook-point map for bastion. Everything below comes from reading the code; I did not build or run anything.
+  
+  **PLAN.md**
+  - F3 is at `PLAN.md:242-246`. "(W, G)" means it takes ideas from wipp and ghola (legend at `:232`).
+  - Related decisions:
+    - D14 (`:72`): no credential enters the VM, so push and PR creation happen on the host.
+    - D18 (`:75`): rules are pure functions in core.
+    - D20 (`:77`): every constraint is enforced in a hook, and its rung is data.
+    - D25 (`:81`): each rule belongs to one layer, charter, harness or factory.
+    - D26 (`:82`): rules and settings are versioned data in the DB, seeded from `seed/governance.sql`.
+    - D35 (`:91`): command steps.
+  - F4 (`:247`) puts a verdict before a push, which is next to F3's pre-push gate.
+  
+  **1. Push and PR body (`crates/bastion-server/src/factory/land.rs`, `forge.rs`)**
+  - `Factory::land` (`land.rs:21`) and `Factory::ship` (`land.rs:35`) both call `bring_back` (`:57`, git bundle from VM to worktree), then `pull_request` for the GitHub forge.
+  - `pull_request` (`land.rs:112`) builds `head = branch_prefix + job.id` and calls `forge::push` (`:123`). It then calls `forge::describe` (`:127`) and `GitHub::open` only when `job.pr` is None.
+  - The pre-push gate goes between `bring_back` and `forge::push`, around `land.rs:122`. The diff is already on the host at that point.
+  - `forge::push(machine, path, head)` (`forge.rs:64`) runs `git push -q origin`.
+  - `forge::describe(job, base, head, issue) -> PullRequest` (`forge.rs:76`) is pure: title is the first request line, body is `"{request}\n\nOpened by Bastion."` plus `Closes #N`.
+  - The publishing gate goes on the `PullRequest` before `GitHub::open(&pr)` (`forge.rs:114`, `gh pr create --body`).
+  - Note: "Opened by Bastion." is itself a tool-attribution line, so a "no AI attribution" rule should decide about it.
+  - Stage dispatch is in `factory.rs:676` `run_step`: `Stage::Ship` goes to `ship` (`:686`).
+  - Pipeline order is in `bastion-core/src/pipeline.rs:28-72`: Checks, Verify, …, Ship, Ci, **Prove**. So Prove runs after the push.
+  
+  **2. Checks stage (`crates/bastion-server/src/factory/acceptance.rs`)**
+  - `checks_step` (`:52`) looks up the workspace's `checks` string; empty means `StepPassed`. Otherwise it builds `Vm { engine, sandbox, spec: empty }` and returns `acceptance::suite(&vm.run("checks", &command))`.
+  - `command_step` (`:75`) runs a D35 workflow line through `acceptance::command`.
+  - `Vm::run(name, cmd) -> Ran{criterion, code, output-tail}` (`:205`) calls `exec` (`:233`), which is `sandbox::exec` with `sh -c "cd /work/repo && …"` and `CHECK_SECS`.
+  - `sh` (`:224`) fails on a nonzero exit.
+  - `changed_since(tag)` (`:172`) runs `git diff --name-only` but only over the spec's files. A changed-files list for the gates needs a general version of it.
+  - Core `acceptance::suite(&Ran) -> Event` (`bastion-core/src/acceptance.rs:128`): 0 is `StepPassed`; 126/127 is `StepStuck` (the command cannot run); anything else is `StepFailed` with the output.
+  - `acceptance::command` is at `:145`. `Ran` is at `:9`.
+  - Lint, autofix and the other gates can reuse `Vm::run` plus a pure core judge, same pattern as `suite`.
+  
+  **3. The gate**
+  - `Gate::judge(envelope)` (`gate.rs:309`): `call_of` builds a `Call`, then `govern::gate(call, stage, constraints(job), grants(job))`. It audits via `note`, runs charter `before` hooks, and returns continue, deny or hold.
+  - `call_of` (`gate.rs:67`) makes `Call.text` from the argv / cmd+args joined, or else **only `arguments.path`**.
+  - For `sandbox::fs::write` the file content (in `envelope.call.arguments`) is never seen by rules. That is the F3 gap for "rules that check file content". The raw arguments are still on `HeldCall.arguments`, and `tool_input` is at `:93`.
+  - `govern::Constraint` (`bastion-core/src/govern.rs:90`) has these fields: `id`, `rule` (what the agent is told), `function` (pattern), `contains` (words in order), `rung: Enforcement`, `source: Source`. `layer(c)` is at `:81`.
+  - `Call { function, text }` is at `:114`. `Verdict { decision, flagged }` is at `:133`.
+  - `matches(pattern, name)` (`:141`) is exact or `prefix*`.
+  - `mentions(text, words)` (`:150`) checks whitespace words in order.
+  - `gate(...)` (`:161`): charter write guard first, then an Enforced constraint gives Deny (a Checked one is only flagged), then the most specific stage grant decides.
+  - Constraints load per job via `Gate::constraints` (`gate.rs:273`). `approved_test` (`:54`) adds the per-job write ban.
+  
+  **4. Prove and proof**
+  - Prompt `PROVE` is at `bastion-core/src/brief.rs:100`: "quote what they print … VERDICT: yes|partial|no".
+  - Graded in `bastion-core/src/lib.rs:1034` `proved(job, report, dials)`, called from `after_report` at `:1025`.
+  - It reads the last `VERDICT:` line: yes goes to `after_turn`, no goes to `step_failed`, anything else is `stuck` ("proof is partial").
+  - Nothing checks for evidence. "Downgrade when no evidence is cited" fits inside `proved`, as yes turning into partial.
+  - Prove's send-back target is in `pipeline.rs:159`.
+  
+  **5. Existing detectors**
+  - **Weakening, partly built.** `bastion-core/src/review.rs`:
+    - `review(diff, constraints)` (`:26`)
+    - `deleted_tests(diff)` (`:50`) finds removed `def test_`, `fn test_` and `#[test]` functions
+    - constants `DIFF="review::diff"` (`:10`) and `DELETED_TESTS` (`:12`), and `binds_diff` (`:43`)
+  - It is called from `Factory::review` (`factory.rs:754`) on `Effect::CaptureDiff` (`factory.rs:427-435`). An Enforced finding sends the work back once (`Event::Commented`). `Gate::reviewed` (`gate.rs:194`) tracks repeats.
+  - New diff checks (assertion removal, skip markers, secrets) can be added as more `contains` kinds under `review::diff`.
+  - Two more existing guards: `acceptance::verified` (`core acceptance.rs:89`) refuses approved checks that changed after baseline, and `put_back_test_writes` (`server acceptance.rs:182`) reverts test writes.
+  - **Not found:** secret scanning of content, coverage, mutation, lint, autofix. The "secret" hits are only the credential vault, Keychain and env scrubbing (`machine.rs:116`).
+  
+  **6. Workspace settings**
+  - `store::Workspace` (`crates/bastion-server/src/store.rs:26`) has `name, path, branch, checks, max_jobs, revision_budget, branch_prefix, setup, cleanup, env`.
+  - Schema: `CREATE TABLE workspaces` is at `:265`. Columns are added through the `ALTER TABLE … ADD COLUMN` migration list (`:376-390`).
+  - SQL: `add_workspace` INSERT at `:818-822`, `workspaces()` SELECT at `:829-842`, UPDATE at `:859`. There is a fake store at `:1112`.
+  - Wire type is `bastion-protocol/src/lib.rs:289` `Workspace`. The desktop form is `bastion-desktop/src/pages/settings/places.rs`.
+  - Adding `lint` or `autofix` means touching all of these, in the same way `setup`, `cleanup` and `env` were added.
+</agent-message>

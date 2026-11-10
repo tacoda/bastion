@@ -13,7 +13,7 @@ use super::{CI_POLLS, Factory, NS, REPO, SLOW_MS};
 use crate::engine::DEFAULT_NAMESPACE;
 use crate::forge;
 use crate::settings_store;
-use crate::store::Record;
+use crate::store::{Record, Workspace};
 
 impl Factory {
     /// The VM's commits come back to the worktree, then `worktree::land`
@@ -85,7 +85,7 @@ impl Factory {
                 &branch,
             ],
         )?;
-        Ok((path, self.workspace_branch(record).await?))
+        Ok((path, self.workspace(record).await?.branch))
     }
 
     /// Push the job's branch and open its pull request, or reuse the one a
@@ -98,11 +98,14 @@ impl Factory {
     ) -> Result<String, String> {
         let job = &record.job;
         let slug = forge::slug(&*self.machine, path)?;
-        forge::push(&*self.machine, path, &job.id)?;
+        // ponytail: a prefix changed while the PR is open sends a fix to a new branch; keep the pushed branch on the job if that bites.
+        // The branch a job's change goes up on: its workspace's prefix, then its id.
+        let head = self.workspace(record).await?.branch_prefix + &job.id;
+        forge::push(&*self.machine, path, &head)?;
         let url = match &job.pr {
             Some(url) => url.clone(),
             None => {
-                let pr = forge::describe(job, base, record.runtime.issue.as_deref());
+                let pr = forge::describe(job, base, &head, record.runtime.issue.as_deref());
                 forge::GitHub {
                     engine: &*self.engine,
                     slug,
@@ -223,14 +226,14 @@ impl Factory {
     /// Land the worktree into the workspace's branch, as the short pipeline does.
     pub(super) async fn merge_here(self: &Arc<Self>, record: &Record) -> Result<(), String> {
         let worktree = record.runtime.worktree.clone().ok_or("no worktree")?;
-        let target = self.workspace_branch(record).await?;
+        let target = self.workspace(record).await?.branch;
         self.land_here(record, &worktree, &target).await
     }
 
     /// The commit the job's branch forked from its workspace's branch, or the
     /// branch's head when that cannot be read.
     pub(super) async fn fork_point(&self, record: &Record, path: &Path) -> String {
-        let Ok(target) = self.workspace_branch(record).await else {
+        let Ok(target) = self.workspace(record).await.map(|w| w.branch) else {
             return "HEAD".into();
         };
         self.git(path, &["merge-base", "HEAD", &target])
@@ -240,14 +243,13 @@ impl Factory {
             .unwrap_or_else(|| "HEAD".into())
     }
 
-    /// The branch of the job's workspace, which its change goes into.
-    pub(super) async fn workspace_branch(&self, record: &Record) -> Result<String, String> {
+    /// The job's workspace, whose branch its change goes into.
+    pub(super) async fn workspace(&self, record: &Record) -> Result<Workspace, String> {
         self.store
             .workspaces()
             .await?
             .into_iter()
             .find(|w| w.name == record.job.workspace)
-            .map(|w| w.branch)
             .ok_or(format!("no workspace {}", record.job.workspace))
     }
 

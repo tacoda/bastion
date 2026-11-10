@@ -54,14 +54,9 @@ pub fn slug(machine: &dyn Machine, path: &Path) -> Result<String, String> {
     ))
 }
 
-/// The branch a job's change goes up on.
-pub fn branch(job: &str) -> String {
-    format!("bastion/{job}")
-}
-
-/// Push the worktree's HEAD as the job's branch.
-pub fn push(machine: &dyn Machine, path: &Path, job: &str) -> Result<(), String> {
-    let refspec = format!("HEAD:refs/heads/{}", branch(job));
+/// Push the worktree's HEAD as the branch `head`.
+pub fn push(machine: &dyn Machine, path: &Path, head: &str) -> Result<(), String> {
+    let refspec = format!("HEAD:refs/heads/{head}");
     let out = machine.run("git", &["push", "-q", "origin", &refspec], Some(path))?;
     if out.success {
         Ok(())
@@ -72,7 +67,7 @@ pub fn push(machine: &dyn Machine, path: &Path, job: &str) -> Result<(), String>
 
 /// What a pull request says: the request's first line as its title, the
 /// request in full, and a line that closes the issue it came from.
-pub fn describe(job: &Job, base: &str, issue: Option<&str>) -> PullRequest {
+pub fn describe(job: &Job, base: &str, head: &str, issue: Option<&str>) -> PullRequest {
     let request = &job.request;
     let first = request.lines().next().unwrap_or_default();
     let title: String = first.chars().take(72).collect();
@@ -81,7 +76,7 @@ pub fn describe(job: &Job, base: &str, issue: Option<&str>) -> PullRequest {
         body.push_str(&format!("\n\nCloses #{number}"));
     }
     PullRequest {
-        head: branch(&job.id),
+        head: head.into(),
         base: base.into(),
         title,
         body,
@@ -331,13 +326,14 @@ mod tests {
     #[test]
     fn a_pull_request_closes_its_issue() {
         let job = Job::new("j1".into(), "w".into(), "Add modulo\nwith a test".into(), 1);
-        let pr = describe(&job, "main", Some("https://github.com/o/r/issues/4"));
+        let head = "bastion/j1";
+        let pr = describe(&job, "main", head, Some("https://github.com/o/r/issues/4"));
         assert_eq!(
             (pr.title.as_str(), pr.head.as_str()),
             ("Add modulo", "bastion/j1")
         );
         assert!(pr.body.ends_with("Closes #4"));
-        assert!(!describe(&job, "main", None).body.contains("Closes"));
+        assert!(!describe(&job, "main", head, None).body.contains("Closes"));
     }
 
     #[test]

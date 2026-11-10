@@ -2,7 +2,7 @@
 //! workspaces on the server shown, and the accounts it uses.
 
 use bastion_protocol::api::{self, Request};
-use bastion_protocol::{AccountView, LOCAL, Server, Workspace};
+use bastion_protocol::{AccountView, LOCAL, Server, Workspace, branch_prefix};
 use iced::widget::{Column, button, column, row, text, text_input};
 use iced::{Element, Task};
 
@@ -36,6 +36,7 @@ impl Default for State {
             branch: "main".into(),
             checks: String::new(),
             max_jobs: None,
+            branch_prefix: branch_prefix(),
         };
         State {
             server,
@@ -60,6 +61,7 @@ pub enum Field {
     Branch,
     Checks,
     MaxJobs,
+    BranchPrefix,
 }
 
 #[derive(Clone, Debug)]
@@ -121,6 +123,7 @@ fn edit(state: &mut State, field: Field, value: String) {
         Field::Branch => w.branch = value,
         Field::Checks => w.checks = value,
         Field::MaxJobs => state.max_jobs = value,
+        Field::BranchPrefix => state.workspace.branch_prefix = value,
     }
 }
 
@@ -171,6 +174,7 @@ fn save(state: &mut State, ctx: &Ctx) -> Task<Message> {
         branch: w.branch,
         checks: w.checks,
         max_jobs,
+        branch_prefix: w.branch_prefix,
     };
     task(ctx, edit, Msg::Done)
 }
@@ -257,7 +261,7 @@ fn servers<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
 }
 
 fn workspaces(state: &State) -> Element<'_, Message> {
-    let lede = "The repositories jobs run against on this Bastion server. Each needs its branch; its checks command runs its tests at the checks step, and its job limit caps how many of its jobs run at once.";
+    let lede = "The repositories jobs run against on this Bastion server. Each needs its branch; its checks command runs its tests at the checks step. A job pushes to its branch prefix and its id, and the job limit caps how many of its jobs run at once.";
     let rows = state.workspaces.iter().map(|w| {
         let checks = (!w.checks.is_empty())
             .then(|| text(w.checks.clone()).font(theme::MONO).color(theme::MUTED));
@@ -282,13 +286,13 @@ fn workspaces(state: &State) -> Element<'_, Message> {
         column![
             text(lede).size(13).color(theme::MUTED),
             Column::with_children(rows).spacing(4),
-            workspace_form(state).spacing(8).align_y(iced::Bottom)
+            workspace_form(state)
         ],
     )
 }
 
 /// The form that adds a workspace, or changes the one it holds.
-fn workspace_form(state: &State) -> iced::widget::Row<'_, Message> {
+fn workspace_form(state: &State) -> Column<'_, Message> {
     let w = &state.workspace;
     let (name, path, label) = match state.editing {
         true => (
@@ -302,14 +306,18 @@ fn workspace_form(state: &State) -> iced::widget::Row<'_, Message> {
             "Add",
         ),
     };
-    row![
-        name,
-        path,
-        field("Branch", "", &w.branch, Field::Branch),
+    let place = row![name, path, field("Branch", "", &w.branch, Field::Branch)];
+    let settings = row![
         field("Checks", "pytest -q", &w.checks, Field::Checks),
+        field("Branch prefix", "", &w.branch_prefix, Field::BranchPrefix),
         field("Job limit", "none", &state.max_jobs, Field::MaxJobs),
         small(label, Some(wrap(Msg::SaveWorkspace))),
+    ];
+    column![
+        place.spacing(8).align_y(iced::Bottom),
+        settings.spacing(8).align_y(iced::Bottom)
     ]
+    .spacing(8)
 }
 
 fn accounts(state: &State) -> Element<'_, Message> {
@@ -352,6 +360,7 @@ mod tests {
                 branch: "main".into(),
                 checks: "make test".into(),
                 max_jobs: Some(2),
+                branch_prefix: "ian/".into(),
             }],
             ..State::default()
         };

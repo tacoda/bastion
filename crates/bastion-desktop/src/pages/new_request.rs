@@ -272,6 +272,7 @@ mod tests {
             branch: "main".into(),
             checks: String::new(),
             max_jobs: None,
+            branch_prefix: "bastion/".into(),
         }];
         assert_eq!(state.chosen().as_deref(), Some("calc"));
         state.request = text_editor::Content::with_text("  ");

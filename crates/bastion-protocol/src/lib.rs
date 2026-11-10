@@ -298,6 +298,14 @@ pub struct Workspace {
     /// the server's own limit.
     #[serde(default)]
     pub max_jobs: Option<u32>,
+    /// What a job's branch starts with, before the job's id.
+    #[serde(default = "branch_prefix")]
+    pub branch_prefix: String,
+}
+
+/// The branch prefix a workspace starts with.
+pub fn branch_prefix() -> String {
+    "bastion/".into()
 }
 
 /// One job as the floor and the inbox show it.

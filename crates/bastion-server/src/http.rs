@@ -997,6 +997,7 @@ mod tests {
             branch: s("main"),
             checks: s(""),
             max_jobs: Some(2),
+            branch_prefix: s("ian/"),
         });
         reads::<LoginId>(api::CodexSignInPoll { login_id: s("l") });
         reads::<CopyWorkflow>(api::WorkflowCopy {

@@ -64,6 +64,7 @@ pub async fn workspaces(cell: &FactoryCell) -> Result<Vec<Workspace>, String> {
             branch: w.branch,
             checks: w.checks,
             max_jobs: w.max_jobs,
+            branch_prefix: w.branch_prefix,
         })
         .collect())
 }
@@ -89,6 +90,7 @@ pub async fn workspace_add(
         branch: branch.into(),
         checks: workspace.checks.trim().into(),
         max_jobs: workspace.max_jobs,
+        branch_prefix: prefix(machine, &workspace.branch_prefix)?,
     };
     factory(cell)?.store().add_workspace(&row).await
 }
@@ -99,9 +101,10 @@ pub struct WorkspaceSettings {
     pub branch: String,
     pub checks: String,
     pub max_jobs: Option<u32>,
+    pub branch_prefix: String,
 }
 
-/// Change a workspace's branch, checks and cap. The branch must exist in
+/// Change a workspace's branch, checks, cap and branch prefix. The branch must exist in
 /// its repository.
 pub async fn workspace_edit(
     cell: &FactoryCell,
@@ -122,7 +125,19 @@ pub async fn workspace_edit(
     has_branch(machine, &row.path, branch)?;
     (row.branch, row.checks) = (branch.into(), edit.checks.trim().into());
     row.max_jobs = edit.max_jobs.filter(|n| *n > 0);
+    row.branch_prefix = prefix(machine, &edit.branch_prefix)?;
     factory.store().edit_workspace(&row).await
+}
+
+/// A branch prefix, trimmed, or why git would refuse a branch named with it.
+fn prefix(machine: &Arc<dyn Machine>, typed: &str) -> Result<String, String> {
+    let prefix = typed.trim();
+    let sample = format!("refs/heads/{prefix}j1");
+    let out = machine.run("git", &["check-ref-format", &sample], None)?;
+    match out.success {
+        true => Ok(prefix.into()),
+        false => Err(format!("{prefix} cannot start a git branch name")),
+    }
 }
 
 /// Refuse a path that is not a git repository with `branch`.
@@ -323,4 +338,19 @@ pub async fn dials_set(cell: &FactoryCell, stage: Stage, dial: Dial) -> Result<(
     crate::settings_store::change(&**factory.store(), &next, crate::factory::now())
         .await
         .map(|_| ())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::machine::ThisMachine;
+
+    #[test]
+    fn a_branch_prefix_is_one_git_takes() {
+        let git: Arc<dyn Machine> = Arc::new(ThisMachine);
+        assert_eq!(prefix(&git, " ian/ "), Ok("ian/".into()));
+        assert_eq!(prefix(&git, ""), Ok("".into()));
+        assert!(prefix(&git, "a b/").is_err());
+        assert!(prefix(&git, "x..").is_err());
+    }
 }

@@ -2,14 +2,13 @@
 //! stage, where a change goes and where requests come from; each step's
 //! dial; and every version of the settings with Restore.
 
-use bastion_protocol::{DialsView, ModelOption, PipelineDials, SettingsView, VersionView, command};
+use bastion_protocol::api::{self, Request};
+use bastion_protocol::{DialsView, ModelOption, PipelineDials, SettingsView, VersionView};
 use iced::widget::{Column, button, column, pick_list, row, text};
 use iced::{Element, Fill, Task};
-use serde_json::{Value, json};
 
 use super::{card, small};
 use crate::app::Message;
-use crate::client::Ask;
 use crate::pages::{Choice, Ctx, ago, labeled};
 use crate::theme;
 
@@ -51,26 +50,27 @@ pub enum Msg {
     Preset(&'static str),
     Dial(String, String),
     Restore(u64),
-    Done(Result<Value, String>),
+    Done(Result<(), String>),
 }
 
 fn wrap(msg: Msg) -> Message {
     Message::Settings(super::Msg::Factory(msg))
 }
 
-fn task<T>(ctx: &Ctx, ask: Ask, then: fn(Result<T, String>) -> Msg) -> Task<Message>
+fn task<R>(ctx: &Ctx, request: R, then: fn(Result<R::Answer, String>) -> Msg) -> Task<Message>
 where
-    T: serde::de::DeserializeOwned + Send + 'static,
+    R: Request + Send + Sync + 'static,
+    R::Answer: Send + 'static,
 {
-    ctx.task(&ctx.current, ask, then).map(wrap)
+    ctx.task(&ctx.current, request, then).map(wrap)
 }
 
 pub fn load(ctx: &Ctx) -> Task<Message> {
     Task::batch([
-        task(ctx, Ask::bare(command::SETTINGS), Msg::Settings),
-        task(ctx, Ask::bare(command::MODELS), Msg::Models),
-        task(ctx, Ask::bare(command::DIALS), Msg::Dials),
-        task(ctx, Ask::bare(command::SETTINGS_HISTORY), Msg::Versions),
+        task(ctx, api::Settings, Msg::Settings),
+        task(ctx, api::Models, Msg::Models),
+        task(ctx, api::Dials, Msg::Dials),
+        task(ctx, api::SettingsHistory, Msg::Versions),
     ])
 }
 
@@ -109,8 +109,12 @@ fn keep<T>(slot: &mut T, note: &mut String, answer: Result<T, String>) {
     }
 }
 
-fn send(ctx: &Ctx, cmd: &'static str, args: Value) -> Task<Message> {
-    task(ctx, Ask { cmd, args }, Msg::Done)
+/// Send a change, and read again when it lands.
+fn send<R>(ctx: &Ctx, request: R) -> Task<Message>
+where
+    R: Request<Answer = ()> + Send + Sync + 'static,
+{
+    task(ctx, request, Msg::Done)
 }
 
 pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
@@ -124,26 +128,14 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
             let Some(s) = state.settings.clone() else {
                 return Task::none();
             };
-            return send(
-                ctx,
-                command::SETTINGS_SET,
-                json!({ "settings": apply(s, pick, &choice.id) }),
-            );
+            return send(ctx, api::SettingsSet(apply(s, pick, &choice.id)));
         }
-        Msg::Preset(p) => return send(ctx, command::SETTINGS_PRESET, json!({ "preset": p })),
+        Msg::Preset(p) => return send(ctx, api::SettingsPreset { preset: p.into() }),
         Msg::Dial(stage, dial) => {
-            return send(
-                ctx,
-                command::DIALS_SET,
-                json!({ "stage": stage, "dial": dial }),
-            );
+            return send(ctx, api::DialsSet { stage, dial });
         }
         Msg::Restore(version) => {
-            return send(
-                ctx,
-                command::SETTINGS_RESTORE,
-                json!({ "version": version }),
-            );
+            return send(ctx, api::SettingsRestore { version });
         }
         Msg::Done(Ok(_)) => {
             state.note = "Saved as a new version.".into();

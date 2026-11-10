@@ -2,17 +2,16 @@
 //! Doctor, then the console: containers with stop, start and logs,
 //! functions and trigger types, and queues.
 
+use bastion_protocol::api::{self, Request};
 use bastion_protocol::{
     Check, CheckState, Console, Container, DoctorReport, EngineStatus, Link, LogCursor, LogLine,
-    LogPage, Queue, Registered, StackState, StackStatus, StartRefused, command,
+    LogPage, LogRequest, Queue, Registered, StackState, StackStatus, StartRefused,
 };
 use iced::widget::{Column, button, column, container, row, scrollable, text, text_input};
 use iced::{Color, Element, Fill, Task};
-use serde_json::{Value, json};
 
 use super::{Ctx, scrolled, section};
 use crate::app::Message;
-use crate::client::Ask;
 use crate::theme;
 
 /// The most log lines the panel keeps.
@@ -46,27 +45,28 @@ pub enum Msg {
     Started(Result<StackStatus, String>),
     RunDoctor,
     Toggle(String, bool),
-    Toggled(Result<Value, String>),
+    Toggled(Result<(), String>),
     Watch(String),
     Logs(String, Result<LogPage, String>),
     CloseLogs,
     Filter(String),
 }
 
-fn task<T>(ctx: &Ctx, ask: Ask, then: fn(Result<T, String>) -> Msg) -> Task<Message>
+fn task<R>(ctx: &Ctx, request: R, then: fn(Result<R::Answer, String>) -> Msg) -> Task<Message>
 where
-    T: serde::de::DeserializeOwned + Send + 'static,
+    R: Request + Send + Sync + 'static,
+    R::Answer: Send + 'static,
 {
-    ctx.task(&ctx.current, ask, then).map(Message::Engine)
+    ctx.task(&ctx.current, request, then).map(Message::Engine)
 }
 
 /// Read the link, the stack, Doctor and the console.
 pub fn load(ctx: &Ctx) -> Task<Message> {
     Task::batch([
-        task(ctx, Ask::bare(command::ENGINE_STATUS), Msg::Link),
-        task(ctx, Ask::bare(command::STACK_STATUS), Msg::Stack),
-        task(ctx, Ask::bare(command::DOCTOR), Msg::Doctor),
-        task(ctx, Ask::bare(command::CONSOLE), Msg::Console),
+        task(ctx, api::EngineStatus, Msg::Link),
+        task(ctx, api::StackStatus, Msg::Stack),
+        task(ctx, api::Doctor, Msg::Doctor),
+        task(ctx, api::Console, Msg::Console),
     ])
 }
 
@@ -115,11 +115,11 @@ fn describe_refusal(why: &str) -> (String, Option<DoctorReport>) {
 /// Read the next page of the watched container's logs, waiting for lines
 /// after `cursor`.
 fn read_logs(ctx: &Ctx, name: String, cursor: Option<LogCursor>) -> Task<Message> {
-    let ask = Ask {
-        cmd: command::CONTAINER_LOGS,
-        args: json!({ "request": { "container": name, "cursor": cursor } }),
-    };
-    let read = ctx.clone().get::<LogPage>(ctx.current.clone(), ask);
+    let ask = api::ContainerLogs(LogRequest {
+        container: name.clone(),
+        cursor,
+    });
+    let read = ctx.clone().get(ctx.current.clone(), ask);
     Task::perform(read, move |page| {
         Message::Engine(Msg::Logs(name.clone(), page))
     })
@@ -179,33 +179,27 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         Msg::Console(a) => keep(&mut state.console, e, a),
         Msg::Start => {
             (state.busy, state.note) = (true, "Starting: Doctor first, then the stack.".into());
-            return task(ctx, Ask::bare(command::STACK_START), Msg::Started);
+            return task(ctx, api::StackStart, Msg::Started);
         }
         Msg::Stop => {
             state.busy = true;
-            return task(ctx, Ask::bare(command::STACK_STOP), Msg::Started);
+            return task(ctx, api::StackStop, Msg::Started);
         }
         Msg::Started(answer) => on_started(state, answer),
-        Msg::RunDoctor => return task(ctx, Ask::bare(command::DOCTOR), Msg::Doctor),
+        Msg::RunDoctor => return task(ctx, api::Doctor, Msg::Doctor),
         Msg::Toggle(name, start) => {
-            let cmd = if start {
-                command::CONTAINER_START
-            } else {
-                command::CONTAINER_STOP
-            };
-            let ask = Ask {
-                cmd,
-                args: json!({ "name": name }),
-            };
-            state.toggling = Some(name);
-            return task(ctx, ask, Msg::Toggled);
+            state.toggling = Some(name.clone());
+            if start {
+                return task(ctx, api::ContainerStart { name }, Msg::Toggled);
+            }
+            return task(ctx, api::ContainerStop { name }, Msg::Toggled);
         }
         Msg::Toggled(answer) => {
             state.toggling = None;
             if let Err(why) = answer {
                 state.error = why;
             }
-            return task(ctx, Ask::bare(command::CONSOLE), Msg::Console);
+            return task(ctx, api::Console, Msg::Console);
         }
         Msg::Watch(name) => {
             (state.watching, state.lines) = (Some(name.clone()), vec![]);

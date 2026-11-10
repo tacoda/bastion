@@ -17,12 +17,12 @@ use std::collections::BTreeSet;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use bastion_protocol::Server;
+use bastion_protocol::api::Request;
 use iced::widget::{column, container, text};
 use iced::{Color, Element, Fill, Task};
-use serde::de::DeserializeOwned;
 
 use crate::app::Message;
-use crate::client::{self, Ask};
+use crate::client;
 use crate::route::Route;
 use crate::theme;
 
@@ -44,20 +44,25 @@ impl Ctx {
             .ok_or_else(|| format!("no Bastion server named {name}"))
     }
 
-    /// Send `ask` to the server named `on`, and read its answer as `T`.
-    pub async fn get<T: DeserializeOwned>(self, on: String, ask: Ask) -> Result<T, String> {
+    /// Send `request` to the server named `on`, and read its answer.
+    pub async fn get<R: Request>(self, on: String, request: R) -> Result<R::Answer, String> {
         let server = self.server(&on)?;
-        let value = client::call(self.http, server, ask).await?;
-        serde_json::from_value(value).map_err(|e| e.to_string())
+        client::send(&self.http, &server, &request).await
     }
 
-    /// A task that sends `ask` to `on` and hands its answer to `then`.
-    pub fn task<T, M>(&self, on: &str, ask: Ask, then: fn(Result<T, String>) -> M) -> Task<M>
+    /// A task that sends `request` to `on` and hands its answer to `then`.
+    pub fn task<R, M>(
+        &self,
+        on: &str,
+        request: R,
+        then: fn(Result<R::Answer, String>) -> M,
+    ) -> Task<M>
     where
-        T: DeserializeOwned + Send + 'static,
+        R: Request + Send + Sync + 'static,
+        R::Answer: Send + 'static,
         M: Send + 'static,
     {
-        Task::perform(self.clone().get(on.to_string(), ask), then)
+        Task::perform(self.clone().get(on.to_string(), request), then)
     }
 }
 

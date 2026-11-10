@@ -4,14 +4,13 @@
 
 use std::collections::BTreeSet;
 
-use bastion_protocol::{Change, LOCAL, Server, StackState, StackStatus, command};
+use bastion_protocol::{Change, LOCAL, Server, StackState, api};
 use iced::widget::{
     Column, button, center, column, container, opaque, pick_list, row, stack, text,
 };
 use iced::{Element, Fill, Subscription, Task, window};
-use serde_json::Value;
 
-use crate::client::{self, Ask};
+use crate::client;
 use crate::events::{self, Feed};
 use crate::pages::{self, Ctx, Page, Push, engine, evals, govern, job, jobs, new_request};
 use crate::route::{PAGES, Route};
@@ -81,19 +80,6 @@ impl App {
 
     fn server(&self, name: &str) -> Option<Server> {
         self.servers.iter().find(|s| s.name == name).cloned()
-    }
-
-    /// Send `ask` to the server named `on`, and map its answer.
-    fn call(
-        &self,
-        on: &str,
-        ask: Ask,
-        then: fn(Result<Value, String>) -> Message,
-    ) -> Task<Message> {
-        let Some(server) = self.server(on) else {
-            return Task::none();
-        };
-        Task::perform(client::call(self.http.clone(), server, ask), then)
     }
 
     fn ctx(&self) -> Ctx {
@@ -206,11 +192,8 @@ impl App {
         if self.server(LOCAL).is_none() {
             return iced::exit();
         }
-        self.call(LOCAL, Ask::bare(command::STACK_STATUS), |answer| {
-            let status = answer
-                .ok()
-                .and_then(|v| serde_json::from_value::<StackStatus>(v).ok());
-            Message::StackRunning(status.is_some_and(|s| s.state == StackState::Running))
+        self.ctx().task(LOCAL, api::StackStatus, |answer| {
+            Message::StackRunning(answer.is_ok_and(|s| s.state == StackState::Running))
         })
     }
 

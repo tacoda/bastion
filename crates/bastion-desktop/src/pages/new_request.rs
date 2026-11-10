@@ -2,14 +2,13 @@
 //! Bastion server, run by the workflow picked, or started from a GitHub
 //! issue.
 
-use bastion_protocol::{IssueView, LOCAL, WorkflowView, Workspace, command};
+use bastion_protocol::api::{self, Request};
+use bastion_protocol::{IssueView, LOCAL, WorkflowView, Workspace};
 use iced::widget::{Column, button, column, container, pick_list, row, text, text_editor};
 use iced::{Element, Fill, Task};
-use serde_json::json;
 
 use super::{Choice, Ctx, labeled};
 use crate::app::Message;
-use crate::client::Ask;
 use crate::route::Route;
 use crate::theme;
 
@@ -68,8 +67,8 @@ fn wrap(task: Task<Msg>) -> Task<Message> {
 /// Read the picked server's workspaces and workflows.
 pub fn load(state: &State, ctx: &Ctx) -> Task<Message> {
     let on = state.server.clone();
-    let spaces = ctx.clone().get(on.clone(), Ask::bare(command::WORKSPACES));
-    let flows = ctx.clone().get(on, Ask::bare(command::WORKFLOWS));
+    let spaces = ctx.clone().get(on.clone(), api::Workspaces);
+    let flows = ctx.clone().get(on, api::Workflows);
     wrap(Task::batch([
         Task::perform(spaces, Msg::Workspaces),
         Task::perform(flows, Msg::Workflows),
@@ -88,51 +87,37 @@ impl State {
         self.chosen().is_some() && !self.request.text().trim().is_empty()
     }
 
-    /// Send `ask` to the picked server.
-    fn ask<T>(&self, ctx: &Ctx, ask: Ask, then: fn(Result<T, String>) -> Msg) -> Task<Message>
+    /// Send `request` to the picked server.
+    fn ask<R>(
+        &self,
+        ctx: &Ctx,
+        request: R,
+        then: fn(Result<R::Answer, String>) -> Msg,
+    ) -> Task<Message>
     where
-        T: serde::de::DeserializeOwned + Send + 'static,
+        R: Request + Send + Sync + 'static,
+        R::Answer: Send + 'static,
     {
-        wrap(ctx.task(&self.server, ask, then))
+        wrap(ctx.task(&self.server, request, then))
     }
 
     fn submit(&self, ctx: &Ctx) -> Task<Message> {
-        let mut args = json!({ "workspace": self.chosen(), "request": self.request.text().trim() });
-        if !self.workflow.id.is_empty() {
-            args["workflow"] = json!(self.workflow.id);
-        }
-        self.ask(
-            ctx,
-            Ask {
-                cmd: command::JOB_SUBMIT,
-                args,
-            },
-            Msg::Started,
-        )
+        let submit = api::JobSubmit {
+            workspace: self.chosen().unwrap_or_default(),
+            request: self.request.text().trim().into(),
+            pipeline: None,
+            workflow: (!self.workflow.id.is_empty()).then(|| self.workflow.id.clone()),
+        };
+        self.ask(ctx, submit, Msg::Started)
     }
 
     /// List the workspace's open issues, or start a job from issue `number`.
     fn issues(&self, ctx: &Ctx, number: Option<u64>) -> Task<Message> {
-        let mut args = json!({ "workspace": self.chosen() });
+        let workspace = self.chosen().unwrap_or_default();
         let Some(number) = number else {
-            return self.ask(
-                ctx,
-                Ask {
-                    cmd: command::ISSUES,
-                    args,
-                },
-                Msg::Issues,
-            );
+            return self.ask(ctx, api::Issues { workspace }, Msg::Issues);
         };
-        args["number"] = json!(number);
-        self.ask(
-            ctx,
-            Ask {
-                cmd: command::JOB_FROM_ISSUE,
-                args,
-            },
-            Msg::Started,
-        )
+        self.ask(ctx, api::JobFromIssue { workspace, number }, Msg::Started)
     }
 }
 

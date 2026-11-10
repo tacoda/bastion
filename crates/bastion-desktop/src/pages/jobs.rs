@@ -2,13 +2,12 @@
 //! waiting on the owner first, after wipp's Jobs page and GitHub Actions'
 //! runs list.
 
-use bastion_protocol::{JobSummary, command};
+use bastion_protocol::{JobSummary, api};
 use iced::widget::{Column, button, column, container, pick_list, row, text, text_input};
 use iced::{Element, Fill, Task};
 
 use super::{Ctx, ago, labeled, mark, section};
 use crate::app::Message;
-use crate::client::Ask;
 use crate::route::Route;
 use crate::theme;
 
@@ -49,10 +48,7 @@ pub fn load(state: &State, ctx: &Ctx) -> Task<Msg> {
 async fn read_all(ctx: Ctx, before: Vec<ServerJob>) -> (Vec<ServerJob>, Vec<String>) {
     let (mut all, mut errors) = (Vec::new(), Vec::new());
     for s in &ctx.servers {
-        let read = ctx
-            .clone()
-            .get::<Vec<JobSummary>>(s.name.clone(), Ask::bare(command::JOBS))
-            .await;
+        let read = ctx.clone().get(s.name.clone(), api::Jobs).await;
         match read {
             Ok(jobs) => all.extend(jobs.into_iter().map(|job| ServerJob {
                 server: s.name.clone(),

@@ -1,14 +1,13 @@
 //! Where jobs run: the Bastion servers this window knows (D30), the
 //! workspaces on the server shown, and the accounts it uses.
 
-use bastion_protocol::{AccountView, LOCAL, Server, Workspace, command};
+use bastion_protocol::api::{self, Request};
+use bastion_protocol::{AccountView, LOCAL, Server, Workspace};
 use iced::widget::{Column, button, column, row, text, text_input};
 use iced::{Element, Task};
-use serde_json::{Value, json};
 
 use super::{card, small};
 use crate::app::Message;
-use crate::client::Ask;
 use crate::pages::{Ctx, labeled};
 use crate::{start, theme};
 
@@ -64,24 +63,25 @@ pub enum Msg {
     RemoveServer(String),
     ServersChanged(Result<(), String>),
     AddWorkspace,
-    Done(Result<Value, String>),
+    Done(Result<(), String>),
 }
 
 fn wrap(msg: Msg) -> Message {
     Message::Settings(super::Msg::Places(msg))
 }
 
-fn task<T>(ctx: &Ctx, ask: Ask, then: fn(Result<T, String>) -> Msg) -> Task<Message>
+fn task<R>(ctx: &Ctx, request: R, then: fn(Result<R::Answer, String>) -> Msg) -> Task<Message>
 where
-    T: serde::de::DeserializeOwned + Send + 'static,
+    R: Request + Send + Sync + 'static,
+    R::Answer: Send + 'static,
 {
-    ctx.task(&ctx.current, ask, then).map(wrap)
+    ctx.task(&ctx.current, request, then).map(wrap)
 }
 
 pub fn load(ctx: &Ctx) -> Task<Message> {
     Task::batch([
-        task(ctx, Ask::bare(command::WORKSPACES), Msg::Workspaces),
-        task(ctx, Ask::bare(command::ACCOUNTS), Msg::Accounts),
+        task(ctx, api::Workspaces, Msg::Workspaces),
+        task(ctx, api::Accounts, Msg::Accounts),
     ])
 }
 
@@ -134,14 +134,7 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         }
         Msg::AddWorkspace => {
             let workspace = std::mem::replace(&mut state.workspace, State::default().workspace);
-            return task(
-                ctx,
-                Ask {
-                    cmd: command::WORKSPACE_ADD,
-                    args: json!({ "workspace": workspace }),
-                },
-                Msg::Done,
-            );
+            return task(ctx, api::WorkspaceAdd(workspace), Msg::Done);
         }
         Msg::Done(Ok(_)) => {
             state.note.clear();

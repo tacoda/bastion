@@ -5,16 +5,15 @@
 
 use std::collections::BTreeMap;
 
-use bastion_protocol::{PersonView, WorkflowView, command};
+use bastion_protocol::api::{self, Request};
+use bastion_protocol::{PersonView, WorkflowView};
 use iced::widget::{button, column, container, pick_list, row, text, text_editor, text_input};
 use iced::{Element, Fill, Task};
-use serde_json::{Value, json};
 
 use super::drawing::{self, Drawing, Pointer, title};
 use super::edit::{self, Drag, Pick};
 use super::{Choice, Ctx, labeled, scrolled};
 use crate::app::Message;
-use crate::client::Ask;
 use crate::theme;
 
 const CUSTOM: [&str; 3] = ["skill", "prompt", "command"];
@@ -62,7 +61,17 @@ pub enum Msg {
     Copy,
     Delete,
     Save,
-    Done(&'static str, Result<Value, String>),
+    Done(Result<Done, String>),
+}
+
+/// What a copy, delete or save answered.
+#[derive(Clone, Debug)]
+pub enum Done {
+    /// The copy's id.
+    Copied(String),
+    Deleted,
+    /// The saved workflow's new version.
+    Saved(u64),
 }
 
 fn wrap(msg: Msg) -> Message {
@@ -70,14 +79,18 @@ fn wrap(msg: Msg) -> Message {
 }
 
 pub fn load(ctx: &Ctx) -> Task<Message> {
-    let read = ctx.task(&ctx.current, Ask::bare(command::WORKFLOWS), Msg::Workflows);
-    let me = ctx.task(&ctx.current, Ask::bare(command::ME), Msg::Me);
+    let read = ctx.task(&ctx.current, api::Workflows, Msg::Workflows);
+    let me = ctx.task(&ctx.current, api::Me, Msg::Me);
     Task::batch([read, me]).map(wrap)
 }
 
-fn act(ctx: &Ctx, what: &'static str, ask: Ask) -> Task<Message> {
-    let read = ctx.clone().get::<Value>(ctx.current.clone(), ask);
-    Task::perform(read, move |r| wrap(Msg::Done(what, r)))
+fn act<R>(ctx: &Ctx, request: R, done: fn(R::Answer) -> Done) -> Task<Message>
+where
+    R: Request + Send + Sync + 'static,
+    R::Answer: Send + 'static,
+{
+    let read = ctx.clone().get(ctx.current.clone(), request);
+    Task::perform(read, move |r| wrap(Msg::Done(r.map(done))))
 }
 
 impl State {
@@ -169,29 +182,23 @@ fn on_field(state: &mut State, field: StepField, value: String) {
     }
 }
 
-fn on_done(
-    state: &mut State,
-    ctx: &Ctx,
-    what: &'static str,
-    answer: Result<Value, String>,
-) -> Task<Message> {
-    match (what, answer) {
-        (_, Err(e)) => {
+fn on_done(state: &mut State, ctx: &Ctx, answer: Result<Done, String>) -> Task<Message> {
+    match answer {
+        Err(e) => {
             state.said = e;
             return Task::none();
         }
-        ("copy", Ok(id)) => {
-            (state.chosen, state.copy_name) =
-                (id.as_str().unwrap_or_default().into(), String::new());
+        Ok(Done::Copied(id)) => {
+            (state.chosen, state.copy_name) = (id, String::new());
             state.said = "Copied. Change it, then save.".into();
         }
-        ("delete", Ok(_)) => {
+        Ok(Done::Deleted) => {
             (state.chosen, state.said) = (
                 String::new(),
                 "Deleted. Its versions stay in the history.".into(),
             )
         }
-        (_, Ok(version)) => state.said = format!("Saved as version {version}."),
+        Ok(Done::Saved(version)) => state.said = format!("Saved as version {version}."),
     }
     load(ctx)
 }
@@ -200,39 +207,27 @@ fn manage(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
     match msg {
         Msg::CopyName(n) => state.copy_name = n,
         Msg::Copy => {
-            return act(
-                ctx,
-                "copy",
-                Ask {
-                    cmd: command::WORKFLOW_COPY,
-                    args: json!({ "from": state.chosen, "name": state.copy_name.trim() }),
-                },
-            );
+            let copy = api::WorkflowCopy {
+                from: state.chosen.clone(),
+                name: state.copy_name.trim().into(),
+            };
+            return act(ctx, copy, Done::Copied);
         }
         Msg::Delete => {
-            return act(
-                ctx,
-                "delete",
-                Ask {
-                    cmd: command::WORKFLOW_DELETE,
-                    args: json!({ "id": state.chosen }),
-                },
-            );
+            let id = state.chosen.clone();
+            return act(ctx, api::WorkflowDelete { id }, |()| Done::Deleted);
         }
         Msg::Save => {
             let Some(w) = state.draft.clone() else {
                 return Task::none();
             };
-            return act(
-                ctx,
-                "save",
-                Ask {
-                    cmd: command::WORKFLOW_SAVE,
-                    args: json!({ "id": w.id, "workflow": w }),
-                },
-            );
+            let save = api::WorkflowSave {
+                id: w.id.clone(),
+                workflow: w,
+            };
+            return act(ctx, save, Done::Saved);
         }
-        Msg::Done(what, answer) => return on_done(state, ctx, what, answer),
+        Msg::Done(answer) => return on_done(state, ctx, answer),
         _ => {}
     }
     Task::none()

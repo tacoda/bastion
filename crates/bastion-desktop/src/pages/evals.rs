@@ -2,18 +2,17 @@
 //! one, and one eval as A against B per request and in total, each refused
 //! call listed with a link to its job.
 
+use bastion_protocol::api::{self, Request};
 use bastion_protocol::{
-    ConstraintView, EvalRow, EvalSummary, EvalView, RunView, Workspace, command,
+    ConstraintView, EvalRow, EvalSummary, EvalView, NewEval, RunView, Workspace,
 };
 use iced::widget::{
     Column, Row, button, column, container, pick_list, row, text, text_editor, text_input,
 };
 use iced::{Element, Fill, Task};
-use serde_json::{Value, json};
 
 use super::{Choice, Ctx, ago, labeled, scrolled, section};
 use crate::app::Message;
-use crate::client::Ask;
 use crate::route::Route;
 use crate::theme;
 
@@ -56,7 +55,7 @@ impl Default for Form {
 
 impl Form {
     /// The eval as the server takes it; a choice left alone is its first option.
-    fn eval(&self) -> Value {
+    fn eval(&self) -> NewEval {
         let workspace = self
             .workspace
             .clone()
@@ -74,10 +73,14 @@ impl Form {
             .filter(|l| !l.is_empty())
             .map(String::from)
             .collect();
-        json!({ "eval": {
-            "name": self.name.trim(), "workspace": workspace.unwrap_or_default(), "requests": requests,
-            "target": target.unwrap_or_default(), "rung_a": self.rung_a, "rung_b": self.rung_b,
-        }})
+        NewEval {
+            name: self.name.trim().into(),
+            workspace: workspace.unwrap_or_default(),
+            requests,
+            target: target.unwrap_or_default(),
+            rung_a: self.rung_a.clone(),
+            rung_b: self.rung_b.clone(),
+        }
     }
 }
 
@@ -127,32 +130,28 @@ pub enum Msg {
     Created(Result<String, String>),
     Eval(Result<Box<EvalView>, String>),
     Apply(&'static str),
-    Applied(&'static str, Result<Value, String>),
+    Applied(&'static str, Result<(), String>),
 }
 
-fn task<T>(ctx: &Ctx, ask: Ask, then: fn(Result<T, String>) -> Msg) -> Task<Message>
+fn task<R>(ctx: &Ctx, request: R, then: fn(Result<R::Answer, String>) -> Msg) -> Task<Message>
 where
-    T: serde::de::DeserializeOwned + Send + 'static,
+    R: Request + Send + Sync + 'static,
+    R::Answer: Send + 'static,
 {
-    ctx.task(&ctx.current, ask, then).map(Message::Evals)
+    ctx.task(&ctx.current, request, then).map(Message::Evals)
 }
 
 pub fn load_list(ctx: &Ctx) -> Task<Message> {
     Task::batch([
-        task(ctx, Ask::bare(command::EVALS), Msg::Evals),
-        task(ctx, Ask::bare(command::WORKSPACES), Msg::Workspaces),
-        task(ctx, Ask::bare(command::CONSTRAINTS), Msg::Constraints),
+        task(ctx, api::Evals, Msg::Evals),
+        task(ctx, api::Workspaces, Msg::Workspaces),
+        task(ctx, api::Constraints, Msg::Constraints),
     ])
 }
 
 pub fn load_one(one: &One, ctx: &Ctx) -> Task<Message> {
-    let ask = Ask {
-        cmd: command::EVAL,
-        args: json!({ "id": one.id }),
-    };
-    task(ctx, ask, |r: Result<EvalView, String>| {
-        Msg::Eval(r.map(Box::new))
-    })
+    let read = api::Eval { id: one.id.clone() };
+    task(ctx, read, |r| Msg::Eval(r.map(Box::new)))
 }
 
 fn targets(all: Vec<ConstraintView>) -> Vec<Choice> {
@@ -179,14 +178,7 @@ fn on_form(form: &mut Form, msg: Msg, ctx: &Ctx) -> Task<Message> {
         Msg::Rung(Rung::A, r) => form.rung_a = r,
         Msg::Rung(Rung::B, r) => form.rung_b = r,
         Msg::Run => {
-            return task(
-                ctx,
-                Ask {
-                    cmd: command::EVAL_CREATE,
-                    args: form.eval(),
-                },
-                Msg::Created,
-            );
+            return task(ctx, api::EvalCreate(form.eval()), Msg::Created);
         }
         Msg::Created(Ok(id)) => return Task::done(Message::Go(Route::Eval(id))),
         _ => {}
@@ -203,7 +195,7 @@ pub fn update_list(list: &mut List, msg: Msg, ctx: &Ctx) -> Task<Message> {
     Task::none()
 }
 
-fn applied(arm: &str, answer: Result<Value, String>) -> String {
+fn applied(arm: &str, answer: Result<(), String>) -> String {
     match answer {
         Ok(_) => format!(
             "Arm {} is now the live policy. The audit records this eval.",
@@ -218,11 +210,11 @@ pub fn update_one(one: &mut One, msg: Msg, ctx: &Ctx) -> Task<Message> {
         Msg::Eval(Ok(v)) => one.eval = Some(*v),
         Msg::Eval(Err(e)) => one.error = e,
         Msg::Apply(arm) => {
-            let ask = Ask {
-                cmd: command::EVAL_APPLY,
-                args: json!({ "id": one.id, "arm": arm }),
+            let apply = api::EvalApply {
+                id: one.id.clone(),
+                arm: arm.into(),
             };
-            let read = ctx.clone().get::<Value>(ctx.current.clone(), ask);
+            let read = ctx.clone().get(ctx.current.clone(), apply);
             return Task::perform(read, move |a| Message::Evals(Msg::Applied(arm, a)));
         }
         Msg::Applied(arm, answer) => one.note = applied(arm, answer),
@@ -550,14 +542,11 @@ mod tests {
             requests: text_editor::Content::with_text("Add add.\n\n  Add sub.  "),
             ..Form::default()
         };
-        let e = &form.eval()["eval"];
-        assert_eq!(e["workspace"], "calc");
-        assert_eq!(e["target"], "constraint:no-curl");
-        assert_eq!(e["requests"], json!(["Add add.", "Add sub."]));
-        assert_eq!(
-            (e["rung_a"].as_str(), e["rung_b"].as_str()),
-            (Some("told"), Some("enforced"))
-        );
+        let e = form.eval();
+        assert_eq!(e.workspace, "calc");
+        assert_eq!(e.target, "constraint:no-curl");
+        assert_eq!(e.requests, ["Add add.", "Add sub."]);
+        assert_eq!((e.rung_a.as_str(), e.rung_b.as_str()), ("told", "enforced"));
     }
 
     #[test]

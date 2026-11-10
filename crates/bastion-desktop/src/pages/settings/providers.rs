@@ -5,14 +5,13 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use bastion_protocol::{HostView, ProviderView, SignIn, command};
+use bastion_protocol::api::{self, Request};
+use bastion_protocol::{HostView, ProviderView, SignIn};
 use iced::widget::{Column, button, column, row, text, text_input};
 use iced::{Element, Fill, Task};
-use serde_json::{Value, json};
 
 use super::{card, small};
 use crate::app::Message;
-use crate::client::Ask;
 use crate::pages::Ctx;
 use crate::theme;
 
@@ -48,24 +47,25 @@ pub enum Msg {
     HostField(HostField, String),
     AddHost,
     RemoveHost(String),
-    Done(Result<Value, String>),
+    Done(Result<(), String>),
 }
 
 fn wrap(msg: Msg) -> Message {
     Message::Settings(super::Msg::Providers(msg))
 }
 
-fn task<T>(ctx: &Ctx, ask: Ask, then: fn(Result<T, String>) -> Msg) -> Task<Message>
+fn task<R>(ctx: &Ctx, request: R, then: fn(Result<R::Answer, String>) -> Msg) -> Task<Message>
 where
-    T: serde::de::DeserializeOwned + Send + 'static,
+    R: Request + Send + Sync + 'static,
+    R::Answer: Send + 'static,
 {
-    ctx.task(&ctx.current, ask, then).map(wrap)
+    ctx.task(&ctx.current, request, then).map(wrap)
 }
 
 pub fn load(ctx: &Ctx) -> Task<Message> {
     Task::batch([
-        task(ctx, Ask::bare(command::PROVIDERS), Msg::Providers),
-        task(ctx, Ask::bare(command::HOSTS), Msg::Hosts),
+        task(ctx, api::Providers, Msg::Providers),
+        task(ctx, api::Hosts, Msg::Hosts),
     ])
 }
 
@@ -77,26 +77,18 @@ fn with_host(mut hosts: Vec<HostView>, host: HostView) -> Vec<HostView> {
 }
 
 fn save_hosts(ctx: &Ctx, hosts: Vec<HostView>) -> Task<Message> {
-    task(
-        ctx,
-        Ask {
-            cmd: command::HOSTS_SET,
-            args: json!({ "hosts": hosts }),
-        },
-        Msg::Done,
-    )
+    task(ctx, api::HostsSet(hosts), Msg::Done)
 }
 
 /// Wait the sign-in's interval, then ask how it went.
 fn poll(ctx: &Ctx, s: &SignIn) -> Task<Message> {
     let (wait, ask) = (
         Duration::from_secs(s.interval.max(1)),
-        Ask {
-            cmd: command::CODEX_SIGN_IN_POLL,
-            args: json!({ "login_id": s.login_id }),
+        api::CodexSignInPoll {
+            login_id: s.login_id.clone(),
         },
     );
-    let read = ctx.clone().get::<String>(ctx.current.clone(), ask);
+    let read = ctx.clone().get(ctx.current.clone(), ask);
     Task::perform(
         async move {
             tokio::time::sleep(wait).await;
@@ -143,33 +135,19 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         }
         Msg::SetKey(id) => {
             let key = state.keys.remove(&id).unwrap_or_default();
-            return task(
-                ctx,
-                Ask {
-                    cmd: command::PROVIDER_KEY_SET,
-                    args: json!({ "id": id, "key": key }),
-                },
-                Msg::Done,
-            );
+            return task(ctx, api::ProviderKeySet { id, key }, Msg::Done);
         }
         Msg::RemoveKey(id) => {
-            return task(
-                ctx,
-                Ask {
-                    cmd: command::PROVIDER_KEY_REMOVE,
-                    args: json!({ "id": id }),
-                },
-                Msg::Done,
-            );
+            return task(ctx, api::ProviderKeyRemove { id }, Msg::Done);
         }
-        Msg::SignIn => return task(ctx, Ask::bare(command::CODEX_SIGN_IN), Msg::Started),
+        Msg::SignIn => return task(ctx, api::CodexSignIn, Msg::Started),
         Msg::Started(Ok(s)) => {
             let next = poll(ctx, &s);
             state.signing_in = Some(s);
             return next;
         }
         Msg::Polled(answer) => return on_polled(state, ctx, answer),
-        Msg::SignOut => return task(ctx, Ask::bare(command::CODEX_SIGN_OUT), Msg::Done),
+        Msg::SignOut => return task(ctx, api::CodexSignOut, Msg::Done),
         Msg::HostField(f, v) => on_host(state, f, v),
         Msg::AddHost => {
             let host = std::mem::take(&mut state.new_host);

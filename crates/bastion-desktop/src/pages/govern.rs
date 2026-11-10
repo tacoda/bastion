@@ -1,16 +1,15 @@
 //! The governance pages: Constraints and Capabilities, each on
 //! its ladder with promote and demote, and the Audit Log with its check.
 
+use bastion_protocol::api::{self, Request};
 use bastion_protocol::{
-    AuditView, CapabilityView, ConstraintView, FactoryCapabilityView, WorkspaceCharterView, command,
+    AuditView, CapabilityView, ConstraintView, FactoryCapabilityView, WorkspaceCharterView,
 };
 use iced::widget::{Column, button, column, container, pick_list, row, text, text_input};
 use iced::{Color, Element, Fill, Task};
-use serde_json::{Value, json};
 
 use super::{Ctx, ago, labeled, scrolled, section};
 use crate::app::Message;
-use crate::client::Ask;
 use crate::theme;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -82,7 +81,7 @@ pub enum Msg {
     Factory(Result<Vec<FactoryCapabilityView>, String>),
     MoveConstraint(String, bool),
     MoveGrant(CapabilityView, bool),
-    Done(Result<Value, String>),
+    Done(Result<(), String>),
     History(String),
     Edit(Field, String),
     Rung(String),
@@ -95,34 +94,43 @@ pub enum Msg {
 /// Read what the page shows from the server it shows.
 pub fn load(state: &State, ctx: &Ctx) -> Task<Message> {
     let on = &ctx.current;
-    let audit = ctx.task(on, Ask::bare(command::AUDIT), Msg::Audit);
+    let audit = ctx.task(on, api::Audit, Msg::Audit);
     let tasks = match state.which {
         Which::Constraints => vec![
-            ctx.task(on, Ask::bare(command::CONSTRAINTS), Msg::Constraints),
-            ctx.task(on, Ask::bare(command::CHARTERS), Msg::Charters),
+            ctx.task(on, api::Constraints, Msg::Constraints),
+            ctx.task(on, api::Charters, Msg::Charters),
             audit,
         ],
         Which::Capabilities => vec![
-            ctx.task(on, Ask::bare(command::CAPABILITIES), Msg::Grants),
-            ctx.task(on, Ask::bare(command::CHARTERS), Msg::Charters),
-            ctx.task(on, Ask::bare(command::FACTORY_CAPABILITIES), Msg::Factory),
+            ctx.task(on, api::Capabilities, Msg::Grants),
+            ctx.task(on, api::Charters, Msg::Charters),
+            ctx.task(on, api::FactoryCapabilities, Msg::Factory),
         ],
         Which::Audit => vec![audit],
     };
     Task::batch(tasks).map(Message::Govern)
 }
 
-fn send(ctx: &Ctx, cmd: &'static str, args: Value) -> Task<Message> {
-    ctx.task(&ctx.current, Ask { cmd, args }, Msg::Done)
+/// Send a write to the server shown, and read again when it lands.
+fn send<R>(ctx: &Ctx, request: R) -> Task<Message>
+where
+    R: Request<Answer = ()> + Send + Sync + 'static,
+{
+    ctx.task(&ctx.current, request, Msg::Done)
         .map(Message::Govern)
 }
 
 /// The owner's new constraint, as the server takes it.
-fn new_constraint(d: &Draft) -> Value {
-    json!({ "constraint": {
-        "id": d.id.trim(), "rule": d.rule.trim(), "function": d.function.trim(),
-        "contains": d.contains.trim(), "rung": d.rung, "source": "owner", "layer": "",
-    }})
+fn new_constraint(d: &Draft) -> api::ConstraintAdd {
+    api::ConstraintAdd(ConstraintView {
+        id: d.id.trim().into(),
+        rule: d.rule.trim().into(),
+        function: d.function.trim().into(),
+        contains: d.contains.trim().into(),
+        rung: d.rung.clone(),
+        source: "owner".into(),
+        layer: String::new(),
+    })
 }
 
 fn edit(d: &mut Draft, field: Field, value: String) {
@@ -151,14 +159,15 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         Msg::Charters(a) => keep(&mut state.charters, e, a),
         Msg::Factory(a) => keep(&mut state.factory, e, a),
         Msg::MoveConstraint(id, up) => {
-            return send(ctx, command::CONSTRAINT_MOVE, json!({ "id": id, "up": up }));
+            return send(ctx, api::ConstraintMove { id, up });
         }
         Msg::MoveGrant(g, up) => {
-            return send(
-                ctx,
-                command::CAPABILITY_MOVE,
-                json!({ "stage": g.stage, "function": g.function, "up": up }),
-            );
+            let moved = api::CapabilityMove {
+                stage: g.stage,
+                function: g.function,
+                up,
+            };
+            return send(ctx, moved);
         }
         Msg::Done(Ok(_)) => {
             state.error.clear();
@@ -170,7 +179,7 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         Msg::Rung(r) => state.draft.rung = r,
         Msg::ToggleForm => state.draft.open = !state.draft.open,
         Msg::Add => {
-            let added = send(ctx, command::CONSTRAINT_ADD, new_constraint(&state.draft));
+            let added = send(ctx, new_constraint(&state.draft));
             state.draft = Draft {
                 rung: state.draft.rung.clone(),
                 open: true,
@@ -180,11 +189,7 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         }
         Msg::Export => {
             return ctx
-                .task(
-                    &ctx.current,
-                    Ask::bare(command::AUDIT_EXPORT),
-                    Msg::Exported,
-                )
+                .task(&ctx.current, api::AuditExport, Msg::Exported)
                 .map(Message::Govern);
         }
         Msg::Exported(answer) => {
@@ -569,10 +574,10 @@ mod tests {
         };
         edit(&mut d, Field::Id, " no-curl ".into());
         edit(&mut d, Field::Contains, "curl".into());
-        let c = &new_constraint(&d)["constraint"];
+        let c = new_constraint(&d).0;
         assert_eq!(
-            (c["id"].as_str(), c["source"].as_str(), c["rung"].as_str()),
-            (Some("no-curl"), Some("owner"), Some("checked"))
+            (c.id.as_str(), c.source.as_str(), c.rung.as_str()),
+            ("no-curl", "owner", "checked")
         );
     }
 

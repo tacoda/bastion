@@ -1,14 +1,13 @@
 //! People on a Bastion server and their tokens (D31). Only an admin on a
 //! remote server manages them; a token is shown once, when it is issued.
 
-use bastion_protocol::{LOCAL, PersonView, TokenView, command};
+use bastion_protocol::api::{self, Request};
+use bastion_protocol::{LOCAL, PersonView, TokenView};
 use iced::widget::{Column, button, column, pick_list, row, text, text_input};
 use iced::{Element, Task};
-use serde_json::{Value, json};
 
 use super::{card, small};
 use crate::app::Message;
-use crate::client::Ask;
 use crate::pages::{Ctx, labeled};
 use crate::theme;
 
@@ -50,18 +49,19 @@ pub enum Msg {
     Issue(String),
     Issued(String, Result<String, String>),
     Revoke(String),
-    Done(Result<Value, String>),
+    Done(Result<(), String>),
 }
 
 fn wrap(msg: Msg) -> Message {
     Message::Settings(super::Msg::People(msg))
 }
 
-fn task<T>(ctx: &Ctx, ask: Ask, then: fn(Result<T, String>) -> Msg) -> Task<Message>
+fn task<R>(ctx: &Ctx, request: R, then: fn(Result<R::Answer, String>) -> Msg) -> Task<Message>
 where
-    T: serde::de::DeserializeOwned + Send + 'static,
+    R: Request + Send + Sync + 'static,
+    R::Answer: Send + 'static,
 {
-    ctx.task(&ctx.current, ask, then).map(wrap)
+    ctx.task(&ctx.current, request, then).map(wrap)
 }
 
 /// Whether `me` manages people here: an admin, on a remote Bastion server.
@@ -71,7 +71,7 @@ fn manages(server: &str, me: Option<&PersonView>) -> bool {
 }
 
 pub fn load(ctx: &Ctx) -> Task<Message> {
-    task(ctx, Ask::bare(command::ME), Msg::Me)
+    task(ctx, api::Me, Msg::Me)
 }
 
 fn on_me(state: &mut State, ctx: &Ctx, me: PersonView) -> Task<Message> {
@@ -81,17 +81,17 @@ fn on_me(state: &mut State, ctx: &Ctx, me: PersonView) -> Task<Message> {
         return Task::none();
     }
     Task::batch([
-        task(ctx, Ask::bare(command::PEOPLE), Msg::People),
-        task(ctx, Ask::bare(command::TOKENS), Msg::Tokens),
+        task(ctx, api::People, Msg::People),
+        task(ctx, api::Tokens, Msg::Tokens),
     ])
 }
 
 fn issue(ctx: &Ctx, name: String) -> Task<Message> {
-    let ask = Ask {
-        cmd: command::TOKEN_ISSUE,
-        args: json!({ "name": name, "label": "issued in Settings" }),
+    let ask = api::TokenIssue {
+        name: name.clone(),
+        label: "issued in Settings".into(),
     };
-    let read = ctx.clone().get::<String>(ctx.current.clone(), ask);
+    let read = ctx.clone().get(ctx.current.clone(), ask);
     Task::perform(read, move |token| wrap(Msg::Issued(name.clone(), token)))
 }
 
@@ -106,26 +106,15 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         Msg::Name(n) => state.name = n,
         Msg::Role(r) => state.role = r,
         Msg::Add => {
-            let person = json!({ "person": { "name": state.name.trim(), "role": state.role } });
+            let person = PersonView {
+                name: state.name.trim().into(),
+                role: state.role.clone(),
+            };
             state.name.clear();
-            return task(
-                ctx,
-                Ask {
-                    cmd: command::PERSON_ADD,
-                    args: person,
-                },
-                Msg::Done,
-            );
+            return task(ctx, api::PersonAdd(person), Msg::Done);
         }
         Msg::ChangeRole(name, role) => {
-            return task(
-                ctx,
-                Ask {
-                    cmd: command::PERSON_ROLE,
-                    args: json!({ "name": name, "role": role }),
-                },
-                Msg::Done,
-            );
+            return task(ctx, api::PersonRole { name, role }, Msg::Done);
         }
         Msg::Issue(name) => return issue(ctx, name),
         Msg::Issued(name, Ok(token)) => {
@@ -134,14 +123,7 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         }
         Msg::Issued(_, Err(e)) => state.note = e,
         Msg::Revoke(id) => {
-            return task(
-                ctx,
-                Ask {
-                    cmd: command::TOKEN_REVOKE,
-                    args: json!({ "id": id }),
-                },
-                Msg::Done,
-            );
+            return task(ctx, api::TokenRevoke { id }, Msg::Done);
         }
         Msg::Done(Ok(_)) => {
             state.note.clear();

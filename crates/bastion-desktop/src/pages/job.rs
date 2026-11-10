@@ -4,19 +4,18 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use bastion_protocol::api::{self, Request};
 use bastion_protocol::{
-    ArtifactView, CharterView, HeldCallView, JobDetail, StepView, TranscriptLine, command,
+    ArtifactView, CharterView, HeldCallRef, HeldCallView, JobDetail, StepView, TranscriptLine,
 };
 use iced::widget::{
     Column, button, column, container, row, scrollable, text, text_editor, text_input,
 };
 use iced::{Element, Fill, Task};
-use serde_json::{Value, json};
 
 use super::drawing::{self, Drawing};
 use super::{Ctx, ago, diff, mark, section};
 use crate::app::Message;
-use crate::client::Ask;
 use crate::route::Route;
 use crate::theme;
 
@@ -60,8 +59,8 @@ pub enum Msg {
     Read(Result<Box<JobDetail>, String>),
     Edit(text_editor::Action),
     CommentAt(String),
-    Act(&'static str),
-    Acted(Result<Value, String>),
+    Act(Action),
+    Acted(Result<(), String>),
     Feedback(String, String),
     Allow(String),
     Refuse(String),
@@ -69,26 +68,30 @@ pub enum Msg {
     ToggleTurn,
 }
 
-fn ask(
-    ctx: &Ctx,
-    cmd: &'static str,
-    args: Value,
-    then: fn(Result<Value, String>) -> Msg,
-) -> Task<Message> {
-    ctx.task(&ctx.current, Ask { cmd, args }, then)
+/// What the owner does to a job from its page.
+#[derive(Clone, Copy, Debug)]
+pub enum Action {
+    Approve,
+    Comment,
+    Stop,
+}
+
+/// Send a write to the server shown, its answer to `Msg::Acted`.
+fn ask<R>(ctx: &Ctx, request: R) -> Task<Message>
+where
+    R: Request<Answer = ()> + Send + Sync + 'static,
+{
+    ctx.task(&ctx.current, request, Msg::Acted)
         .map(Message::Job)
 }
 
 /// Read the job again from the server the page shows.
 pub fn load(state: &State, ctx: &Ctx) -> Task<Message> {
-    let read = Ask {
-        cmd: command::JOB,
-        args: json!({ "id": state.id }),
+    let read = api::Job {
+        id: state.id.clone(),
     };
-    ctx.task(&ctx.current, read, |r: Result<JobDetail, String>| {
-        Msg::Read(r.map(Box::new))
-    })
-    .map(Message::Job)
+    ctx.task(&ctx.current, read, |r| Msg::Read(r.map(Box::new)))
+        .map(Message::Job)
 }
 
 /// Put `at` on its own line at the end of the note.
@@ -103,31 +106,28 @@ fn append(note: &mut text_editor::Content, at: &str) {
 }
 
 /// Approve, send back or answer with the note, or stop.
-fn act(state: &State, ctx: &Ctx, cmd: &'static str) -> Task<Message> {
-    let mut args = json!({ "id": state.id });
-    if cmd == command::JOB_COMMENT {
-        args["text"] = json!(state.note.text().trim());
+fn act(state: &State, ctx: &Ctx, action: Action) -> Task<Message> {
+    let id = state.id.clone();
+    match action {
+        Action::Approve => ask(ctx, api::JobApprove { id }),
+        Action::Stop => ask(ctx, api::JobStop { id }),
+        Action::Comment => {
+            let text = state.note.text().trim().to_string();
+            ask(ctx, api::JobComment { id, text })
+        }
     }
-    ask(ctx, cmd, args, Msg::Acted)
 }
 
 fn held(state: &State, ctx: &Ctx, call: String, allow: bool) -> Task<Message> {
-    let held = json!({ "job": state.id, "call": call });
-    if allow {
-        return ask(
-            ctx,
-            command::HELD_ALLOW,
-            json!({ "held": held }),
-            Msg::Acted,
-        );
-    }
     let feedback = state.feedback.get(&call).cloned().unwrap_or_default();
-    ask(
-        ctx,
-        command::HELD_REFUSE,
-        json!({ "held": held, "feedback": feedback }),
-        Msg::Acted,
-    )
+    let held = HeldCallRef {
+        job: state.id.clone(),
+        call,
+    };
+    if allow {
+        return ask(ctx, api::HeldAllow(held));
+    }
+    ask(ctx, api::HeldRefuse { held, feedback })
 }
 
 pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
@@ -143,7 +143,7 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         Msg::Read(Err(e)) | Msg::Acted(Err(e)) => state.error = e,
         Msg::Edit(action) => state.note.perform(action),
         Msg::CommentAt(at) => append(&mut state.note, &at),
-        Msg::Act(cmd) => return act(state, ctx, cmd),
+        Msg::Act(action) => return act(state, ctx, action),
         Msg::Acted(Ok(_)) => {
             state.note = text_editor::Content::new();
             state.error.clear();
@@ -324,16 +324,15 @@ fn actions(state: &State) -> Element<'_, Message> {
             button("Approve")
                 .padding([8, 12])
                 .style(theme::primary)
-                .on_press(Message::Job(Msg::Act(command::JOB_APPROVE))),
+                .on_press(Message::Job(Msg::Act(Action::Approve))),
         );
     }
     if state.allows("comment") || answer {
         let label = if answer { "Answer" } else { "Send back" };
         let ready = !state.note.text().trim().is_empty();
         let send = button(label).padding([8, 12]).style(theme::secondary);
-        buttons = buttons.push(
-            send.on_press_maybe(ready.then_some(Message::Job(Msg::Act(command::JOB_COMMENT)))),
-        );
+        buttons = buttons
+            .push(send.on_press_maybe(ready.then_some(Message::Job(Msg::Act(Action::Comment)))));
     }
     buttons.into()
 }
@@ -585,7 +584,7 @@ fn top(state: &State) -> Element<'_, Message> {
         let stop = button(text("Stop").color(theme::BAD))
             .padding([8, 12])
             .style(theme::secondary);
-        bar = bar.push(stop.on_press(Message::Job(Msg::Act(command::JOB_STOP))));
+        bar = bar.push(stop.on_press(Message::Job(Msg::Act(Action::Stop))));
     }
     bar.into()
 }

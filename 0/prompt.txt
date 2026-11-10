@@ -1,0 +1,45 @@
+<task-notification>
+<task-id>b8t5sgzao</task-id>
+<summary>Monitor event: "job j0ee15c51 across the server restart"</summary>
+<event>12:09:42 server unreachable</event>
+</task-notification>
+
+---
+
+done, cargo clean ran
+
+---
+
+<task-notification>
+<task-id>bvy5mqmp2</task-id>
+<summary>Monitor event: "job j0ee15c51 after the server restart"</summary>
+<event>12:18:18 server unreachable</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b8t5sgzao</task-id>
+<summary>Monitor event: "job j0ee15c51 across the server restart"</summary>
+<event>[Monitor expired after 30m with 1 event delivered. Re-arm it if you still need the watch.]</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>be276c9jz</task-id>
+<summary>Monitor event: "job j0ee15c51 after a mid-turn restart"</summary>
+<event>12:40:24 server unreachable</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bvy5mqmp2</task-id>
+<summary>Monitor event: "job j0ee15c51 after the server restart"</summary>
+<event>[Monitor expired after 30m with 1 event delivered. Re-arm it if you still need the watch.]</event>
+</task-notification>
+
+---
+
+ok, let's do the next run - also I expect the server to also handle the iii stack. When I cancel that process, I except the engine to go down as well. The UI app should connect if one is running and start if not, and still allow for the server to continue running with the UI exit message.

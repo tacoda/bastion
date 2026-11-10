@@ -7,7 +7,7 @@ description = "A client of Bastion servers (PLAN.md D38): the server list, the l
 
 [dependencies]
 bastion-protocol = { path = "../bastion-protocol" }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-native-roots", "stream"] }
 futures = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

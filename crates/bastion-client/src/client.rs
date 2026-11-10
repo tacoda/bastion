@@ -4,6 +4,7 @@
 use std::time::Duration;
 
 use bastion_protocol::Server;
+use bastion_protocol::api::Request;
 use bastion_protocol::routes::{self, Body};
 use serde_json::{Map, Value};
 
@@ -82,6 +83,31 @@ pub async fn call(http: reqwest::Client, server: Server, ask: Ask) -> Result<Val
     let ok = response.status().is_success();
     let text = response.text().await.unwrap_or_default();
     answer(ok, &text)
+}
+
+/// Send `request` to `server`, and read its answer, or the server's
+/// refusal as text.
+pub async fn send<R: Request>(
+    http: &reqwest::Client,
+    server: &Server,
+    request: &R,
+) -> Result<R::Answer, String> {
+    let url = format!("{}{}", server.url.trim_end_matches('/'), request.path());
+    let method = reqwest::Method::from_bytes(R::METHOD.as_bytes()).map_err(|e| e.to_string())?;
+    let mut sent = http.request(method, url).bearer_auth(&server.token);
+    if R::BODY {
+        sent = sent.json(request);
+    }
+    let unreachable = |_| {
+        format!(
+            "The Bastion server {} at {} cannot be reached.",
+            server.name, server.url
+        )
+    };
+    let response = sent.send().await.map_err(unreachable)?;
+    let ok = response.status().is_success();
+    let text = response.text().await.unwrap_or_default();
+    serde_json::from_value(answer(ok, &text)?).map_err(|e| e.to_string())
 }
 
 /// A success's value, or a refusal's text: `{ "error": text }`, or the

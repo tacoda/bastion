@@ -850,16 +850,15 @@ mod tests {
         (status, String::from_utf8_lossy(&body).into_owned())
     }
 
-    /// Every command a client routes reaches a handler here: no 404 for a
+    /// Every request a client can send reaches a handler here: no 404 for a
     /// path that does not exist, no 405 for the wrong method.
     #[test]
-    fn every_route_the_page_uses_exists() {
+    fn every_request_a_client_sends_has_a_route() {
         crate::rt::block_on(async {
-            for cmd in bastion_protocol::routes::ROUTED {
-                let (method, path, body) = bastion_protocol::routes::route(cmd).unwrap();
-                let path = path.replace("{number}", "7").replace(['{', '}'], "");
-                let body = match body {
-                    bastion_protocol::routes::Body::Empty => Body::empty(),
+            for (method, route) in bastion_protocol::api::every() {
+                let path = route.replace("{number}", "7").replace(['{', '}'], "");
+                let body = match method {
+                    "GET" | "DELETE" => Body::empty(),
                     _ => Body::from("{}"),
                 };
                 let request = Request::builder()
@@ -876,9 +875,84 @@ mod tests {
                     .status();
                 assert!(
                     status != StatusCode::NOT_FOUND && status != StatusCode::METHOD_NOT_ALLOWED,
-                    "{cmd}: {method} {path} answered {status}"
+                    "{method} {route} answered {status}"
                 );
             }
+        });
+    }
+
+    /// Each typed request's body reads as the body its handler takes.
+    #[test]
+    fn every_typed_body_reads_as_its_handlers_body() {
+        use bastion_protocol::api;
+        fn reads<T: serde::de::DeserializeOwned>(body: impl Serialize) {
+            let value = serde_json::to_value(body).unwrap();
+            if let Err(e) = serde_json::from_value::<T>(value.clone()) {
+                panic!(
+                    "{value} does not read as {}: {e}",
+                    std::any::type_name::<T>()
+                );
+            }
+        }
+        let held = HeldCallRef {
+            job: "j1".into(),
+            call: "c1".into(),
+        };
+        let s = |v: &str| v.to_string();
+        reads::<Submit>(api::JobSubmit {
+            workspace: s("w"),
+            request: s("r"),
+            pipeline: Some(s("full_no_acceptance")),
+            workflow: None,
+        });
+        reads::<Text>(api::JobComment {
+            id: s("j1"),
+            text: s("x"),
+        });
+        reads::<SetDial>(api::DialsSet {
+            stage: s("plan"),
+            dial: s("dark"),
+        });
+        reads::<Arm>(api::EvalApply {
+            id: s("e1"),
+            arm: s("a"),
+        });
+        reads::<RefuseCall>(api::HeldRefuse {
+            held: held.clone(),
+            feedback: s("no"),
+        });
+        reads::<HeldCallRef>(api::HeldAllow(held));
+        reads::<Up>(api::ConstraintMove {
+            id: s("c"),
+            up: true,
+        });
+        reads::<Grant>(api::CapabilityMove {
+            stage: s("build"),
+            function: s("f"),
+            up: false,
+        });
+        reads::<Preset>(api::SettingsPreset { preset: s("low") });
+        reads::<Version>(api::SettingsRestore { version: 3 });
+        reads::<NewRole>(api::PersonRole {
+            name: s("ana"),
+            role: s("member"),
+        });
+        reads::<Person>(api::PersonAdd(bastion_protocol::PersonView {
+            name: s("ana"),
+            role: s("viewer"),
+        }));
+        reads::<Label>(api::TokenIssue {
+            name: s("ana"),
+            label: s("laptop"),
+        });
+        reads::<Key>(api::ProviderKeySet {
+            id: s("x"),
+            key: s("k"),
+        });
+        reads::<LoginId>(api::CodexSignInPoll { login_id: s("l") });
+        reads::<CopyWorkflow>(api::WorkflowCopy {
+            from: s("a"),
+            name: s("b"),
         });
     }
 

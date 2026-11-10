@@ -2,6 +2,7 @@
 //! change the server pushes, with their types. The server and each client
 //! depend on this crate, and on nothing of each other's.
 
+pub mod api;
 pub mod routes;
 
 use serde::{Deserialize, Serialize};

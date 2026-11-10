@@ -63,7 +63,8 @@ fn approved_test(file: &str) -> Constraint {
 }
 
 /// What the rules read from a call: its command line in any of the shapes
-/// `sandbox::exec` takes (`argv`, or `cmd` with `args`), else its path.
+/// `sandbox::exec` takes (`argv`, or `cmd` with `args`), else its path, and
+/// what a write writes.
 fn call_of(call: &Value) -> Call {
     let arguments = &call["arguments"];
     let words = |v: &Value| -> Vec<String> {
@@ -86,6 +87,7 @@ fn call_of(call: &Value) -> Call {
     Call {
         function: call["function_id"].as_str().unwrap_or_default().into(),
         text,
+        content: arguments["content"].as_str().unwrap_or_default().into(),
     }
 }
 
@@ -706,6 +708,17 @@ mod tests {
     /// Wait for the writer task and the spawned saves to catch up.
     fn settle() {
         std::thread::sleep(Duration::from_millis(50));
+    }
+
+    #[test]
+    fn a_write_call_carries_what_it_writes() {
+        let call = json!({ "function_id": "sandbox::fs::write",
+            "arguments": { "path": "/work/repo/a.py", "content": "import pickle" } });
+        let read = call_of(&call);
+        assert_eq!(
+            (read.text.as_str(), read.content.as_str()),
+            ("/work/repo/a.py", "import pickle")
+        );
     }
 
     #[test]

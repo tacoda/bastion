@@ -268,6 +268,7 @@ mod tests {
     #[test]
     fn a_run_is_tallied_from_the_lines_describe_writes() {
         let call = Call {
+            content: String::new(),
             function: "sandbox::exec".into(),
             text: "git rm a".into(),
         };

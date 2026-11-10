@@ -113,6 +113,7 @@ mod tests {
     #[test]
     fn a_turn_may_not_write_the_charter() {
         let write = |path: &str| Call {
+            content: String::new(),
             function: "sandbox::fs::write".into(),
             text: path.into(),
         };
@@ -145,6 +146,7 @@ mod tests {
         assert_eq!(rules[1].rung, Enforcement::Told);
         assert_eq!(rules[2].contains, "rm -rf");
         let push = Call {
+            content: String::new(),
             function: "sandbox::exec".into(),
             text: "git -C /work/repo push origin".into(),
         };

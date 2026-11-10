@@ -109,11 +109,13 @@ pub struct Capability {
 }
 
 /// One call a turn makes. `text` is its arguments as the rules read them,
-/// such as a command line or a path.
+/// such as a command line or a path; `content` is what a write writes.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Call {
     pub function: String,
     pub text: String,
+    #[serde(default)]
+    pub content: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -152,6 +154,13 @@ pub fn mentions(text: &str, words: &str) -> bool {
     words.split_whitespace().all(|w| said.any(|t| t == w))
 }
 
+/// Whether a constraint's words are in the call: its arguments, or what it
+/// writes. A constraint with no words binds every call of its function.
+fn binds(c: &Constraint, call: &Call) -> bool {
+    let written = !c.contains.is_empty() && mentions(&call.content, &c.contains);
+    mentions(&call.text, &c.contains) || written
+}
+
 /// The sandbox function that writes a file.
 const WRITE: &str = "sandbox::fs::write";
 
@@ -167,7 +176,7 @@ pub fn gate(
     let broken = || {
         constraints
             .iter()
-            .filter(|c| matches(&c.function, &call.function) && mentions(&call.text, &c.contains))
+            .filter(|c| matches(&c.function, &call.function) && binds(c, call))
     };
     let flagged = broken()
         .filter(|c| c.rung == Enforcement::Checked)
@@ -294,6 +303,7 @@ mod tests {
 
     fn exec(text: &str) -> Call {
         Call {
+            content: String::new(),
             function: "sandbox::exec".into(),
             text: text.into(),
         }
@@ -301,6 +311,7 @@ mod tests {
 
     fn write() -> Call {
         Call {
+            content: String::new(),
             function: "sandbox::fs::write".into(),
             text: "/work/repo/calc.py".into(),
         }
@@ -359,8 +370,30 @@ mod tests {
     }
 
     #[test]
+    fn a_rule_reads_what_a_write_writes() {
+        let rule = Constraint {
+            id: "no-pickle".into(),
+            rule: "Do not load pickles.".into(),
+            function: "sandbox::fs::write".into(),
+            contains: "import pickle".into(),
+            rung: Enforcement::Enforced,
+            source: Source::Owner,
+        };
+        let pickled = Call {
+            content: "import os\nimport pickle\n".into(),
+            ..write()
+        };
+        assert!(matches!(
+            decide(&pickled, Stage::Build, std::slice::from_ref(&rule)),
+            Decision::Deny { .. }
+        ));
+        assert_eq!(decide(&write(), Stage::Build, &[rule]), Decision::Continue);
+    }
+
+    #[test]
     fn a_call_no_grant_covers_is_refused() {
         let call = Call {
+            content: String::new(),
             function: "github::pr::create".into(),
             text: String::new(),
         };

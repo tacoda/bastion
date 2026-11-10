@@ -713,6 +713,7 @@ fn held_call(row: &Value) -> Result<HeldCall, String> {
         session: parse(row, "session")?,
         turn: parse(row, "turn")?,
         call: Call {
+            content: String::new(),
             function: parse(row, "function")?,
             text: parse(row, "text")?,
         },
@@ -1359,6 +1360,7 @@ mod tests {
             session: "s".into(),
             turn: "t".into(),
             call: Call {
+                content: String::new(),
                 function: "sandbox::fs::write".into(),
                 text: "/work/repo/a.py".into(),
             },
@@ -1682,6 +1684,7 @@ mod live {
                 session: "s".into(),
                 turn: "t".into(),
                 call: Call {
+                    content: String::new(),
                     function: "sandbox::fs::write".into(),
                     text: "/work/repo/a.py".into(),
                 },

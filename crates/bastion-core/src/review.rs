@@ -201,6 +201,7 @@ mod tests {
     fn diff_rules_bind_no_call() {
         let rules = default_constraints();
         let call = Call {
+            content: String::new(),
             function: "sandbox::exec".into(),
             text: "deleted tests".into(),
         };

@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.12.2",
+  "checkpoint_id": "01M73EVPCA9S9SYJA0802CK724",
+  "session_id": "4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-10T19:27:23.893839Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/bastion-client/Cargo.toml",
+    "crates/bastion-client/src/client.rs",
+    "crates/bastion-client/src/servers.rs",
+    "crates/bastion-client/src/start.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "358b21043f1c",
+  "checkpoint_transcript_start": 20088,
+  "transcript_lines_at_start": 20088,
+  "compact_transcript_start": 2662,
+  "token_usage": {
+    "input_tokens": 22,
+    "cache_creation_tokens": 14746,
+    "cache_read_tokens": 4589456,
+    "output_tokens": 9143,
+    "api_call_count": 11,
+    "subagent_tokens": {
+      "input_tokens": 72,
+      "cache_creation_tokens": 84625,
+      "cache_read_tokens": 4465434,
+      "output_tokens": 9223,
+      "api_call_count": 36
+    }
+  },
+  "redaction": {
+    "replacements": 759,
+    "layers": {
+      "betterleaks": 55,
+      "connection_string": 0,
+      "credential_key": 646,
+      "credential_value": 69,
+      "credentialed_uri": 0,
+      "entropy": 72,
+      "key_context": 0,
+      "provider_token": 4,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 134
+  }
+}

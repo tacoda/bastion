@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01WvhWr1A3UQD3cb3vTFS6sB",
+  "agent_id": "a4ef810a3ec8866d7",
+  "subagent_type": "general-purpose",
+  "task_description": "Move desktop pages to typed requests",
+  "token_usage": {
+    "input_tokens": 76,
+    "cache_creation_tokens": 157714,
+    "cache_read_tokens": 4532821,
+    "output_tokens": 9245,
+    "api_call_count": 38
+  },
+  "started_at": "2026-11-10T13:19:10.486307-06:00",
+  "completed_at": "2026-11-10T13:23:37.978947-06:00"
+}

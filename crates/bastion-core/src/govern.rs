@@ -236,6 +236,27 @@ pub fn default_constraints() -> Vec<Constraint> {
             Enforcement::Checked,
         ),
         rule(
+            "no-secrets",
+            "Commit no secret: no key, token or private key.",
+            crate::review::DIFF,
+            crate::review::SECRETS,
+            Enforcement::Enforced,
+        ),
+        rule(
+            "assertions-kept",
+            "Keep every assertion a test makes.",
+            crate::review::DIFF,
+            crate::review::REMOVED_ASSERTIONS,
+            Enforcement::Checked,
+        ),
+        rule(
+            "no-skipped-tests",
+            "Do not skip or ignore a test.",
+            crate::review::DIFF,
+            crate::review::SKIP_MARKERS,
+            Enforcement::Checked,
+        ),
+        rule(
             "commit-work",
             "Commit every change before you reply.",
             "",

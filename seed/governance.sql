@@ -8,6 +8,9 @@ INSERT OR IGNORE INTO constraints (id, rule, function, contains, rung, source) V
   ('no-login-shell', 'Run commands directly, not through bash -lc.', 'sandbox::exec', 'bash -lc', 'enforced', 'owner'),
   ('keep-tests', 'Do not delete existing tests.', 'sandbox::exec', 'git rm', 'told', 'owner'),
   ('tests-kept', 'Every existing test still exists at review.', 'review::diff', 'deleted tests', 'checked', 'owner'),
+  ('no-secrets', 'Commit no secret: no key, token or private key.', 'review::diff', 'secrets', 'enforced', 'owner'),
+  ('assertions-kept', 'Keep every assertion a test makes.', 'review::diff', 'removed assertions', 'checked', 'owner'),
+  ('no-skipped-tests', 'Do not skip or ignore a test.', 'review::diff', 'skip markers', 'checked', 'owner'),
   ('commit-work', 'Commit every change before you reply.', '', '', 'told', 'owner'),
   ('clean-tree', 'Leave a clean tree: no untracked files.', '', '', 'told', 'owner');
 

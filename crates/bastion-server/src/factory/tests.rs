@@ -1073,3 +1073,34 @@ fn a_revived_vm_with_no_new_commits_lands_what_the_worktree_holds() {
         assert!(!rig.engine.called("sandbox::fs::read"));
     });
 }
+
+#[test]
+fn a_turn_the_harness_lost_starts_again_on_resume() {
+    let lost = Err("handler error: session/not_found: session j1-build-old does not exist".into());
+    let rig = rig_on(engine().answer("harness::status", lost));
+    let mut job = Job::new("j1".into(), "w".into(), "r".into(), super::now());
+    (job.stage, job.state) = (Stage::Build, State::Running);
+    let record = Record {
+        job,
+        runtime: Runtime {
+            worktree: Some("wt1".into()),
+            sandbox: Some("vm1".into()),
+            session: Some("j1-build-old".into()),
+            ..Runtime::default()
+        },
+        rev: 1,
+        created_at: 1,
+    };
+    crate::rt::block_on(async {
+        rig.store.insert(&record).await.unwrap();
+        rig.factory.clone().resume().await;
+        for _ in 0..200 {
+            let session = rig.store.load("j1").await.unwrap().runtime.session;
+            if session.as_deref() != Some("j1-build-old") && rig.engine.called("harness::send") {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("the lost turn did not start again");
+    });
+}

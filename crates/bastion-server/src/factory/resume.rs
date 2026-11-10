@@ -7,8 +7,9 @@ use std::time::Duration;
 
 use bastion_core::{Effect, Event, Job, Kind, Stage, State, TURN_CAP_SECS, restart};
 use bastion_protocol::Link;
+use serde_json::json;
 
-use super::{Factory, now, turn};
+use super::{Factory, NS, now, turn};
 use crate::store::Record;
 
 /// How often the factory looks at the engine link.
@@ -82,6 +83,11 @@ impl Factory {
         if let (Kind::Turn, Some(out)) = (record.job.stage.kind(), out) {
             return self.resume_turn(record, &out).await;
         }
+        self.start_again(record).await;
+    }
+
+    /// Start a running job's step again, as if it had just begun.
+    async fn start_again(self: Arc<Self>, record: Record) {
         let dials = match self.dials_for(&record).await {
             Ok(dials) => dials,
             Err(e) => return eprintln!("resume {}: {e}", record.job.id),
@@ -94,7 +100,14 @@ impl Factory {
 
     /// A turn that was out: listen for its end again, arm what is left of
     /// its cap, and check whether it ended while nobody listened.
+    /// A turn the harness no longer has, as after the stack restarted, can
+    /// never end, so its step starts again.
     async fn resume_turn(self: Arc<Self>, record: Record, out: &turn::Turn) {
+        let asked = json!({ "session_id": out.session });
+        let status = self.engine.call(NS, "harness::status", asked).await;
+        if status.is_err_and(|e| e.contains("session/not_found")) {
+            return self.start_again(record).await;
+        }
         if self.listen_for_turn(out).is_err() {
             return;
         }

@@ -42,6 +42,12 @@ pub fn slug_of(url: &str) -> Option<String> {
     (slug.split('/').count() == 2).then(|| slug.to_string())
 }
 
+/// Whether a checkout has an `origin` remote to push to.
+pub fn has_origin(machine: &dyn Machine, path: &Path) -> bool {
+    let out = machine.run("git", &["remote", "get-url", "origin"], Some(path));
+    out.is_ok_and(|o| o.success)
+}
+
 /// The GitHub repository a checkout's `origin` points at.
 pub fn slug(machine: &dyn Machine, path: &Path) -> Result<String, String> {
     let out = machine.run("git", &["remote", "get-url", "origin"], Some(path))?;
@@ -270,6 +276,15 @@ mod tests {
     use super::*;
     use crate::engine::fake::FakeEngine;
     use bastion_protocol::Link;
+
+    #[test]
+    fn a_checkout_has_an_origin_only_when_git_names_one() {
+        let at = Path::new("/repo");
+        let named = crate::machine::fake::FakeMachine::new().run_ok("git", "git@github.com:a/b");
+        assert!(has_origin(&named, at));
+        let none = crate::machine::fake::FakeMachine::new().run_fails("git", "No such remote");
+        assert!(!has_origin(&none, at));
+    }
 
     #[test]
     fn a_remote_url_gives_its_slug() {

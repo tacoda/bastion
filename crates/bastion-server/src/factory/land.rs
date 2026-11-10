@@ -21,7 +21,7 @@ impl Factory {
     pub(super) async fn land(self: &Arc<Self>, record: &Record) -> Result<(), String> {
         let (path, target) = self.bring_back(record).await?;
         let worktree = record.runtime.worktree.clone().ok_or("no worktree")?;
-        match settings_store::current(&*self.store).await?.forge {
+        match self.forge_for(&path).await? {
             Forge::Github => {
                 let url = self.pull_request(record, &path, &target).await?;
                 self.apply(&record.job.id, Event::PrOpened { url }).await
@@ -34,12 +34,22 @@ impl Factory {
     /// pull request, or, with the local forge, go on with them in the worktree.
     pub(super) async fn ship(&self, record: &Record) -> Result<Event, String> {
         let (path, target) = self.bring_back(record).await?;
-        Ok(match settings_store::current(&*self.store).await?.forge {
+        Ok(match self.forge_for(&path).await? {
             Forge::Github => Event::PrOpened {
                 url: self.pull_request(record, &path, &target).await?,
             },
             Forge::Local => Event::StepPassed,
         })
+    }
+
+    /// The server's forge, except that a repository with no `origin`
+    /// remote has nowhere to push, so its change lands here.
+    async fn forge_for(&self, path: &Path) -> Result<Forge, String> {
+        let forge = settings_store::current(&*self.store).await?.forge;
+        match forge::has_origin(&*self.machine, path) {
+            true => Ok(forge),
+            false => Ok(Forge::Local),
+        }
     }
 
     /// Bring the VM's commits back to the job's worktree. Returns the

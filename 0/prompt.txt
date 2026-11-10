@@ -1,0 +1,10 @@
+Restarted, continue
+
+---
+
+continue
+
+---
+
+[Image #5]
+The in progress indicator should rotate

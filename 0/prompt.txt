@@ -1,0 +1,3 @@
+On the new request page, the workflow and kind values are redundant - only use workflow
+Also layout the form in a nicer way to take advantage of horizontal space
+[Image #11]

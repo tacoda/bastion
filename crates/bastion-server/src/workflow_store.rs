@@ -1,4 +1,4 @@
-//! Workflows (PLAN.md D35): graphs of steps, kept as versions. The
+//! Workflows (DECISIONS.md D35): graphs of steps, kept as versions. The
 //! built-in workflows are the pipelines as chains, under the settings'
 //! dials. A person may change one: their version is kept under its id and
 //! takes its place, and deleting it brings the original back.

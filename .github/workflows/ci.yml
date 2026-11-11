@@ -1,4 +1,4 @@
-# The checks every push passes (PLAN.md §6, D19). The toolchain comes from
+# The checks every push passes (DECISIONS.md D19). The toolchain comes from
 # rust-toolchain.toml.
 name: ci
 

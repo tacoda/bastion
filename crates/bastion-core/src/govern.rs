@@ -1,4 +1,4 @@
-//! Constraints, capabilities and the gate (PLAN.md D20). Every call a turn
+//! Constraints, capabilities and the gate (DECISIONS.md D20). Every call a turn
 //! makes passes the gate, and each rule's rung on its ladder is data, so a
 //! change in behavior traces to a change in that data.
 

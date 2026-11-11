@@ -1,4 +1,4 @@
-//! A/B evals in the factory (PLAN.md D22). An eval submits each request
+//! A/B evals in the factory (DECISIONS.md D22). An eval submits each request
 //! once per arm as a trial job from the same commit; the gate judges each
 //! trial under its arm's rungs. Every turn's usage is metered, and each run
 //! that reaches review is graded by a turn with no tools. The comparison

@@ -1,4 +1,4 @@
-//! Commands for workflows (PLAN.md D35): read them, copy one, save a
+//! Commands for workflows (DECISIONS.md D35): read them, copy one, save a
 //! new version, delete one. Only an admin reaches the last three (D31).
 
 use bastion_core::workflow::Graph;

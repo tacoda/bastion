@@ -1,4 +1,4 @@
-//! A client of Bastion servers (PLAN.md D38): what every interface needs to
+//! A client of Bastion servers (DECISIONS.md D38): what every interface needs to
 //! reach a server through its API and its events, and nothing about how
 //! it shows them.
 

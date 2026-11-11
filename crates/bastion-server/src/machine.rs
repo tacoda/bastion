@@ -39,7 +39,7 @@ pub struct ThisMachine;
 
 /// The environment a long-running program such as the compose daemon is
 /// given: the basics to run, and iii's own settings. Model keys live in the
-/// vault (PLAN.md D34), never here.
+/// vault (DECISIONS.md D34), never here.
 fn passed(name: &str) -> bool {
     const BASICS: [&str; 9] = [
         "PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "LC_ALL", "TERM",

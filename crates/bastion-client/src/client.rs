@@ -1,4 +1,4 @@
-//! Calls to a Bastion server (PLAN.md D28): each typed request in
+//! Calls to a Bastion server (DECISIONS.md D28): each typed request in
 //! `bastion-protocol` goes over HTTP, with the server's bearer token.
 
 use std::time::Duration;

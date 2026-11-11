@@ -1,4 +1,4 @@
-//! The people on this Bastion server and their tokens (PLAN.md D31). A token
+//! The people on this Bastion server and their tokens (DECISIONS.md D31). A token
 //! is kept only as its SHA-256, so the database never holds one that works.
 //! `Store` extends this trait.
 

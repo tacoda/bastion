@@ -1,4 +1,4 @@
-//! The audit chain (PLAN.md D21). Each entry carries the hash of the one
+//! The audit chain (DECISIONS.md D21). Each entry carries the hash of the one
 //! before it, so a change to any past entry breaks every hash after it.
 //! The hash is an HMAC under a key kept outside the record, so whoever can
 //! edit the record cannot also recompute the chain without that key.

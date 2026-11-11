@@ -2,9 +2,9 @@
 
 ## The project
 
-Bastion is a server and its clients. [PLAN.md](PLAN.md) holds the decisions
-(cited in code as `PLAN.md D<n>`) and the phases; read §3 and §5 before a
-change.
+Bastion is a server and its clients. [DECISIONS.md](DECISIONS.md) holds the
+goals and the decisions (cited in code as `DECISIONS.md D<n>`); read it
+before a change.
 
 - `crates/bastion-core`: the factory's rules, pure. It may depend only on
   `serde` and `sha2`.

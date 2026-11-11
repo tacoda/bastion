@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install Bastion from its GitHub release (PLAN.md F10):
+# Install Bastion from its GitHub release:
 #   curl -fsSL https://tacoda.github.io/bastion/install.sh | sh
 #   curl -fsSL https://tacoda.github.io/bastion/install.sh | sh -s -- --desktop
 # Options:

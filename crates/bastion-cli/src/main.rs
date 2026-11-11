@@ -1,4 +1,4 @@
-//! `bastion`: Bastion on the command line (PLAN.md I4). It reaches a server
+//! `bastion`: Bastion on the command line. It reaches a server
 //! only through the client library (D38): the local one, which it starts
 //! if nothing runs, or one added in the desktop's Settings.
 

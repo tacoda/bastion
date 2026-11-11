@@ -1,4 +1,4 @@
-//! The people on a Bastion server and what each may do (PLAN.md D31).
+//! The people on a Bastion server and what each may do (DECISIONS.md D31).
 
 use serde::{Deserialize, Serialize};
 

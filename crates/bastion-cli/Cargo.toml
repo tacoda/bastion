@@ -3,7 +3,7 @@ name = "bastion-cli"
 version = "0.1.1"
 edition = "2024"
 publish = false
-description = "Bastion's command line (PLAN.md I4): list jobs, submit a request, approve, send back, stop and follow, on any Bastion server, through the client library."
+description = "Bastion's command line: list jobs, submit a request, approve, send back, stop and follow, on any Bastion server, through the client library."
 
 [[bin]]
 name = "bastion"

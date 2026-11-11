@@ -1,4 +1,4 @@
-//! Bastion's server (PLAN.md D27): the factory and everything it runs on,
+//! Bastion's server (DECISIONS.md D27): the factory and everything it runs on,
 //! reached through the Engine seam, with the HTTP API in front of it.
 
 pub mod access;

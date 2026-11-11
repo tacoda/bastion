@@ -1,4 +1,4 @@
-//! Model provider keys in configuration, not the environment (PLAN.md D34).
+//! Model provider keys in configuration, not the environment (DECISIONS.md D34).
 //! A key goes to the stack's `secrets` vault, readable only by
 //! `llm-router`, and the router's entry names it as `secret://NAME`. No
 //! function here returns a key.

@@ -1,4 +1,4 @@
-//! The factory's rules (PLAN.md D18). Everything here is a pure
+//! The factory's rules (DECISIONS.md D18). Everything here is a pure
 //! function: an event and the current job go in, the next job and the effects
 //! to run come out. No I/O, no clock, no engine.
 

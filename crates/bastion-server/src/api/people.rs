@@ -1,4 +1,4 @@
-//! Managing the people on this Bastion server (PLAN.md D31). Only an
+//! Managing the people on this Bastion server (DECISIONS.md D31). Only an
 //! admin reaches these; `access` checks that before any of them runs.
 
 use bastion_core::people::{Person, Role};

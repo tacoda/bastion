@@ -1,4 +1,4 @@
-# A release (PLAN.md F10): each platform's files from scripts/package.sh,
+# A release: each platform's files from scripts/package.sh,
 # their SHA256SUMS signed with the release minisign key, on a GitHub release.
 # Push a tag such as v0.1.0 to run it. Needs the secret MINISIGN_SECRET_KEY:
 # the contents of a key made with `minisign -G -W` (no password, for CI).

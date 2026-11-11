@@ -1,4 +1,4 @@
-//! The audit writer (PLAN.md D21): the one writer of the chain. Records
+//! The audit writer (DECISIONS.md D21): the one writer of the chain. Records
 //! queue on a channel and one task appends them in order. A record is kept
 //! on disk until it is written, and a failed write is tried again with
 //! backoff, so a store that is down delays records and loses none; the

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build one platform's release files into dist/ (PLAN.md F10):
+# Build one platform's release files into dist/:
 #   bastion-<version>-<target>.tar.gz          the server and the CLI, with the stack
 #   bastion-desktop-<version>-<target>.zip     macOS: Bastion.app, which holds the server too
 #   bastion-desktop-<version>-<target>.tar.gz  Linux: the window and the tray, with the server

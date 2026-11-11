@@ -1,4 +1,4 @@
-//! Bastion's native client (PLAN.md D37): a new client of the Bastion server,
+//! Bastion's native client (DECISIONS.md D37): a new client of the Bastion server,
 //! on iced. It reaches a server only through its HTTP API and its events.
 
 mod app;

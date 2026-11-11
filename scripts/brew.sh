@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Write the Homebrew tap's formula and cask for a release (PLAN.md F10):
+# Write the Homebrew tap's formula and cask for a release:
 #   Formula/bastion.rb  the server and the CLI, with their stack
 #   Casks/bastion.rb    Bastion.app, on the formula, with bastion-desktop on the path
 # Usage: scripts/brew.sh <version> <SHA256SUMS> <tap checkout>

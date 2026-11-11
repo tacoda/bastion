@@ -1,4 +1,4 @@
-//! Each Bastion server's pushes (PLAN.md D29) as a subscription: one
+//! Each Bastion server's pushes (DECISIONS.md D29) as a subscription: one
 //! stream per server, read by the client library.
 
 use bastion_client::events;

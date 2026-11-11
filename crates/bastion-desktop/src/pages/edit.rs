@@ -1,4 +1,4 @@
-//! Editing a workflow on the canvas (PLAN.md D35), as plain functions: what
+//! Editing a workflow on the canvas (DECISIONS.md D35), as plain functions: what
 //! a point hits, and what a press, a move and a release do to the graph.
 
 use bastion_protocol::{LinkView, NodeView, WorkflowView};

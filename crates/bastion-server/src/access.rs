@@ -1,4 +1,4 @@
-//! Who is asking, and whether they may (PLAN.md D31). The HTTP layer asks
+//! Who is asking, and whether they may (DECISIONS.md D31). The HTTP layer asks
 //! these; the role rules themselves are `bastion_core::people`.
 
 use axum::http::Method;

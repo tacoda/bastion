@@ -1,4 +1,4 @@
-//! The Workflows page (PLAN.md D35): each workflow on a canvas. An admin
+//! The Workflows page (DECISIONS.md D35): each workflow on a canvas. An admin
 //! copies a workflow, adds steps, drags them, links them from a step's
 //! right edge, edits the picked step, and saves a new version; everyone
 //! else reads it.

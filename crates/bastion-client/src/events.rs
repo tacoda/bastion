@@ -1,4 +1,4 @@
-//! A Bastion server's pushes (PLAN.md D29): its `GET /events` stream, read
+//! A Bastion server's pushes (DECISIONS.md D29): its `GET /events` stream, read
 //! again with `Last-Event-ID` after it drops.
 
 use std::time::Duration;

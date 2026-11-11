@@ -1,4 +1,4 @@
-//! Every server route as a typed request (PLAN.md D38): its method, its
+//! Every server route as a typed request (DECISIONS.md D38): its method, its
 //! path, its body and the type of its answer. A client sends one with
 //! `bastion_client::send`, and the server's tests check each against its
 //! router, so a route and its request cannot drift apart.

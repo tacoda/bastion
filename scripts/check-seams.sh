@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The seam check (PLAN.md D19). Fails when a dependency crosses a seam.
+# The seam check (DECISIONS.md D19). Fails when a dependency crosses a seam.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

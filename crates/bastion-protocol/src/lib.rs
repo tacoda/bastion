@@ -1,4 +1,4 @@
-//! The API's contract (PLAN.md D28): every request a client sends and every
+//! The API's contract (DECISIONS.md D28): every request a client sends and every
 //! change the server pushes, with their types. The server and each client
 //! depend on this crate, and on nothing of each other's.
 
@@ -59,7 +59,7 @@ pub struct TokenView {
 }
 
 /// A model provider and where its credential comes from: `secret` (a key
-/// A workflow (PLAN.md D35): its steps on the canvas and the links between
+/// A workflow (DECISIONS.md D35): its steps on the canvas and the links between
 /// them. Each node's `stage` and `dial` are their words, and `level` is
 /// `lights_on`, `dim` or `dark`. A built-in workflow can only be copied.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -571,7 +571,7 @@ pub struct HeldCallRef {
     pub call: String,
 }
 
-/// A rule on its ladder (PLAN.md D20): `told`, `checked` or `enforced`.
+/// A rule on its ladder (DECISIONS.md D20): `told`, `checked` or `enforced`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConstraintView {
     pub id: String,
@@ -588,7 +588,7 @@ pub struct ConstraintView {
     pub layer: String,
 }
 
-/// A grant on its ladder (PLAN.md D20): `denied`, `ask` or `allowed`.
+/// A grant on its ladder (DECISIONS.md D20): `denied`, `ask` or `allowed`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CapabilityView {
     pub stage: String,
@@ -606,7 +606,7 @@ pub struct AuditEntryView {
     pub hash: String,
 }
 
-/// The audit chain and whether it verifies (PLAN.md D21).
+/// The audit chain and whether it verifies (DECISIONS.md D21).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuditView {
     pub entries: Vec<AuditEntryView>,
@@ -618,7 +618,7 @@ pub struct AuditView {
     pub last_error: Option<String>,
 }
 
-/// Each step's dial (PLAN.md D33), by pipeline.
+/// Each step's dial (DECISIONS.md D33), by pipeline.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DialsView {
     pub short: PipelineDials,
@@ -771,7 +771,7 @@ pub struct IssueView {
     pub url: String,
 }
 
-/// One workspace's charter, as its repository has it (PLAN.md D25).
+/// One workspace's charter, as its repository has it (DECISIONS.md D25).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkspaceCharterView {
     pub workspace: String,

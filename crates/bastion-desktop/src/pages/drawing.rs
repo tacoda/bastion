@@ -1,4 +1,4 @@
-//! A workflow drawn on a canvas (PLAN.md D35): each step a box, each link a
+//! A workflow drawn on a canvas (DECISIONS.md D35): each step a box, each link a
 //! curve from one box's right edge to the next box's left. The job page
 //! draws it read-only, each step marked with its state.
 

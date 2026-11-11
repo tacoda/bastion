@@ -1,4 +1,4 @@
--- The owner's first-run rules and grants (PLAN.md D26). Bastion runs this
+-- The owner's first-run rules and grants (DECISIONS.md D26). Bastion runs this
 -- file each time it opens the database. INSERT OR IGNORE writes a row only
 -- when its key is missing, so a row the owner changed is kept. Edit this file
 -- to change the defaults of a new database; edit the rows to change this one.

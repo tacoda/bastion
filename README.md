@@ -7,7 +7,7 @@ a canvas, and each step waits for your approval or runs on its own, as you set
 it. Bastion is a server and its clients: `bastion-server` runs the factory on
 the [iii](https://iii.dev) engine, and the desktop client (Rust, on
 [iced](https://iced.rs)) talks to it over HTTP. It's early, and
-[PLAN.md](PLAN.md) says what works and what comes next.
+[DECISIONS.md](DECISIONS.md) holds the goals and the decisions behind it.
 
 ```sh
 cargo build -p bastion-server
@@ -49,7 +49,7 @@ fix it. A failed required check stops the start.
 | Desktop client | `crates/bastion-desktop` | The pages, on iced. |
 | Workers | `workers/` | Bastion's own iii workers. |
 
-`scripts/check-seams.sh` fails the build when code crosses a seam (PLAN.md
+`scripts/check-seams.sh` fails the build when code crosses a seam (DECISIONS.md
 D19).
 
 What the engine was found to do, and on which versions, is in

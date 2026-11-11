@@ -1,4 +1,4 @@
-//! The owner's settings (PLAN.md D23): each step's dial, the model
+//! The owner's settings (DECISIONS.md D23): each step's dial, the model
 //! each agent stage runs, and which forge and tracker the factory uses. They
 //! are kept as versions of key/value pairs, so any version can be restored.
 

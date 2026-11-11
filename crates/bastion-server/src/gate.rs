@@ -1,4 +1,4 @@
-//! The gate in the factory (PLAN.md D20, D21). Every `sandbox::*` call a
+//! The gate in the factory (DECISIONS.md D20, D21). Every `sandbox::*` call a
 //! turn makes reaches `judge` through a `pre-trigger` hook, and
 //! `bastion_core::govern::gate` decides it. The hook reads the policy from
 //! memory and hands every record to the audit writer, so a slow store never

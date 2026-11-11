@@ -1,4 +1,4 @@
-//! Workflows (PLAN.md D35): a graph of steps on a canvas. A step is a
+//! Workflows (DECISIONS.md D35): a graph of steps on a canvas. A step is a
 //! skill (the preferred building block), a prompt, a command, or a Bastion
 //! stage. A link sends one step's results to another, and carries no
 //! condition: a step's entry criteria are the results linked into it, and

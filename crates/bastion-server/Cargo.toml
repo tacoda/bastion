@@ -3,7 +3,7 @@ name = "bastion-server"
 version = "0.1.1"
 edition = "2024"
 publish = false
-description = "Bastion's server (PLAN.md D27): the factory, the store, the gate and the stack, over iii."
+description = "Bastion's server (DECISIONS.md D27): the factory, the store, the gate and the stack, over iii."
 
 [dependencies]
 iii-sdk = "=0.25.0"

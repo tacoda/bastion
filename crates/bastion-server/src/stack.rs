@@ -1,4 +1,4 @@
-//! The stack routine (PLAN.md D13): start, attach to, and stop the compose
+//! The stack routine (DECISIONS.md D13): start, attach to, and stop the compose
 //! project in the server's checkout. `iii ps --json` is the source of truth.
 
 use std::path::PathBuf;

@@ -1,11 +1,11 @@
-# Bastion's stack on iii 0.25.0. The local server starts it with `iii compose --up` (PLAN.md D13).
+# Bastion's stack on iii 0.25.0. The local server starts it with `iii compose --up` (DECISIONS.md D13).
 #
 # The engine listens on loopback only, because it trusts the worker name a
 # connection declares. Port 49160 keeps a Bastion engine apart from iii's stock
 # 49134 and from Bastion's 49150.
 #
 # Every package is pinned to one exact version. Bastion's own workers join this
-# file as Rust binaries, started through `scripts.run` (PLAN.md D6).
+# file as Rust binaries, started through `scripts.run` (DECISIONS.md D6).
 #
 # Docs: https://iii.dev/docs/using-iii/compose
 
@@ -143,8 +143,8 @@ containers:
   approval-gate:
     worker: package://approval-gate
     version: "1.0.26"
-  # Nothing calls it yet: a machine verdict on promotion comes with
-  # PLAN.md F4, through the governed listener above.
+  # Unused: it runs sandboxed and cannot see a host repository, so the
+  # factory runs gantry-verify in a VM of its own instead.
   opengantry:
     worker: package://opengantry
     version: "0.1.13"

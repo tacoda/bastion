@@ -18,24 +18,8 @@ fn default_workflow() -> Choice {
     Choice::new("", "The server's default")
 }
 
-/// A request's kinds, with "none" first.
-const KINDS: [(&str, &str); 5] = [
-    ("", "No kind"),
-    ("feature", "Feature"),
-    ("bug", "Bug"),
-    ("chore", "Chore"),
-    ("docs", "Docs"),
-];
-
-fn kinds() -> Vec<Choice> {
-    KINDS
-        .iter()
-        .map(|(id, name)| Choice::new(id, name))
-        .collect()
-}
-
 fn default_model() -> Choice {
-    Choice::new("", "The server's plan and build models")
+    Choice::new("", "The server's models")
 }
 
 pub struct State {
@@ -49,7 +33,6 @@ pub struct State {
     models: Vec<Choice>,
     model: Choice,
     request: text_editor::Content,
-    kind: Choice,
     criteria: text_editor::Content,
     /// One web address per line.
     links: text_editor::Content,
@@ -72,7 +55,6 @@ impl Default for State {
             models: vec![default_model()],
             model: default_model(),
             request: text_editor::Content::new(),
-            kind: kinds()[0].clone(),
             criteria: text_editor::Content::new(),
             links: text_editor::Content::new(),
             shot_path: String::new(),
@@ -94,7 +76,6 @@ pub enum Msg {
     Models(Result<Vec<ModelOption>, String>),
     Model(Choice),
     Edit(text_editor::Action),
-    Kind(Choice),
     EditCriteria(text_editor::Action),
     EditLinks(text_editor::Action),
     ShotPath(String),
@@ -157,7 +138,6 @@ impl State {
             pipeline: None,
             workflow: (!self.workflow.id.is_empty()).then(|| self.workflow.id.clone()),
             model: (!self.model.id.is_empty()).then(|| self.model.id.clone()),
-            kind: (!self.kind.id.is_empty()).then(|| self.kind.id.clone()),
             criteria: Some(self.criteria.text().trim().to_string()).filter(|c| !c.is_empty()),
             links: lines(&self.links.text()),
             screenshots: self.shots.clone(),
@@ -204,7 +184,6 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         Msg::Workspace(name) => state.workspace = Some(name),
         Msg::Workflow(choice) => state.workflow = choice,
         Msg::Edit(action) => state.request.perform(action),
-        Msg::Kind(choice) => state.kind = choice,
         Msg::EditCriteria(action) => state.criteria.perform(action),
         Msg::EditLinks(action) => state.links.perform(action),
         Msg::ShotPath(path) => state.shot_path = path,
@@ -260,19 +239,18 @@ fn screenshot(path: &str) -> Result<Screenshot, String> {
     })
 }
 
-/// The kind, criteria, links and screenshots a request may carry.
+/// The widest the form grows, so a line of the request stays readable.
+const FORM_WIDTH: f32 = 1200.0;
+
+/// The criteria, links and screenshots a request may carry.
 fn details(state: &State) -> Element<'_, Message> {
     let msg = Message::NewRequest;
-    let kind = pick_list(kinds(), Some(state.kind.clone()), move |c| {
-        msg(Msg::Kind(c))
-    })
-    .style(theme::select);
     let criteria = text_editor(&state.criteria)
         .on_action(move |a| msg(Msg::EditCriteria(a)))
-        .height(64);
+        .height(96);
     let links = text_editor(&state.links)
         .on_action(move |a| msg(Msg::EditLinks(a)))
-        .height(48);
+        .height(64);
     let path = text_input("/path/to/screenshot.png", &state.shot_path)
         .on_input(move |p| msg(Msg::ShotPath(p)))
         .on_submit(msg(Msg::AddShot));
@@ -289,10 +267,12 @@ fn details(state: &State) -> Element<'_, Message> {
         .into()
     });
     column![
-        labeled("Kind", kind),
         labeled("Acceptance criteria (optional)", criteria),
         labeled("Links, one per line (optional)", links),
-        labeled("Screenshots (optional)", row![path, add].spacing(8)),
+        labeled(
+            "Screenshots (optional)",
+            row![path, add].spacing(8).align_y(iced::Center)
+        ),
         Column::with_children(added).spacing(2),
     ]
     .spacing(12)
@@ -305,23 +285,27 @@ fn form<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let server = pick_list(names, Some(state.server.clone()), move |n| {
         msg(Msg::Server(n))
     })
+    .width(Fill)
     .style(theme::select);
     let spaces: Vec<String> = state.workspaces.iter().map(|w| w.name.clone()).collect();
-    let space =
-        pick_list(spaces, state.chosen(), move |n| msg(Msg::Workspace(n))).style(theme::select);
+    let space = pick_list(spaces, state.chosen(), move |n| msg(Msg::Workspace(n)))
+        .width(Fill)
+        .style(theme::select);
     let flow = pick_list(
         state.workflows.clone(),
         Some(state.workflow.clone()),
         move |c| msg(Msg::Workflow(c)),
     )
+    .width(Fill)
     .style(theme::select);
     let model = pick_list(state.models.clone(), Some(state.model.clone()), move |c| {
         msg(Msg::Model(c))
     })
+    .width(Fill)
     .style(theme::select);
     let editor = text_editor(&state.request)
         .on_action(move |a| msg(Msg::Edit(a)))
-        .height(128);
+        .height(276);
     let empty = if state.workspaces.is_empty() {
         "This Bastion server has no workspace yet. Add one in Settings."
     } else {
@@ -333,21 +317,30 @@ fn form<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     } else {
         submit
     };
-    let body = column![
-        labeled("Bastion server", server),
-        labeled("Workspace", space),
-        labeled("Workflow", flow),
-        labeled("Model", model),
-        labeled("What should change?", editor),
-        details(state),
-        text(empty).size(13).color(theme::MUTED),
-        text(&state.error).color(theme::BAD),
-        submit,
+    // Where it runs, in one row; then what to do beside what it must meet.
+    let place = row![
+        container(labeled("Bastion server", server)).width(Fill),
+        container(labeled("Workspace", space)).width(Fill),
+        container(labeled("Workflow", flow)).width(Fill),
+        container(labeled("Model", model)).width(Fill),
     ]
     .spacing(12);
+    let work = row![
+        container(labeled("What should change?", editor)).width(iced::FillPortion(3)),
+        container(details(state)).width(iced::FillPortion(2)),
+    ]
+    .spacing(16);
+    let mut body = column![place, work].spacing(16);
+    if !empty.is_empty() {
+        body = body.push(text(empty).size(13).color(theme::MUTED));
+    }
+    if !state.error.is_empty() {
+        body = body.push(text(&state.error).color(theme::BAD));
+    }
+    let body = body.push(submit);
     container(body)
-        .padding(16)
-        .max_width(672)
+        .padding(20)
+        .max_width(FORM_WIDTH)
         .style(theme::panel)
         .into()
 }
@@ -385,7 +378,7 @@ fn issues(state: &State) -> Element<'_, Message> {
     ];
     container(body.spacing(8))
         .padding(16)
-        .max_width(672)
+        .max_width(FORM_WIDTH)
         .style(theme::panel)
         .into()
 }

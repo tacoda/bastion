@@ -445,8 +445,6 @@ struct Submit {
     #[serde(default)]
     model: Option<String>,
     #[serde(default)]
-    kind: Option<String>,
-    #[serde(default)]
     criteria: Option<String>,
     #[serde(default)]
     links: Vec<String>,
@@ -462,7 +460,6 @@ async fn job_submit(
     let names: Vec<String> = b.screenshots.iter().map(|s| s.name.clone()).collect();
     let asked = bastion_core::request::Request {
         text: &b.request,
-        kind: b.kind.as_deref(),
         criteria: b.criteria.as_deref(),
         links: &b.links,
         screenshots: &names,

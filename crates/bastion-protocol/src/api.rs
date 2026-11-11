@@ -197,9 +197,6 @@ pub struct JobSubmit {
     /// plan and build models when none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    /// `feature`, `bug`, `chore` or `docs`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub kind: Option<String>,
     /// What the change must do, in the requester's words.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub criteria: Option<String>,

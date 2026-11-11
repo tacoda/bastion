@@ -1,0 +1,17 @@
+push
+I'm ready to move on to the next page
+
+---
+
+Many workflows do not have information in them. I want to have the text readily avilable to edit.
+[Image #13]
+I'm also not a fan of the step split. I want each step to allow for editing text, whether that's a prompt, agent invocation, skill invocation, command invocation, shell script, or cli command.
+
+---
+
+Replace dark with a moon icon and lights-on with a sun icon
+[Image #14]
+
+---
+
+What is a bastion stage? I'm not sure if we need that concept - it should just be a series of steps

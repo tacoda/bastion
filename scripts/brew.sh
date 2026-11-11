@@ -81,11 +81,12 @@ cask "bastion" do
   app "Bastion.app"
   binary "#{appdir}/Bastion.app/Contents/MacOS/bastion-desktop"
 
-  caveats <<~TEXT
-    Bastion.app is not signed with a Developer ID yet. Install it with
-      brew install --cask --no-quarantine tacoda/bastion/bastion
-    or open it once with right-click, Open.
-  TEXT
+  # Not signed with a Developer ID yet, and Homebrew dropped --no-quarantine:
+  # the download is pinned to its signed sum, so the quarantine mark goes.
+  postflight do
+    system_command "/usr/bin/xattr",
+                   args: ["-dr", "com.apple.quarantine", "#{appdir}/Bastion.app"]
+  end
 end
 EOF
 

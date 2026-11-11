@@ -365,7 +365,6 @@ dependencies = [
  "futures-util",
  "iced",
  "reqwest",
- "serde",
  "serde_json",
  "tokio",
 ]

@@ -744,10 +744,8 @@ fn wait(job: &mut Job, dials: &Dials) -> Vec<Effect> {
 /// merge. `None` means the event does not fit, and nothing changes.
 fn land(job: &mut Job, event: &Event, dials: &Dials) -> Option<Vec<Effect>> {
     Some(match (job.state, event) {
-        (State::Running, Event::Landed) => {
-            job.state = State::Landed;
-            vec![Effect::Teardown]
-        }
+        // A step after the land, such as learn, runs before the job is landed.
+        (State::Running, Event::Landed) => advance(job, dials),
         // A failed land keeps the VM and its commits, and waits on the owner:
         // approve retries the land, stop ends the job.
         (State::Running, Event::LandFailed { error }) => {

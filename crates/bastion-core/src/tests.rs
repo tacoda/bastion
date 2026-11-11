@@ -405,6 +405,24 @@ fn with_every_dial_dark_a_request_lands_alone() {
 }
 
 #[test]
+fn a_workflow_step_after_a_local_land_runs_before_the_job_is_landed() {
+    let node = |stage: Stage| workflow::Step {
+        id: workflow::chain_id(stage),
+        stage,
+        run: String::new(),
+        dial: Dial::Dark,
+        note: String::new(),
+        needs: Vec::new(),
+        gives: Vec::new(),
+    };
+    let mut j = job().running(vec![node(Stage::Land), node(Stage::Learn)]);
+    j.state = State::Running;
+    let (j, effects) = step(&j, &Event::Landed, AT, &Dials::all(Dial::Dark));
+    assert_eq!((j.stage, j.state), (Stage::Learn, State::Running));
+    assert!(!effects.contains(&Effect::Teardown), "learn needs the VM");
+}
+
+#[test]
 fn a_failed_land_waits_on_the_owner_with_its_vm_and_approve_retries_it() {
     let mut events = planned();
     events.extend([

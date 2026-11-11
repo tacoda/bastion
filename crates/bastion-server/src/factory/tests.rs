@@ -620,6 +620,7 @@ fn a_trial_runs_from_its_eval_commit_under_its_arm_and_stops_at_review() {
             request: "x".into(),
             job: String::new(),
             grade: None,
+            contract: None,
         };
         let id = rig.factory.submit_trial(&e, run).await.unwrap();
         until(&rig, &id, Stage::Plan, State::Running).await;

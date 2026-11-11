@@ -150,6 +150,7 @@ pub async fn create(
                 request: request.clone(),
                 job: String::new(),
                 grade: None,
+                contract: None,
             };
             factory.submit_trial(&e, run).await?;
         }
@@ -187,6 +188,8 @@ pub async fn read_run(
     tally.reviewed = record.job.stage == Stage::Review;
     tally.seconds = record.job.updated_at.saturating_sub(record.created_at);
     tally.grade = run.grade;
+    tally.contract_held = u32::from(run.contract == Some(true));
+    tally.contract_failed = u32::from(run.contract == Some(false));
     let refused = chain
         .iter()
         .filter(|e| {
@@ -253,6 +256,7 @@ mod tests {
             request: "r".into(),
             job: "j1".into(),
             grade: None,
+            contract: None,
         };
         store.eval_rows.runs.lock().unwrap().push(run.clone());
         crate::rt::block_on(async {

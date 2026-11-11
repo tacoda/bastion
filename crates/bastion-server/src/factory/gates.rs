@@ -41,7 +41,7 @@ impl Factory {
     }
 
     /// The files the change adds or modifies since the fork point.
-    async fn changed_files(&self, vm: &str) -> Result<Vec<String>, String> {
+    pub(super) async fn changed_files(&self, vm: &str) -> Result<Vec<String>, String> {
         let diff = [
             "git",
             "-C",
@@ -57,7 +57,12 @@ impl Factory {
     }
 
     /// The gates that fail, each with what it printed.
-    async fn failing(&self, vm: &str, gates: &[Gate], files: &[String]) -> Vec<(Gate, String)> {
+    pub(super) async fn failing(
+        &self,
+        vm: &str,
+        gates: &[Gate],
+        files: &[String],
+    ) -> Vec<(Gate, String)> {
         let mut failed = Vec::new();
         for gate in gates {
             if let Err(out) = self.run_in_repo(vm, &fill(&gate.command, files)).await {

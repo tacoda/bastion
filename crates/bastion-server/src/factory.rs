@@ -814,11 +814,19 @@ impl Factory {
         if record.job.stage != Stage::Review {
             return;
         }
-        let (factory, id) = (self.clone(), record.job.id.clone());
+        let (factory, record) = (self.clone(), record.clone());
+        let id = record.job.id.clone();
         crate::rt::spawn(async move {
             let Ok(Some(run)) = factory.store.eval_run_of(&id).await else {
                 return;
             };
+            // The contract is checked before the judge grades, so a graded
+            // run's contract is already known.
+            match factory.contract_holds(&record).await {
+                Ok(Some(held)) => drop(factory.store.set_contract(&id, held).await),
+                Ok(None) => {}
+                Err(e) => eprintln!("job {id}: the contract was not checked: {e}"),
+            }
             match evals::grade(&*factory.engine, &*factory.store, &run).await {
                 Ok(_) => (factory.on_change)(&id),
                 Err(e) => eprintln!("job {id}: the run was not graded: {e}"),

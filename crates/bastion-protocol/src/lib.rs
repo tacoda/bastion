@@ -659,6 +659,10 @@ pub struct RunView {
     pub cost_micros: u64,
     pub seconds: u64,
     pub grade: Option<u8>,
+    /// Whether the run's contract held: its workspace's gates and its
+    /// repository's verify contract. None without one, or not yet checked.
+    #[serde(default)]
+    pub contract: Option<bool>,
     /// The audit lines of the calls refused, each with its entry number.
     pub refused_calls: Vec<String>,
 }

@@ -59,6 +59,11 @@ fn view_of(t: &Run, job: &str, state: &str, refused_calls: Vec<String>) -> RunVi
         cost_micros: t.usage.cost_micros,
         seconds: t.seconds,
         grade: t.grade,
+        contract: match (t.contract_held, t.contract_failed) {
+            (0, 0) => None,
+            (_, 0) => Some(true),
+            _ => Some(false),
+        },
         refused_calls,
     }
 }
@@ -215,6 +220,7 @@ mod tests {
                 request: "r".into(),
                 job: "j".into(),
                 grade,
+                contract: None,
             },
             state: state.into(),
             tally: Run {

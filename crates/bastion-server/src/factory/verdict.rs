@@ -7,7 +7,8 @@
 
 use std::path::{Path, PathBuf};
 
-use bastion_core::BASE_TAG;
+use bastion_core::gates::parse;
+use bastion_core::{BASE_TAG, eval};
 
 use super::setup::TREE;
 use super::{Factory, REPO};
@@ -23,7 +24,7 @@ const CONTRACT: &str = "verify.yaml";
 impl Factory {
     /// The verdict on the job's change, when its repository has a contract
     /// at the fork point; an error says why the change may not go on.
-    pub(super) async fn verdict(&self, record: &Record) -> Result<(), String> {
+    pub(super) async fn verdict(&self, record: &Record) -> Result<bool, String> {
         let vm = record.runtime.sandbox.as_deref().ok_or("no VM")?;
         let at_base = format!("{BASE_TAG}:{CONTRACT}");
         let contract = self
@@ -31,9 +32,24 @@ impl Factory {
             .await;
         let empty = |out: &serde_json::Value| out["stdout"].as_str().is_none_or(str::is_empty);
         if contract.as_ref().is_ok_and(|c| !empty(c)) {
-            return self.judge(record, vm).await;
+            return self.judge(record, vm).await.map(|()| true);
         }
-        Ok(())
+        Ok(false)
+    }
+
+    /// A trial's contract as a grader (F6): the workspace's gates over the
+    /// change, with no autofix, then opengantry's verdict. None when the
+    /// workspace has no gates and the repository no contract.
+    pub(super) async fn contract_holds(&self, record: &Record) -> Result<Option<bool>, String> {
+        let vm = record.runtime.sandbox.as_deref().ok_or("no VM")?;
+        let gates = parse(&self.workspace(record).await?.gates);
+        let files = self.changed_files(vm).await?;
+        let failed = match files.is_empty() {
+            true => Vec::new(),
+            false => self.failing(vm, &gates, &files).await,
+        };
+        let judged = self.verdict(record).await;
+        Ok(eval::contract(!gates.is_empty(), failed.is_empty(), judged))
     }
 
     /// Judge the change in a VM of its own, from the node image, offline.

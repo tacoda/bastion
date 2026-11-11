@@ -102,6 +102,9 @@ pub struct Run {
     pub seconds: u64,
     /// The judge's grade from 0 to 10, once graded.
     pub grade: Option<u8>,
+    /// Runs whose contract held, and runs whose contract failed (F6).
+    pub contract_held: u32,
+    pub contract_failed: u32,
 }
 
 /// Count a run's audit records by what they decided.
@@ -144,6 +147,8 @@ pub fn total(runs: &[Run]) -> Run {
             usage: t.usage + r.usage,
             seconds: t.seconds + r.seconds,
             grade: t.grade,
+            contract_held: t.contract_held + r.contract_held,
+            contract_failed: t.contract_failed + r.contract_failed,
         },
     )
 }
@@ -152,6 +157,13 @@ pub fn total(runs: &[Run]) -> Run {
 pub fn differences(a: &Run, b: &Run) -> Vec<String> {
     let money = |m: u64| format!("${:.4}", m as f64 / 1e6);
     let grade = |g: Option<u8>| g.map_or("-".to_string(), |g| g.to_string());
+    let held = |r: &Run| {
+        format!(
+            "{} of {}",
+            r.contract_held,
+            r.contract_held + r.contract_failed
+        )
+    };
     let measures = [
         ("refused", a.refused.to_string(), b.refused.to_string()),
         ("held", a.held.to_string(), b.held.to_string()),
@@ -178,12 +190,24 @@ pub fn differences(a: &Run, b: &Run) -> Vec<String> {
             money(b.usage.cost_micros),
         ),
         ("grade", grade(a.grade), grade(b.grade)),
+        ("contract held", held(a), held(b)),
     ];
     measures
         .into_iter()
         .filter(|(_, x, y)| x != y)
         .map(|(name, x, y)| format!("{name}: {x} -> {y}"))
         .collect()
+}
+
+/// What a run's contract came to, as a grader that checks rather than
+/// judges: the workspace's gates over the change, then the repository's
+/// verify contract. `judged` is whether a verify contract ran; an error is
+/// one that refused. None when neither the gates nor a contract exist.
+pub fn contract(gated: bool, gates_pass: bool, judged: Result<bool, String>) -> Option<bool> {
+    match judged {
+        Err(_) => Some(false),
+        Ok(judged) => (gated || judged).then_some(gates_pass),
+    }
 }
 
 /// The grade a judge's reply gives, from its `GRADE: n` line.
@@ -351,6 +375,15 @@ mod tests {
         };
         assert_eq!(differences(&a, &b), ["refused: 0 -> 3"]);
         assert!(differences(&a, &a).is_empty());
+    }
+
+    #[test]
+    fn a_contract_holds_only_when_its_gates_pass_and_the_verify_allows() {
+        assert_eq!(contract(false, true, Ok(false)), None, "no contract at all");
+        assert_eq!(contract(true, true, Ok(false)), Some(true));
+        assert_eq!(contract(true, false, Ok(true)), Some(false));
+        assert_eq!(contract(false, true, Ok(true)), Some(true));
+        assert_eq!(contract(false, true, Err("refused".into())), Some(false));
     }
 
     #[test]

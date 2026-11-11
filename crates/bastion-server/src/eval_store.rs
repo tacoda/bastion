@@ -30,6 +30,8 @@ pub struct EvalRun {
     pub request: String,
     pub job: String,
     pub grade: Option<u8>,
+    /// Whether its contract held, once checked; none without a contract.
+    pub contract: Option<bool>,
 }
 
 /// One turn's usage, as `harness::metrics` metered it.
@@ -63,6 +65,7 @@ pub trait EvalStore {
     /// The eval run a job is, if it is one.
     fn eval_run_of<'a>(&'a self, job: &'a str) -> Answer<'a, Option<EvalRun>>;
     fn set_grade<'a>(&'a self, job: &'a str, grade: u8) -> Answer<'a, ()>;
+    fn set_contract<'a>(&'a self, job: &'a str, held: bool) -> Answer<'a, ()>;
 }
 
 pub const SCHEMA: [&str; 3] = [
@@ -90,7 +93,7 @@ pub const SCHEMA: [&str; 3] = [
         PRIMARY KEY (eval, arm, idx))",
 ];
 
-const RUN_COLUMNS: &str = "eval, arm, idx, request, job, grade";
+const RUN_COLUMNS: &str = "eval, arm, idx, request, job, grade, contract";
 
 /// An override as its row: kind, target, stage, rung.
 fn override_row(o: &Override) -> (&'static str, &str, Option<String>, String) {
@@ -128,6 +131,7 @@ fn run_of(r: &Value) -> Result<EvalRun, String> {
         request: parse(r, "request")?,
         job: parse(r, "job")?,
         grade: r["grade"].as_u64().map(|g| g as u8),
+        contract: r["contract"].as_u64().map(|c| c == 1),
     })
 }
 
@@ -230,10 +234,18 @@ impl EvalStore for SqlStore {
 
     fn add_eval_run<'a>(&'a self, r: &'a EvalRun) -> Answer<'a, ()> {
         Box::pin(async move {
-            let sql = format!("INSERT INTO eval_runs ({RUN_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?)");
+            let sql = format!("INSERT INTO eval_runs ({RUN_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?)");
             self.execute(
                 &sql,
-                json!([r.eval, r.arm, r.idx, r.request, r.job, r.grade]),
+                json!([
+                    r.eval,
+                    r.arm,
+                    r.idx,
+                    r.request,
+                    r.job,
+                    r.grade,
+                    r.contract.map(u8::from)
+                ]),
             )
             .await
             .map(|_| ())
@@ -264,6 +276,17 @@ impl EvalStore for SqlStore {
             self.execute(
                 "UPDATE eval_runs SET grade = ? WHERE job = ?",
                 json!([grade, job]),
+            )
+            .await
+            .map(|_| ())
+        })
+    }
+
+    fn set_contract<'a>(&'a self, job: &'a str, held: bool) -> Answer<'a, ()> {
+        Box::pin(async move {
+            self.execute(
+                "UPDATE eval_runs SET contract = ? WHERE job = ?",
+                json!([u8::from(held), job]),
             )
             .await
             .map(|_| ())
@@ -399,6 +422,14 @@ pub mod fake {
                 .filter(|r| r.job == job)
             {
                 r.grade = Some(grade);
+            }
+            ready(Ok(()))
+        }
+
+        fn set_contract<'a>(&'a self, job: &'a str, held: bool) -> Answer<'a, ()> {
+            let mut runs = self.eval_rows.runs.lock().unwrap();
+            for r in runs.iter_mut().filter(|r| r.job == job) {
+                r.contract = Some(held);
             }
             ready(Ok(()))
         }

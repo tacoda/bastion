@@ -339,7 +339,7 @@ pub fn view_list(list: &List) -> Element<'_, Message> {
 }
 
 /// A run's measures, by name.
-fn measures(r: &RunView) -> [(&'static str, String); 8] {
+fn measures(r: &RunView) -> [(&'static str, String); 9] {
     let outcome = match (r.job.is_empty(), r.reviewed) {
         (true, _) => String::new(),
         (false, true) => "reached review".into(),
@@ -354,6 +354,12 @@ fn measures(r: &RunView) -> [(&'static str, String); 8] {
         ("Turns", r.turns.to_string()),
         ("Cost", format!("${:.4}", r.cost_micros as f64 / 1e6)),
         ("Grade", r.grade.map_or("-".into(), |g| g.to_string())),
+        (
+            "Contract",
+            r.contract
+                .map_or("-", |held| if held { "held" } else { "failed" })
+                .into(),
+        ),
     ]
 }
 

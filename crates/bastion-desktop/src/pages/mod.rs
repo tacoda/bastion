@@ -39,6 +39,8 @@ pub struct Ctx {
     pub servers: Vec<Server>,
     pub current: String,
     pub down: BTreeSet<String>,
+    /// Whether shift is held now.
+    pub shift: bool,
 }
 
 impl Ctx {

@@ -22,6 +22,9 @@ pub const PANEL: Color = hex(0x19162a);
 pub const INK: Color = hex(0xece9f5);
 pub const MUTED: Color = hex(0xa39cb8);
 pub const LINE: Color = hex(0x2c2742);
+/// A hovered row: lighter than a panel, darker than a line, so a chip's
+/// edge and a section's edge stay visible over it.
+pub const RAISED: Color = hex(0x221e34);
 pub const PRIMARY: Color = hex(0x7c3aed);
 pub const PRIMARY_HOVER: Color = hex(0x6d28d9);
 pub const LINK: Color = hex(0xc4b5fd);
@@ -49,6 +52,11 @@ pub fn bastion() -> Theme {
 pub const FONT: Font = Font::with_name("Helvetica Neue");
 pub const BOLD: Font = Font {
     weight: font::Weight::Bold,
+    ..FONT
+};
+/// A title in a list: heavier than the body, lighter than bold.
+pub const MEDIUM: Font = Font {
+    weight: font::Weight::Medium,
     ..FONT
 };
 
@@ -227,11 +235,28 @@ pub fn rule<'a, M: 'a>() -> iced::Element<'a, M> {
 /// A whole row that opens something: no fill until hovered.
 pub fn row_button(_: &Theme, status: button::Status) -> button::Style {
     let background = matches!(status, button::Status::Hovered | button::Status::Pressed)
-        .then_some(Background::Color(LINE));
+        .then_some(Background::Color(RAISED));
     button::Style {
         background,
         text_color: INK,
         ..button::Style::default()
+    }
+}
+
+/// A diff line picked for a comment: a purple tint that stays.
+pub fn picked_row(theme: &Theme, status: button::Status) -> button::Style {
+    button::Style {
+        background: Some(Background::Color(Color { a: 0.25, ..PRIMARY })),
+        ..row_button(theme, status)
+    }
+}
+
+/// A row in a list card: [`row_button`] with rounded corners, inset from the
+/// card's edge so the edge shows while it is hovered.
+pub fn card_row(theme: &Theme, status: button::Status) -> button::Style {
+    button::Style {
+        border: rounded(8.0),
+        ..row_button(theme, status)
     }
 }
 

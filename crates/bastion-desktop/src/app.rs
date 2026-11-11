@@ -52,6 +52,8 @@ pub enum Message {
     ReadServers,
     /// Open a link, such as a pull request, in the browser.
     OpenUrl(String),
+    /// Whether shift is held, so a shift-click on a diff line picks a range.
+    Shift(bool),
 }
 
 pub struct App {
@@ -66,6 +68,7 @@ pub struct App {
     problem: Option<String>,
     /// How many jobs wait on a person, by server.
     waiting: std::collections::BTreeMap<String, u32>,
+    shift: bool,
 }
 
 impl App {
@@ -81,6 +84,7 @@ impl App {
             asking: false,
             problem: None,
             waiting: Default::default(),
+            shift: false,
         };
         let started = async {
             tokio::task::spawn_blocking(start::start)
@@ -100,6 +104,7 @@ impl App {
             servers: self.servers.clone(),
             current: self.current.clone(),
             down: self.down.clone(),
+            shift: self.shift,
         }
     }
 
@@ -179,6 +184,7 @@ impl App {
             }
             Message::Stay => self.asking = false,
             Message::Tick => {}
+            Message::Shift(held) => self.shift = held,
             Message::Waiting(server, n) => drop(self.waiting.insert(server, n)),
         }
         Task::none()
@@ -254,7 +260,13 @@ impl App {
                 .map(|_| Message::Tick),
             false => Subscription::none(),
         };
-        Subscription::batch([pushes, closes, ticks, frames])
+        let keys = iced::event::listen_with(|event, _, _| match event {
+            iced::Event::Keyboard(iced::keyboard::Event::ModifiersChanged(m)) => {
+                Some(Message::Shift(m.shift()))
+            }
+            _ => None,
+        });
+        Subscription::batch([pushes, closes, ticks, frames, keys])
     }
 
     pub fn view(&self) -> Element<'_, Message> {

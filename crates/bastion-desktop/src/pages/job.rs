@@ -38,6 +38,8 @@ pub struct State {
     marks: BTreeMap<String, String>,
     /// Each artifact's body, parsed as markdown, by its text.
     docs: BTreeMap<String, markdown::Content>,
+    /// The diff lines the last click named in the note.
+    pick: Option<diff::Pick>,
 }
 
 impl State {
@@ -52,6 +54,7 @@ impl State {
             feedback: BTreeMap::new(),
             toggled: BTreeSet::new(),
             turn_open: false,
+            pick: None,
             marks: BTreeMap::new(),
             docs: BTreeMap::new(),
         }
@@ -69,7 +72,8 @@ pub enum Msg {
     Read(Result<Box<JobDetail>, String>),
     Edit(text_editor::Action),
     EditParts(text_editor::Action),
-    CommentAt(String),
+    /// A click on a diff line: its file and its line.
+    CommentAt(String, u32),
     Act(Action),
     Acted(Result<(), String>),
     Feedback(String, String),
@@ -129,6 +133,40 @@ fn append(note: &mut text_editor::Content, at: &str) {
     note.perform(text_editor::Action::Move(text_editor::Motion::DocumentEnd));
 }
 
+/// A click on a diff line names it in the note. A shift-click on a line of
+/// the same file widens what the last click named into a range instead.
+fn comment_at(state: &mut State, path: String, n: u32, shift: bool) {
+    let before = state.pick.take();
+    let widened = before
+        .as_ref()
+        .filter(|_| shift)
+        .and_then(|p| p.to(&path, n));
+    let pick = match (widened, before) {
+        (Some(wide), Some(before)) => {
+            rename(&mut state.note, &before.reference(), &wide.reference());
+            wide
+        }
+        _ => {
+            let one = diff::Pick::line(path, n);
+            append(&mut state.note, &one.reference());
+            one
+        }
+    };
+    state.pick = Some(pick);
+}
+
+/// Put `new` where the note last says `old`; append it if the note no
+/// longer says `old`.
+fn rename(note: &mut text_editor::Content, old: &str, new: &str) {
+    let t = note.text();
+    let Some(at) = t.rfind(old) else {
+        return append(note, new);
+    };
+    let renamed = format!("{}{new}{}", &t[..at], &t[at + old.len()..]);
+    *note = text_editor::Content::with_text(&renamed);
+    note.perform(text_editor::Action::Move(text_editor::Motion::DocumentEnd));
+}
+
 /// Approve, send back or answer with the note, or stop.
 fn act(state: &State, ctx: &Ctx, action: Action) -> Task<Message> {
     let id = state.id.clone();
@@ -181,11 +219,12 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
             state.parts_edited |= action.is_edit();
             state.parts.perform(action);
         }
-        Msg::CommentAt(at) => append(&mut state.note, &at),
+        Msg::CommentAt(path, n) => comment_at(state, path, n, ctx.shift),
         Msg::Act(action) => return act(state, ctx, action),
         Msg::Acted(Ok(_)) => {
             state.parts_edited = false;
             state.note = text_editor::Content::new();
+            state.pick = None;
             state.error.clear();
         }
         Msg::Feedback(call, text) => {
@@ -295,8 +334,17 @@ fn doc<'a>(state: &'a State, body: String) -> Element<'a, Message> {
     let Some(content) = state.docs.get(&body) else {
         return block(body);
     };
+    // iced's default here is the system face, not the app's, and a near-black
+    // highlight that vanishes on this block's background.
     let style = markdown::Style {
+        font: theme::FONT,
         inline_code_font: theme::MONO,
+        inline_code_color: theme::INK,
+        inline_code_padding: iced::Padding::from([0, 3]),
+        inline_code_highlight: markdown::Highlight {
+            background: theme::LINE.into(),
+            border: iced::border::rounded(4),
+        },
         code_block_font: theme::MONO,
         ..markdown::Style::from(&theme::bastion())
     };
@@ -508,12 +556,15 @@ fn waiting<'a>(state: &'a State, d: &'a JobDetail) -> Element<'a, Message> {
         body = body.extend(report.map(|r| doc(state, r)));
         if let Some(change) = change {
             body = body.push(
-                text("The change (click a line to comment on it)")
-                    .size(13)
-                    .font(theme::BOLD)
-                    .color(theme::MUTED),
+                text(
+                    "The change (click a line to comment on it; shift-click to take in more lines)",
+                )
+                .size(13)
+                .font(theme::BOLD)
+                .color(theme::MUTED),
             );
-            body = body.push(diff::view(&change, |at| Message::Job(Msg::CommentAt(at))));
+            let comment = |path, n| Message::Job(Msg::CommentAt(path, n));
+            body = body.push(diff::view(&change, comment, state.pick.as_ref()));
         }
     }
     body = body.extend(parts(state));
@@ -833,6 +884,24 @@ mod tests {
             ["Add the model", "Add the page"]
         );
         assert!(lines("").is_empty());
+    }
+
+    #[test]
+    fn a_shift_click_widens_the_last_line_named_to_a_range() {
+        let mut state = State::new("j1".into());
+        state.note = text_editor::Content::with_text("Fix this");
+        comment_at(&mut state, "calc.py".into(), 12, false);
+        comment_at(&mut state, "calc.py".into(), 15, true);
+        assert_eq!(state.note.text(), "Fix this\ncalc.py:12-15: ");
+        comment_at(&mut state, "calc.py".into(), 9, true);
+        assert_eq!(state.note.text(), "Fix this\ncalc.py:9-15: ");
+        // Another file, or no shift, starts a new line of the note.
+        comment_at(&mut state, "main.py".into(), 3, true);
+        comment_at(&mut state, "main.py".into(), 4, false);
+        assert_eq!(
+            state.note.text(),
+            "Fix this\ncalc.py:9-15: \nmain.py:3: \nmain.py:4: "
+        );
     }
 
     #[test]

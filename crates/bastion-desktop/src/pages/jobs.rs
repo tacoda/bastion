@@ -168,8 +168,26 @@ fn line(job: &JobSummary, server: &str, down: bool) -> String {
     )
 }
 
+/// The most of a request a row shows; the job's page shows all of it.
+const TITLE_CHARS: usize = 120;
+
+/// A request as a row's title: its first line, cut at a word to
+/// [`TITLE_CHARS`], with an ellipsis when anything was cut.
+fn title(request: &str) -> String {
+    let first = request.trim().lines().next().unwrap_or_default();
+    let cut = first.char_indices().nth(TITLE_CHARS).map(|(i, _)| i);
+    match cut {
+        None if first.len() == request.trim().len() => first.to_string(),
+        None => format!("{first} …"),
+        Some(i) => {
+            let at_word = first[..i].rfind(' ').unwrap_or(i);
+            format!("{}…", first[..at_word].trim_end())
+        }
+    }
+}
+
 fn job_row<'a>(sj: ServerJob, down: bool) -> Element<'a, Message> {
-    let mut about = column![text(sj.job.request.clone()).font(theme::BOLD)].spacing(2);
+    let mut about = column![text(title(&sj.job.request)).size(15).font(theme::MEDIUM)].spacing(3);
     if let Some(p) = &sj.job.part {
         about = about.push(text(format!("Part: {p}")).size(13));
     }
@@ -195,7 +213,7 @@ fn job_row<'a>(sj: ServerJob, down: bool) -> Element<'a, Message> {
     let row_button = button(body)
         .width(Fill)
         .padding([10, 12])
-        .style(theme::row_button)
+        .style(theme::card_row)
         .on_press(open);
     let faded = if down { 0.6 } else { 1.0 };
     container(row_button)
@@ -220,7 +238,8 @@ fn group<'a>(title: String, jobs: Vec<ServerJob>, ctx: &Ctx, accent: bool) -> El
             let down = ctx.down.contains(&j.server);
             job_row(j, down)
         });
-        Column::with_children(rows).into()
+        // Inset, so a hovered row leaves the card's edge in view.
+        Column::with_children(rows).spacing(2).padding(6).into()
     };
     section(title, body, accent)
 }
@@ -369,5 +388,18 @@ mod tests {
         update(&mut state, Msg::Place(EVERY.into()));
         update(&mut state, Msg::Search("REQUEST J1".into()));
         assert_eq!(state.shown()[0].job.id, "j1");
+    }
+
+    #[test]
+    fn a_long_request_is_cut_at_a_word_for_its_row() {
+        assert_eq!(
+            title("Add shout(x) to calc.py."),
+            "Add shout(x) to calc.py."
+        );
+        assert_eq!(title("First line\nmore detail"), "First line …");
+        let long = "word ".repeat(40);
+        let shown = title(&long);
+        assert!(shown.ends_with("word…"), "{shown}");
+        assert!(shown.chars().count() <= TITLE_CHARS + 1);
     }
 }

@@ -7,6 +7,7 @@ members = [
     "crates/bastion-cli",
     "crates/bastion-client",
     "crates/bastion-desktop",
+    "crates/bastion-tray",
     "workers/bastion-openai-compat",
 ]
 

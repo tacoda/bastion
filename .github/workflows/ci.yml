@@ -19,6 +19,13 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # The tray icon (bastion-tray) needs GTK and an app indicator on Linux.
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libxdo-dev libayatana-appindicator3-dev
+
       - name: Format
         run: cargo fmt --all -- --check
 

@@ -322,9 +322,9 @@ footer { padding: 48px 0; color: var(--dim); }
   <p>Install the server and the CLI, or add <code>--desktop</code> for the app and the tray too. The installer checks each download against the release's signed checksums.</p>
 <pre>curl -fsSL https://tacoda.github.io/bastion/install.sh | sh
 curl -fsSL https://tacoda.github.io/bastion/install.sh | sh -s -- --desktop</pre>
-  <p>Or use Homebrew. The app isn't signed with a Developer ID yet, so the cask needs <code>--no-quarantine</code>.</p>
+  <p>Or use Homebrew. The cask adds the app, and the window's command, to what the formula installs.</p>
 <pre>brew install tacoda/bastion/bastion
-brew install --cask --no-quarantine tacoda/bastion/bastion</pre>
+brew install --cask tacoda/bastion/bastion</pre>
   <p>On a Linux VM or VPS, <code>--service</code> runs the server as a systemd user service. The host needs <code>/dev/kvm</code> for the sandbox VMs.</p>
   <p>You also need <code>iii</code> 0.25.0 and a key for one model provider, which you add in Settings. Start the app or <code>bastion-server</code>. If something is missing, Doctor names it and says how to fix it. Later, <code>bastion update</code> installs a newer release once its signature checks.</p>
 </section>

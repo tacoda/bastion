@@ -1,0 +1,21 @@
+Commands run
+
+---
+
+<task-notification>
+<task-id>bczbrg7a3</task-id>
+<tool-use-id>toolu_01AZmoyV1ghG1fsuxxVK9vZ7</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/bczbrg7a3.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the release workflow to finish" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bloycrj9p</task-id>
+<tool-use-id>toolu_01XzfRi1uDwVsc5Pbfeewtzp</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/bloycrj9p.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the release run" completed (exit code 0)</summary>
+</task-notification>

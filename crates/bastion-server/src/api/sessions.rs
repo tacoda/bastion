@@ -30,6 +30,9 @@ pub async fn session(cell: &FactoryCell, id: String) -> Result<SessionDetail, St
 
 /// The turn's messages as steps, each call with the first unused gate entry
 /// that names it. The gate writes `<decision> <function> <text>`.
+// ponytail: entries are the whole job's, so a later turn's call can take an
+// earlier identical call's verdict; bound them by the turn's start if the
+// two ever differ.
 fn steps(messages: &Value, mut verdicts: Vec<String>) -> Vec<TurnStep> {
     let mut all = Vec::new();
     for m in messages.as_array().into_iter().flatten() {

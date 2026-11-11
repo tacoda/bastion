@@ -1,0 +1,2 @@
+untrusted comment: the Bastion release key's public half goes here (minisign -G -W -p scripts/minisign.pub)
+RWQ_REPLACE_WITH_THE_RELEASE_PUBLIC_KEY

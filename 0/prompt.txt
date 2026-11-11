@@ -1,0 +1,35 @@
+I freed up the space, continue
+
+---
+
+<task-notification>
+<task-id>bjnu7i01i</task-id>
+<tool-use-id>toolu_01ErWX7kJ6Ra3udDV1ikJQDj</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/bjnu7i01i.output</output-file>
+<status>completed</status>
+<summary>Background command "Drive both test jobs to their end" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>brhpax9oc</task-id>
+<tool-use-id>toolu_019j6jnVzQokVvVh4478wYjk</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/brhpax9oc.output</output-file>
+<status>completed</status>
+<summary>Background command "Drive the PR job to its end" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+I want to create a vision for this product. It's pretty close. We still need to go page-by-page.
+I want the jobs pages to be as they are for now.
+All other pages, including settings, are for each server
+Servers can be local or remote and have all their settings tied to them.
+
+The goal is to have a GUI application that a developer can use to run jobs through a factory server locally or remotely, or in combination, allow them to define their own workflows, capabilities, constraints, and so on
+
+---
+
+IT's failing
+Just merge and commit S2

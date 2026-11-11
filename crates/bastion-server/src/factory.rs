@@ -447,6 +447,8 @@ impl Factory {
             }
             Effect::WatchCi | Effect::Merge => self.forge_effect(&record, effect).await,
             Effect::Teardown => {
+                // The contract runs in the trial's VM, so before the teardown.
+                self.check_contract(&record).await;
                 self.grade_trial(&record);
                 self.teardown(&record).await.err()
             }
@@ -809,24 +811,32 @@ impl Factory {
         })
     }
 
+    /// Check a trial's contract, whose diff reached review, while its VM is
+    /// still there. A graded run's contract is then already known.
+    async fn check_contract(&self, record: &Record) {
+        let id = &record.job.id;
+        if record.job.stage != Stage::Review
+            || !matches!(self.store.eval_run_of(id).await, Ok(Some(_)))
+        {
+            return;
+        }
+        match self.contract_holds(record).await {
+            Ok(Some(held)) => drop(self.store.set_contract(id, held).await),
+            Ok(None) => {}
+            Err(e) => eprintln!("job {id}: the contract was not checked: {e}"),
+        }
+    }
+
     /// Grade a trial whose diff reached review, off the effect's path.
     fn grade_trial(self: &Arc<Self>, record: &Record) {
         if record.job.stage != Stage::Review {
             return;
         }
-        let (factory, record) = (self.clone(), record.clone());
-        let id = record.job.id.clone();
+        let (factory, id) = (self.clone(), record.job.id.clone());
         crate::rt::spawn(async move {
             let Ok(Some(run)) = factory.store.eval_run_of(&id).await else {
                 return;
             };
-            // The contract is checked before the judge grades, so a graded
-            // run's contract is already known.
-            match factory.contract_holds(&record).await {
-                Ok(Some(held)) => drop(factory.store.set_contract(&id, held).await),
-                Ok(None) => {}
-                Err(e) => eprintln!("job {id}: the contract was not checked: {e}"),
-            }
             match evals::grade(&*factory.engine, &*factory.store, &run).await {
                 Ok(_) => (factory.on_change)(&id),
                 Err(e) => eprintln!("job {id}: the run was not graded: {e}"),

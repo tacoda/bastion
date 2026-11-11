@@ -648,20 +648,28 @@ fn a_trial_runs_from_its_eval_commit_under_its_arm_and_stops_at_review() {
         until(&rig, &id, Stage::Build, State::Running).await;
         finish_turn(&rig, &id).await;
         until(&rig, &id, Stage::Review, State::Stopped).await;
-        assert!(
-            rig.store
-                .artifacts(&id)
-                .await
-                .unwrap()
-                .iter()
-                .any(|a| a.stage == Stage::Review)
-        );
+        let artifacts = rig.store.artifacts(&id).await.unwrap();
+        assert!(artifacts.iter().any(|a| a.stage == Stage::Review));
         assert!(!rig.engine.called("worktree::land"), "a trial never lands");
         assert!(
             rig.engine.called("harness::metrics"),
             "each turn is metered"
         );
+        let checked = contract_before_stop(&rig);
+        assert!(
+            checked,
+            "the contract is checked in the trial's VM before it stops"
+        );
     });
+}
+
+/// Whether the contract's `verify.yaml` was read in the VM before it stopped.
+fn contract_before_stop(rig: &Rig) -> bool {
+    let calls = rig.engine.calls.lock().unwrap();
+    let at = |name: &str, holds: &str| {
+        (calls.iter()).position(|c| c.1 == name && c.2.to_string().contains(holds))
+    };
+    matches!((at("sandbox::exec", "verify.yaml"), at("sandbox::stop", "")), (Some(c), Some(s)) if c < s)
 }
 
 /// A rig whose workspace's origin is on GitHub, where every gh call

@@ -41,6 +41,7 @@ pub enum Message {
     NewRequest(new_request::Msg),
     Job(job::Msg),
     Govern(govern::Msg),
+    Audit(pages::audit::Msg),
     Engine(engine::Msg),
     Evals(evals::Msg),
     Costs(pages::costs::Msg),
@@ -139,8 +140,10 @@ impl App {
 
     /// Show `route`'s page and read it.
     fn go(&mut self, route: Route) -> Task<Message> {
-        let (page, first) = Page::open(&route, &self.ctx());
-        (self.route, self.page) = (route, page);
+        // The page reads under its own route: a records page may read every server.
+        self.route = route;
+        let (page, first) = Page::open(&self.route, &self.ctx());
+        self.page = page;
         let top = iced::widget::scrollable::AbsoluteOffset { x: 0.0, y: 0.0 };
         Task::batch([
             first,
@@ -181,6 +184,7 @@ impl App {
             | Message::NewRequest(_)
             | Message::Job(_)
             | Message::Govern(_)
+            | Message::Audit(_)
             | Message::Engine(_)
             | Message::Evals(_)
             | Message::Costs(_)

@@ -1,15 +1,12 @@
-//! The governance pages: Constraints and Capabilities, each on
-//! its ladder with promote and demote, and the Audit Log with its check.
-
-use std::collections::BTreeMap;
+//! The governance pages: Constraints and Capabilities, each on its ladder
+//! with promote and demote. A constraint's history comes from the audit.
 
 use bastion_protocol::api::{self, Request};
 use bastion_protocol::{
-    AuditEntryView, AuditView, CapabilityView, ConstraintView, FactoryCapabilityView,
-    WorkspaceCharterView,
+    AuditView, CapabilityView, ConstraintView, FactoryCapabilityView, WorkspaceCharterView,
 };
 use iced::widget::{Column, button, column, container, pick_list, row, text, text_input};
-use iced::{Color, Element, Fill, Task};
+use iced::{Element, Fill, Task};
 
 use super::{Ctx, ago, labeled, scrolled, section};
 use crate::app::Message;
@@ -19,7 +16,6 @@ use crate::theme;
 pub enum Which {
     Constraints,
     Capabilities,
-    Audit,
 }
 
 /// The fields of a new constraint.
@@ -52,7 +48,6 @@ pub struct State {
     /// The constraint whose history is open.
     history: Option<String>,
     draft: Draft,
-    exported: String,
 }
 
 impl State {
@@ -70,7 +65,6 @@ impl State {
                 rung: "told".into(),
                 ..Draft::default()
             },
-            exported: String::new(),
         }
     }
 }
@@ -90,8 +84,6 @@ pub enum Msg {
     Rung(String),
     ToggleForm,
     Add,
-    Export,
-    Exported(Result<String, String>),
 }
 
 /// Read what the page shows from the server it shows.
@@ -109,7 +101,6 @@ pub fn load(state: &State, ctx: &Ctx) -> Task<Message> {
             ctx.task(on, api::Charters, Msg::Charters),
             ctx.task(on, api::FactoryCapabilities, Msg::Factory),
         ],
-        Which::Audit => vec![audit],
     };
     Task::batch(tasks).map(Message::Govern)
 }
@@ -189,14 +180,6 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
                 ..Draft::default()
             };
             return added;
-        }
-        Msg::Export => {
-            return ctx
-                .task(&ctx.current, api::AuditExport, Msg::Exported)
-                .map(Message::Govern);
-        }
-        Msg::Exported(answer) => {
-            state.exported = answer.map_or_else(|e| e, |path| format!("Written to {path}"))
         }
     }
     Task::none()
@@ -481,102 +464,14 @@ fn capabilities(state: &State) -> Element<'_, Message> {
     .into()
 }
 
-/// Whether the chain verifies, and whether its writer keeps up.
-fn audit_status(a: &AuditView) -> (String, Color, Option<(String, Color)>) {
-    let (status, color) = match a.broken_at {
-        None => (
-            format!(
-                "Verified: all {} entries chain from the first.",
-                a.entries.len()
-            ),
-            theme::OK,
-        ),
-        Some(seq) => (
-            format!("Broken: entry {seq} does not follow from the one before it."),
-            theme::BAD,
-        ),
-    };
-    let writer = match (a.pending, &a.last_error) {
-        (_, Some(e)) => Some((format!("The audit writer is failing: {e}"), theme::BAD)),
-        (0, None) => None,
-        (n, None) => Some((format!("{n} records waiting to be written."), theme::WARN)),
-    };
-    (status, color, writer)
-}
-
-/// How many entries of each kind the chain holds, the gate's split by its
-/// decision, most first.
-fn tallies(entries: &[AuditEntryView]) -> Vec<(String, usize)> {
-    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
-    for e in entries {
-        let key = match e.kind.as_str() {
-            "gate" => format!("gate {}", e.detail.split(' ').next().unwrap_or_default()),
-            kind => kind.to_string(),
-        };
-        *counts.entry(key).or_default() += 1;
-    }
-    let mut all: Vec<_> = counts.into_iter().collect();
-    all.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
-    all
-}
-
-fn audit(state: &State) -> Element<'_, Message> {
-    let head = row![
-        text("Audit")
-            .size(13)
-            .font(theme::BOLD)
-            .color(theme::MUTED)
-            .width(Fill),
-        small("Export", Some(Message::Govern(Msg::Export)))
-    ];
-    let mut body = column![
-        container(head.align_y(iced::Center)).padding([8, 12]),
-        theme::rule()
-    ];
-    body =
-        body.push(container(text(&state.exported).size(12).color(theme::MUTED)).padding([0, 12]));
-    if let Some(a) = &state.audit {
-        let (status, color, writer) = audit_status(a);
-        body = body.push(container(text(status).font(theme::BOLD).color(color)).padding([8, 12]));
-        body =
-            body.extend(writer.map(|(t, c)| container(text(t).color(c)).padding([0, 12]).into()));
-        let counts: Vec<String> = tallies(&a.entries)
-            .into_iter()
-            .map(|(key, n)| format!("{key}: {n}"))
-            .collect();
-        body = body.push(
-            container(text(counts.join(" · ")).size(13).color(theme::MUTED)).padding([0, 12]),
-        );
-        let rows = a.entries.iter().rev().map(|e| {
-            let what = column![
-                text(format!("{} · {}", e.subject, e.detail)),
-                text(e.hash.chars().take(12).collect::<String>())
-                    .size(12)
-                    .color(theme::MUTED)
-            ];
-            let line = row![
-                text(format!("#{}", e.seq)).color(theme::MUTED).width(64),
-                text(ago(e.at)).color(theme::MUTED).width(96),
-                text(e.kind.clone()).width(112),
-                what.width(Fill)
-            ];
-            container(line.spacing(8)).padding([6, 12]).into()
-        });
-        body = body.push(Column::with_children(rows));
-    }
-    container(body).width(Fill).style(theme::panel).into()
-}
-
 pub fn view(state: &State) -> Element<'_, Message> {
     let title = match state.which {
         Which::Constraints => "Constraints",
         Which::Capabilities => "Capabilities",
-        Which::Audit => "Audit Log",
     };
     let body = match state.which {
         Which::Constraints => constraints(state),
         Which::Capabilities => capabilities(state),
-        Which::Audit => audit(state),
     };
     scrolled(
         column![
@@ -605,53 +500,5 @@ mod tests {
             (c.id.as_str(), c.source.as_str(), c.rung.as_str()),
             ("no-curl", "owner", "checked")
         );
-    }
-
-    #[test]
-    fn the_audit_is_tallied_by_kind_and_the_gate_by_decision() {
-        let entry = |kind: &str, detail: &str| AuditEntryView {
-            seq: 1,
-            at: 0,
-            kind: kind.into(),
-            subject: "j1".into(),
-            detail: detail.into(),
-            hash: String::new(),
-        };
-        let all = [
-            entry("gate", "continue sandbox::exec ls"),
-            entry("gate", "continue sandbox::fs::read a"),
-            entry("gate", "deny (no) sandbox::exec rm"),
-            entry("decide", "plan: approved by Ian"),
-        ];
-        assert_eq!(
-            tallies(&all),
-            [
-                ("gate continue".to_string(), 2),
-                ("decide".to_string(), 1),
-                ("gate deny".to_string(), 1)
-            ]
-        );
-    }
-
-    #[test]
-    fn the_audit_says_whether_it_verifies_and_whether_the_writer_keeps_up() {
-        let a = AuditView {
-            entries: vec![],
-            broken_at: None,
-            pending: 2,
-            last_error: None,
-        };
-        let (status, _, writer) = audit_status(&a);
-        assert!(status.starts_with("Verified: all 0"));
-        assert_eq!(writer.unwrap().0, "2 records waiting to be written.");
-        let broken = AuditView {
-            broken_at: Some(7),
-            pending: 0,
-            last_error: Some("disk".into()),
-            ..a
-        };
-        let (status, _, writer) = audit_status(&broken);
-        assert!(status.starts_with("Broken: entry 7"));
-        assert!(writer.unwrap().0.ends_with("disk"));
     }
 }

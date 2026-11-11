@@ -45,6 +45,14 @@ switched from all servers to `local` and back, and Workflows opened from
 - Exit, live: Costs and Audit Log show `local` and a second server
   together.
 
+Done 2026-11-11. The Audit Log is its own page now; Constraints still reads
+one server's audit for each constraint's history. Live: with `two` added,
+Costs showed both servers' totals, a workspace named with its server, and
+the days added up; the Audit Log showed both chains verified and their
+entries in one list. An export writes on one server, so it waits for one.
+The run found that opening a records page read only one server, because
+the page read under the route it left; that is fixed.
+
 ### U3. Graphs
 
 - Costs: spend by day as bars, each bar split by server.
@@ -65,6 +73,8 @@ switched from all servers to `local` and back, and Workflows opened from
 
 ## After this plan
 
+- A step is named `workflow/step`, and constraints and capabilities apply
+  per workflow step, not per kind of step. This changes D42 and the gate.
 - A model per step, chosen in the workflow editor.
 - Workflows that branch: a step can name a step to go to on failure, so a
   workflow draws as a flowchart. Today a failure waits for you or goes back

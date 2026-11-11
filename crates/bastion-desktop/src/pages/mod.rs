@@ -1,6 +1,7 @@
 //! One file per page. A page keeps its state here, reads from
 //! the servers through `Ctx`, and draws with the shared pieces below.
 
+pub mod audit;
 pub mod costs;
 pub mod diff;
 pub mod drawing;
@@ -73,6 +74,33 @@ impl Ctx {
         Task::perform(self.clone().get(on.to_string(), request), then)
     }
 }
+
+impl Ctx {
+    /// The servers a records page reads: every one while All servers is
+    /// on, else the one shown.
+    pub fn shown(&self) -> Vec<String> {
+        match self.all {
+            true => self.servers.iter().map(|s| s.name.clone()).collect(),
+            false => vec![self.current.clone()],
+        }
+    }
+
+    /// Send `request` to each server [`Ctx::shown`] names. Returns each
+    /// answer with its server, and why each server that failed did.
+    pub async fn each<R: Request + Clone>(self, request: R) -> Each<R::Answer> {
+        let (mut read, mut failed) = (Vec::new(), Vec::new());
+        for name in self.shown() {
+            match self.clone().get(name.clone(), request.clone()).await {
+                Ok(answer) => read.push((name, answer)),
+                Err(e) => failed.push(format!("{name}: {e}")),
+            }
+        }
+        (read, failed)
+    }
+}
+
+/// Each server's answer by its name, and why each server that failed did.
+pub type Each<A> = (Vec<(String, A)>, Vec<String>);
 
 /// The states of a job or step still on its way; their marks turn.
 pub const IN_PROGRESS: [&str; 3] = ["queued", "provisioning", "running"];
@@ -191,6 +219,7 @@ pub enum Page {
     NewRequest(new_request::State),
     Job(Box<job::State>),
     Govern(govern::State),
+    Audit(Box<audit::State>),
     Engine(Box<engine::State>),
     Evals(Box<evals::List>),
     Costs(Box<costs::State>),
@@ -221,7 +250,7 @@ impl Page {
             Route::Job(id) => Page::Job(Box::new(job::State::new(id.clone()))),
             Route::Constraints => Page::Govern(govern::State::new(govern::Which::Constraints)),
             Route::Capabilities => Page::Govern(govern::State::new(govern::Which::Capabilities)),
-            Route::Audit => Page::Govern(govern::State::new(govern::Which::Audit)),
+            Route::Audit => Page::Audit(Box::default()),
             Route::Engine => Page::Engine(Box::default()),
             Route::Evals => Page::Evals(Box::default()),
             Route::Costs => Page::Costs(Box::default()),
@@ -253,6 +282,7 @@ impl Page {
             Page::NewRequest(s) => new_request::load(s, ctx),
             Page::Job(s) => job::load(s, ctx),
             Page::Govern(s) => govern::load(s, ctx),
+            Page::Audit(_) => audit::load(ctx),
             Page::Engine(_) => engine::load(ctx),
             Page::Evals(_) => evals::load_list(ctx),
             Page::Costs(_) => costs::load(ctx),
@@ -282,6 +312,7 @@ impl Page {
             (Page::NewRequest(s), Message::NewRequest(m)) => return new_request::update(s, m, ctx),
             (Page::Job(s), Message::Job(m)) => return job::update(s, m, ctx),
             (Page::Govern(s), Message::Govern(m)) => return govern::update(s, m, ctx),
+            (Page::Audit(s), Message::Audit(m)) => return audit::update(s, m, ctx),
             (Page::Engine(s), Message::Engine(m)) => return engine::update(s, m, ctx),
             (Page::Evals(s), Message::Evals(m)) => return evals::update_list(s, m, ctx),
             (Page::Costs(s), Message::Costs(m)) => costs::update(s, m),
@@ -303,6 +334,7 @@ impl Page {
             Page::NewRequest(s) => new_request::view(s, ctx),
             Page::Job(s) => job::view(s, ctx),
             Page::Govern(s) => govern::view(s),
+            Page::Audit(s) => audit::view(s, ctx),
             Page::Engine(s) => engine::view(s),
             Page::Evals(s) => evals::view_list(s),
             Page::Costs(s) => costs::view(s, ctx),

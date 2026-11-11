@@ -13,7 +13,7 @@ set -eu
 
 REPO="tacoda/bastion"
 # The release key's public half; a release is signed with its secret half.
-PUBKEY="${BASTION_MINISIGN_PUBKEY:-RWQ_REPLACE_WITH_THE_RELEASE_PUBLIC_KEY}"
+PUBKEY="${BASTION_MINISIGN_PUBKEY:-RWRxPyyTFnBoVkMwrQGM3Z/h9W1jdGi9Vcqv0k2QVJyJzegnI7UaTVoS}"
 
 desktop=no service=no version="" prefix="${HOME}/.local"
 while [ $# -gt 0 ]; do

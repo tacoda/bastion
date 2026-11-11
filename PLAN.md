@@ -263,7 +263,8 @@ value; each is a phase of its own when it starts.
   `landed`, with a tray count, and a chat adapter (D23).
 - **F10, packaging and updates.** A signed macOS build and a Linux build of
   the server and the client, with signed updates, installed through a
-  Homebrew tap or an install script run as `curl … | sh`.
+  Homebrew tap or an install script run as `curl … | sh`. Either way installs
+  the server alone (with its CLI) or the server and the desktop app.
 - **F11, the browser agent.** Browser tools for turns, with screenshots and
   recordings as artifacts.
 

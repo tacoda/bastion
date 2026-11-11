@@ -65,8 +65,8 @@ pub async fn grade(engine: &dyn Engine, store: &dyn Store, run: &EvalRun) -> Res
         .ok_or("the run has no diff to grade")?;
     let session = format!("{}-grade-{}", run.job, short_id());
     let brief = eval::grading_brief(&run.request, &diff);
-    // ponytail: the judge runs on the default model; read it from settings when graders get their own (PLAN.md F6).
-    let judge = bastion_core::settings::Model::default();
+    // The judge runs on the server's plan model, which has a key.
+    let judge = crate::settings_store::current(store).await?.plan_model;
     engine
         .call_for(
             NS,
@@ -267,11 +267,19 @@ mod tests {
                 created_at: 1,
             };
             store.add_artifact("j1", &diff).await.unwrap();
+            use crate::settings_store::SettingsStore;
+            let mut settings = bastion_core::settings::Settings::default();
+            settings.plan_model.provider = "deepseek".into();
+            store.add_version(&settings, "keyed", 1).await.unwrap();
             assert_eq!(grade(&engine, &store, &run).await, Ok(9));
         });
         assert_eq!(store.eval_rows.runs.lock().unwrap()[0].grade, Some(9));
         let calls = engine.calls.lock().unwrap();
         let sent = calls.iter().find(|c| c.1 == "harness::send").unwrap();
         assert_eq!(sent.2["options"]["functions"]["allow"], json!([]));
+        assert_eq!(
+            sent.2["provider"], "deepseek",
+            "the judge runs on the plan model"
+        );
     }
 }

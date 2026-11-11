@@ -1,7 +1,7 @@
 //! The job state machine on workflows of steps (D39).
 
 use super::*;
-use crate::workflow::{Reach, Step};
+use crate::workflow::{Options, Reach, Step};
 
 const AT: u64 = 1_000;
 
@@ -15,6 +15,7 @@ fn prompt(id: &str, dial: Dial) -> Step {
         needs: Vec::new(),
         gives: Vec::new(),
         reach: Reach::default(),
+        options: Options::default(),
     }
 }
 
@@ -261,4 +262,72 @@ fn a_step_shows_where_it_stands_and_a_queue_admits_by_its_limits() {
     let queued = |id: &str, w: &str| Job::new(id.into(), w.into(), "r".into(), AT);
     let jobs = [queued("a", "w"), queued("b", "w"), queued("c", "v")];
     assert_eq!(admit(&jobs, 2, |w| (w == "w").then_some(1)), ["a", "c"]);
+}
+
+#[test]
+fn a_step_sets_how_often_its_failure_sends_work_back() {
+    let mut j = job([Dial::Dark; 3]);
+    (j.node, j.stage) = (Some("tests".into()), Stage::Shell);
+    j.results.insert("plan".into(), "1. Add x.".into());
+    j.flow[2].options.revisions = Some(0);
+    let failed = Event::StepFailed {
+        detail: "1 failed".into(),
+    };
+    let (none, _) = go(&j, failed.clone());
+    assert_eq!(
+        (none.state, none.node.as_deref()),
+        (State::NeedsYou, Some("tests")),
+        "no revision allowed, so it waits"
+    );
+    j.flow[2].options.revisions = Some(5);
+    j.revisions.insert("tests".into(), 3);
+    let (more, _) = go(&j, failed);
+    assert_eq!(
+        more.node.as_deref(),
+        Some("build"),
+        "past the default of two"
+    );
+}
+
+#[test]
+fn a_spent_step_starts_no_more_turns_by_itself_but_a_person_may_send_it_back() {
+    let mut j = job([Dial::Dark; 3]);
+    (j.node, j.stage) = (Some("tests".into()), Stage::Shell);
+    j.results.insert("plan".into(), "1. Add x.".into());
+    j.flow[1].options.spend_micros = Some(10_000);
+    let spent = Bounds {
+        spent: [("build".to_string(), 12_000)].into(),
+        ..Bounds::default()
+    };
+    let failed = Event::StepFailed {
+        detail: "1 failed".into(),
+    };
+    let (waits, effects) = step(&j, &failed, AT, &spent);
+    assert_eq!(
+        (waits.state, waits.node.as_deref(), kinds(&effects)),
+        (State::NeedsYou, Some("build"), vec!["artifact"])
+    );
+    assert!(
+        waits
+            .error
+            .as_deref()
+            .unwrap()
+            .starts_with("This step's budget of $0.0100 is spent: its turns cost $0.0120."),
+        "{:?}",
+        waits.error
+    );
+    let note = Event::Commented {
+        text: "Try once more.".into(),
+    };
+    let (again, effects) = step(&waits, &note, AT, &spent);
+    assert_eq!(
+        (again.state, kinds(&effects)),
+        (State::Running, vec!["turn"])
+    );
+    let under = Bounds {
+        spent: [("build".to_string(), 9_000)].into(),
+        ..Bounds::default()
+    };
+    let (fixing, _) = step(&j, &failed, AT, &under);
+    assert_eq!(fixing.state, State::Running, "under its budget, it runs");
 }

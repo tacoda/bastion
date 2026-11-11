@@ -181,7 +181,7 @@ fn name<'a>(p: &ProviderView) -> Element<'a, Message> {
 fn key_status(p: &ProviderView) -> &'static str {
     match p.source.as_str() {
         "secret" => "key set here",
-        "env" => "key from the stack's environment",
+        "env" => "key from the engine's environment",
         _ if p.ready => "no key needed",
         _ => "no key",
     }

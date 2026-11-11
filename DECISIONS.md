@@ -66,6 +66,7 @@ retired with the old plan.
 | D40 | A shell step runs in the job's VM, with no network unless it asks. A step that asks gets a VM of its own with the network and the vault secrets it names as environment variables. |
 | D41 | A job ends with its branch ready. When the last step passes, a workspace set to merge merges the branch into its base on the host; one set to leave keeps the branch. |
 | D42 | Governance is per step. A step may change files or only reads, and the gate refuses a write from a step that only reads. Dials, notices, artifacts and evals name steps. |
+| D43 | A step may name its own model and budget. The model wins over the job's and the server's. The budget is how often its failure may send work back (two by default) and the most its turns may cost; past the cost, the factory starts no more turns there by itself, but a person's retry, note or answer still runs. |
 
 ## Open questions
 

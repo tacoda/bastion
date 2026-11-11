@@ -172,7 +172,7 @@ fn github(machine: &dyn Machine) -> Check {
 /// At least one model provider has a credential, as `llm-router` sees it.
 async fn providers(engine: &dyn Engine) -> Check {
     if engine.link() != Link::Up {
-        return Probe::required("Model providers").skipped("needs the engine; start the stack");
+        return Probe::required("Model providers").skipped("needs the engine; start it");
     }
     match engine.call(NS, "router::provider::list", json!({})).await {
         Ok(out) => provider_check(&out),

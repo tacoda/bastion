@@ -118,12 +118,27 @@ Done 2026-11-11. Live on "no-wc told vs enforced": B cost 40% less, took
 0, and graded the same, 7. The run found that a change from zero read
 "same" and that a zero drew a sliver of bar; both are fixed.
 
+### U7. A model and a budget per step (D43)
+
+- A step's options: its model, the most revisions its failure sends back,
+  and the most its turns may spend.
+- The step's model wins over the job's and the server's.
+- Past its spend, the factory starts no more turns at the step by itself;
+  a person's retry, note or answer still runs.
+- The workflow editor shows the three options on a step.
+
+Done 2026-11-11. Live: a copy of Short kept its options through a save
+(plan with a model and $0.50, checks with one revision). With the plan
+step set to `anthropic/claude-haiku-4-5-20251001` and the server's default
+on DeepSeek, the plan turn ran on Anthropic, as its session records; a
+first run with DeepSeek on the step landed `quadruple(x)` on `demo-local`.
+The spending limit and the revision count are covered by tests, not run
+live. The user-facing word "stack" is now "engine" everywhere.
+
 ## After this plan
 
 - A step is named `workflow/step`, and constraints and capabilities apply
   per workflow step, not per kind of step. This changes D42 and the gate.
-- A model and a budget per step, chosen in the workflow editor: the most
-  revisions a step may take, and the most it may spend.
 - Workflows that branch: a step can name a step to go to on failure, so a
   workflow draws as a flowchart. Today a failure waits for you or goes back
   to the step that writes. This changes the core, so it needs a decision

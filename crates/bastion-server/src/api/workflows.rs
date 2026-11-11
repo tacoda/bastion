@@ -33,6 +33,11 @@ fn view_of(w: &Workflow) -> WorkflowView {
                     secrets: n.reach.secrets.clone(),
                     reads_only: n.reach.reads_only,
                 },
+                options: bastion_protocol::OptionsView {
+                    model: n.options.model.clone(),
+                    revisions: n.options.revisions,
+                    spend_micros: n.options.spend_micros,
+                },
                 x: n.x,
                 y: n.y,
             })

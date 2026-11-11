@@ -252,6 +252,7 @@ fn chain(steps: Vec<Step>) -> Graph {
                 },
                 reads_only: s.reads_only,
             },
+            options: Default::default(),
             x: 220 * i as i32,
             y: 0,
         }

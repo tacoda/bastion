@@ -178,7 +178,7 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         Msg::Doctor(a) => keep(&mut state.report, e, a),
         Msg::Console(a) => keep(&mut state.console, e, a),
         Msg::Start => {
-            (state.busy, state.note) = (true, "Starting: Doctor first, then the stack.".into());
+            (state.busy, state.note) = (true, "Starting: Doctor first, then the engine.".into());
             return task(ctx, api::StackStart, Msg::Started);
         }
         Msg::Stop => {
@@ -243,7 +243,7 @@ fn stack_panel(state: &State) -> Element<'_, Message> {
         start.on_press_maybe((!state.busy && !running).then_some(Message::Engine(Msg::Start)));
     let stop = stop.on_press_maybe((!state.busy && running).then_some(Message::Engine(Msg::Stop)));
     panel(column![
-        heading("Stack"),
+        heading("Running"),
         text(described),
         text(&state.note).color(theme::MUTED),
         row![start, stop].spacing(8)
@@ -480,7 +480,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         super::head(
             "Engine",
             format!(
-                "The iii engine {} runs on: its link, its stack, Doctor and its workers.",
+                "The iii engine {} runs on: its link, whether it runs, Doctor and its workers.",
                 ctx.current
             ),
             vec![]

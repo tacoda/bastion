@@ -270,7 +270,7 @@ fn refused(why: Refusal) -> Response {
         Refusal::Unknown => (StatusCode::UNAUTHORIZED, "no valid token".to_string()),
         Refusal::NotReady => (
             StatusCode::SERVICE_UNAVAILABLE,
-            "the server's people are not open yet; start the stack".to_string(),
+            "the server's people are not open yet; start the engine".to_string(),
         ),
         Refusal::Forbidden(why) => (StatusCode::FORBIDDEN, why),
         Refusal::NoJob(why) => (StatusCode::NOT_FOUND, why),

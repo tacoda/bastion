@@ -218,6 +218,9 @@ pub struct Bounds {
     /// themselves; past it, a failing step waits on the owner. It comes from
     /// the job's workspace.
     pub revision_budget: Option<u32>,
+    /// What each step's turns have cost so far, by step id, in millionths of
+    /// a US dollar, for the steps' own budgets (D43).
+    pub spent: BTreeMap<String, u64>,
 }
 
 /// How an agent turn ended.
@@ -355,7 +358,7 @@ pub fn step(job: &Job, event: &Event, at: u64, bounds: &Bounds) -> (Job, Vec<Eff
             next.state = State::Provisioning;
             vec![Effect::Provision]
         }
-        (State::Provisioning, Event::Provisioned) => start(&mut next),
+        (State::Provisioning, Event::Provisioned) => start_within(&mut next, bounds),
         (State::Provisioning, Event::ProvisionFailed { error }) => fail(&mut next, error),
         (State::Running, Event::TurnFinished { outcome }) if job.stage.kind() == Kind::Turn => {
             turn_finished(&mut next, outcome, bounds)
@@ -419,6 +422,32 @@ fn extends(job: &Job) -> bool {
 fn retries(job: &Job) -> bool {
     job.state == State::Failed
         || (job.state == State::NeedsYou && job.error.is_some() && job.question.is_none())
+}
+
+/// Start the current step as [`start`] does, unless its turns have spent
+/// its budget (D43); then it waits on a person. Only the factory's own
+/// starts are bounded: a person's retry, note or answer always runs.
+fn start_within(job: &mut Job, bounds: &Bounds) -> Vec<Effect> {
+    match over_budget(job, bounds) {
+        Some(spent) => stuck(job, &spent),
+        None => start(job),
+    }
+}
+
+/// Why the current step may not start another turn, when its turns have
+/// cost its budget or more.
+fn over_budget(job: &Job, bounds: &Bounds) -> Option<String> {
+    let step = job.step().filter(|s| s.stage.kind() == Kind::Turn)?;
+    let budget = step.options.spend_micros?;
+    let spent = bounds.spent.get(&step.id).copied().unwrap_or_default();
+    let dollars = |m: u64| format!("${:.4}", m as f64 / 1e6);
+    (spent >= budget).then(|| {
+        format!(
+            "This step's budget of {} is spent: its turns cost {}.",
+            dollars(budget),
+            dollars(spent)
+        )
+    })
 }
 
 /// Run the current step, once its entry criteria hold: every result
@@ -503,8 +532,12 @@ fn step_failed(job: &mut Job, detail: &str, bounds: &Bounds) -> Vec<Effect> {
         let spent = format!("The revision budget of {budget} is spent.\n{detail}");
         return stuck(job, &spent);
     }
+    let limit = job
+        .step()
+        .and_then(|s| s.options.revisions)
+        .unwrap_or(MAX_REVISIONS);
     let tries = job.revisions.entry(at).or_default();
-    if *tries >= MAX_REVISIONS || job.last_refusal.as_deref() == Some(detail) {
+    if *tries >= limit || job.last_refusal.as_deref() == Some(detail) {
         return stuck(job, detail);
     }
     *tries += 1;
@@ -513,7 +546,7 @@ fn step_failed(job: &mut Job, detail: &str, bounds: &Bounds) -> Vec<Effect> {
         "A later step failed. Read its output, fix the cause, and commit.\n<output>\n{detail}\n</output>"
     ));
     job.go_to(fixer);
-    start(job)
+    start_within(job, bounds)
 }
 
 /// Whether the job's steps have sent its work back as often as its
@@ -557,7 +590,7 @@ fn advance(job: &mut Job, bounds: &Bounds) -> Vec<Effect> {
     let next = job.position().map_or(job.flow.len(), |i| i + 1);
     if next < job.flow.len() {
         job.go_to(next);
-        return start(job);
+        return start_within(job, bounds);
     }
     if bounds.trial {
         job.state = State::Stopped;
@@ -615,7 +648,7 @@ fn turn_finished(job: &mut Job, outcome: &Outcome, bounds: &Bounds) -> Vec<Effec
                 body: report.clone(),
             };
             std::iter::once(kept)
-                .chain(bad_reply(job, problem))
+                .chain(bad_reply(job, problem, bounds))
                 .collect()
         }
         Outcome::Asked { question } => {
@@ -628,7 +661,7 @@ fn turn_finished(job: &mut Job, outcome: &Outcome, bounds: &Bounds) -> Vec<Effec
             if job.failures >= MAX_TURN_FAILURES {
                 return fail(job, error);
             }
-            start(job)
+            start_within(job, bounds)
         }
     }
 }
@@ -657,7 +690,7 @@ fn done(job: &mut Job, report: &str, bounds: &Bounds) -> Vec<Effect> {
 
 /// A reply the factory cannot use gets one more try with the reason, then
 /// the job waits on a person, as in wipp.
-fn bad_reply(job: &mut Job, problem: &str) -> Vec<Effect> {
+fn bad_reply(job: &mut Job, problem: &str, bounds: &Bounds) -> Vec<Effect> {
     let at = job.node.clone().unwrap_or_default();
     let tries = job.revisions.entry(at).or_default();
     if *tries >= 1 {
@@ -665,7 +698,7 @@ fn bad_reply(job: &mut Job, problem: &str) -> Vec<Effect> {
     }
     *tries += 1;
     job.feedback = Some(format!("Your last reply could not be used. {problem}"));
-    start(job)
+    start_within(job, bounds)
 }
 
 /// A note on a step's result sends the work back with it to the nearest

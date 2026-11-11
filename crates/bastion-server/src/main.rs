@@ -89,8 +89,8 @@ fn main() -> Result<(), String> {
         let server = Server::new(engine, machine, stack, a.data.clone())?;
         // Start the stack, or attach to the one already running.
         match api::stack::stack_start(&server.stack, &server.machine, &server.engine).await {
-            Ok(status) => println!("stack: {:?}", status.state),
-            Err(refused) => eprintln!("stack did not start: {refused:?}"),
+            Ok(status) => println!("engine: {:?}", status.state),
+            Err(refused) => eprintln!("engine did not start: {refused:?}"),
         }
         let owner = a
             .owner
@@ -101,8 +101,8 @@ fn main() -> Result<(), String> {
         let served = serve(&a, app).await;
         // The stack is the server's (D13): it goes down with it.
         match api::stack::stack_stop(&server.stack, &server.machine).await {
-            Ok(_) => println!("bastion-server: stopped, and its stack with it"),
-            Err(e) => eprintln!("bastion-server: stopped, but the stack did not: {e}"),
+            Ok(_) => println!("bastion-server: stopped, and its engine with it"),
+            Err(e) => eprintln!("bastion-server: stopped, but the engine did not: {e}"),
         }
         served
     })

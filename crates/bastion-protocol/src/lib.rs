@@ -75,21 +75,38 @@ pub struct WorkflowView {
     pub links: Vec<LinkView>,
 }
 
+/// A step's own model and budget (D43); each empty is the default.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OptionsView {
+    /// `provider/model`, or empty for the job's or the server's.
+    #[serde(default)]
+    pub model: String,
+    /// How often the step's failure may send work back; two when none.
+    #[serde(default)]
+    pub revisions: Option<u32>,
+    /// The most the step's turns may cost, in millionths of a US dollar.
+    #[serde(default)]
+    pub spend_micros: Option<u64>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NodeView {
     /// Unique in its workflow; links name it.
     pub id: String,
-    /// `prompt`, `agent`, `skill`, `command`, `shell`, or a Bastion stage.
+    /// `prompt`, `agent`, `skill`, `command` or `shell`.
     pub stage: String,
     /// An agent's, skill's or command's name, or a shell script.
     pub run: String,
     pub dial: String,
-    /// The step's instructions; empty keeps the stage's built-in ones.
+    /// The step's instructions.
     pub note: String,
     pub results: Vec<String>,
     /// A shell step's network and the vault's secrets it gets (D40).
     #[serde(default)]
     pub reach: ReachView,
+    /// The step's model and budget (D43).
+    #[serde(default)]
+    pub options: OptionsView,
     pub x: i32,
     pub y: i32,
 }

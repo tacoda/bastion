@@ -285,16 +285,25 @@ impl Factory {
         Ok(id)
     }
 
-    /// What bounds a job's run: whether it is an eval's trial, and its
-    /// workspace's revision budget. Each step's dial is its own (D39).
+    /// What bounds a job's run: whether it is an eval's trial, its
+    /// workspace's revision budget, and what each step's turns have cost,
+    /// for the steps' own budgets (D43). Each step's dial is its own (D39).
     async fn bounds_for(&self, record: &Record) -> Result<Bounds, String> {
+        let id = &record.job.id;
+        let mut spent = std::collections::BTreeMap::new();
+        for t in self.store.turns(id).await? {
+            if let Some(step) = turn::session_step(id, &t.session) {
+                *spent.entry(step.to_string()).or_default() += t.usage.cost_micros;
+            }
+        }
         Ok(Bounds {
-            trial: self.store.eval_run_of(&record.job.id).await?.is_some(),
+            trial: self.store.eval_run_of(id).await?.is_some(),
             revision_budget: self
                 .workspace(record)
                 .await
                 .ok()
                 .and_then(|w| w.revision_budget),
+            spent,
         })
     }
 
@@ -701,7 +710,12 @@ impl Factory {
         message.push_str(&self.gate.rules(&job.id));
         message.push_str(brief);
         let settings = settings_store::current(&*self.store).await?;
-        let model = settings.model_for(reads_only, record.runtime.model.as_deref());
+        // The step's own model wins over the job's, which wins over the server's (D43).
+        let step_model = job
+            .step()
+            .map(|s| s.options.model.trim())
+            .filter(|m| !m.is_empty());
+        let model = settings.model_for(reads_only, step_model.or(record.runtime.model.as_deref()));
         turn::provider_ready(&*self.engine, &model.provider).await?;
         self.engine
             .call(

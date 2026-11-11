@@ -210,7 +210,7 @@ impl App {
             Message::StackRunning(true) => self.asking = true,
             Message::StackRunning(false) => return iced::exit(),
             Message::Quit => {
-                println!("bastion: the local Bastion server keeps running, and its stack with it");
+                println!("bastion: the local Bastion server keeps running, and its engine with it");
                 return iced::exit();
             }
             Message::Stay => self.asking = false,
@@ -443,7 +443,7 @@ fn quit_dialog<'a>() -> Element<'a, Message> {
     .spacing(8);
     let body = column![
         text("The Bastion server keeps running").size(18).font(theme::BOLD),
-        text("It and its stack go on after you quit, so jobs keep running. The next start attaches to it. Stopping the server stops the stack too.")
+        text("It and its engine go on after you quit, so jobs keep running. The next start attaches to it. Stopping the server stops the engine too.")
             .color(theme::MUTED),
         buttons,
     ]

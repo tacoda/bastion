@@ -31,8 +31,28 @@ pub struct Node {
     /// What a shell step may reach beyond its VM (D40).
     #[serde(default)]
     pub reach: Reach,
+    /// The step's model and budget (D43).
+    #[serde(default)]
+    pub options: Options,
     pub x: i32,
     pub y: i32,
+}
+
+/// A step's own model and budget (D43). Each is the default when empty.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Options {
+    /// The model an agent's turn at this step runs on, as `provider/model`.
+    /// It wins over the job's model and the server's.
+    #[serde(default)]
+    pub model: String,
+    /// How many times this step's failure may send the work back to be
+    /// fixed; two when none.
+    #[serde(default)]
+    pub revisions: Option<u32>,
+    /// The most this step's turns may cost in all, in millionths of a US
+    /// dollar. Past it, the factory starts no more turns here by itself.
+    #[serde(default)]
+    pub spend_micros: Option<u64>,
 }
 
 /// What a step may reach and change. A shell step may reach the network,
@@ -86,6 +106,8 @@ pub struct Step {
     pub gives: Vec<String>,
     #[serde(default)]
     pub reach: Reach,
+    #[serde(default)]
+    pub options: Options,
 }
 
 /// The level of a workflow's steps by their dials (D33): lights-on when
@@ -129,7 +151,23 @@ fn what_runs(n: &Node) -> Result<(), String> {
     if let Some(why) = missing_run(n) {
         return Err(format!("{}: {why}", n.id));
     }
-    reach_fits(n).map_err(|why| format!("{}: {why}", n.id))
+    model_fits(n)
+        .and_then(|_| reach_fits(n))
+        .map_err(|why| format!("{}: {why}", n.id))
+}
+
+/// A step's own model, when it names one, is `provider/model`, and only
+/// an agent's step runs one (D43).
+fn model_fits(n: &Node) -> Result<(), String> {
+    let model = n.options.model.trim();
+    match (model.is_empty(), n.stage) {
+        (true, _) => Ok(()),
+        (false, Stage::Shell) => Err("a shell step runs no model".into()),
+        _ if crate::settings::Model::named(model).is_none() => {
+            Err(format!("the model {model:?} is not provider/model"))
+        }
+        _ => Ok(()),
+    }
 }
 
 /// A step reaches only what its kind may: the network and secrets for a
@@ -268,6 +306,7 @@ impl Graph {
                     .collect(),
                 gives: n.results.clone(),
                 reach: n.reach.clone(),
+                options: n.options.clone(),
             })
             .collect())
     }
@@ -287,6 +326,7 @@ mod tests {
             note: String::new(),
             results: results.iter().map(|r| r.to_string()).collect(),
             reach: Reach::default(),
+            options: Options::default(),
             x,
             y: 0,
         }
@@ -453,5 +493,30 @@ mod tests {
         let reply = "Thinking first.\nRESULT plan:\n1. Add triple.\n2. Test it.\n\nRESULT plan:\n";
         assert_eq!(results(reply)["plan"], "1. Add triple.\n2. Test it.");
         assert!(results("RESULT plan:\n").is_empty());
+    }
+
+    #[test]
+    fn a_steps_model_is_provider_and_model_and_only_for_an_agent() {
+        let mut g = Graph {
+            nodes: vec![prompt("plan", 0, &[])],
+            links: vec![],
+        };
+        g.nodes[0].options.model = "anthropic/claude-sonnet-5-5".into();
+        assert_eq!(g.check(), Ok(()));
+        g.nodes[0].options.model = "sonnet".into();
+        assert!(g.check().unwrap_err().contains("not provider/model"));
+        let mut shell = node("tests", Shell, 0, &[]);
+        shell.run = "make test".into();
+        shell.options.model = "openai/gpt-5".into();
+        g.nodes = vec![shell];
+        assert!(
+            g.check()
+                .unwrap_err()
+                .contains("a shell step runs no model")
+        );
+        g.nodes[0].options.model.clear();
+        g.nodes[0].options.spend_micros = Some(5);
+        let steps = g.steps().unwrap();
+        assert_eq!(steps[0].options.spend_micros, Some(5), "a job keeps it");
     }
 }

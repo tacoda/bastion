@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use bastion_core::workflow::{Graph, Link, Node, Reach, Step};
+use bastion_core::workflow::{Graph, Link, Node, Options, Reach, Step};
 use serde_json::{Value, json};
 
 use crate::store::{Answer, Record, SqlStore, Store, name, parse};
@@ -152,6 +152,11 @@ fn node_of(r: &Value) -> Result<Node, String> {
                 .collect(),
             reads_only: r["reads_only"].as_i64() == Some(1),
         },
+        options: Options {
+            model: r["model"].as_str().unwrap_or_default().into(),
+            revisions: r["revisions"].as_u64().map(|n| n as u32),
+            spend_micros: r["spend_micros"].as_u64(),
+        },
         x: parse(r, "x")?,
         y: parse(r, "y")?,
     })
@@ -162,8 +167,8 @@ fn graph_statements(id: &str, version: u64, g: &Graph) -> Vec<Value> {
     let statement = |sql: &str, params: Value| json!({ "sql": sql, "params": params });
     let nodes = g.nodes.iter().map(|n| {
         statement(
-            "INSERT INTO workflow_nodes (workflow, version, id, stage, run, dial, note, x, y, network, secrets, reads_only) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            json!([id, version, n.id, name(n.stage), n.run.trim(), name(n.dial), n.note, n.x, n.y, n.reach.network as i64, n.reach.secrets.join(" "), n.reach.reads_only as i64]),
+            "INSERT INTO workflow_nodes (workflow, version, id, stage, run, dial, note, x, y, network, secrets, reads_only, model, revisions, spend_micros) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            json!([id, version, n.id, name(n.stage), n.run.trim(), name(n.dial), n.note, n.x, n.y, n.reach.network as i64, n.reach.secrets.join(" "), n.reach.reads_only as i64, n.options.model.trim(), n.options.revisions, n.options.spend_micros]),
         )
     });
     let results = g.nodes.iter().flat_map(|n| {
@@ -201,7 +206,7 @@ impl WorkflowStore for SqlStore {
             let mut nodes = self
                 .rows(
                     &format!(
-                        "SELECT id, stage, run, dial, note, x, y, network, secrets, reads_only FROM workflow_nodes {where_}"
+                        "SELECT id, stage, run, dial, note, x, y, network, secrets, reads_only, model, revisions, spend_micros FROM workflow_nodes {where_}"
                     ),
                     at.clone(),
                     node_of,

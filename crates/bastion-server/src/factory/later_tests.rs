@@ -104,6 +104,35 @@ fn a_job_that_names_a_model_runs_its_turns_on_it() {
 }
 
 #[test]
+fn a_steps_own_model_wins_over_the_jobs() {
+    use super::Submission;
+    let rig = rig();
+    crate::rt::block_on(async {
+        let mut short = crate::workflow_store::find(&*rig.store, "short")
+            .await
+            .unwrap();
+        short.graph.nodes[0].options.model = "anthropic/claude-sonnet-5-5".into();
+        crate::workflow_store::save(&*rig.store, &short, 1)
+            .await
+            .unwrap();
+        let how = Submission {
+            model: Some("deepseek/deepseek-flash".into()),
+            ..Submission::default()
+        };
+        let id = rig.factory.submit_with("w", "x", how).await.unwrap();
+        until(&rig, &id, Some("plan"), State::Running).await;
+        let sent = async || rig.engine.called("harness::send");
+        assert!(eventually(sent).await, "no turn started");
+        let calls = rig.engine.calls.lock().unwrap();
+        let send = calls.iter().find(|c| c.1 == "harness::send").unwrap();
+        assert_eq!(
+            (&send.2["provider"], &send.2["model"]),
+            (&json!("anthropic"), &json!("claude-sonnet-5-5"))
+        );
+    });
+}
+
+#[test]
 fn a_requests_screenshots_are_kept_and_put_in_its_vm() {
     use super::Submission;
     let rig = rig();
@@ -233,6 +262,7 @@ fn a_shell_step_gets_the_jobs_branch_and_the_vault_names_this_server_only_for_a_
             needs: Vec::new(),
             gives: Vec::new(),
             reach: Reach::default(),
+            options: Default::default(),
         }];
         record.job.node = Some("tests".into());
         rig.factory.shell_step(&record).await;

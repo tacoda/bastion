@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 
 use bastion_protocol::api::{self, Request};
-use bastion_protocol::{PersonView, WorkflowView};
+use bastion_protocol::{ModelOption, PersonView, WorkflowView};
 use iced::widget::{button, column, container, pick_list, row, text, text_editor, text_input};
 use iced::{Element, Fill, Task};
 
@@ -43,6 +43,11 @@ pub struct State {
     results: String,
     /// A shell step's secrets, as typed.
     secrets: String,
+    /// The picked step's most revisions and most spend in dollars, as typed.
+    revisions: String,
+    spend: String,
+    /// The server's models, as `provider/id` choices for a step's model.
+    models: Vec<Choice>,
     /// The picked step's name, as typed: it renames the step once no
     /// other step has it.
     name: String,
@@ -58,11 +63,16 @@ pub enum StepField {
     Run,
     Results,
     Secrets,
+    Revisions,
+    Spend,
 }
 
 #[derive(Clone, Debug)]
 pub enum Msg {
     Workflows(Result<Vec<WorkflowView>, String>),
+    Models(Result<Vec<ModelOption>, String>),
+    /// The picked step's model; the default is empty.
+    Model(Choice),
     Me(Result<PersonView, String>),
     Choose(Choice),
     Pointer(Pointer),
@@ -103,7 +113,8 @@ fn wrap(msg: Msg) -> Message {
 pub fn load(ctx: &Ctx) -> Task<Message> {
     let read = ctx.task(&ctx.current, api::Workflows, Msg::Workflows);
     let me = ctx.task(&ctx.current, api::Me, Msg::Me);
-    Task::batch([read, me]).map(wrap)
+    let models = ctx.task(&ctx.current, api::Models, Msg::Models);
+    Task::batch([read, me, models]).map(wrap)
 }
 
 fn act<R>(ctx: &Ctx, request: R, done: fn(R::Answer) -> Done) -> Task<Message>
@@ -153,6 +164,13 @@ impl State {
             .as_ref()
             .map(|n| n.reach.secrets.join(", "))
             .unwrap_or_default();
+        let options = step.as_ref().map(|n| n.options.clone()).unwrap_or_default();
+        self.revisions = options
+            .revisions
+            .map_or_else(String::new, |n| n.to_string());
+        self.spend = options
+            .spend_micros
+            .map_or_else(String::new, |m| format!("{}", m as f64 / 1e6));
         self.results = step.map(|n| n.results.join(", ")).unwrap_or_default();
         self.picked = pick;
     }
@@ -245,7 +263,46 @@ fn on_field(state: &mut State, field: StepField, value: String) {
             state.step(|n| n.reach.secrets = secrets);
             state.secrets = value;
         }
+        StepField::Revisions => {
+            // What does not read as a count is kept as typed, and changes nothing.
+            if let Some(n) = optional(&value, |v| v.parse::<u32>().ok()) {
+                state.step(|step| step.options.revisions = n);
+            }
+            state.revisions = value;
+        }
+        StepField::Spend => {
+            let micros = |v: &str| {
+                let dollars = v.trim_start_matches('$').parse::<f64>().ok()?;
+                (dollars >= 0.0).then(|| (dollars * 1e6).round() as u64)
+            };
+            if let Some(m) = optional(&value, micros) {
+                state.step(|step| step.options.spend_micros = m);
+            }
+            state.spend = value;
+        }
     }
+}
+
+/// What a typed optional number holds: none when empty, `read` of it
+/// otherwise; `None` overall when it does not read.
+fn optional<T>(typed: &str, read: impl Fn(&str) -> Option<T>) -> Option<Option<T>> {
+    match typed.trim() {
+        "" => Some(None),
+        words => read(words).map(Some),
+    }
+}
+
+/// The server's models as choices, the default first.
+fn model_choices(models: Vec<ModelOption>) -> Vec<Choice> {
+    let each = models.into_iter().map(|m| {
+        Choice::new(
+            &format!("{}/{}", m.provider, m.id),
+            &format!("{} ({})", m.name, m.provider),
+        )
+    });
+    std::iter::once(Choice::new("", "The job's or the server's model"))
+        .chain(each)
+        .collect()
 }
 
 fn on_done(state: &mut State, ctx: &Ctx, answer: Result<Done, String>) -> Task<Message> {
@@ -315,7 +372,8 @@ fn change(state: &mut State, msg: Msg) {
             .iter_mut()
             .for_each(|w| edit::add_step(w, &stage)),
         Msg::Field(f, v) => on_field(state, f, v),
-        Msg::Kind(_) if !state.editable() => {}
+        Msg::Kind(_) | Msg::Model(_) if !state.editable() => {}
+        Msg::Model(c) => state.step(|n| n.options.model = c.id),
         Msg::Kind(c) => {
             state.step(|n| n.stage = c.id);
             state.pick(state.picked.clone());
@@ -351,7 +409,8 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
             state.show_latest();
         }
         Msg::Me(Ok(me)) => state.admin = me.role == "admin",
-        Msg::Workflows(Err(e)) | Msg::Me(Err(e)) => state.said = e,
+        Msg::Models(Ok(all)) => state.models = model_choices(all),
+        Msg::Workflows(Err(e)) | Msg::Me(Err(e)) | Msg::Models(Err(e)) => state.said = e,
         Msg::Choose(c) => {
             (state.chosen, state.draft) = (c.id, None);
             state.show_latest();
@@ -451,6 +510,47 @@ fn name_label(stage: &str) -> Option<&'static str> {
     }
 }
 
+/// The step's model and budget (D43): a model and a spending limit for an
+/// agent's step, and how often a step's failure may send work back.
+fn options_row<'a>(
+    state: &'a State,
+    n: &bastion_protocol::NodeView,
+    editable: bool,
+) -> Element<'a, Message> {
+    let field = |placeholder: &'a str, typed: &'a str, which: StepField| {
+        text_input(placeholder, typed)
+            .on_input_maybe(editable.then_some(move |v| wrap(Msg::Field(which, v))))
+            .style(theme::field)
+            .width(160)
+    };
+    let revisions = labeled(
+        "Most revisions its failure sends back",
+        field("2", &state.revisions, StepField::Revisions),
+    );
+    if is_script(n) {
+        return row![revisions].into();
+    }
+    let shown = state
+        .models
+        .iter()
+        .find(|c| c.id == n.options.model)
+        .cloned()
+        .or_else(|| {
+            (!n.options.model.is_empty()).then(|| Choice::new(&n.options.model, &n.options.model))
+        });
+    let model = pick_list(state.models.clone(), shown, |c| wrap(Msg::Model(c)))
+        .placeholder("The job's or the server's model")
+        .style(theme::select)
+        .width(Fill);
+    let spend = labeled(
+        "Most its turns may spend, in dollars",
+        field("no limit", &state.spend, StepField::Spend),
+    );
+    row![labeled("Model", model), spend, revisions]
+        .spacing(12)
+        .into()
+}
+
 /// What the step's one text box is for.
 fn text_label(n: &bastion_protocol::NodeView) -> &'static str {
     match n.stage.as_str() {
@@ -542,6 +642,7 @@ fn step_detail<'a>(state: &'a State, id: &str, editable: bool) -> Option<Element
             .on_toggle_maybe(editable.then_some(|on| wrap(Msg::ReadsOnly(on))));
         body = body.push(reads);
     }
+    body = body.push(options_row(state, &n, editable));
     let results = text_input("", &state.results)
         .on_input_maybe(editable.then_some(|v| wrap(Msg::Field(StepField::Results, v))))
         .style(theme::field);
@@ -747,5 +848,35 @@ mod tests {
         state.admin = false;
         change(&mut state, Msg::Kind(Choice::new("prompt", "Prompt")));
         assert_eq!(node(&state).stage, "shell", "a reader cannot change a step");
+    }
+
+    #[test]
+    fn a_steps_budget_reads_as_typed_and_empty_is_the_default() {
+        let mut w = workflow("mine", 1, false);
+        edit::add_step(&mut w, "prompt");
+        let mut state = State {
+            draft: Some(w),
+            admin: true,
+            ..State::default()
+        };
+        let id = state.draft.as_ref().unwrap().nodes[0].id.clone();
+        state.pick(Pick::Step(id));
+        let options = |state: &State| state.draft.as_ref().unwrap().nodes[0].options.clone();
+        on_field(&mut state, StepField::Spend, "$0.25".into());
+        on_field(&mut state, StepField::Revisions, "3".into());
+        assert_eq!(
+            (options(&state).spend_micros, options(&state).revisions),
+            (Some(250_000), Some(3))
+        );
+        on_field(&mut state, StepField::Revisions, "three".into());
+        assert_eq!(options(&state).revisions, Some(3), "kept until it reads");
+        assert_eq!(state.revisions, "three");
+        on_field(&mut state, StepField::Spend, "".into());
+        assert_eq!(options(&state).spend_micros, None, "empty is no limit");
+        change(
+            &mut state,
+            Msg::Model(Choice::new("deepseek/deepseek-flash", "Flash")),
+        );
+        assert_eq!(options(&state).model, "deepseek/deepseek-flash");
     }
 }

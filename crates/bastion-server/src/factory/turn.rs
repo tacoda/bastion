@@ -21,6 +21,13 @@ fn step_of(job: &Job) -> &str {
     job.node.as_deref().unwrap_or("finish")
 }
 
+/// The step a session ran at, from its name `<job>-<step>-<random>`; none
+/// for a session from before steps were named in it.
+pub fn session_step<'a>(job: &str, session: &'a str) -> Option<&'a str> {
+    let rest = session.strip_prefix(job)?.strip_prefix('-')?;
+    rest.rsplit_once('-').map(|(step, _)| step)
+}
+
 /// One turn: the job it runs for and its session.
 #[derive(Clone, Debug)]
 pub struct Turn {
@@ -255,6 +262,17 @@ mod tests {
             assert!(provider_ready(&engine, "openai-codex").await.is_ok());
             assert!(provider_ready(&engine, "unlisted").await.is_ok());
         });
+    }
+
+    #[test]
+    fn a_session_names_the_step_it_ran_at() {
+        assert_eq!(session_step("j1-2", "j1-2-build-a1b2"), Some("build"));
+        assert_eq!(
+            session_step("j1-2", "j1-2-acceptance-tests-a1b2"),
+            Some("acceptance-tests")
+        );
+        assert_eq!(session_step("j1-2", "j1-2-a1b2c3d4"), None, "before steps");
+        assert_eq!(session_step("j1-2", "j9-build-a1b2"), None, "another job's");
     }
 
     #[test]

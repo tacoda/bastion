@@ -40,6 +40,13 @@ A server is a factory, and everything that shapes it lives with it.
   notifications, and its secrets.
 - **Records:** its audit log, its evals, its costs, and what it learned.
 
+These are live controls, not a configuration file you edit and restart.
+A server runs on the iii engine, and each value you change in the app
+changes how that engine works for the next call or the next job: which
+model a turn runs on, which calls an agent may make, which image a VM
+boots, what a step does. Bastion's job is to turn the values you set into
+how iii behaves.
+
 The app itself keeps one thing: the list of servers you added. That list
 is the only setting that belongs to you and not to a server.
 

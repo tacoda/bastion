@@ -1,0 +1,13 @@
+I don't know where the dev server is. Shut it down so I can start it with the desktop app
+
+---
+
+the app started, but the desktop app did not start
+
+---
+
+Just came up
+
+---
+
+That was a very long startup time - was it because it was waiting for the server to start?

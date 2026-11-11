@@ -988,7 +988,11 @@ fn advance(job: &mut Job, dials: &Dials) -> Vec<Effect> {
             job.failures = 0;
             enter(job, dials)
         }
-        None if job.finishes() => vec![Effect::Finish],
+        // An approve gets here from waiting: the finish runs, and reports.
+        None if job.finishes() => {
+            job.state = State::Running;
+            vec![Effect::Finish]
+        }
         None => {
             job.state = State::Landed;
             vec![Effect::Teardown]

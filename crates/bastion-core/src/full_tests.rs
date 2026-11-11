@@ -1009,10 +1009,11 @@ fn a_workflow_of_steps_only_finishes_as_its_workspace_says_after_its_last_step()
         (landed.state, effects),
         (State::Landed, vec![Effect::Teardown])
     );
-    let mut bad = g.clone();
-    bad.nodes[0].reach.network = true;
-    assert!(bad.check().unwrap_err().contains("only a shell step"));
-    let mut bad = g;
-    bad.nodes[2].reach.secrets = vec!["gh token".into()];
-    assert!(bad.check().unwrap_err().contains("not a secret's name"));
+    let (approved, effects) = go(&stuck, &Event::Approved);
+    assert_eq!(
+        (approved.state, effects),
+        (State::Running, vec![Effect::Finish])
+    );
+    let (landed, _) = go(&approved, &Event::Landed);
+    assert_eq!(landed.state, State::Landed, "an approved finish lands");
 }

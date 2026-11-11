@@ -483,4 +483,23 @@ mod tests {
         assert_eq!(ids(&g), ["plan", "build", "land"]);
         assert_eq!(g.level(), Ok(Level::Dim));
     }
+
+    #[test]
+    fn only_a_shell_step_reaches_past_its_vm_and_a_secret_is_named_as_a_variable() {
+        let mut build = node("build", Prompt, 0, &[]);
+        build.note = "Do it.".into();
+        let mut pr = node("pr", Shell, 100, &[]);
+        pr.run = "gh pr create".into();
+        let g = Graph {
+            nodes: vec![build, pr],
+            links: Vec::new(),
+        };
+        assert_eq!(g.check(), Ok(()), "a workflow of steps needs no land");
+        let mut bad = g.clone();
+        bad.nodes[0].reach.network = true;
+        assert!(bad.check().unwrap_err().contains("only a shell step"));
+        let mut bad = g;
+        bad.nodes[1].reach.secrets = vec!["gh token".into()];
+        assert!(bad.check().unwrap_err().contains("not a secret's name"));
+    }
 }

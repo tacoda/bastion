@@ -103,6 +103,21 @@ with its server and added up 17 landed and 2 escapes. `two` has no eval
 and no landed job yet, so its rows could not show; the merge is covered by
 tests. A turn's steps on Costs now open on the turn's own server too.
 
+### U6. Eval charts: A against B
+
+- An eval's page compares A and B in total, measure by measure: grade,
+  cost, seconds, turns, calls, refused, held and flagged. Each pair is
+  scaled to its larger value and says how B differs from A.
+- Grade, cost, time, turns and calls are colored better or worse.
+  Refusals, holds and flags are not, as an enforced rung is meant to raise
+  them.
+- A second chart compares each request's grade under A and B.
+
+Done 2026-11-11. Live on "no-wc told vs enforced": B cost 40% less, took
+25% less time, 28% fewer turns and 48% fewer calls, refused 5 calls to A's
+0, and graded the same, 7. The run found that a change from zero read
+"same" and that a zero drew a sliver of bar; both are fixed.
+
 ## After this plan
 
 - A step is named `workflow/step`, and constraints and capabilities apply

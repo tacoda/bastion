@@ -11,7 +11,7 @@ use iced::widget::{
 };
 use iced::{Element, Fill, Task};
 
-use super::{Choice, Ctx, Each, ago, labeled, scrolled, section};
+use super::{Choice, Ctx, Each, ago, chart, labeled, scrolled, section};
 use crate::app::Message;
 use crate::route::Route;
 use crate::theme;
@@ -353,6 +353,59 @@ pub fn view_list<'a>(list: &'a List, ctx: &Ctx) -> Element<'a, Message> {
     scrolled(body.spacing(12))
 }
 
+/// The arms' totals, measure by measure, for the comparison chart.
+fn total_pairs(a: &RunView, b: &RunView) -> Vec<chart::Pair> {
+    let count = |name: &str, x: u64, y: u64, less_is_better| chart::Pair {
+        name: name.into(),
+        a: x as f64,
+        b: y as f64,
+        shown: (x.to_string(), y.to_string()),
+        less_is_better,
+    };
+    let dollars = |m: u64| format!("${:.4}", m as f64 / 1e6);
+    let grade = |r: &RunView| r.grade.map_or(0.0, f64::from);
+    let shown = |r: &RunView| r.grade.map_or("-".into(), |g| g.to_string());
+    vec![
+        chart::Pair {
+            name: "Grade".into(),
+            a: grade(a),
+            b: grade(b),
+            shown: (shown(a), shown(b)),
+            less_is_better: Some(false),
+        },
+        chart::Pair {
+            name: "Cost".into(),
+            a: a.cost_micros as f64,
+            b: b.cost_micros as f64,
+            shown: (dollars(a.cost_micros), dollars(b.cost_micros)),
+            less_is_better: Some(true),
+        },
+        count("Seconds", a.seconds, b.seconds, Some(true)),
+        count("Turns", a.turns.into(), b.turns.into(), Some(true)),
+        count("Calls", a.passed.into(), b.passed.into(), Some(true)),
+        // An enforced rung is meant to refuse, hold or flag more.
+        count("Refused", a.refused.into(), b.refused.into(), None),
+        count("Held", a.held.into(), b.held.into(), None),
+        count("Flagged", a.flagged.into(), b.flagged.into(), None),
+    ]
+}
+
+/// Each request's grade under A and under B, where both runs were graded.
+fn grade_pairs(rows: &[EvalRow]) -> Vec<chart::Pair> {
+    rows.iter()
+        .filter_map(|r| {
+            let (a, b) = (r.a.as_ref()?.grade?, r.b.as_ref()?.grade?);
+            Some(chart::Pair {
+                name: format!("Request {}", r.idx + 1),
+                a: a.into(),
+                b: b.into(),
+                shown: (a.to_string(), b.to_string()),
+                less_is_better: Some(false),
+            })
+        })
+        .collect()
+}
+
 /// A run's measures, by name.
 fn measures(r: &RunView) -> [(&'static str, String); 9] {
     let outcome = match (r.job.is_empty(), r.reviewed) {
@@ -536,6 +589,15 @@ pub fn view_one<'a>(one: &'a One, ctx: &Ctx) -> Element<'a, Message> {
                     .width(Fill)
                     .style(theme::panel),
             )
+            .push(chart::compare(
+                "A and B in total",
+                total_pairs(&v.total_a, &v.total_b),
+            ))
+            .extend(
+                Some(grade_pairs(&v.rows))
+                    .filter(|p| p.len() > 1)
+                    .map(|p| chart::compare("Grade by request", p)),
+            )
             .push(totals(one, v))
             .push(
                 container(Column::with_children(rows))
@@ -595,5 +657,43 @@ mod tests {
             ("reached review", "$0.0123", "4")
         );
         assert_eq!(measures(&RunView::default())[0].1, "");
+    }
+
+    #[test]
+    fn the_grade_chart_has_each_request_both_arms_graded() {
+        let graded = |g| {
+            Some(RunView {
+                grade: g,
+                ..RunView::default()
+            })
+        };
+        let row = |idx, a, b| EvalRow {
+            idx,
+            request: String::new(),
+            a,
+            b,
+            differences: Vec::new(),
+        };
+        let rows = [
+            row(0, graded(Some(7)), graded(Some(9))),
+            row(1, graded(Some(8)), graded(None)),
+            row(2, None, graded(Some(5))),
+        ];
+        let pairs = grade_pairs(&rows);
+        assert_eq!(pairs.len(), 1, "only a request both arms were graded on");
+        assert_eq!(
+            (pairs[0].name.as_str(), pairs[0].a, pairs[0].b),
+            ("Request 1", 7.0, 9.0)
+        );
+        let totals = total_pairs(&RunView::default(), &RunView::default());
+        assert_eq!(totals[0].name, "Grade");
+        assert_eq!(
+            (
+                totals[0].less_is_better,
+                totals[1].less_is_better,
+                totals[5].less_is_better
+            ),
+            (Some(false), Some(true), None)
+        );
     }
 }

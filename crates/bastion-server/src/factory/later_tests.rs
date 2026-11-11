@@ -129,6 +129,10 @@ fn a_steps_own_model_wins_over_the_jobs() {
             (&send.2["provider"], &send.2["model"]),
             (&json!("anthropic"), &json!("claude-sonnet-5-5"))
         );
+        assert_eq!(
+            send.2["options"]["metadata"]["step"], "short/plan",
+            "the gate knows the step as workflow/step"
+        );
     });
 }
 

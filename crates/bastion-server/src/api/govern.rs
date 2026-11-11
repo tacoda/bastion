@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use bastion_core::govern::{Constraint, Source};
+use bastion_core::govern::{Capability, Constraint, Source};
 use bastion_protocol::{
     AuditEntryView, AuditView, CapabilityView, ConstraintView, FactoryCapabilityView, HeldCallRef,
     WorkspaceCharterView,
@@ -46,8 +46,27 @@ pub async fn constraints(cell: &FactoryCell) -> Result<Vec<ConstraintView>, Stri
             contains: c.contains,
             rung: name(c.rung),
             source: name(c.source),
+            steps: c.steps,
         })
         .collect())
+}
+
+/// The steps a form names, trimmed, without the empty ones.
+fn steps_of(typed: &[String]) -> Vec<String> {
+    let kept = typed.iter().map(|s| s.trim().to_string());
+    kept.filter(|s| !s.is_empty()).collect()
+}
+
+/// Set the workflow steps a constraint applies at (D44).
+pub async fn constraint_steps(
+    cell: &FactoryCell,
+    id: String,
+    steps: Vec<String>,
+) -> Result<(), String> {
+    factory(cell)?
+        .gate()
+        .scope_constraint(&id, steps_of(&steps))
+        .await
 }
 
 /// Add an owner's constraint from the form.
@@ -61,6 +80,7 @@ pub async fn constraint_add(cell: &FactoryCell, constraint: ConstraintView) -> R
         contains: constraint.contains.trim().into(),
         rung,
         source: Source::Owner,
+        steps: steps_of(&constraint.steps),
     };
     factory(cell)?.gate().add_constraint(c).await
 }
@@ -75,23 +95,56 @@ pub async fn capabilities(cell: &FactoryCell) -> Result<Vec<CapabilityView>, Str
         .into_iter()
         .map(|g| CapabilityView {
             stage: name(g.stage),
+            step: g.step,
             function: g.function,
             rung: name(g.rung),
         })
         .collect())
 }
 
+/// A grant from its view, its words read as a stage and a rung.
+fn grant_of(v: &CapabilityView) -> Result<Capability, String> {
+    let stage = serde_json::from_value(json!(v.stage))
+        .map_err(|_| format!("{:?} is not a kind of step", v.stage))?;
+    let rung = serde_json::from_value(json!(v.rung))
+        .map_err(|_| format!("{:?} is not denied, ask or allowed", v.rung))?;
+    Ok(Capability {
+        stage,
+        step: v.step.trim().into(),
+        function: v.function.trim().into(),
+        rung,
+    })
+}
+
+/// Move the grant `g` names, its kind's or a step's own, up or down its
+/// ladder; its rung is not read.
 pub async fn capability_move(
     cell: &FactoryCell,
-    stage: String,
-    function: String,
+    g: CapabilityView,
     up: bool,
 ) -> Result<(), String> {
-    let stage =
-        serde_json::from_value(json!(stage)).map_err(|_| format!("{stage:?} is not a stage"))?;
+    let stage = serde_json::from_value(json!(g.stage))
+        .map_err(|_| format!("{:?} is not a stage", g.stage))?;
+    let at = bastion_core::govern::At {
+        stage,
+        step: &g.step,
+    };
     factory(cell)?
         .gate()
-        .move_capability(stage, &function, up)
+        .move_capability(at, &g.function, up)
+        .await
+}
+
+/// Grant a function at one workflow step (D44).
+pub async fn capability_add(cell: &FactoryCell, grant: CapabilityView) -> Result<(), String> {
+    factory(cell)?.gate().grant_at_step(grant_of(&grant)?).await
+}
+
+/// Take back a step's own grant.
+pub async fn capability_remove(cell: &FactoryCell, grant: CapabilityView) -> Result<(), String> {
+    factory(cell)?
+        .gate()
+        .ungrant_at_step(&grant_of(&grant)?)
         .await
 }
 
@@ -201,7 +254,7 @@ pub async fn factory_capabilities(
         row(
             "Send failing work back to be fixed",
             "allowed",
-            "At most 2 times a step, within the workspace's revision budget.",
+            "As often as each step allows, 2 times by default, within the workspace's revision budget.",
         ),
     ])
 }

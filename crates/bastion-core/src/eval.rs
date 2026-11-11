@@ -40,7 +40,7 @@ pub fn apply(constraints: &mut [Constraint], grants: &mut [Capability], override
                 rung,
             } => grants
                 .iter_mut()
-                .filter(|g| g.stage == *stage && &g.function == function)
+                .filter(|g| g.step.is_empty() && g.stage == *stage && &g.function == function)
                 .for_each(|g| g.rung = *rung),
         }
     }

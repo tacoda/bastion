@@ -8,7 +8,7 @@ use bastion_protocol::{
 use iced::widget::{Column, button, column, container, pick_list, row, text, text_input};
 use iced::{Element, Fill, Task};
 
-use super::{Ctx, ago, labeled, scrolled, section};
+use super::{Choice, Ctx, ago, labeled, scrolled, section};
 use crate::app::Message;
 use crate::theme;
 
@@ -48,6 +48,27 @@ pub struct State {
     /// The constraint whose history is open.
     history: Option<String>,
     draft: Draft,
+    /// Each workflow step, as `workflow/step` with its workflow's name, and
+    /// the kind it runs as (D44).
+    steps: Vec<(Choice, String)>,
+    grant: GrantForm,
+}
+
+/// A grant for one workflow step, as the form holds it.
+struct GrantForm {
+    step: Option<Choice>,
+    function: String,
+    rung: String,
+}
+
+impl Default for GrantForm {
+    fn default() -> Self {
+        GrantForm {
+            step: None,
+            function: "sandbox::fs::write".into(),
+            rung: "ask".into(),
+        }
+    }
 }
 
 impl State {
@@ -61,6 +82,8 @@ impl State {
             factory: vec![],
             error: String::new(),
             history: None,
+            steps: vec![],
+            grant: GrantForm::default(),
             draft: Draft {
                 rung: "told".into(),
                 ..Draft::default()
@@ -84,22 +107,47 @@ pub enum Msg {
     Rung(String),
     ToggleForm,
     Add,
+    Workflows(Result<Vec<bastion_protocol::WorkflowView>, String>),
+    /// Add a step to the steps a constraint applies at, or take one off.
+    Scope(String, Choice, bool),
+    GrantStep(Choice),
+    GrantFunction(String),
+    GrantRung(String),
+    Grant,
+    Ungrant(CapabilityView),
+}
+
+/// Each workflow's steps as choices: `workflow/step`, labeled with the
+/// workflow's name, with the kind each runs as.
+fn steps_of(workflows: Vec<bastion_protocol::WorkflowView>) -> Vec<(Choice, String)> {
+    workflows
+        .into_iter()
+        .flat_map(|w| {
+            w.nodes.into_iter().map(move |n| {
+                let id = format!("{}/{}", w.id, n.id);
+                (Choice::new(&id, &format!("{} / {}", w.name, n.id)), n.stage)
+            })
+        })
+        .collect()
 }
 
 /// Read what the page shows from the server it shows.
 pub fn load(state: &State, ctx: &Ctx) -> Task<Message> {
     let on = &ctx.current;
     let audit = ctx.task(on, api::Audit, Msg::Audit);
+    let workflows = ctx.task(on, api::Workflows, Msg::Workflows);
     let tasks = match state.which {
         Which::Constraints => vec![
             ctx.task(on, api::Constraints, Msg::Constraints),
             ctx.task(on, api::Charters, Msg::Charters),
             audit,
+            workflows,
         ],
         Which::Capabilities => vec![
             ctx.task(on, api::Capabilities, Msg::Grants),
             ctx.task(on, api::Charters, Msg::Charters),
             ctx.task(on, api::FactoryCapabilities, Msg::Factory),
+            workflows,
         ],
     };
     Task::batch(tasks).map(Message::Govern)
@@ -124,6 +172,7 @@ fn new_constraint(d: &Draft) -> api::ConstraintAdd {
         rung: d.rung.clone(),
         source: "owner".into(),
         layer: String::new(),
+        steps: Vec::new(),
     })
 }
 
@@ -158,6 +207,7 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         Msg::MoveGrant(g, up) => {
             let moved = api::CapabilityMove {
                 stage: g.stage,
+                step: g.step,
                 function: g.function,
                 up,
             };
@@ -181,8 +231,54 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
             };
             return added;
         }
+        other => return on_steps(state, other, ctx),
     }
     Task::none()
+}
+
+/// The constraints' steps and the steps' own grants (D44).
+fn on_steps(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
+    match msg {
+        Msg::Workflows(Ok(all)) => state.steps = steps_of(all),
+        Msg::Workflows(Err(e)) => state.error = e,
+        Msg::Scope(id, step, add) => {
+            let Some(c) = state.constraints.iter().find(|c| c.id == id) else {
+                return Task::none();
+            };
+            let mut steps: Vec<String> =
+                c.steps.iter().filter(|s| **s != step.id).cloned().collect();
+            if add {
+                steps.push(step.id);
+            }
+            return send(ctx, api::ConstraintSteps { id, steps });
+        }
+        Msg::GrantStep(c) => state.grant.step = Some(c),
+        Msg::GrantFunction(f) => state.grant.function = f,
+        Msg::GrantRung(r) => state.grant.rung = r,
+        Msg::Grant => {
+            let Some(step) = state.grant.step.clone() else {
+                state.error = "Pick the step to grant at.".into();
+                return Task::none();
+            };
+            let stage = state.steps.iter().find(|(c, _)| c.id == step.id);
+            let grant = CapabilityView {
+                stage: stage.map(|(_, k)| k.clone()).unwrap_or_default(),
+                step: step.id,
+                function: state.grant.function.trim().into(),
+                rung: state.grant.rung.clone(),
+            };
+            return send(ctx, api::CapabilityAdd(grant));
+        }
+        Msg::Ungrant(g) => return send(ctx, api::CapabilityRemove(g)),
+        _ => {}
+    }
+    Task::none()
+}
+
+/// A step's name as the page shows it: its workflow's name and its own.
+fn step_label(state: &State, step: &str) -> String {
+    let found = state.steps.iter().find(|(c, _)| c.id == step);
+    found.map_or_else(|| step.to_string(), |(c, _)| c.name.clone())
 }
 
 fn rung<'a>(name: &str) -> Element<'a, Message> {
@@ -260,8 +356,10 @@ fn constraint_row<'a>(state: &State, c: &ConstraintView) -> Element<'a, Message>
         text(c.rule.clone()),
         text(format!("{} · {} · {binds}", c.id, c.source))
             .size(12)
-            .color(theme::MUTED)
-    ];
+            .color(theme::MUTED),
+        scope_row(state, c)
+    ]
+    .spacing(2);
     let go = |up: bool| Message::Govern(Msg::MoveConstraint(c.id.clone(), up));
     let buttons = vec![
         small("History", Some(Message::Govern(Msg::History(c.id.clone())))),
@@ -276,9 +374,42 @@ fn constraint_row<'a>(state: &State, c: &ConstraintView) -> Element<'a, Message>
     }
 }
 
+/// Where a constraint applies: every step, or its steps, each with a ✕ to
+/// take it off, and a picker to add one (D44).
+fn scope_row<'a>(state: &State, c: &ConstraintView) -> Element<'a, Message> {
+    let mut line = row![text("At").size(12).color(theme::MUTED)]
+        .spacing(6)
+        .align_y(iced::Center);
+    if c.steps.is_empty() {
+        line = line.push(text("every step").size(12).color(theme::MUTED));
+    }
+    for step in &c.steps {
+        let off = Message::Govern(Msg::Scope(c.id.clone(), Choice::new(step, step), false));
+        let chip = button(text(format!("{} ✕", step_label(state, step))).size(12))
+            .padding([2, 8])
+            .style(theme::secondary)
+            .on_press(off);
+        line = line.push(chip);
+    }
+    let open: Vec<Choice> = state
+        .steps
+        .iter()
+        .map(|(choice, _)| choice.clone())
+        .filter(|choice| !c.steps.contains(&choice.id))
+        .collect();
+    let id = c.id.clone();
+    let add = pick_list(open, None::<Choice>, move |step| {
+        Message::Govern(Msg::Scope(id.clone(), step, true))
+    })
+    .placeholder("Only at a step…")
+    .text_size(12)
+    .style(theme::select);
+    line.push(add).wrap().into()
+}
+
 fn layer_title(layer: &str) -> &'static str {
     if layer == "factory" {
-        "Factory: rules on the pipeline, checked at review"
+        "Factory: rules on a step's change, checked once the step has made it"
     } else {
         "Harness: rules on an agent's calls"
     }
@@ -429,6 +560,56 @@ fn grant_row<'a>(g: &CapabilityView) -> Element<'a, Message> {
     ladder_row(&g.rung, about.into(), buttons)
 }
 
+/// The steps' own grants, each with its ladder and Remove, and the form to
+/// add one (D44).
+fn step_grants(state: &State) -> Element<'_, Message> {
+    let rows = state.grants.iter().filter(|g| !g.step.is_empty()).map(|g| {
+        let about = row![
+            text(step_label(state, &g.step)),
+            text(format!(" · {}", g.function))
+        ];
+        let go = |up: bool| Message::Govern(Msg::MoveGrant(g.clone(), up));
+        let buttons = vec![
+            small("Demote", (g.rung != "denied").then(|| go(false))),
+            small("Promote", (g.rung != "allowed").then(|| go(true))),
+            small("Remove", Some(Message::Govern(Msg::Ungrant(g.clone())))),
+        ];
+        ladder_row(&g.rung, about.into(), buttons)
+    });
+    let f = &state.grant;
+    let choices: Vec<Choice> = state
+        .steps
+        .iter()
+        .filter(|(_, kind)| kind != "shell")
+        .map(|(c, _)| c.clone())
+        .collect();
+    let step = pick_list(choices, f.step.clone(), |c| {
+        Message::Govern(Msg::GrantStep(c))
+    })
+    .placeholder("A workflow step")
+    .style(theme::select)
+    .width(Fill);
+    let function = text_input("sandbox::fs::write", &f.function)
+        .on_input(|v| Message::Govern(Msg::GrantFunction(v)))
+        .style(theme::field);
+    let rungs = vec!["denied".to_string(), "ask".into(), "allowed".into()];
+    let rung = pick_list(rungs, Some(f.rung.clone()), |r| {
+        Message::Govern(Msg::GrantRung(r))
+    })
+    .style(theme::select);
+    let form = row![
+        labeled("Step", step),
+        labeled("Calls to", function),
+        labeled("Rung", rung),
+        small("Grant", Some(Message::Govern(Msg::Grant)))
+    ]
+    .spacing(12)
+    .align_y(iced::Bottom);
+    Column::with_children(rows)
+        .push(container(form).padding([8, 12]))
+        .into()
+}
+
 fn capabilities(state: &State) -> Element<'_, Message> {
     let allows = state.charters.iter().map(|c| {
         let mut head = row![text(c.workspace.clone()).font(theme::BOLD)];
@@ -445,7 +626,11 @@ fn capabilities(state: &State) -> Element<'_, Message> {
         ));
         container(body.spacing(4)).padding([8, 12]).into()
     });
-    let grants = state.grants.iter().map(grant_row);
+    let grants = state
+        .grants
+        .iter()
+        .filter(|g| g.step.is_empty())
+        .map(grant_row);
     let factory = state.factory.iter().map(|f| {
         let about = column![
             text(f.name.clone()),
@@ -456,6 +641,7 @@ fn capabilities(state: &State) -> Element<'_, Message> {
     column![
         section("Charter: what each repository allows".into(), Column::with_children(allows).into(), false),
         section("Harness: what an agent's calls may do in each kind of step: denied, then ask (held for you), then allowed".into(), Column::with_children(grants).into(), false),
+        section("For one workflow step: a grant here wins over its kind's".into(), step_grants(state), false),
         section("Factory: what the factory may do, as Settings set it".into(), Column::with_children(factory).into(), false),
     ]
     .spacing(16)

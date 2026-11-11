@@ -275,6 +275,9 @@ bare!(Capabilities, "GET", "/capabilities", Vec<CapabilityView>);
 #[derive(Clone, Debug, Serialize)]
 pub struct CapabilityMove {
     pub stage: String,
+    /// The workflow step of a step's own grant; empty for its kind's (D44).
+    #[serde(default)]
+    pub step: String,
     pub function: String,
     pub up: bool,
 }
@@ -284,6 +287,33 @@ impl Request for CapabilityMove {
     const ROUTE: &'static str = "/capabilities/move";
     const BODY: bool = true;
     type Answer = ();
+}
+
+with!(CapabilityAdd, "POST", "/capabilities", CapabilityView, ());
+with!(
+    CapabilityRemove,
+    "POST",
+    "/capabilities/remove",
+    CapabilityView,
+    ()
+);
+
+/// Set the workflow steps a constraint applies at; none is every step.
+#[derive(Clone, Debug, Serialize)]
+pub struct ConstraintSteps {
+    #[serde(skip)]
+    pub id: String,
+    pub steps: Vec<String>,
+}
+
+impl Request for ConstraintSteps {
+    const METHOD: &'static str = "POST";
+    const ROUTE: &'static str = "/constraints/{id}/steps";
+    const BODY: bool = true;
+    type Answer = ();
+    fn path(&self) -> String {
+        fill(Self::ROUTE, "id", &self.id)
+    }
 }
 
 bare!(
@@ -561,8 +591,11 @@ fn factory_requests() -> Vec<(&'static str, &'static str)> {
         Constraints,
         ConstraintAdd,
         ConstraintMove,
+        ConstraintSteps,
         Capabilities,
         CapabilityMove,
+        CapabilityAdd,
+        CapabilityRemove,
         FactoryCapabilities,
         Charters,
         Audit,
@@ -628,6 +661,6 @@ mod tests {
         assert_eq!(comment.path(), "/jobs/j1/comment");
         let spaced = WorkflowDelete { id: "a b/c".into() };
         assert_eq!(spaced.path(), "/workflows/a%20b%2Fc");
-        assert_eq!(every().len(), 70);
+        assert_eq!(every().len(), 73);
     }
 }

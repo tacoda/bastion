@@ -135,10 +135,26 @@ first run with DeepSeek on the step landed `quadruple(x)` on `demo-local`.
 The spending limit and the revision count are covered by tests, not run
 live. The user-facing word "stack" is now "engine" everywhere.
 
+### U8. Rules per workflow step (D44)
+
+- A step is known as `workflow/step`, and each turn tells the gate which.
+- A grant may be for one workflow step; it wins over its kind's grant.
+- A constraint may apply at some steps only; with none, at every step.
+  An agent is told only the rules that apply at its step.
+- Capabilities lists the steps' own grants with a form to add one, and
+  each constraint shows its steps with a picker to add one.
+
+Done 2026-11-11. Migration 6 rebuilt the grants table with the step in
+its key. Live: with `sandbox::fs::write` denied at the test workflow's
+build step, the gate refused the build's two writes there; the agent then
+wrote through `sandbox::exec`, which its kind still allows, and the job
+landed. So a step's grant binds only the function it names: to stop all
+writes at a step, deny `sandbox::exec` there too. A refusal now names the
+step. The grant showed under "For one workflow step" and its Remove took
+it back.
+
 ## After this plan
 
-- A step is named `workflow/step`, and constraints and capabilities apply
-  per workflow step, not per kind of step. This changes D42 and the gate.
 - Workflows that branch: a step can name a step to go to on failure, so a
   workflow draws as a flowchart. Today a failure waits for you or goes back
   to the step that writes. This changes the core, so it needs a decision

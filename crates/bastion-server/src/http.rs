@@ -14,8 +14,8 @@ use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use bastion_core::Event as JobEvent;
 use bastion_protocol::{
-    Change, ConstraintView, EscapeReport, HeldCallRef, HostView, LogRequest, NewEval, NotifySet,
-    NotifyView, SettingsView, Workspace,
+    CapabilityView, Change, ConstraintView, EscapeReport, HeldCallRef, HostView, LogRequest,
+    NewEval, NotifySet, NotifyView, SettingsView, Workspace,
 };
 use futures_util::{Stream, stream};
 use serde::{Deserialize, Serialize};
@@ -174,8 +174,10 @@ fn govern_routes() -> Router<App> {
         .route("/held/refuse", post(held_refuse))
         .route("/constraints", get(constraints).post(constraint_add))
         .route("/constraints/{id}/move", post(constraint_move))
-        .route("/capabilities", get(capabilities))
+        .route("/constraints/{id}/steps", post(constraint_steps))
+        .route("/capabilities", get(capabilities).post(capability_add))
         .route("/capabilities/move", post(capability_move))
+        .route("/capabilities/remove", post(capability_remove))
         .route("/capabilities/factory", get(factory_capabilities))
         .route("/charters", get(charters))
         .route("/audit", get(audit))
@@ -642,13 +644,42 @@ async fn capabilities(State(app): State<App>) -> Response {
 #[derive(Deserialize)]
 struct Grant {
     stage: String,
+    #[serde(default)]
+    step: String,
     function: String,
     up: bool,
 }
 
 async fn capability_move(State(app): State<App>, Json(b): Json<Grant>) -> Response {
     let f = &app.server.factory;
-    answer(api::govern::capability_move(f, b.stage, b.function, b.up).await)
+    let g = CapabilityView {
+        stage: b.stage,
+        step: b.step,
+        function: b.function,
+        rung: String::new(),
+    };
+    answer(api::govern::capability_move(f, g, b.up).await)
+}
+
+async fn capability_add(State(app): State<App>, Json(g): Json<CapabilityView>) -> Response {
+    answer(api::govern::capability_add(&app.server.factory, g).await)
+}
+
+async fn capability_remove(State(app): State<App>, Json(g): Json<CapabilityView>) -> Response {
+    answer(api::govern::capability_remove(&app.server.factory, g).await)
+}
+
+#[derive(Deserialize)]
+struct Steps {
+    steps: Vec<String>,
+}
+
+async fn constraint_steps(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    Json(b): Json<Steps>,
+) -> Response {
+    answer(api::govern::constraint_steps(&app.server.factory, id, b.steps).await)
 }
 
 async fn factory_capabilities(State(app): State<App>) -> Response {
@@ -1022,6 +1053,7 @@ mod tests {
             up: true,
         });
         reads::<Grant>(api::CapabilityMove {
+            step: s(""),
             stage: s("build"),
             function: s("f"),
             up: false,

@@ -139,7 +139,7 @@ fn transactions_at(version: u64) -> Vec<Vec<String>> {
 #[test]
 fn migration_1_rebuilds_the_staged_tables_once_with_deferred_keys() {
     let fresh = transactions_at(0);
-    assert_eq!(fresh.len(), 6, "the schema, then migrations 1 to 5");
+    assert_eq!(fresh.len(), 7, "the schema, then migrations 1 to 6");
     let m1 = &fresh[1];
     assert_eq!(m1.first().unwrap(), "PRAGMA defer_foreign_keys = ON");
     assert_eq!(m1.last().unwrap(), "PRAGMA user_version = 1");
@@ -178,8 +178,14 @@ fn migration_1_rebuilds_the_staged_tables_once_with_deferred_keys() {
             .any(|s| s.starts_with("DELETE FROM workflow_nodes WHERE stage IN ('land'")),
         "{m5:#?}"
     );
-    assert_eq!(transactions_at(4).len(), 2, "only migration 5 is left");
-    assert_eq!(transactions_at(5).len(), 1, "nothing left to migrate");
+    let m6 = &fresh[6];
+    assert!(
+        m6.iter()
+            .any(|s| s.contains("PRIMARY KEY (stage, step, function)")),
+        "a grant's key gains its step: {m6:#?}"
+    );
+    assert_eq!(transactions_at(4).len(), 3, "migrations 5 and 6 are left");
+    assert_eq!(transactions_at(6).len(), 1, "nothing left to migrate");
 }
 
 #[test]

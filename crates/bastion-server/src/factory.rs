@@ -707,7 +707,8 @@ impl Factory {
         {
             message.push_str(BROWSER_GUIDE);
         }
-        message.push_str(&self.gate.rules(&job.id));
+        let step = step_name(record);
+        message.push_str(&self.gate.rules(&job.id, &step));
         message.push_str(brief);
         let settings = settings_store::current(&*self.store).await?;
         // The step's own model wins over the job's, which wins over the server's (D43).
@@ -727,7 +728,7 @@ impl Factory {
         self.engine
             .call_for(NS, "harness::send", json!({
                 "session_id": session, "provider": model.provider, "model": model.model, "message": message,
-                "options": { "max_turns": MAX_TURN_STEPS, "functions": { "allow": TOOLS }, "metadata": { "sandbox_id": sandbox, "job": job.id, "stage": stage, "reads_only": job.step().is_some_and(|s| s.reach.reads_only) } },
+                "options": { "max_turns": MAX_TURN_STEPS, "functions": { "allow": TOOLS }, "metadata": { "sandbox_id": sandbox, "job": job.id, "stage": stage, "step": step, "reads_only": job.step().is_some_and(|s| s.reach.reads_only) } },
             }), 60_000)
             .await?;
         self.arm_cap(&turn, bastion_core::TURN_CAP_SECS);
@@ -968,6 +969,13 @@ mod shell;
 mod turn;
 
 pub use turn::final_reply;
+
+/// The name the gate knows a job's current step by: `workflow/step` (D44).
+fn step_name(record: &Record) -> String {
+    let workflow = record.runtime.workflow.as_deref().unwrap_or_default();
+    let node = record.job.node.as_deref().unwrap_or_default();
+    format!("{workflow}/{node}")
+}
 
 /// The sandbox worker's answer for a VM that no longer exists (S002).
 fn vm_lost(error: &str) -> bool {

@@ -12,8 +12,10 @@ pub trait GovernStore {
     /// Add a constraint, or replace the one with its id.
     fn set_constraint<'a>(&'a self, constraint: &'a Constraint) -> Answer<'a, ()>;
     fn capabilities(&self) -> Answer<'_, Vec<Capability>>;
-    /// Add a grant, or replace the one for its stage and function.
+    /// Add a grant, or replace the one for its stage, step and function.
     fn set_capability<'a>(&'a self, grant: &'a Capability) -> Answer<'a, ()>;
+    /// Remove the grant for a stage, step and function.
+    fn remove_capability<'a>(&'a self, grant: &'a Capability) -> Answer<'a, ()>;
     fn hold<'a>(&'a self, call: &'a HeldCall) -> Answer<'a, ()>;
     /// The calls held for a job, oldest first.
     fn held<'a>(&'a self, job: &'a str) -> Answer<'a, Vec<HeldCall>>;
@@ -33,10 +35,11 @@ pub trait GovernStore {
     fn append_audit<'a>(&'a self, entry: &'a Entry) -> Answer<'a, ()>;
 }
 
-const UPSERT_CONSTRAINT: &str = "INSERT INTO constraints (id, rule, function, contains, rung, source) VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT (id) DO UPDATE SET rule = excluded.rule, function = excluded.function, contains = excluded.contains, rung = excluded.rung, source = excluded.source";
-const UPSERT_CAPABILITY: &str = "INSERT INTO capabilities (stage, function, rung) VALUES (?, ?, ?)
-    ON CONFLICT (stage, function) DO UPDATE SET rung = excluded.rung";
+const UPSERT_CONSTRAINT: &str = "INSERT INTO constraints (id, rule, function, contains, rung, source, steps) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (id) DO UPDATE SET rule = excluded.rule, function = excluded.function, contains = excluded.contains, rung = excluded.rung, source = excluded.source, steps = excluded.steps";
+const UPSERT_CAPABILITY: &str =
+    "INSERT INTO capabilities (stage, step, function, rung) VALUES (?, ?, ?, ?)
+    ON CONFLICT (stage, step, function) DO UPDATE SET rung = excluded.rung";
 
 fn constraint_params(c: &Constraint) -> Value {
     json!([
@@ -45,12 +48,13 @@ fn constraint_params(c: &Constraint) -> Value {
         c.function,
         c.contains,
         name(c.rung),
-        name(c.source)
+        name(c.source),
+        c.steps.join(" ")
     ])
 }
 
 fn capability_params(g: &Capability) -> Value {
-    json!([name(g.stage), g.function, name(g.rung)])
+    json!([name(g.stage), g.step, g.function, name(g.rung)])
 }
 
 pub(crate) fn constraint(r: &Value) -> Result<Constraint, String> {
@@ -61,12 +65,19 @@ pub(crate) fn constraint(r: &Value) -> Result<Constraint, String> {
         contains: parse(r, "contains")?,
         rung: parse(r, "rung")?,
         source: parse(r, "source")?,
+        steps: r["steps"]
+            .as_str()
+            .unwrap_or_default()
+            .split_whitespace()
+            .map(String::from)
+            .collect(),
     })
 }
 
 pub(crate) fn capability(r: &Value) -> Result<Capability, String> {
     Ok(Capability {
         stage: parse(r, "stage")?,
+        step: r["step"].as_str().unwrap_or_default().into(),
         function: parse(r, "function")?,
         rung: parse(r, "rung")?,
     })
@@ -107,8 +118,7 @@ pub(crate) fn entry(row: &Value) -> Result<Entry, String> {
 impl GovernStore for SqlStore {
     fn constraints(&self) -> Answer<'_, Vec<Constraint>> {
         Box::pin(async move {
-            let sql =
-                "SELECT id, rule, function, contains, rung, source FROM constraints ORDER BY id";
+            let sql = "SELECT id, rule, function, contains, rung, source, steps FROM constraints ORDER BY id";
             self.rows(sql, json!([]), constraint).await
         })
     }
@@ -123,7 +133,7 @@ impl GovernStore for SqlStore {
 
     fn capabilities(&self) -> Answer<'_, Vec<Capability>> {
         Box::pin(async move {
-            let sql = "SELECT stage, function, rung FROM capabilities ORDER BY stage, function";
+            let sql = "SELECT stage, step, function, rung FROM capabilities ORDER BY stage, step, function";
             self.rows(sql, json!([]), capability).await
         })
     }
@@ -133,6 +143,17 @@ impl GovernStore for SqlStore {
             self.execute(UPSERT_CAPABILITY, capability_params(g))
                 .await
                 .map(|_| ())
+        })
+    }
+
+    fn remove_capability<'a>(&'a self, g: &'a Capability) -> Answer<'a, ()> {
+        Box::pin(async move {
+            self.execute(
+                "DELETE FROM capabilities WHERE stage = ? AND step = ? AND function = ?",
+                json!([name(g.stage), g.step, g.function]),
+            )
+            .await
+            .map(|_| ())
         })
     }
 
@@ -227,8 +248,14 @@ pub mod fake {
 
         fn set_capability<'a>(&'a self, g: &'a Capability) -> Answer<'a, ()> {
             let mut all = self.capabilities.lock().unwrap();
-            all.retain(|x| (x.stage, &x.function) != (g.stage, &g.function));
+            all.retain(|x| (x.stage, &x.step, &x.function) != (g.stage, &g.step, &g.function));
             all.push(g.clone());
+            Box::pin(async { Ok(()) })
+        }
+
+        fn remove_capability<'a>(&'a self, g: &'a Capability) -> Answer<'a, ()> {
+            let mut all = self.capabilities.lock().unwrap();
+            all.retain(|x| (x.stage, &x.step, &x.function) != (g.stage, &g.step, &g.function));
             Box::pin(async { Ok(()) })
         }
 

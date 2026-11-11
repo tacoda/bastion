@@ -98,12 +98,26 @@ pub struct Constraint {
     pub contains: String,
     pub rung: Enforcement,
     pub source: Source,
+    /// The workflow steps it applies at, each as `workflow/step`; empty for
+    /// every step (D44).
+    #[serde(default)]
+    pub steps: Vec<String>,
 }
 
-/// A grant: what calls to a function pattern may do at one stage.
+/// Whether constraint `c` applies at `step`, named `workflow/step`.
+pub fn applies(c: &Constraint, step: &str) -> bool {
+    c.steps.is_empty() || c.steps.iter().any(|s| s == step)
+}
+
+/// A grant: what calls to a function pattern may do at one kind of step,
+/// or at one workflow step, which wins over its kind (D44).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Capability {
     pub stage: Stage,
+    /// The workflow step it grants at, as `workflow/step`; empty for every
+    /// step of its kind.
+    #[serde(default)]
+    pub step: String,
     pub function: String,
     pub rung: Access,
 }
@@ -164,25 +178,64 @@ fn binds(c: &Constraint, call: &Call) -> bool {
 /// The sandbox function that writes a file.
 const WRITE: &str = "sandbox::fs::write";
 
-/// Judge one call. A write to the charter is refused first, then any call
-/// an enforced constraint binds. Then the most specific grant for the stage
-/// decides, and a call no grant covers is refused.
+/// Where a call is made: the kind of step, and the workflow step by name,
+/// `workflow/step`, empty when no workflow names it (D44).
+#[derive(Clone, Copy, Debug)]
+pub struct At<'a> {
+    pub stage: Stage,
+    pub step: &'a str,
+}
+
+/// Judge one call at a step no workflow names: only the grants for its
+/// kind and the constraints for every step apply.
 pub fn gate(
     call: &Call,
     stage: Stage,
     constraints: &[Constraint],
     grants: &[Capability],
 ) -> Verdict {
+    gate_at(call, At { stage, step: "" }, constraints, grants)
+}
+
+/// The most specific grant for a call at `step` of kind `stage`: a grant for
+/// the step wins over one for its kind, then an exact function over a
+/// pattern, then the longer pattern.
+fn grant_for<'a>(call: &Call, at: At, grants: &'a [Capability]) -> Option<&'a Capability> {
+    let At { stage, step } = at;
+    let fits = |g: &&Capability| {
+        let here = (g.step.is_empty() && g.stage == stage) || (!step.is_empty() && g.step == step);
+        here && matches(&g.function, &call.function)
+    };
+    grants.iter().filter(fits).max_by_key(|g| {
+        (
+            !g.step.is_empty(),
+            !g.function.ends_with('*'),
+            g.function.len(),
+        )
+    })
+}
+
+/// Judge one call at `step`, named `workflow/step`, of kind `stage`. A
+/// write to the charter is refused first, then any call an enforced
+/// constraint that applies at the step binds. Then the most specific grant
+/// decides, and a call no grant covers is refused.
+pub fn gate_at(call: &Call, at: At, constraints: &[Constraint], grants: &[Capability]) -> Verdict {
+    let At { stage, step } = at;
     let broken = || {
         constraints
             .iter()
-            .filter(|c| matches(&c.function, &call.function) && binds(c, call))
+            .filter(|c| applies(c, step) && matches(&c.function, &call.function) && binds(c, call))
     };
     let flagged = broken()
         .filter(|c| c.rung == Enforcement::Checked)
         .map(|c| c.id.clone())
         .collect();
     let charter = (call.function == WRITE).then(|| crate::charter::guards(&call.text));
+    // A refusal names the step when a workflow names it, else its kind.
+    let place = match step.is_empty() {
+        true => format!("{stage:?}"),
+        false => step.to_string(),
+    };
     let decision = if let Some(reason) = charter.flatten() {
         Decision::Deny { reason }
     } else if let Some(c) = broken().find(|c| c.rung == Enforcement::Enforced) {
@@ -190,20 +243,16 @@ pub fn gate(
             reason: format!("Refused by constraint {}: {}", c.id, c.rule),
         }
     } else {
-        let grant = grants
-            .iter()
-            .filter(|g| g.stage == stage && matches(&g.function, &call.function))
-            .max_by_key(|g| (!g.function.ends_with('*'), g.function.len()));
-        match grant.map(|g| g.rung) {
+        match grant_for(call, at, grants).map(|g| g.rung) {
             Some(Access::Allowed) => Decision::Continue,
             Some(Access::Ask) => Decision::Hold {
-                reason: format!("{} at {stage:?} waits for the owner.", call.function),
+                reason: format!("{} at {place} waits for the owner.", call.function),
             },
             Some(Access::Denied) => Decision::Deny {
-                reason: format!("{} is not granted at {stage:?}.", call.function),
+                reason: format!("{} is not granted at {place}.", call.function),
             },
             None => Decision::Deny {
-                reason: format!("No grant covers {} at {stage:?}.", call.function),
+                reason: format!("No grant covers {} at {place}.", call.function),
             },
         }
     };
@@ -221,6 +270,7 @@ pub fn default_constraints() -> Vec<Constraint> {
         contains: contains.into(),
         rung,
         source: Source::Owner,
+        steps: Vec::new(),
     };
     vec![
         rule(
@@ -287,6 +337,7 @@ pub fn default_constraints() -> Vec<Constraint> {
 pub fn default_capabilities() -> Vec<Capability> {
     let grant = |stage, function: &str, rung| Capability {
         stage,
+        step: String::new(),
         function: function.into(),
         rung,
     };
@@ -378,6 +429,7 @@ mod tests {
             contains: "import pickle".into(),
             rung: Enforcement::Enforced,
             source: Source::Owner,
+            steps: Vec::new(),
         };
         let pickled = Call {
             content: "import os\nimport pickle\n".into(),
@@ -411,6 +463,7 @@ mod tests {
     fn a_denied_grant_refuses() {
         let grants = [Capability {
             stage: Stage::Prompt,
+            step: String::new(),
             function: "sandbox::exec".into(),
             rung: Access::Denied,
         }];
@@ -482,5 +535,75 @@ mod tests {
                 Decision::Continue
             );
         }
+    }
+
+    #[test]
+    fn a_grant_for_one_workflow_step_wins_over_its_kinds() {
+        let mut grants = default_capabilities();
+        grants.push(Capability {
+            stage: Stage::Prompt,
+            step: "short/review".into(),
+            function: "sandbox::fs::write".into(),
+            rung: Access::Denied,
+        });
+        let at = |step| {
+            gate_at(
+                &write(),
+                At {
+                    stage: Stage::Prompt,
+                    step,
+                },
+                &[],
+                &grants,
+            )
+            .decision
+        };
+        let named = Decision::Deny {
+            reason: "sandbox::fs::write is not granted at short/review.".into(),
+        };
+        assert!(
+            at("short/review") == named,
+            "the step's own grant, and a refusal names the step"
+        );
+        assert_eq!(
+            at("short/build"),
+            Decision::Continue,
+            "the kind's at another step"
+        );
+        assert_eq!(at(""), Decision::Continue, "no step named");
+    }
+
+    #[test]
+    fn a_constraint_for_some_steps_binds_only_there() {
+        let rule = Constraint {
+            id: "no-rm".into(),
+            rule: "Do not delete.".into(),
+            function: "sandbox::exec".into(),
+            contains: "rm".into(),
+            rung: Enforcement::Enforced,
+            source: Source::Owner,
+            steps: vec!["short/build".into()],
+        };
+        let at = |step| {
+            gate_at(
+                &exec("rm x"),
+                At {
+                    stage: Stage::Prompt,
+                    step,
+                },
+                std::slice::from_ref(&rule),
+                &default_capabilities(),
+            )
+            .decision
+        };
+        assert!(matches!(at("short/build"), Decision::Deny { .. }));
+        assert_eq!(at("short/plan"), Decision::Continue);
+        assert!(applies(
+            &Constraint {
+                steps: vec![],
+                ..rule.clone()
+            },
+            "any/step"
+        ));
     }
 }

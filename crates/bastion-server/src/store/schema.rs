@@ -36,13 +36,14 @@ pub(super) fn staged_tables() -> [(&'static str, &'static str, String); 4] {
         ),
         (
             "capabilities",
-            "stage, function, rung",
+            "stage, step, function, rung",
             format!(
                 "CREATE TABLE IF NOT EXISTS capabilities (
         stage TEXT NOT NULL {stage},
+        step TEXT NOT NULL DEFAULT '',
         function TEXT NOT NULL CHECK (length(function) > 0),
         rung TEXT NOT NULL CHECK (rung IN ('denied','ask','allowed')),
-        PRIMARY KEY (stage, function))"
+        PRIMARY KEY (stage, step, function))"
             ),
         ),
         turns_table(&stage),
@@ -217,7 +218,7 @@ pub(super) const LEGACY_JOB_COLUMNS: &str = "id, workspace, request, stage, stat
 /// Columns added after a table was first made. Each runs once; on a table
 /// that already has the column it fails, and that failure is expected.
 // They run before the numbered migrations, which need these columns to exist.
-pub(super) const ALTERS: [&str; 31] = [
+pub(super) const ALTERS: [&str; 33] = [
     "ALTER TABLE jobs ADD COLUMN pr TEXT",
     "ALTER TABLE jobs ADD COLUMN ci_fixes INTEGER NOT NULL DEFAULT 0 CHECK (ci_fixes >= 0)",
     "ALTER TABLE jobs ADD COLUMN issue TEXT",
@@ -249,6 +250,8 @@ pub(super) const ALTERS: [&str; 31] = [
     "ALTER TABLE workflow_nodes ADD COLUMN model TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE workflow_nodes ADD COLUMN revisions INTEGER CHECK (revisions >= 0)",
     "ALTER TABLE workflow_nodes ADD COLUMN spend_micros INTEGER CHECK (spend_micros >= 0)",
+    "ALTER TABLE capabilities ADD COLUMN step TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE constraints ADD COLUMN steps TEXT NOT NULL DEFAULT ''",
 ];
 
 /// Numbered migrations, each run once in order; `PRAGMA user_version` is the
@@ -300,6 +303,12 @@ pub(super) fn migrations() -> Vec<Vec<String>> {
             .iter()
             .flat_map(rebuild)
             .chain(nodes_as_steps())
+            .collect(),
+        // A grant may be for one workflow step (D44), so its key gains the step.
+        current
+            .iter()
+            .filter(|t| t.0 == "capabilities")
+            .flat_map(rebuild)
             .collect(),
     ]
 }

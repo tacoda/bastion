@@ -588,12 +588,20 @@ pub struct ConstraintView {
     /// `charter`, `harness` or `factory`.
     #[serde(default)]
     pub layer: String,
+    /// The workflow steps it applies at, as `workflow/step`; empty for every
+    /// step (D44).
+    #[serde(default)]
+    pub steps: Vec<String>,
 }
 
 /// A grant on its ladder (DECISIONS.md D20): `denied`, `ask` or `allowed`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CapabilityView {
     pub stage: String,
+    /// The workflow step it grants at, as `workflow/step`; empty for every
+    /// step of its kind (D44).
+    #[serde(default)]
+    pub step: String,
     pub function: String,
     pub rung: String,
 }

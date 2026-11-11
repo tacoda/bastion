@@ -60,6 +60,7 @@ fn approved_test(file: &str) -> Constraint {
         contains: format!("/work/repo/{file}"),
         rung: bastion_core::govern::Enforcement::Enforced,
         source: bastion_core::govern::Source::Owner,
+        steps: Vec::new(),
     }
 }
 
@@ -322,10 +323,11 @@ impl Gate {
     }
 
     /// Every rule, for the brief. The agent is told each rule at every rung.
-    pub fn rules(&self, job: &str) -> String {
+    pub fn rules(&self, job: &str, step: &str) -> String {
         let rules: Vec<String> = self
             .constraints(job)
             .iter()
+            .filter(|c| govern::applies(c, step))
             .map(|c| format!("- {}", c.rule))
             .collect();
         if rules.is_empty() {
@@ -343,6 +345,9 @@ impl Gate {
             .to_string();
         let stage: Option<Stage> =
             serde_json::from_value(envelope["metadata"]["stage"].clone()).ok();
+        // The workflow step, as `workflow/step` (D44); none from a turn
+        // that names no step, such as onboarding.
+        let step = envelope["metadata"]["step"].as_str().unwrap_or_default();
         let verdict = match (&*self.policy.read().unwrap(), stage, &self.audit) {
             (_, _, Err(why)) => Verdict {
                 decision: Decision::Deny {
@@ -351,7 +356,8 @@ impl Gate {
                 flagged: vec![],
             },
             (Some(_), Some(stage), Ok(_)) => {
-                govern::gate(&call, stage, &self.constraints(&job), &self.grants(&job))
+                let (rules, grants) = (self.constraints(&job), self.grants(&job));
+                govern::gate_at(&call, govern::At { stage, step }, &rules, &grants)
             }
             _ => Verdict {
                 decision: Decision::Deny {
@@ -633,25 +639,69 @@ impl Gate {
     /// Move a grant one rung up or down its ladder, and record it.
     pub async fn move_capability(
         &self,
-        stage: Stage,
+        at: govern::At<'_>,
         function: &str,
         up: bool,
     ) -> Result<(), String> {
+        let govern::At { stage, step } = at;
         let grants = self.store.capabilities().await?;
         let mut g = grants
             .into_iter()
-            .find(|g| g.stage == stage && g.function == function)
-            .ok_or(format!("no grant for {function} at {stage:?}"))?;
+            .find(|g| g.stage == stage && g.step == step && g.function == function)
+            .ok_or(format!("no grant for {function} at {stage:?} {step}"))?;
         let was = g.rung;
         g.rung = if up { was.promote() } else { was.demote() };
         self.store.set_capability(&g).await?;
         self.reload().await?;
-        let subject = format!("{stage:?} {function}");
+        let subject = format!("{stage:?} {step} {function}");
         self.note(
             if up { "promote" } else { "demote" },
             &subject,
             format!("{was:?} -> {:?}", g.rung),
         );
+        Ok(())
+    }
+
+    /// Grant a function at one workflow step, over its kind's grant (D44).
+    pub async fn grant_at_step(&self, g: Capability) -> Result<(), String> {
+        if !g.step.contains('/') || g.function.trim().is_empty() {
+            return Err("a step's grant names its step, as workflow/step, and a function".into());
+        }
+        self.store.set_capability(&g).await?;
+        self.reload().await?;
+        let subject = format!("{:?} {} {}", g.stage, g.step, g.function);
+        self.note("grant", &subject, format!("{:?}", g.rung));
+        Ok(())
+    }
+
+    /// Take back a step's own grant; its kind's grant applies again. A
+    /// kind's grant stays, as it only moves on its ladder.
+    pub async fn ungrant_at_step(&self, g: &Capability) -> Result<(), String> {
+        if g.step.is_empty() {
+            return Err("only a step's own grant can be taken back".into());
+        }
+        self.store.remove_capability(g).await?;
+        self.reload().await?;
+        let subject = format!("{:?} {} {}", g.stage, g.step, g.function);
+        self.note("ungrant", &subject, String::new());
+        Ok(())
+    }
+
+    /// Set the workflow steps a constraint applies at; none is every step.
+    pub async fn scope_constraint(&self, id: &str, steps: Vec<String>) -> Result<(), String> {
+        let constraints = self.store.constraints().await?;
+        let mut c = constraints
+            .into_iter()
+            .find(|c| c.id == id)
+            .ok_or(format!("no constraint {id}"))?;
+        c.steps = steps;
+        self.store.set_constraint(&c).await?;
+        self.reload().await?;
+        let at = match c.steps.is_empty() {
+            true => "every step".to_string(),
+            false => c.steps.join(", "),
+        };
+        self.note("scope", id, at);
         Ok(())
     }
 }
@@ -976,7 +1026,7 @@ mod tests {
                 .unwrap()
                 .contains("Bash(git push:*)")
         );
-        assert!(r.gate.rules("j1").contains("Bash(git push:*)"));
+        assert!(r.gate.rules("j1", "").contains("Bash(git push:*)"));
     }
 
     #[test]
@@ -1058,6 +1108,7 @@ mod tests {
             contains: "curl".into(),
             rung: govern::Enforcement::Enforced,
             source: govern::Source::Owner,
+            steps: Vec::new(),
         };
         crate::rt::block_on(async {
             r.gate.add_constraint(rule.clone()).await.unwrap();
@@ -1138,7 +1189,7 @@ mod tests {
 
     #[test]
     fn the_brief_names_every_rule() {
-        let rules = rig().gate.rules("j1");
+        let rules = rig().gate.rules("j1", "");
         for c in govern::default_constraints() {
             assert!(rules.contains(&c.rule), "{rules}");
         }
@@ -1169,5 +1220,48 @@ mod tests {
             "{:?}",
             chain[0]
         );
+    }
+
+    #[test]
+    fn a_grant_and_a_rule_for_one_workflow_step_apply_only_there() {
+        let r = rig();
+        let at = |step: &str| {
+            let mut call = envelope(
+                "prompt",
+                "sandbox::fs::write",
+                json!({ "sandbox_id": "job", "path": "/work/repo/a.py" }),
+            );
+            call["metadata"]["step"] = json!(step);
+            r.gate.judge(&call)["decision"].clone()
+        };
+        crate::rt::block_on(async {
+            let grant = Capability {
+                stage: Stage::Prompt,
+                step: "short/review".into(),
+                function: "sandbox::fs::write".into(),
+                rung: govern::Access::Denied,
+            };
+            r.gate.grant_at_step(grant.clone()).await.unwrap();
+            assert_eq!(at("short/review"), "deny", "the step's own grant");
+            assert_eq!(at("short/build"), "continue", "its kind's, elsewhere");
+            r.gate.ungrant_at_step(&grant).await.unwrap();
+            assert_eq!(at("short/review"), "continue", "taken back");
+            let kind = Capability {
+                step: String::new(),
+                ..grant
+            };
+            assert!(
+                r.gate.ungrant_at_step(&kind).await.is_err(),
+                "a kind's grant stays"
+            );
+
+            r.gate
+                .scope_constraint("keep-tests", vec!["short/build".into()])
+                .await
+                .unwrap();
+            let rule = "Do not delete existing tests";
+            assert!(r.gate.rules("j1", "short/build").contains(rule));
+            assert!(!r.gate.rules("j1", "short/plan").contains(rule));
+        });
     }
 }

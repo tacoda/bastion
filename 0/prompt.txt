@@ -1,0 +1,30 @@
+I guess jobs technically work like this too - each server has jobs and there is also an aggregate
+
+---
+
+<task-notification>
+<task-id>bw4b5ppnb</task-id>
+<tool-use-id>toolu_01QiPHXXeFErrNami4pEhURC</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/bw4b5ppnb.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI on the pushed commits" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+SO I guess I really want to swap between servers (or all servers) for all these concepts in a horizontal menu bar at the top. Seeing aggregates and swapping servers should be easy.
+Remove the sidebar. Update the pages to be clean and well-organized. Also add some more rich elements like graphs.
+
+---
+
+<task-notification>
+<task-id>bv8m0vulb</task-id>
+<tool-use-id>toolu_01CfSMj4xcAuB5nHGnCAq9TL</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/bv8m0vulb.output</output-file>
+<status>failed</status>
+<summary>Background command "Run new desktop build" failed with exit code 143</summary>
+</task-notification>
+
+---
+
+steps should probably use workflow and step name for identifiers and I think constraints and capabilities are also per workflow step

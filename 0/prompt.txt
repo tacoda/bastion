@@ -1,0 +1,1 @@
+I guess jobs technically work like this too - each server has jobs and there is also an aggregate

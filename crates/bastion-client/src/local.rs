@@ -21,10 +21,11 @@ const START_WAIT: Duration = Duration::from_secs(20);
 /// Attach to the local server, starting it first if nothing listens on its
 /// port. Its data folder holds its token and its log.
 pub fn start(at: &Layout) -> Result<Server, String> {
-    let data = &at.data;
     if !listening() {
         spawn(at)?;
     }
+    // A server another build started keeps its token in its own folder.
+    let data = &started_with().unwrap_or_else(|| at.data.clone());
     let token = data.join("token");
     let since = Instant::now();
     while !(listening() && token.exists()) {
@@ -51,6 +52,18 @@ fn listening() -> bool {
     TcpStream::connect(("127.0.0.1", PORT)).is_ok()
 }
 
+/// The file that says which data folder the running local server uses, so
+/// a client of another build (a dev build beside an installed one) finds
+/// its token. It holds the folder's path, never the token.
+fn pointer() -> std::path::PathBuf {
+    crate::start::config_dir().join("local-server")
+}
+
+fn started_with() -> Option<std::path::PathBuf> {
+    let kept = std::fs::read_to_string(pointer()).ok()?;
+    Some(std::path::PathBuf::from(kept.trim())).filter(|p| p.join("token").exists())
+}
+
 /// Start the server in its own process group, so quitting the client leaves it running.
 fn spawn(at: &Layout) -> Result<(), String> {
     let (checkout, data) = (&at.stack, &at.data);
@@ -68,6 +81,8 @@ fn spawn(at: &Layout) -> Result<(), String> {
         .stderr(log);
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(&mut command, 0);
+    let _ = std::fs::create_dir_all(crate::start::config_dir());
+    let _ = std::fs::write(pointer(), data.display().to_string());
     command
         .spawn()
         .map(|_| ())

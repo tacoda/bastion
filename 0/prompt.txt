@@ -1,0 +1,7 @@
+It doesn't open - how do I allow it in settings?
+[Image #4]
+
+---
+
+It opens now, continue with F11
+Also, the server didn't start with the app - I expected the desktop to automatically start the server if it wasn't already running

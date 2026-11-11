@@ -6,14 +6,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bastion_core::settings::Forge;
-use bastion_core::{Effect, Event};
+use bastion_core::{Effect, Event, escape};
 use serde_json::{Value, json};
 
 use super::{CI_POLLS, Factory, NS, REPO, SLOW_MS};
 use crate::engine::DEFAULT_NAMESPACE;
 use crate::forge;
 use crate::settings_store;
-use crate::store::{Record, Workspace};
+use crate::store::{Artifact, Record, Workspace};
 
 impl Factory {
     /// The workspace's gates pass, opengantry's verdict allows the change,
@@ -23,6 +23,7 @@ impl Factory {
         self.gate_change(record).await?;
         self.verdict(record).await?;
         let (path, target) = self.bring_back(record).await?;
+        self.keep_commits(record, &path, &target).await;
         let worktree = record.runtime.worktree.clone().ok_or("no worktree")?;
         match self.forge_for(&path).await? {
             Forge::Github => {
@@ -39,6 +40,7 @@ impl Factory {
         self.gate_change(record).await?;
         self.verdict(record).await?;
         let (path, target) = self.bring_back(record).await?;
+        self.keep_commits(record, &path, &target).await;
         Ok(match self.forge_for(&path).await? {
             Forge::Github => Event::PrOpened {
                 url: self.pull_request(record, &path, &target).await?,
@@ -254,6 +256,26 @@ impl Factory {
         let worktree = record.runtime.worktree.clone().ok_or("no worktree")?;
         let target = self.workspace(record).await?.branch;
         self.land_here(record, &worktree, &target).await
+    }
+
+    /// Keep the commits the job lands as an artifact, so an escape found in
+    /// one later traces to the job.
+    // ponytail: a pull request merged by squash or rebase lands new ids; trace
+    // by the merge commit when that matters.
+    async fn keep_commits(&self, record: &Record, path: &Path, target: &str) {
+        let range = format!("{target}..HEAD");
+        let Ok(log) = self.git(path, &["log", "--format=%H %s", &range]) else {
+            return;
+        };
+        let Some(body) = escape::commits_artifact(&log) else {
+            return;
+        };
+        let artifact = Artifact {
+            stage: record.job.stage,
+            body,
+            created_at: super::now(),
+        };
+        let _ = self.store.add_artifact(&record.job.id, &artifact).await;
     }
 
     /// The commit the job's branch forked from its workspace's branch, or the

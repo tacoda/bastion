@@ -15,6 +15,7 @@ pub mod new_request;
 pub mod session;
 pub mod settings;
 pub mod spinner;
+pub mod verification;
 pub mod workflows;
 
 use std::collections::BTreeSet;
@@ -191,6 +192,7 @@ pub enum Page {
     Evals(Box<evals::List>),
     Costs(Box<costs::State>),
     Learn(Box<learn::State>),
+    Verification(Box<verification::State>),
     Session(Box<session::State>),
     Eval(Box<evals::One>),
     Settings(Box<settings::State>),
@@ -222,6 +224,7 @@ impl Page {
             Route::Evals => Page::Evals(Box::default()),
             Route::Costs => Page::Costs(Box::default()),
             Route::Learn => Page::Learn(Box::default()),
+            Route::Verification => Page::Verification(Box::default()),
             Route::Session(id) => Page::Session(Box::new(session::State::new(id.clone()))),
             Route::Eval(id) => Page::Eval(Box::new(evals::One::new(id.clone()))),
             Route::Settings => Page::Settings(Box::default()),
@@ -253,6 +256,7 @@ impl Page {
             Page::Evals(_) => evals::load_list(ctx),
             Page::Costs(_) => costs::load(ctx),
             Page::Learn(_) => learn::load(ctx),
+            Page::Verification(_) => verification::load(ctx),
             Page::Session(s) => session::load(s, ctx),
             Page::Eval(s) => evals::load_one(s, ctx),
             Page::Settings(_) => settings::load(ctx),
@@ -282,6 +286,9 @@ impl Page {
             (Page::Evals(s), Message::Evals(m)) => return evals::update_list(s, m, ctx),
             (Page::Costs(s), Message::Costs(m)) => costs::update(s, m),
             (Page::Learn(s), Message::Learn(m)) => return learn::update(s, m, ctx),
+            (Page::Verification(s), Message::Verification(m)) => {
+                return verification::update(s, m, ctx);
+            }
             (Page::Session(s), Message::Session(m)) => session::update(s, m),
             (Page::Eval(s), Message::Evals(m)) => return evals::update_one(s, m, ctx),
             (Page::Settings(s), Message::Settings(m)) => return settings::update(s, m, ctx),
@@ -301,6 +308,7 @@ impl Page {
             Page::Evals(s) => evals::view_list(s),
             Page::Costs(s) => costs::view(s, ctx),
             Page::Learn(s) => learn::view(s, ctx),
+            Page::Verification(s) => verification::view(s, ctx),
             Page::Session(s) => session::view(s, ctx),
             Page::Eval(s) => evals::view_one(s, ctx),
             Page::Settings(s) => settings::view(s, ctx),

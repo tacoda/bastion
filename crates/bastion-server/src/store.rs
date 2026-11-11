@@ -124,8 +124,8 @@ pub trait Store: EvalStore + PeopleStore + SettingsStore + WorkflowStore + Send 
     fn save<'a>(&'a self, record: &'a Record) -> Answer<'a, i64>;
     fn add_artifact<'a>(&'a self, job: &'a str, artifact: &'a Artifact) -> Answer<'a, ()>;
     fn artifacts<'a>(&'a self, job: &'a str) -> Answer<'a, Vec<Artifact>>;
-    /// Every learn reply as (job, workspace, body), newest first.
-    fn learned(&self) -> Answer<'_, Vec<(String, String, String)>>;
+    /// Every artifact kept at `stage` as (job, workspace, body), newest first.
+    fn artifacts_at(&self, stage: Stage) -> Answer<'_, Vec<(String, String, String)>>;
     /// The checkpoint dials. A checkpoint with no row asks.
     fn dials(&self) -> Answer<'_, Dials>;
     fn constraints(&self) -> Answer<'_, Vec<Constraint>>;
@@ -967,11 +967,11 @@ impl Store for SqlStore {
         })
     }
 
-    fn learned(&self) -> Answer<'_, Vec<(String, String, String)>> {
+    fn artifacts_at(&self, stage: Stage) -> Answer<'_, Vec<(String, String, String)>> {
         Box::pin(async move {
-            let sql = "SELECT a.job, j.workspace, a.body FROM artifacts a JOIN jobs j ON j.id = a.job WHERE a.stage = 'learn' ORDER BY a.id DESC";
+            let sql = "SELECT a.job, j.workspace, a.body FROM artifacts a JOIN jobs j ON j.id = a.job WHERE a.stage = ? ORDER BY a.id DESC";
             let row = |r: &Value| Ok((parse(r, "job")?, parse(r, "workspace")?, parse(r, "body")?));
-            self.rows(sql, json!([]), row).await
+            self.rows(sql, json!([name(stage)]), row).await
         })
     }
 
@@ -1231,9 +1231,9 @@ pub mod fake {
             Box::pin(async move { Ok(found) })
         }
 
-        fn learned(&self) -> Answer<'_, Vec<(String, String, String)>> {
+        fn artifacts_at(&self, stage: Stage) -> Answer<'_, Vec<(String, String, String)>> {
             let jobs = self.jobs.lock().unwrap();
-            let mut all: Vec<_> = matching(&self.artifacts, |(_, a)| a.stage == Stage::Learn)
+            let mut all: Vec<_> = matching(&self.artifacts, |(_, a)| a.stage == stage)
                 .into_iter()
                 .filter_map(|(j, a)| Some((j.clone(), jobs.get(&j)?.job.workspace.clone(), a.body)))
                 .collect();

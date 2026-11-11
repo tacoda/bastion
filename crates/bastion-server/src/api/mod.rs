@@ -16,6 +16,7 @@ pub mod sessions;
 pub mod settings;
 pub mod sign_in;
 pub mod stack;
+pub mod verification;
 pub mod workflows;
 
 /// Which part of a long list to answer with: `limit` items after skipping

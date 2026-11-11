@@ -14,6 +14,7 @@ pub enum Route {
     Eval(String),
     Costs,
     Learn,
+    Verification,
     Session(String),
     Engine,
     Workflows,
@@ -21,7 +22,7 @@ pub enum Route {
 }
 
 /// The sidebar's pages. A job and New request belong to Jobs.
-pub const PAGES: [(Route, &str, &str); 10] = [
+pub const PAGES: [(Route, &str, &str); 11] = [
     (Route::Jobs, "Jobs", icons::JOBS),
     (Route::Workflows, "Workflows", icons::WORKFLOWS),
     (Route::Constraints, "Constraints", icons::CONSTRAINTS),
@@ -30,6 +31,7 @@ pub const PAGES: [(Route, &str, &str); 10] = [
     (Route::Evals, "Evals", icons::EVALS),
     (Route::Costs, "Costs", icons::COSTS),
     (Route::Learn, "Learning", icons::LEARN),
+    (Route::Verification, "Verification", icons::VERIFICATION),
     (Route::Engine, "Engine", icons::ENGINE),
     (Route::Settings, "Settings", icons::SETTINGS),
 ];

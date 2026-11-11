@@ -14,8 +14,8 @@ use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use bastion_core::Pipeline;
 use bastion_protocol::{
-    Change, ConstraintView, HeldCallRef, HostView, LogRequest, NewEval, ProposalDecision,
-    SettingsView, Workspace,
+    Change, ConstraintView, EscapeReport, HeldCallRef, HostView, LogRequest, NewEval,
+    ProposalDecision, SettingsView, Workspace,
 };
 use futures_util::{Stream, stream};
 use serde::{Deserialize, Serialize};
@@ -156,6 +156,8 @@ fn factory_routes() -> Router<App> {
         .route("/sessions/{id}", get(session))
         .route("/proposals", get(proposals))
         .route("/proposals/decide", post(proposal_decide))
+        .route("/verification", get(verification))
+        .route("/escapes", post(escape_add))
         .route("/jobs/{id}", get(job))
         .route("/jobs/{id}/approve", post(job_approve))
         .route("/jobs/{id}/comment", post(job_comment))
@@ -401,6 +403,14 @@ async fn proposals(State(app): State<App>) -> Response {
 
 async fn proposal_decide(State(app): State<App>, Json(d): Json<ProposalDecision>) -> Response {
     answer(api::learn::decide(&app.server.factory, d).await)
+}
+
+async fn verification(State(app): State<App>) -> Response {
+    answer(api::verification::verification(&app.server.factory).await)
+}
+
+async fn escape_add(State(app): State<App>, Json(r): Json<EscapeReport>) -> Response {
+    answer(api::verification::escape_add(&app.server.factory, r).await)
 }
 
 async fn costs(State(app): State<App>) -> Response {

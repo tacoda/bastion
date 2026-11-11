@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 
+use bastion_core::Stage;
 use bastion_core::audit::Record;
 use bastion_core::govern::{Constraint, Enforcement, Source};
 use bastion_protocol::{ProposalDecision, ProposalView};
@@ -21,7 +22,7 @@ pub async fn proposals(cell: &FactoryCell) -> Result<Vec<ProposalView>, String> 
     let factory = factory(cell)?;
     let decided = decisions(&factory).await?;
     let mut all = Vec::new();
-    for (job, workspace, body) in factory.store().learned().await? {
+    for (job, workspace, body) in factory.store().artifacts_at(Stage::Learn).await? {
         // A reply the turn could not read was sent back, so skip it here.
         let Ok(proposals) = learn::read(&body) else {
             continue;
@@ -76,7 +77,7 @@ fn view(p: Proposal) -> ProposalView {
 /// the constraint's id is the proposal's, and a gate already listed stays once.
 pub async fn decide(cell: &FactoryCell, d: ProposalDecision) -> Result<(), String> {
     let factory = factory(cell)?;
-    let found = factory.store().learned().await?;
+    let found = factory.store().artifacts_at(Stage::Learn).await?;
     let (_, workspace, body) = found
         .into_iter()
         .find(|(job, ..)| *job == d.job)

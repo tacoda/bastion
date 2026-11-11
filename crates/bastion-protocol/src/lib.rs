@@ -385,6 +385,37 @@ pub struct ProposalView {
     pub decision: String,
 }
 
+/// A defect found after a change landed (F6): the commit it is in and what
+/// went wrong.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EscapeReport {
+    pub commit: String,
+    pub what: String,
+}
+
+/// An escape, traced to the job whose commits hold it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EscapeView {
+    pub job: String,
+    pub commit: String,
+    pub what: String,
+    pub at: u64,
+}
+
+/// A landed job and what checked it: each step's decision and who made it,
+/// the commits it landed, and the escapes found in them since.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LandedView {
+    pub job: String,
+    pub workspace: String,
+    pub request: String,
+    pub landed_at: u64,
+    pub commits: Vec<String>,
+    /// Such as `code_review: approved by ada`, oldest first.
+    pub checks: Vec<String>,
+    pub escapes: Vec<EscapeView>,
+}
+
 /// A person's decision on one proposal.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProposalDecision {

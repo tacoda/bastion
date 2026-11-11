@@ -27,6 +27,8 @@ pub struct Server {
     /// Where the server writes what it keeps outside the database, such as
     /// an audit export.
     pub data: PathBuf,
+    /// Where notices go besides the event stream (F9).
+    pub webhook: Arc<crate::notify::Webhook>,
 }
 
 impl Server {
@@ -42,6 +44,7 @@ impl Server {
         crate::api::engine::watch(events.clone(), engine.clone());
         let bus = events.clone();
         engine.on_functions_changed(Arc::new(move || bus.publish(Change::Console)))?;
+        let webhook = Arc::new(crate::notify::Webhook::new(machine.clone(), &data));
         Ok(Arc::new(Server {
             engine,
             machine,
@@ -49,6 +52,7 @@ impl Server {
             factory: FactoryCell::default(),
             stack,
             data,
+            webhook,
         }))
     }
 
@@ -99,7 +103,18 @@ impl Server {
 
     fn run(&self, store: SqlStore, scratch: PathBuf) {
         let bus = self.events.clone();
-        let on_change = Arc::new(move |change: Change| bus.publish(change));
+        let webhook = self.webhook.clone();
+        let on_change = Arc::new(move |change: Change| {
+            if let Change::Notice { text, .. } = &change {
+                let (webhook, text) = (webhook.clone(), text.clone());
+                crate::rt::spawn(async move {
+                    if let Err(e) = webhook.send(&text).await {
+                        eprintln!("a notice did not reach the webhook: {e}");
+                    }
+                });
+            }
+            bus.publish(change);
+        });
         let factory = Factory::new(
             self.engine.clone(),
             Arc::new(store),

@@ -395,6 +395,7 @@ dependencies = [
  "bastion-protocol",
  "futures-util",
  "iii-sdk",
+ "reqwest",
  "rustls",
  "serde",
  "serde_json",

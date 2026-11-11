@@ -375,6 +375,9 @@ impl Request for EvalApply {
 // Settings.
 bare!(Settings, "GET", "/settings", SettingsView);
 with!(SettingsSet, "PUT", "/settings", SettingsView, ());
+bare!(Notify, "GET", "/notify", NotifyView);
+with!(NotifySetWebhook, "PUT", "/notify", NotifySet, ());
+bare!(NotifyTest, "POST", "/notify/test", ());
 
 /// Apply a named preset.
 #[derive(Clone, Debug, Serialize)]
@@ -634,6 +637,9 @@ fn admin_requests() -> Vec<(&'static str, &'static str)> {
         EvalApply,
         Settings,
         SettingsSet,
+        Notify,
+        NotifySetWebhook,
+        NotifyTest,
         SettingsPreset,
         SettingsHistory,
         SettingsRestore,
@@ -681,6 +687,6 @@ mod tests {
         assert_eq!(comment.path(), "/jobs/j1/comment");
         let spaced = WorkflowDelete { id: "a b/c".into() };
         assert_eq!(spaced.path(), "/workflows/a%20b%2Fc");
-        assert_eq!(every().len(), 73);
+        assert_eq!(every().len(), 76);
     }
 }

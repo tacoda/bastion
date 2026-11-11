@@ -729,6 +729,19 @@ pub struct VersionView {
     pub note: String,
 }
 
+/// Where notices go besides the clients (F9): a chat webhook, shown only
+/// as a hint of its address.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NotifyView {
+    pub webhook: Option<String>,
+}
+
+/// A webhook to set, or an empty one to forget it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NotifySet {
+    pub webhook: String,
+}
+
 /// A model `llm-router` offers on a provider with a key.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelOption {

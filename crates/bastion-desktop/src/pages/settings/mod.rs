@@ -3,6 +3,7 @@
 //! section in its own file.
 
 mod factory;
+mod notify;
 mod people;
 mod places;
 mod providers;
@@ -20,6 +21,7 @@ pub struct State {
     people: people::State,
     providers: providers::State,
     factory: factory::State,
+    notify: notify::State,
 }
 
 #[derive(Clone, Debug)]
@@ -28,6 +30,7 @@ pub enum Msg {
     People(people::Msg),
     Providers(providers::Msg),
     Factory(factory::Msg),
+    Notify(notify::Msg),
 }
 
 /// A titled section of the page.
@@ -55,6 +58,7 @@ pub fn load(ctx: &Ctx) -> Task<Message> {
         people::load(ctx),
         providers::load(ctx),
         factory::load(ctx),
+        notify::load(ctx),
     ])
 }
 
@@ -64,6 +68,7 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         Msg::People(m) => people::update(&mut state.people, m, ctx),
         Msg::Providers(m) => providers::update(&mut state.providers, m, ctx),
         Msg::Factory(m) => factory::update(&mut state.factory, m, ctx),
+        Msg::Notify(m) => notify::update(&mut state.notify, m, ctx),
     }
 }
 
@@ -77,6 +82,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         providers,
         hosts,
         factory,
+        notify::view(&state.notify),
         oversight,
         history,
         workspaces,

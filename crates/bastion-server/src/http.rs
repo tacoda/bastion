@@ -14,8 +14,8 @@ use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use bastion_core::{Event as JobEvent, Pipeline};
 use bastion_protocol::{
-    Change, ConstraintView, EscapeReport, HeldCallRef, HostView, LogRequest, NewEval,
-    ProposalDecision, SettingsView, Workspace,
+    Change, ConstraintView, EscapeReport, HeldCallRef, HostView, LogRequest, NewEval, NotifySet,
+    NotifyView, ProposalDecision, SettingsView, Workspace,
 };
 use futures_util::{Stream, stream};
 use serde::{Deserialize, Serialize};
@@ -189,6 +189,8 @@ fn govern_routes() -> Router<App> {
 fn settings_routes() -> Router<App> {
     Router::new()
         .route("/settings", get(settings).put(settings_set))
+        .route("/notify", get(notify).put(notify_set))
+        .route("/notify/test", post(notify_test))
         .route("/settings/preset", post(settings_preset))
         .route("/settings/history", get(settings_history))
         .route("/settings/restore", post(settings_restore))
@@ -732,6 +734,20 @@ struct Version {
 async fn settings_restore(State(app): State<App>, Json(b): Json<Version>) -> Response {
     let s = &app.server;
     answer(api::settings::settings_restore(&s.events, &s.factory, b.version).await)
+}
+
+async fn notify(State(app): State<App>) -> Response {
+    let hint = app.server.webhook.hint();
+    answer::<NotifyView>(Ok(NotifyView { webhook: hint }))
+}
+
+async fn notify_set(State(app): State<App>, Json(b): Json<NotifySet>) -> Response {
+    answer(app.server.webhook.set(&b.webhook))
+}
+
+async fn notify_test(State(app): State<App>) -> Response {
+    let text = "Bastion's notices reach this chat.";
+    answer(app.server.webhook.send(text).await)
 }
 
 async fn models(State(app): State<App>) -> Response {

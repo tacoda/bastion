@@ -26,6 +26,8 @@ pub trait Machine: Send + Sync {
     fn write_bytes(&self, path: &Path, bytes: &[u8]) -> Result<(), String>;
     /// Make a new file only its owner can read. Refuses to replace one.
     fn write_secret(&self, path: &Path, bytes: &[u8]) -> Result<(), String>;
+    /// Remove a file; one already gone is not an error.
+    fn remove(&self, path: &Path) -> Result<(), String>;
     /// Make a folder and its parents, if missing.
     fn make_dir(&self, path: &Path) -> Result<(), String>;
     fn exists(&self, path: &Path) -> bool;
@@ -155,6 +157,15 @@ impl Machine for ThisMachine {
             .open(path)
             .and_then(|mut file| file.write_all(bytes))
             .map_err(|e| format!("{}: {e}", path.display()))
+    }
+
+    fn remove(&self, path: &Path) -> Result<(), String> {
+        match fs::remove_file(path) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                Err(format!("{}: {e}", path.display()))
+            }
+            _ => Ok(()),
+        }
     }
 
     fn exists(&self, path: &Path) -> bool {
@@ -297,6 +308,14 @@ pub mod fake {
                 .lock()
                 .unwrap()
                 .push(format!("write-secret {}", path.display()));
+            Ok(())
+        }
+
+        fn remove(&self, path: &Path) -> Result<(), String> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("remove {}", path.display()));
             Ok(())
         }
 

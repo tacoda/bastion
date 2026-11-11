@@ -1,0 +1,9 @@
+Try again
+I quit all my bastion instances
+
+---
+
+[Image #9]
+This error message is not helpful
+[Image #10]
+The plan section should be styled better and it should use ASD-STE100

@@ -38,6 +38,8 @@ INSERT OR IGNORE INTO capabilities (stage, function, rung) VALUES
   ('prove', 'sandbox::fs::write', 'denied'),
   ('comprehend', 'sandbox::*', 'allowed'),
   ('comprehend', 'sandbox::fs::write', 'denied'),
+  ('uat', 'sandbox::*', 'allowed'),
+  ('uat', 'sandbox::fs::write', 'denied'),
   ('learn', 'sandbox::*', 'allowed'),
   ('learn', 'sandbox::fs::write', 'denied'),
   ('implement', 'sandbox::*', 'allowed'),

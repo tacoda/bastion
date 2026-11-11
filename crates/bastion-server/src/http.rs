@@ -472,8 +472,10 @@ async fn job_approve(
     Path(id): Path<String>,
 ) -> Response {
     let by = person.name.clone();
-    let approve = api::factory::job_approve(&app.server.factory, id.clone(), by);
-    on_job(&app, &person, &id, async { answer(approve.await) }).await
+    match access::approve(&app.server, &person, &id).await {
+        Ok(()) => answer(api::factory::job_approve(&app.server.factory, id, by).await),
+        Err(why) => refused(why),
+    }
 }
 
 #[derive(Deserialize)]

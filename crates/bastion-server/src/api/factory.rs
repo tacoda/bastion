@@ -398,6 +398,9 @@ pub async fn dials_set(cell: &FactoryCell, stage: Stage, dial: Dial) -> Result<(
     if !stage.dialed() {
         return Err(format!("{} is not a step", name(stage)));
     }
+    if (stage, dial) == (Stage::Uat, Dial::Dark) {
+        return Err("UAT waits for its requester's sign-off, so it cannot be dark".into());
+    }
     let factory = factory(cell)?;
     let mut next = crate::settings_store::current(&**factory.store()).await?;
     next.dials.set(stage, dial);

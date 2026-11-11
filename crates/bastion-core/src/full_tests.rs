@@ -110,6 +110,16 @@ fn each_step_obeys_its_own_dial_and_a_step_that_acts_waits_before_it_acts() {
             .all(|e| matches!(e, Effect::RecordArtifact { .. }))
     );
     let (j, effects) = step(&j, &Event::Approved, AT, &dials);
+    assert_eq!((j.stage, j.state), (Stage::Uat, State::Running));
+    assert!(starts_turn(&effects, Stage::Uat));
+    dials.set(Stage::Uat, Dial::Dark);
+    let (j, _) = step(&j, &done(), AT, &dials);
+    assert_eq!(
+        (j.stage, j.state),
+        (Stage::Uat, State::NeedsYou),
+        "the requester signs off a UAT script whatever its dial"
+    );
+    let (j, effects) = step(&j, &Event::Approved, AT, &dials);
     assert_eq!(
         (j.stage, j.state, effects),
         (Stage::Merge, State::NeedsYou, vec![])
@@ -119,7 +129,7 @@ fn each_step_obeys_its_own_dial_and_a_step_that_acts_waits_before_it_acts() {
 
     dials.set(Stage::Merge, Dial::Dark);
     let (_, effects) = step(
-        &at(Stage::Comprehend, State::NeedsYou),
+        &at(Stage::Uat, State::NeedsYou),
         &Event::Approved,
         AT,
         &dials,

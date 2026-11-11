@@ -21,7 +21,7 @@ pub enum Pipeline {
 
 const SHORT: [Stage; 3] = [Stage::Plan, Stage::Build, Stage::Land];
 
-const FULL: [Stage; 20] = [
+const FULL: [Stage; 21] = [
     Stage::Prepare,
     Stage::Scope,
     Stage::Discover,
@@ -39,6 +39,7 @@ const FULL: [Stage; 20] = [
     Stage::Ci,
     Stage::Prove,
     Stage::Comprehend,
+    Stage::Uat,
     Stage::Merge,
     Stage::Deploy,
     Stage::Learn,
@@ -46,7 +47,7 @@ const FULL: [Stage; 20] = [
 
 /// Every step in the order work flows through them, short and full
 /// pipelines merged. It places a step a workflow left out (`next_listed`).
-const ORDER: [Stage; 25] = [
+const ORDER: [Stage; 26] = [
     Stage::Prepare,
     Stage::Scope,
     Stage::Discover,
@@ -68,6 +69,7 @@ const ORDER: [Stage; 25] = [
     Stage::Ci,
     Stage::Prove,
     Stage::Comprehend,
+    Stage::Uat,
     Stage::Land,
     Stage::Merge,
     Stage::Deploy,
@@ -185,7 +187,6 @@ pub fn folded(stage: Stage) -> Stage {
         Stage::Review => Stage::Build,
         Stage::PickRefactors => Stage::Refactor,
         Stage::PickFindings => Stage::CodeReview,
-        Stage::Uat => Stage::Comprehend,
         other => other,
     }
 }

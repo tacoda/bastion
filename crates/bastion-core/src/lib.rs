@@ -153,13 +153,13 @@ impl Stage {
     pub fn kind(self) -> Kind {
         use Stage::*;
         match self {
-            Approve | Review | Clarify | YourChecks | PickRefactors | PickFindings | Uat => {
+            Approve | Review | Clarify | YourChecks | PickRefactors | PickFindings => {
                 Kind::Checkpoint
             }
             Land | Prepare | Baseline | Checks | Verify | Acceptance | Ship | Ci | Merge
             | Deploy | Command => Kind::Factory,
             Plan | Build | Scope | Discover | Define | Specify | Implement | Refactor
-            | CodeReview | CiFix | Prove | Comprehend | Learn | Falsify | Skill | Prompt => {
+            | CodeReview | CiFix | Prove | Comprehend | Uat | Learn | Falsify | Skill | Prompt => {
                 Kind::Turn
             }
         }
@@ -184,7 +184,15 @@ impl Stage {
         use Stage::*;
         matches!(
             self,
-            Plan | Scope | Discover | Define | Refactor | CodeReview | Prove | Comprehend | Learn
+            Plan | Scope
+                | Discover
+                | Define
+                | Refactor
+                | CodeReview
+                | Prove
+                | Comprehend
+                | Uat
+                | Learn
         )
     }
 }
@@ -730,7 +738,11 @@ fn wait(job: &mut Job, dials: &Dials) -> Vec<Effect> {
         job.state = State::Stopped;
         return vec![Effect::Teardown];
     }
-    let dial = job.step().map_or_else(|| dials.at(job.stage), |s| s.dial);
+    // The requester signs off a UAT script, so it waits whatever its dial (F7).
+    let dial = match job.stage {
+        Stage::Uat => Dial::LightsOn,
+        _ => job.step().map_or_else(|| dials.at(job.stage), |s| s.dial),
+    };
     match dial {
         Dial::LightsOn => {
             job.state = State::NeedsYou;

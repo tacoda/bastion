@@ -390,6 +390,7 @@ impl Factory {
             .collect();
         Ok(forge::Notes {
             briefing: last(Stage::Comprehend),
+            uat: last(Stage::Uat),
             proof: last(Stage::Prove),
             waived,
             issue: record.runtime.issue.clone(),

@@ -76,6 +76,7 @@ pub fn push(machine: &dyn Machine, path: &Path, head: &str) -> Result<(), String
 #[derive(Clone, Debug, Default)]
 pub struct Notes {
     pub briefing: Option<String>,
+    pub uat: Option<String>,
     pub proof: Option<String>,
     pub waived: Vec<String>,
     pub issue: Option<String>,
@@ -97,6 +98,7 @@ pub fn describe(job: &Job, base: &str, head: &str, notes: &Notes) -> PullRequest
     let sections = [
         ("Plan", job.plan.clone().unwrap_or_default()),
         ("Briefing", notes.briefing.clone().unwrap_or_default()),
+        ("UAT", notes.uat.clone().unwrap_or_default()),
         ("Proof", notes.proof.clone().unwrap_or_default()),
         ("Waived", waived),
     ];
@@ -487,12 +489,14 @@ mod tests {
         job.plan = Some("1. Add mod(a, b)".into());
         let notes = Notes {
             briefing: Some("Try mod(7, 3).".into()),
+            uat: Some("1. Run mod(7, 3); see 1.".into()),
             proof: Some("```\n3 passed\n```\nVERDICT: yes".into()),
             waived: vec!["ci: shipped anyway by ada, waiving: lint".into()],
             issue: None,
         };
         let body = describe(&job, "main", "bastion/j1", &notes).body;
-        let order = ["## Plan", "## Briefing", "## Proof", "## Waived"].map(|h| body.find(h));
+        let order =
+            ["## Plan", "## Briefing", "## UAT", "## Proof", "## Waived"].map(|h| body.find(h));
         assert!(order.iter().all(Option::is_some), "{body}");
         assert!(order.is_sorted(), "{body}");
         assert!(body.contains("- ci: shipped anyway by ada, waiving: lint"));

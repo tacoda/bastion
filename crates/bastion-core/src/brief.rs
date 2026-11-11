@@ -110,6 +110,13 @@ file. Run `git diff bastion-base` to see it. Say in plain words what changed and
 why, what to try and what they should see, and any risk worth knowing. Keep it
 short enough to read in two minutes.";
 
+const UAT: &str = "\
+Write the user acceptance test for this change, as a script the person who
+asked for it follows before it merges. Do not change any file. Run `git diff
+bastion-base` to see the change. Number each step: what to do, then what they
+should see. Cover each thing the request asked for, and one thing it must not
+break. Keep it to what a person can try in ten minutes.";
+
 const LEARN: &str = "\
 The job below is done. Do not change any file. Say what surprised you in this
 repository: a rule the factory should have told you, a check that was missing,
@@ -149,6 +156,7 @@ fn intro(stage: Stage) -> &'static str {
         Stage::CodeReview => CODE_REVIEW,
         Stage::Prove => PROVE,
         Stage::Comprehend => COMPREHEND,
+        Stage::Uat => UAT,
         Stage::Learn => LEARN,
         Stage::Build | Stage::Implement | Stage::CiFix => BUILD,
         _ => PLAN,

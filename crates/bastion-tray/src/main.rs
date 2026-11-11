@@ -27,6 +27,7 @@ pub enum UserEvent {
 fn main() {
     // One tray at a time: a second exits, so the window can start it freely.
     let Some(_lock) = single() else {
+        eprintln!("a Bastion tray already runs; this one stops");
         return;
     };
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();

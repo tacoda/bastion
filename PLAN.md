@@ -268,6 +268,8 @@ value; each is a phase of its own when it starts.
   server installs headless on any Linux VM or VPS, x86_64 or arm64, and runs
   as a systemd service. Its job VMs need `/dev/kvm`, so a host without KVM
   (no nested virtualization) is refused by the doctor with that reason.
+  Once a release installs, the gh-pages site is brought up to date with it:
+  what Bastion is now and how to install it.
 - **F11, the browser agent.** Browser tools for turns, with screenshots and
   recordings as artifacts.
 

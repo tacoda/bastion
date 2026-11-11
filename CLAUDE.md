@@ -2,7 +2,9 @@
 
 ## The project
 
-Bastion is a server and its clients. [DECISIONS.md](DECISIONS.md) holds the
+Bastion is a server and its clients. [VISION.md](VISION.md) says what the
+product is for and how its pages split between jobs and servers.
+[DECISIONS.md](DECISIONS.md) holds the
 goals and the decisions (cited in code as `DECISIONS.md D<n>`); read it
 before a change.
 

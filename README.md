@@ -7,8 +7,8 @@ a canvas, and each step waits for your approval or runs on its own, as you set
 it. Bastion is a server and its clients: `bastion-server` runs the factory on
 the [iii](https://iii.dev) engine, and the desktop app (on
 [iced](https://iced.rs)) and the `bastion` command line talk to it over HTTP.
-It's early, and [DECISIONS.md](DECISIONS.md) holds the goals and the decisions
-behind it.
+It's early. [VISION.md](VISION.md) says where it is going, and
+[DECISIONS.md](DECISIONS.md) holds the goals and the decisions behind it.
 
 ## Install
 

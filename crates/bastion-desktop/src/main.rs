@@ -4,6 +4,7 @@
 mod app;
 mod events;
 mod icons;
+mod notify;
 mod pages;
 mod route;
 mod theme;
@@ -25,7 +26,7 @@ fn main() -> iced::Result {
         ..window::Settings::default()
     };
     iced::application(app::App::new, app::App::update, app::App::view)
-        .title("Bastion")
+        .title(app::App::title)
         .subscription(app::App::subscription)
         .theme(|_: &app::App| theme::bastion())
         .default_font(theme::FONT)

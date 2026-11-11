@@ -29,6 +29,8 @@ pub enum Message {
     Stay,
     /// A minute passed: draw the page again, for its times.
     Tick,
+    /// How many jobs on a server wait on a person (F9).
+    Waiting(String, u32),
     /// A job's page, on the server it runs on.
     OpenJob {
         server: String,
@@ -62,6 +64,8 @@ pub struct App {
     page: Page,
     asking: bool,
     problem: Option<String>,
+    /// How many jobs wait on a person, by server (F9).
+    waiting: std::collections::BTreeMap<String, u32>,
 }
 
 impl App {
@@ -75,6 +79,7 @@ impl App {
             page: Page::Pending,
             asking: false,
             problem: None,
+            waiting: Default::default(),
         };
         let started = async {
             tokio::task::spawn_blocking(start::start)
@@ -130,7 +135,9 @@ impl App {
             }
             Message::Servers(Ok(all)) => {
                 self.servers = all;
-                return self.page.reload(&self.ctx(), Push::All);
+                let counts = self.servers.iter().map(|s| self.count_waiting(&s.name));
+                let reload = self.page.reload(&self.ctx(), Push::All);
+                return Task::batch(counts.chain([reload]));
             }
             Message::Servers(Err(why)) => self.problem = Some(why),
             Message::ReadServers => return self.read_servers(),
@@ -171,6 +178,7 @@ impl App {
             }
             Message::Stay => self.asking = false,
             Message::Tick => {}
+            Message::Waiting(server, n) => drop(self.waiting.insert(server, n)),
         }
         Task::none()
     }
@@ -182,19 +190,46 @@ impl App {
     fn on_feed(&mut self, server: String, feed: Feed) -> Task<Message> {
         let push = match feed {
             // A server back from down may have missed changes.
-            Feed::Up if self.down.remove(&server) => Push::All,
+            Feed::Up if self.down.remove(&server) => {
+                let page = self.page.reload(&self.ctx(), Push::All);
+                return Task::batch([self.count_waiting(&server), page]);
+            }
             Feed::Up => return Task::none(),
             Feed::Down => {
                 self.down.insert(server);
                 return Task::none();
             }
-            Feed::Resync => Push::All,
+            Feed::Resync => {
+                let page = self.page.reload(&self.ctx(), Push::All);
+                return Task::batch([self.count_waiting(&server), page]);
+            }
+            Feed::Change(Change::Notice { text, waiting, .. }) => {
+                crate::notify::show(&text);
+                self.waiting.insert(server, waiting);
+                Push::Job
+            }
             Feed::Change(Change::Job { id }) if id.is_empty() => Push::All,
             Feed::Change(Change::Job { .. }) => Push::Job,
             Feed::Change(_) if server != self.current => return Task::none(),
             Feed::Change(_) => Push::Engine,
         };
         self.page.reload(&self.ctx(), push)
+    }
+
+    /// Read how many of `server`'s jobs wait on a person.
+    fn count_waiting(&self, server: &str) -> Task<Message> {
+        let name = server.to_string();
+        let jobs = self.ctx().get(name.clone(), api::Jobs);
+        Task::perform(jobs, move |listed| {
+            let all = listed.unwrap_or_default();
+            let n = all.iter().filter(|j| j.state == "needs_you").count() as u32;
+            Message::Waiting(name, n)
+        })
+    }
+
+    /// The window's title, with how many jobs wait on a person.
+    pub fn title(&self) -> String {
+        titled(self.waiting.values().sum())
     }
 
     /// The server and its stack outlive the client (D13), so a quit says
@@ -246,6 +281,11 @@ impl App {
         for (route, label, glyph) in PAGES {
             let on = route == here;
             let color = if on { iced::Color::WHITE } else { theme::INK };
+            let waiting: u32 = self.waiting.values().sum();
+            let label = match (route == Route::Jobs, waiting) {
+                (true, n) if n > 0 => format!("{label} ({n})"),
+                _ => label.to_string(),
+            };
             let entry = row![icons::icon(glyph, color), text(label)]
                 .spacing(8)
                 .align_y(iced::Center);
@@ -336,4 +376,23 @@ fn quit_dialog<'a>() -> Element<'a, Message> {
     .spacing(12)
     .max_width(400);
     container(body).padding(20).style(theme::panel).into()
+}
+
+/// "Bastion", and how many jobs wait on a person when any do.
+fn titled(waiting: u32) -> String {
+    match waiting {
+        0 => "Bastion".into(),
+        n => format!("Bastion ({n} waiting)"),
+    }
+}
+
+#[cfg(test)]
+mod title_tests {
+    use super::titled;
+
+    #[test]
+    fn the_title_counts_the_jobs_waiting_on_a_person() {
+        assert_eq!(titled(0), "Bastion");
+        assert_eq!(titled(3), "Bastion (3 waiting)");
+    }
 }

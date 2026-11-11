@@ -1,0 +1,96 @@
+{
+  "cli_version": "0.12.2",
+  "checkpoint_id": "01M74CNPXMJ8JTAVMVEXZPHA7H",
+  "session_id": "4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-11T04:08:25.851823Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/bastion-desktop/src/pages/evals.rs",
+    "crates/bastion-desktop/src/pages/new_request.rs",
+    "crates/bastion-desktop/src/pages/settings/places.rs",
+    "crates/bastion-protocol/src/api.rs",
+    "crates/bastion-protocol/src/lib.rs",
+    "crates/bastion-server/src/api/factory.rs",
+    "crates/bastion-server/src/factory.rs",
+    "crates/bastion-server/src/factory/setup.rs",
+    "crates/bastion-server/src/http.rs",
+    "crates/bastion-server/src/store.rs",
+    "crates/bastion-server/src/store/live.rs",
+    "crates/bastion-server/src/store/schema.rs",
+    "crates/bastion-server/src/store/sql.rs",
+    "worker-compose.yaml"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "71c3d7784b54",
+  "checkpoint_transcript_start": 31285,
+  "transcript_lines_at_start": 31285,
+  "compact_transcript_start": 4229,
+  "token_usage": {
+    "input_tokens": 52,
+    "cache_creation_tokens": 35029,
+    "cache_read_tokens": 23396948,
+    "output_tokens": 18499,
+    "api_call_count": 26,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 785,
+    "layers": {
+      "betterleaks": 58,
+      "connection_string": 0,
+      "credential_key": 646,
+      "credential_value": 85,
+      "credentialed_uri": 0,
+      "entropy": 84,
+      "key_context": 0,
+      "provider_token": 7,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_012k8JvaoAiys3LG9bvyESh1",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "voice-check"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "431379893e3d",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 30919,
+        "end": 30920,
+        "entry_ids": [
+          "43c9bff0-5654-449b-b7ff-1f9e09bc1808"
+        ],
+        "tool_use_id": "toolu_012k8JvaoAiys3LG9bvyESh1"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_012k8JvaoAiys3LG9bvyESh1"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: voice-check",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 217
+  }
+}

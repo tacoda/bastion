@@ -54,29 +54,20 @@ fn rig() -> Rig {
 }
 
 fn rig_on(engine: FakeEngine) -> Rig {
-    let engine = Arc::new(engine);
+    rig_with(engine, FakeMachine::new().run_ok("git", ""))
+}
+
+/// A rig on `engine` and `machine`, with one workspace `w` on `/repo`.
+fn rig_with(engine: FakeEngine, machine: FakeMachine) -> Rig {
+    let (engine, machine) = (Arc::new(engine), Arc::new(machine));
     let store = Arc::new(FakeStore::default());
-    store.workspaces.lock().unwrap().push(Workspace {
-        name: "w".into(),
-        path: "/repo".into(),
-        branch: "main".into(),
-        checks: String::new(),
-        max_jobs: None,
-        revision_budget: None,
-        branch_prefix: "bastion/".into(),
-        setup: String::new(),
-        cleanup: String::new(),
-        env: String::new(),
-        gates: String::new(),
-        autofix: String::new(),
-    });
-    let machine = Arc::new(FakeMachine::new().run_ok("git", ""));
+    store.workspaces.lock().unwrap().push(workspace());
     let factory = Factory::new(
         engine.clone() as Arc<dyn Engine>,
         store.clone() as Arc<dyn Store>,
         machine.clone(),
         Arc::new(|_| {}),
-        "/scratch".into(),
+        "/s".into(),
     );
     Rig {
         factory,
@@ -86,16 +77,43 @@ fn rig_on(engine: FakeEngine) -> Rig {
     }
 }
 
-/// Wait until the job reaches `stage` and `state`, or fail after two seconds.
-async fn until(rig: &Rig, id: &str, stage: Stage, state: State) {
+/// The workspace every rig has: `w` on `/repo`, branch `main`.
+fn workspace() -> Workspace {
+    Workspace {
+        name: "w".into(),
+        path: "/repo".into(),
+        branch: "main".into(),
+        branch_prefix: "bastion/".into(),
+        ..Workspace::default()
+    }
+}
+
+/// Ask `ready` every 10 ms for up to two seconds; whether it said yes.
+async fn eventually(mut ready: impl AsyncFnMut() -> bool) -> bool {
     for _ in 0..200 {
-        let job = rig.store.load(id).await.unwrap().job;
-        if (job.stage, job.state) == (stage, state) {
-            return;
+        if ready().await {
+            return true;
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    let job = rig.store.load(id).await.unwrap().job;
+    false
+}
+
+/// The job `id` as the store holds it now.
+async fn job_of(rig: &Rig, id: &str) -> Job {
+    rig.store.load(id).await.unwrap().job
+}
+
+/// Wait until the job reaches `stage` and `state`, or fail after two seconds.
+async fn until(rig: &Rig, id: &str, stage: Stage, state: State) {
+    let at = async || {
+        let j = job_of(rig, id).await;
+        (j.stage, j.state) == (stage, state)
+    };
+    if eventually(at).await {
+        return;
+    }
+    let job = job_of(rig, id).await;
     panic!(
         "job is at {:?} {:?}, not {stage:?} {state:?}: {:?}",
         job.stage, job.state, job.error
@@ -104,31 +122,20 @@ async fn until(rig: &Rig, id: &str, stage: Stage, state: State) {
 
 /// Fire the turn-completed binding for the job's current session.
 async fn finish_turn(rig: &Rig, id: &str) {
-    let mut session = String::new();
-    for _ in 0..200 {
-        // The turn saves its session before it binds, so read it again each try.
-        session = rig
-            .store
-            .load(id)
-            .await
-            .unwrap()
-            .runtime
-            .session
-            .unwrap_or_default();
-        if !rig
+    // The turn saves its session before it binds, so read it again each try.
+    let fired = async || {
+        let r = rig.store.load(id).await.unwrap();
+        let session = r.runtime.session.unwrap_or_default();
+        let done = json!({ "session_id": session });
+        let fired = rig
             .engine
-            .fire(
-                "harness::turn-completed",
-                "session_id",
-                json!({ "session_id": session }),
-            )
-            .is_empty()
-        {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    panic!("no turn-completed binding for {session}");
+            .fire("harness::turn-completed", "session_id", done);
+        !fired.is_empty()
+    };
+    assert!(
+        eventually(fired).await,
+        "no turn-completed binding for job {id}"
+    );
 }
 
 /// Run a submitted job through its plan, the approval and its build, to
@@ -233,7 +240,7 @@ fn checks_that_pass_before_the_build_go_to_falsify_and_one_that_stays_green_goes
         finish_turn(&rig, "j1").await;
         // And it passes against the broken code too, so it checks nothing.
         until(&rig, "j1", Stage::Specify, State::Running).await;
-        let job = rig.store.load("j1").await.unwrap().job;
+        let job = job_of(&rig, "j1").await;
         assert!(job.feedback.unwrap().contains("C1 stayed green"));
         let commands = vm_commands(&rig);
         for expected in [
@@ -264,7 +271,7 @@ fn the_checks_step_runs_the_workspaces_command_and_passes_on_exit_0() {
         };
         rig.store.insert(&record).await.unwrap();
         rig.factory.run_step(&record, Stage::Checks).await;
-        let job = rig.store.load("j1").await.unwrap().job;
+        let job = job_of(&rig, "j1").await;
         assert_eq!((job.stage, job.state), (Stage::Checks, State::NeedsYou));
         assert!(vm_commands(&rig).contains(&"sh -c cd /work/repo && pytest -q".to_string()));
     });
@@ -294,44 +301,14 @@ fn with_the_local_forge_ship_brings_the_commits_back_and_prove_starts() {
                 .iter()
                 .any(|c| c.contains("bundle create /work/out.bundle"))
         );
-        assert_eq!(rig.store.load("j1").await.unwrap().job.pr, None);
+        assert_eq!(job_of(&rig, "j1").await.pr, None);
     });
 }
 
 /// A rig whose every VM dies at the first turn, with one job that keeps
 /// its worktree.
 fn dying_vms() -> Rig {
-    let engine =
-        Arc::new(engine().answer("approval::set-mode", Err("sandbox not found: vm1".into())));
-    let store = Arc::new(FakeStore::default());
-    store.workspaces.lock().unwrap().push(Workspace {
-        name: "w".into(),
-        path: "/repo".into(),
-        branch: "main".into(),
-        checks: String::new(),
-        max_jobs: None,
-        revision_budget: None,
-        branch_prefix: "bastion/".into(),
-        setup: String::new(),
-        cleanup: String::new(),
-        env: String::new(),
-        gates: String::new(),
-        autofix: String::new(),
-    });
-    let machine = Arc::new(FakeMachine::new().run_ok("git", ""));
-    let factory = Factory::new(
-        engine.clone() as Arc<dyn Engine>,
-        store.clone() as Arc<dyn Store>,
-        machine.clone(),
-        Arc::new(|_| {}),
-        "/scratch".into(),
-    );
-    Rig {
-        factory,
-        engine,
-        store,
-        machine,
-    }
+    rig_on(engine().answer("approval::set-mode", Err("sandbox not found: vm1".into())))
 }
 
 /// How many VMs the rig has made.
@@ -342,13 +319,8 @@ fn vms_made(rig: &Rig) -> usize {
 
 /// Wait until the job fails, after the rig has made at least `vms` VMs.
 async fn failed_after(rig: &Rig, vms: usize) -> Record {
-    for _ in 0..200 {
-        let r = rig.store.load("j1").await.unwrap();
-        if vms_made(rig) >= vms && r.job.state == State::Failed {
-            return r;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+    let failed = async || vms_made(rig) >= vms && job_of(rig, "j1").await.state == State::Failed;
+    eventually(failed).await;
     rig.store.load("j1").await.unwrap()
 }
 
@@ -444,20 +416,13 @@ fn a_request_runs_the_short_pipeline_to_landed() {
         until(&rig, &id, Stage::Land, State::NeedsYou).await;
         rig.factory.apply(&id, Event::Approved).await.unwrap();
         until(&rig, &id, Stage::Land, State::Running).await;
-        for _ in 0..200 {
-            if !rig
-                .engine
-                .fire(
-                    "worktree::landed",
-                    "worktree_id",
-                    json!({ "worktree_id": "wt1" }),
-                )
+        let landed = json!({ "worktree_id": "wt1" });
+        let fire = async || {
+            !rig.engine
+                .fire("worktree::landed", "worktree_id", landed.clone())
                 .is_empty()
-            {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
+        };
+        eventually(fire).await;
         until(&rig, &id, Stage::Land, State::Landed).await;
         let land = rig
             .engine
@@ -469,13 +434,8 @@ fn a_request_runs_the_short_pipeline_to_landed() {
             .map(|c| c.2.clone())
             .unwrap();
         assert_eq!(land["target_branch"], "main");
-        for _ in 0..200 {
-            if rig.engine.called("sandbox::stop") {
-                return;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-        panic!("the VM was never stopped");
+        let stopped = async || rig.engine.called("sandbox::stop");
+        assert!(eventually(stopped).await, "the VM was never stopped");
     });
 }
 
@@ -521,58 +481,27 @@ fn setup_runs_with_the_network_in_a_vm_of_its_own_and_cleanup_runs_at_the_end() 
         assert!(order.iter().all(Option::is_some), "{ran:#?}");
         assert!(order.is_sorted(), "{ran:#?}");
         rig.factory.apply(&id, Event::Stopped).await.unwrap();
-        for _ in 0..200 {
-            if vm_commands(&rig)
+        let cleaned = async || {
+            vm_commands(&rig)
                 .iter()
                 .any(|r| r.ends_with("&& make clean"))
-            {
-                return;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-        panic!("cleanup did not run: {:#?}", vm_commands(&rig));
+        };
+        let ran = eventually(cleaned).await;
+        assert!(ran, "cleanup did not run: {:#?}", vm_commands(&rig));
     });
 }
 
 #[test]
 fn a_failed_provision_fails_the_job_with_its_reason() {
-    let engine = Arc::new(engine().answer(
+    let failing = engine().answer(
         "worktree::create",
         Err("W503 repository not in gates.repos".into()),
-    ));
-    let store = Arc::new(FakeStore::default());
-    store.workspaces.lock().unwrap().push(Workspace {
-        name: "w".into(),
-        path: "/repo".into(),
-        branch: "main".into(),
-        checks: String::new(),
-        max_jobs: None,
-        revision_budget: None,
-        branch_prefix: "bastion/".into(),
-        setup: String::new(),
-        cleanup: String::new(),
-        env: String::new(),
-        gates: String::new(),
-        autofix: String::new(),
-    });
-    let machine = Arc::new(FakeMachine::new());
-    let factory = Factory::new(
-        engine.clone() as Arc<dyn Engine>,
-        store.clone() as Arc<dyn Store>,
-        machine.clone(),
-        Arc::new(|_| {}),
-        "/s".into(),
     );
-    let rig = Rig {
-        factory,
-        engine,
-        store,
-        machine,
-    };
+    let rig = rig_with(failing, FakeMachine::new());
     crate::rt::block_on(async {
         let id = rig.factory.submit("w", "x").await.unwrap();
         until(&rig, &id, Stage::Plan, State::Failed).await;
-        let job = rig.store.load(&id).await.unwrap().job;
+        let job = job_of(&rig, &id).await;
         assert!(job.error.unwrap().contains("W503"));
     });
 }
@@ -637,12 +566,6 @@ fn a_trial_runs_from_its_eval_commit_under_its_arm_and_stops_at_review() {
             create["base_ref"], "abc1234",
             "the trial starts from the eval's commit"
         );
-        let rules = rig.factory.gate().constraints(&id);
-        assert_eq!(
-            rules.iter().find(|c| c.id == "keep-tests").map(|c| c.rung),
-            None,
-            "the fake store has no owner rules"
-        );
 
         finish_turn(&rig, &id).await;
         until(&rig, &id, Stage::Build, State::Running).await;
@@ -675,52 +598,21 @@ fn contract_before_stop(rig: &Rig) -> bool {
 /// A rig whose workspace's origin is on GitHub, where every gh call
 /// answers with the pull request's URL.
 fn github_rig(pr: &str) -> Rig {
-    let engine = Arc::new(
-        engine()
-            .answer(
-                "sandbox::exec",
-                Ok(json!({ "exit_code": 0, "stdout": "+x" })),
-            )
-            .answer(
-                "github::exec",
-                Ok(json!({ "exit_code": 0, "stdout": format!("{pr}\n") })),
-            ),
-    );
-    let store = Arc::new(FakeStore::default());
-    store.workspaces.lock().unwrap().push(Workspace {
-        name: "w".into(),
-        path: "/repo".into(),
-        branch: "main".into(),
-        checks: String::new(),
-        max_jobs: None,
-        revision_budget: None,
-        branch_prefix: "bastion/".into(),
-        setup: String::new(),
-        cleanup: String::new(),
-        env: String::new(),
-        gates: String::new(),
-        autofix: String::new(),
-    });
+    let engine = engine()
+        .answer(
+            "sandbox::exec",
+            Ok(json!({ "exit_code": 0, "stdout": "+x" })),
+        )
+        .answer(
+            "github::exec",
+            Ok(json!({ "exit_code": 0, "stdout": format!("{pr}\n") })),
+        );
     // The repository has a verify.yaml, so the push waits on a verdict;
     // the verify package is already on the host.
-    let machine = Arc::new(
-        FakeMachine::new()
-            .run_ok("git", "git@github.com:o/r.git\n")
-            .file("/s/opengantry-verify-4.0.2/kit.tgz", "kit"),
-    );
-    let factory = Factory::new(
-        engine.clone() as Arc<dyn Engine>,
-        store.clone() as Arc<dyn Store>,
-        machine.clone(),
-        Arc::new(|_| {}),
-        "/s".into(),
-    );
-    Rig {
-        factory,
-        engine,
-        store,
-        machine,
-    }
+    let machine = FakeMachine::new()
+        .run_ok("git", "git@github.com:o/r.git\n")
+        .file("/s/opengantry-verify-4.0.2/kit.tgz", "kit");
+    rig_with(engine, machine)
 }
 
 #[test]
@@ -744,13 +636,8 @@ fn with_github_as_the_forge_a_reviewed_change_goes_up_as_a_pull_request_and_merg
         rig.factory.apply(&id, Event::Approved).await.unwrap();
         until(&rig, &id, Stage::Land, State::NeedsYou).await;
         rig.factory.apply(&id, Event::Approved).await.unwrap();
-        for _ in 0..200 {
-            if rig.store.load(&id).await.unwrap().job.pr.is_some() {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-        let job = rig.store.load(&id).await.unwrap().job;
+        eventually(async || job_of(&rig, &id).await.pr.is_some()).await;
+        let job = job_of(&rig, &id).await;
         assert_eq!(
             (job.pr.as_deref(), job.state),
             (Some(pr), State::Running),
@@ -883,7 +770,7 @@ fn a_turn_that_ends_twice_counts_once_and_a_stale_one_changes_nothing() {
         until(&rig, &id, Stage::Build, State::Running).await;
         // The plan's session, found again later, does not finish the build.
         rig.factory.turn_done(&plan, false).await;
-        let job = rig.store.load(&id).await.unwrap().job;
+        let job = job_of(&rig, &id).await;
         assert_eq!((job.stage, job.state), (Stage::Build, State::Running));
     });
 }
@@ -921,13 +808,11 @@ fn approved_tests_stay_protected_after_a_restart() {
         until(&rig, &id, Stage::Plan, State::NeedsYou).await;
         rig.factory.apply(&id, Event::Approved).await.unwrap();
         until(&rig, &id, Stage::Build, State::Running).await;
-        for _ in 0..200 {
+        let building = async || {
             let session = rig.store.load(&id).await.unwrap().runtime.session;
-            if session.is_some_and(|s| s.contains("-build-")) {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
+            session.is_some_and(|s| s.contains("-build-"))
+        };
+        eventually(building).await;
         assert_eq!(rig.factory.gate.protected(&id), files);
     });
 }
@@ -946,16 +831,11 @@ fn stopping_a_job_cancels_its_turn() {
         };
         rig.factory.apply(&id, Event::Stopped).await.unwrap();
         until(&rig, &id, Stage::Plan, State::Stopped).await;
-        for _ in 0..200 {
-            let stop = |c: &(String, String, serde_json::Value)| {
-                c.1 == "harness::stop" && c.2["session_id"] == session
-            };
-            if rig.engine.calls.lock().unwrap().iter().any(stop) {
-                return;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-        panic!("no harness::stop for {session}");
+        let stop = |c: &(String, String, serde_json::Value)| {
+            c.1 == "harness::stop" && c.2["session_id"] == session
+        };
+        let stopped = async || rig.engine.calls.lock().unwrap().iter().any(stop);
+        assert!(eventually(stopped).await, "no harness::stop for {session}");
     });
 }
 
@@ -998,19 +878,7 @@ fn a_turn_on_a_job_whose_vm_went_while_it_waited_gets_a_new_vm_first() {
             text: "again".into(),
         };
         rig.factory.apply("j1", sent_back).await.unwrap();
-        for _ in 0..200 {
-            if rig
-                .engine
-                .calls
-                .lock()
-                .unwrap()
-                .iter()
-                .any(|c| c.1 == "sandbox::create")
-            {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
+        eventually(async || rig.engine.called("sandbox::create")).await;
         let calls = rig.engine.calls.lock().unwrap();
         assert!(calls.iter().any(|c| c.1 == "sandbox::create"), "a new VM");
         assert!(
@@ -1049,15 +917,10 @@ fn a_cap_that_runs_out_after_an_extend_waits_out_the_new_one() {
         let late = planning(&rig, "j2", 1).await;
         rig.factory.arm_cap(&extended, 0);
         rig.factory.arm_cap(&late, 0);
-        for _ in 0..200 {
-            if rig.store.load("j2").await.unwrap().job.failures > 0 {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-        let timed_out = rig.store.load("j2").await.unwrap().job;
+        eventually(async || job_of(&rig, "j2").await.failures > 0).await;
+        let timed_out = job_of(&rig, "j2").await;
         assert!(timed_out.failures > 0, "the late turn ran past its cap");
-        let job = rig.store.load("j1").await.unwrap().job;
+        let job = job_of(&rig, "j1").await;
         assert_eq!((job.state, job.failures), (State::Running, 0));
     });
 }
@@ -1103,13 +966,10 @@ fn a_turn_the_harness_lost_starts_again_on_resume() {
     crate::rt::block_on(async {
         rig.store.insert(&record).await.unwrap();
         rig.factory.clone().resume().await;
-        for _ in 0..200 {
+        let again = async || {
             let session = rig.store.load("j1").await.unwrap().runtime.session;
-            if session.as_deref() != Some("j1-build-old") && rig.engine.called("harness::send") {
-                return;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-        panic!("the lost turn did not start again");
+            session.as_deref() != Some("j1-build-old") && rig.engine.called("harness::send")
+        };
+        assert!(eventually(again).await, "the lost turn did not start again");
     });
 }

@@ -248,6 +248,50 @@ impl Factory {
         let _ = self.store.add_artifact(&record.job.id, &artifact).await;
     }
 
+    /// Watch the merge commit's deployment (F7) in the background, then
+    /// report it. A job with no pull request has nothing to watch.
+    pub(super) fn watch_deploy(self: &Arc<Self>, record: &Record) {
+        let (factory, record) = (self.clone(), record.clone());
+        crate::rt::spawn(async move {
+            let id = record.job.id.clone();
+            let event = match (&record.job.pr, factory.slug(&record).await) {
+                (Some(pr), Ok(slug)) => {
+                    let hub = forge::GitHub {
+                        engine: &*factory.engine,
+                        slug,
+                    };
+                    factory.deployed(&record, &hub, pr).await
+                }
+                _ => Event::StepPassed,
+            };
+            let _ = factory.apply(&id, event).await;
+        });
+    }
+
+    /// Poll the merge commit's newest deployment until it ends.
+    async fn deployed(&self, record: &Record, hub: &forge::GitHub<'_>, pr: &str) -> Event {
+        let sha = match hub.merge_commit(pr).await {
+            Ok(sha) => sha,
+            Err(detail) => return Event::StepStuck { detail },
+        };
+        for polls in 1..=CI_POLLS {
+            tokio::time::sleep(Duration::from_secs(20)).await;
+            let found = hub.deployment(&format!("sha={sha}")).await;
+            let Some((event, note)) = deploy_outcome(found, polls, &sha) else {
+                continue;
+            };
+            let artifact = Artifact {
+                stage: record.job.stage,
+                body: note,
+                created_at: super::now(),
+            };
+            let _ = self.store.add_artifact(&record.job.id, &artifact).await;
+            return event;
+        }
+        let detail = format!("The deployment of {sha} did not finish within 30 minutes.");
+        Event::StepStuck { detail }
+    }
+
     /// Watch CI on the job's pull request, or merge it.
     pub(super) async fn forge_effect(
         self: &Arc<Self>,
@@ -366,5 +410,69 @@ impl Factory {
         let pull = ["pull", "-q", "--ff-only", "origin", &ws.branch];
         let _ = self.machine.run("git", &pull, Some(Path::new(&ws.path)));
         Ok(())
+    }
+}
+
+/// Polls with no deployment of the merge commit before a deploy counts as
+/// one nothing watches: two minutes at one poll each 20 s.
+const NO_DEPLOY_POLLS: u32 = 6;
+
+/// What one poll of the merge commit's deployment says, and the note to keep:
+/// none while it runs, or while one may still appear.
+fn deploy_outcome(
+    found: Result<Option<forge::Deployment>, String>,
+    polls: u32,
+    sha: &str,
+) -> Option<(Event, String)> {
+    let short = &sha[..sha.len().min(7)];
+    match found {
+        Ok(Some(d)) if d.state == forge::Deployed::Succeeded => {
+            let at = d.url.map(|u| format!(" at <{u}>")).unwrap_or_default();
+            Some((Event::StepPassed, format!("Deployed {short}{at}.")))
+        }
+        Ok(Some(d)) if d.state == forge::Deployed::Failed => {
+            let detail = format!("The deployment of {short} failed.");
+            Some((
+                Event::StepStuck {
+                    detail: detail.clone(),
+                },
+                detail,
+            ))
+        }
+        Ok(None) if polls >= NO_DEPLOY_POLLS => {
+            let note = format!("Nothing deployed {short}, so there was nothing to watch.");
+            Some((Event::StepPassed, note))
+        }
+        Err(detail) => Some((
+            Event::StepStuck {
+                detail: detail.clone(),
+            },
+            detail,
+        )),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::forge::{Deployed, Deployment};
+
+    #[test]
+    fn a_deploy_passes_on_success_sticks_on_failure_and_waits_while_it_runs() {
+        let at = |state| Ok(Some(Deployment { state, url: None }));
+        let sha = "a1b2c3d4e5";
+        let passed = deploy_outcome(at(Deployed::Succeeded), 1, sha).unwrap();
+        assert_eq!(passed, (Event::StepPassed, "Deployed a1b2c3d.".into()));
+        let failed = deploy_outcome(at(Deployed::Failed), 1, sha).unwrap();
+        assert!(matches!(failed.0, Event::StepStuck { .. }));
+        assert_eq!(deploy_outcome(at(Deployed::Pending), 50, sha), None);
+        assert_eq!(deploy_outcome(Ok(None), NO_DEPLOY_POLLS - 1, sha), None);
+        let unwatched = deploy_outcome(Ok(None), NO_DEPLOY_POLLS, sha).unwrap();
+        assert_eq!(unwatched.0, Event::StepPassed);
+        assert!(matches!(
+            deploy_outcome(Err("gh".into()), 1, sha),
+            Some((Event::StepStuck { .. }, _))
+        ));
     }
 }

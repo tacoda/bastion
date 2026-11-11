@@ -668,8 +668,10 @@ impl Factory {
                 .ship(record)
                 .await
                 .unwrap_or_else(|detail| Event::StepStuck { detail }),
-            // ponytail: nothing watches CD yet, so a deploy passes; watching the merge commit's checks comes with a workspace that deploys.
-            Stage::Deploy => Event::StepPassed,
+            Stage::Deploy => {
+                self.watch_deploy(record);
+                return None;
+            }
             _ => Event::StepFailed {
                 detail: format!("Bastion does not run the {stage:?} step yet."),
             },

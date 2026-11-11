@@ -205,6 +205,24 @@ impl GitHub<'_> {
         Ok(Some(deployment_of(first(&statuses))))
     }
 
+    /// The commit a merged pull request made on its base branch.
+    pub async fn merge_commit(&self, pr: &str) -> Result<String, String> {
+        let out = self
+            .gh(&[
+                "pr",
+                "view",
+                pr,
+                "--json",
+                "mergeCommit",
+                "--jq",
+                ".mergeCommit.oid",
+            ])
+            .await?;
+        Some(out.trim().to_string())
+            .filter(|sha| !sha.is_empty())
+            .ok_or_else(|| format!("{pr} has no merge commit"))
+    }
+
     /// Say the pull request's body again, as it stands before the merge.
     pub async fn edit(&self, pr: &str, body: &str) -> Result<(), String> {
         self.gh(&["pr", "edit", pr, "--body", body])

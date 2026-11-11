@@ -1,0 +1,6 @@
+I also want an icon in the tray that I can use to manage my factory. I want to be able to close the app, keep the server running, and use the tray icon to check up on what's happening and even interact with the factory at a basic level
+
+---
+
+I don't want the tray icon to be black like in windows
+I want the tray icon to be white on macos

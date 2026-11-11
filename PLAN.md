@@ -264,7 +264,10 @@ value; each is a phase of its own when it starts.
 - **F10, packaging and updates.** A signed macOS build and a Linux build of
   the server and the client, with signed updates, installed through a
   Homebrew tap or an install script run as `curl … | sh`. Either way installs
-  the server alone (with its CLI) or the server and the desktop app.
+  the server alone (with its CLI) or the server and the desktop app. The
+  server installs headless on any Linux VM or VPS, x86_64 or arm64, and runs
+  as a systemd service. Its job VMs need `/dev/kvm`, so a host without KVM
+  (no nested virtualization) is refused by the doctor with that reason.
 - **F11, the browser agent.** Browser tools for turns, with screenshots and
   recordings as artifacts.
 

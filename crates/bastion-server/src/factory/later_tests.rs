@@ -215,3 +215,20 @@ fn a_turns_screenshot_is_kept_once_with_the_job() {
         );
     });
 }
+
+#[test]
+fn a_new_vm_brings_loopback_up_and_a_browser_vm_finds_its_browsers() {
+    let rig = rig();
+    crate::rt::block_on(async {
+        let ws = workspace();
+        let vm = rig.factory.create_vm_from("browser", false, &ws).await;
+        assert_eq!(vm.as_deref(), Ok("vm1"));
+        let calls = rig.engine.calls.lock().unwrap().clone();
+        let made = calls.iter().find(|c| c.1 == "sandbox::create").unwrap();
+        let env = made.2["env"].as_array().unwrap();
+        assert!(env.contains(&json!("PLAYWRIGHT_BROWSERS_PATH=/ms-playwright")));
+        let exec = calls.iter().find(|c| c.1 == "sandbox::exec").unwrap();
+        assert_eq!(exec.2["argv"][0], "perl", "loopback comes up first");
+        assert!(exec.2["argv"][2].as_str().unwrap().contains("0x8914"));
+    });
+}

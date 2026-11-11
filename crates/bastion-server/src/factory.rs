@@ -59,10 +59,16 @@ pub struct Submission {
 }
 /// What a turn on the browser image is told it has (F11).
 const BROWSER_GUIDE: &str = "\
-This VM has Playwright with Chromium, Firefox and WebKit, and Node. It has no
-network, so serve the app inside the VM (for example on 127.0.0.1) and point the
-browser there. Keep each screenshot (.png) and recording (.webm) you make under
-/work/artifacts; they are kept with the job for the person to see.\n\n";
+This VM has Node and Playwright's Chromium, Firefox and WebKit under
+/ms-playwright, but not the playwright npm package; a workspace whose setup
+installs playwright@1.65.0 can drive them from a script and record video.
+Without it, take a screenshot with
+/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux*/chrome-headless-shell
+--no-sandbox --window-size=1280,800 --screenshot=/work/artifacts/home.png URL.
+The VM has no network, so serve the app on 127.0.0.1, and start the server in
+the same command as the browser: a background process ends with its command.
+Keep each screenshot (.png) and recording (.webm) under /work/artifacts; they
+are kept with the job for the person to see.\n\n";
 
 /// The VM tag a read-only turn's tree is put back to.
 const BEFORE_TURN: &str = "bastion-before-turn";

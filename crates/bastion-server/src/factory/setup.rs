@@ -16,6 +16,15 @@ const SETUP_MS: u64 = 20 * 60_000;
 const EXEC_MS: u64 = 120_000;
 /// The repository as a tarball, in a VM.
 pub(super) const TREE: &str = "/work/repo.tgz";
+/// Where the browser image keeps Playwright's browsers.
+const BROWSERS: &str = "/ms-playwright";
+/// Brings the loopback interface up: an offline VM boots with `lo` down, so
+/// nothing can serve on 127.0.0.1 for a test or a browser. The images have
+/// Perl but no `ip`, so this is the ioctl `ip link set lo up` makes.
+const LOOPBACK_UP: &str = "use Socket; socket(my $s, AF_INET, SOCK_DGRAM, 0) or die $!; \
+my $r = pack('a16 s', 'lo', 0); ioctl($s, 0x8913, $r) or die $!; \
+my (undef, $f) = unpack('a16 s', $r); $r = pack('a16 s', 'lo', $f | 1); \
+ioctl($s, 0x8914, $r) or die $!;";
 
 impl Workspace {
     /// The environment as a VM takes it, one `K=V` per entry.
@@ -45,17 +54,26 @@ impl Factory {
         network: bool,
         ws: &Workspace,
     ) -> Result<String, String> {
-        let env = ws.env_vars()?;
+        let mut env = ws.env_vars()?;
+        if image == "browser" {
+            // The image's own environment does not reach the VM.
+            env.push(format!("PLAYWRIGHT_BROWSERS_PATH={BROWSERS}"));
+        }
         let vm =
             json!({ "image": image, "network": network, "env": env, "idle_timeout_secs": 3600 });
         let made = self
             .engine
             .call_for(DEFAULT_NAMESPACE, "sandbox::create", vm, SLOW_MS)
             .await?;
-        made["sandbox_id"]
+        let vm = made["sandbox_id"]
             .as_str()
             .map(String::from)
-            .ok_or("sandbox::create gave no sandbox_id".into())
+            .ok_or("sandbox::create gave no sandbox_id")?;
+        // A VM without loopback still runs whatever needs no local server.
+        if let Err(e) = self.vm_exec(&vm, &["perl", "-e", LOOPBACK_UP]).await {
+            eprintln!("vm {vm}: loopback stays down: {e}");
+        }
+        Ok(vm)
     }
 
     /// Fill the job's VM with the job's branch, set up by the workspace's

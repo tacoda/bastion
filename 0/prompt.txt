@@ -1,0 +1,1 @@
+It installed bastion and bastion-server, but I don't see bastion-desktop in my path

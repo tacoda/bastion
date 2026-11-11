@@ -112,7 +112,7 @@ impl Factory {
             return;
         }
         self.arm_cap(out, cap_left(&record.job, now()));
-        self.read_charter(&record).await;
+        let _ = self.read_charter(&record).await;
         self.turn_done(out, false).await;
     }
 }

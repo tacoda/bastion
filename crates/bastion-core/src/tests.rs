@@ -70,11 +70,10 @@ fn admission_provisions_and_provisioning_starts_a_read_only_plan_turn() {
         &effects[..],
         [Effect::StartTurn {
             stage: Stage::Plan,
-            read_only: true,
-            cap_secs: TURN_CAP_SECS,
             ..
         }]
     ));
+    assert!(Stage::Plan.read_only());
 }
 
 #[test]
@@ -101,12 +100,12 @@ fn approval_starts_a_build_that_may_write_and_sees_the_plan() {
         [
             Effect::StartTurn {
                 stage: Stage::Build,
-                read_only: false,
                 brief,
                 ..
             },
         ] => {
             assert!(brief.contains("1. Add /health"), "{brief}");
+            assert!(!Stage::Build.read_only());
         }
         other => panic!("{other:?}"),
     }

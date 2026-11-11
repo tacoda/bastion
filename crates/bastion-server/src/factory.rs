@@ -402,13 +402,8 @@ impl Factory {
                     .await
                     .err(),
             },
-            Effect::StartTurn {
-                stage,
-                brief,
-                cap_secs,
-                ..
-            } => {
-                let started = self.start_turn(&record, stage, &brief, cap_secs).await;
+            Effect::StartTurn { stage, brief } => {
+                let started = self.start_turn(&record, stage, &brief).await;
                 let failed = |error| Event::TurnFinished {
                     outcome: Outcome::Failed { error },
                 };
@@ -571,7 +566,6 @@ impl Factory {
         record: &Record,
         stage: Stage,
         brief: &str,
-        cap_secs: u64,
     ) -> Result<(), String> {
         let job = &record.job;
         let sandbox = record.runtime.sandbox.clone().ok_or("no VM")?;
@@ -586,22 +580,7 @@ impl Factory {
         self.listen_for_turn(&turn)?;
         // The owner may have edited the rows directly (D26).
         self.gate.reload().await?;
-        if !record.runtime.approved.is_empty() {
-            self.gate.protect(&job.id, record.runtime.approved.clone());
-        }
-
-        let mut message = String::new();
-        if let Some(file) = self.at_base(record).await {
-            self.gate.set_charter(&job.id, charter::read(&file));
-            self.load_arm(&job.id).await?;
-            for name in charter::BRIEF_FILES {
-                if let Some(text) = file(name) {
-                    message.push_str(&format!(
-                        "The repository's charter ({name}):\n<charter>\n{text}\n</charter>\n\n"
-                    ));
-                }
-            }
-        }
+        let mut message = self.read_charter(record).await?;
         if stage.read_only() || stage == Stage::Falsify {
             // Where the tree goes back to after the turn, commits included:
             // by `put_back` for a read-only turn, by the baseline after falsify.
@@ -628,7 +607,7 @@ impl Factory {
                 "options": { "max_turns": MAX_TURN_STEPS, "functions": { "allow": TOOLS }, "metadata": { "sandbox_id": sandbox, "job": job.id, "stage": stage } },
             }), 60_000)
             .await?;
-        self.arm_cap(&turn, cap_secs);
+        self.arm_cap(&turn, bastion_core::TURN_CAP_SECS);
         Ok(())
     }
 
@@ -853,16 +832,26 @@ impl Factory {
         Ok(())
     }
 
-    /// Judge the job's calls by its charter, read again from its worktree.
-    async fn read_charter(&self, record: &Record) {
-        let _ = self.load_arm(&record.job.id).await;
+    /// Judge the job's calls under its arm and by its charter, read again
+    /// from its base, with its approved tests protected. Returns the charter's
+    /// brief files as the turn reads them.
+    async fn read_charter(&self, record: &Record) -> Result<String, String> {
+        let id = &record.job.id;
+        self.load_arm(id).await?;
         if !record.runtime.approved.is_empty() {
-            self.gate
-                .protect(&record.job.id, record.runtime.approved.clone());
+            self.gate.protect(id, record.runtime.approved.clone());
         }
-        if let Some(file) = self.at_base(record).await {
-            self.gate.set_charter(&record.job.id, charter::read(&file));
-        }
+        let Some(file) = self.at_base(record).await else {
+            return Ok(String::new());
+        };
+        self.gate.set_charter(id, charter::read(&file));
+        let quoted = charter::BRIEF_FILES.iter().filter_map(|name| {
+            let text = file(name)?;
+            Some(format!(
+                "The repository's charter ({name}):\n<charter>\n{text}\n</charter>\n\n"
+            ))
+        });
+        Ok(quoted.collect())
     }
 
     /// A file as the job's base commit has it, so nothing the agent writes

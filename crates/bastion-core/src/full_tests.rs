@@ -78,10 +78,10 @@ fn a_full_job_prepares_first_then_scopes_read_only() {
         effects.as_slice(),
         [Effect::StartTurn {
             stage: Stage::Scope,
-            read_only: true,
             ..
         }]
     ));
+    assert!(Stage::Scope.read_only());
 }
 
 #[test]

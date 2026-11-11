@@ -434,11 +434,12 @@ pub enum Effect {
     StartTurn {
         stage: Stage,
         brief: String,
-        read_only: bool,
-        cap_secs: u64,
     },
     /// Keep the turn's report as the stage's artifact.
-    RecordArtifact { stage: Stage, body: String },
+    RecordArtifact {
+        stage: Stage,
+        body: String,
+    },
     /// Keep the build's diff against its base as the review's artifact.
     CaptureDiff,
     /// Bring the VM's commits back to the worktree, then land them.
@@ -451,11 +452,17 @@ pub enum Effect {
     Merge,
     /// Run a step the factory runs itself, then send `StepPassed` or
     /// `StepFailed`. Ship sends `PrOpened` when it passes.
-    RunStep { stage: Stage },
+    RunStep {
+        stage: Stage,
+    },
     /// A dark step went on with no person (D33): note it in the audit log.
-    DarkDecided { stage: Stage },
+    DarkDecided {
+        stage: Stage,
+    },
     /// Scope split the request: keep these jobs, the later parts, queued.
-    Split { parts: Vec<Job> },
+    Split {
+        parts: Vec<Job>,
+    },
 }
 
 impl Job {
@@ -711,8 +718,6 @@ fn start(job: &mut Job, dials: &Dials) -> Vec<Effect> {
     vec![Effect::StartTurn {
         stage: job.stage,
         brief: brief(job),
-        read_only: job.stage.read_only(),
-        cap_secs: TURN_CAP_SECS,
     }]
 }
 

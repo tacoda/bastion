@@ -369,7 +369,7 @@ impl Page {
             Page::Govern(s) => govern::view(s, ctx),
             Page::Audit(s) => audit::view(s, ctx),
             Page::Engine(s) => engine::view(s, ctx),
-            Page::Evals(s) => evals::view_list(s),
+            Page::Evals(s) => evals::view_list(s, ctx),
             Page::Costs(s) => costs::view(s, ctx),
             Page::Verification(s) => verification::view(s, ctx),
             Page::Session(s) => session::view(s, ctx),

@@ -37,6 +37,11 @@ pub enum Message {
         server: String,
         id: String,
     },
+    /// One record's page, such as an eval, on the server that holds it.
+    OpenOn {
+        server: String,
+        route: Route,
+    },
     Jobs(jobs::Msg),
     NewRequest(new_request::Msg),
     Job(job::Msg),
@@ -179,6 +184,10 @@ impl App {
                 // The job's page talks to the server it runs on.
                 self.current = server;
                 return self.go(Route::Job(id));
+            }
+            Message::OpenOn { server, route } => {
+                self.current = server;
+                return self.go(route);
             }
             page @ (Message::Jobs(_)
             | Message::NewRequest(_)

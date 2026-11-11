@@ -11,7 +11,7 @@ use iced::widget::{
 };
 use iced::{Element, Fill, Task};
 
-use super::{Choice, Ctx, ago, labeled, scrolled, section};
+use super::{Choice, Ctx, Each, ago, labeled, scrolled, section};
 use crate::app::Message;
 use crate::route::Route;
 use crate::theme;
@@ -86,7 +86,8 @@ impl Form {
 
 #[derive(Default)]
 pub struct List {
-    evals: Vec<EvalSummary>,
+    /// Each eval with the server that holds it.
+    evals: Vec<(String, EvalSummary)>,
     error: String,
     form: Form,
 }
@@ -117,7 +118,7 @@ pub enum Rung {
 
 #[derive(Clone, Debug)]
 pub enum Msg {
-    Evals(Result<Vec<EvalSummary>, String>),
+    Evals(Box<Each<Vec<EvalSummary>>>),
     Workspaces(Result<Vec<Workspace>, String>),
     Constraints(Result<Vec<ConstraintView>, String>),
     ToggleForm,
@@ -143,7 +144,9 @@ where
 
 pub fn load_list(ctx: &Ctx) -> Task<Message> {
     Task::batch([
-        task(ctx, api::Evals, Msg::Evals),
+        Task::perform(ctx.clone().each(api::Evals), |r| {
+            Message::Evals(Msg::Evals(Box::new(r)))
+        }),
         task(ctx, api::Workspaces, Msg::Workspaces),
         task(ctx, api::Constraints, Msg::Constraints),
     ])
@@ -188,8 +191,16 @@ fn on_form(form: &mut Form, msg: Msg, ctx: &Ctx) -> Task<Message> {
 
 pub fn update_list(list: &mut List, msg: Msg, ctx: &Ctx) -> Task<Message> {
     match msg {
-        Msg::Evals(Ok(all)) => list.evals = all,
-        Msg::Evals(Err(e)) => list.error = e,
+        Msg::Evals(read) => {
+            let (read, failed) = *read;
+            list.evals = read
+                .into_iter()
+                .flat_map(|(server, all)| all.into_iter().map(move |e| (server.clone(), e)))
+                .collect();
+            list.evals
+                .sort_by_key(|(_, e)| std::cmp::Reverse(e.created_at));
+            list.error = failed.join(" ");
+        }
         other => return on_form(&mut list.form, other, ctx),
     }
     Task::none()
@@ -232,11 +243,12 @@ fn rung_pick<'a>(arm: Rung, value: &str) -> Element<'a, Message> {
     .into()
 }
 
-fn form_view(form: &Form) -> Element<'_, Message> {
+/// The form for a new eval, which runs on `server`, the last one picked.
+fn form_view<'a>(form: &'a Form, server: &str) -> Element<'a, Message> {
     let msg = Message::Evals;
     let arrow = if form.open { "▾" } else { "▸" };
     let toggle = button(
-        text(format!("{arrow} Run an eval"))
+        text(format!("{arrow} Run an eval on {server}"))
             .size(13)
             .font(theme::BOLD),
     )
@@ -294,11 +306,11 @@ fn form_view(form: &Form) -> Element<'_, Message> {
         .into()
 }
 
-fn summary_row<'a>(e: &EvalSummary) -> Element<'a, Message> {
+fn summary_row<'a>(server: &str, e: &EvalSummary) -> Element<'a, Message> {
     let about = column![
         text(e.name.clone()).font(theme::BOLD),
         text(format!(
-            "{} · {} · {} · {}",
+            "{server} · {} · {} · {} · {}",
             e.id,
             e.workspace,
             short(&e.base),
@@ -315,24 +327,27 @@ fn summary_row<'a>(e: &EvalSummary) -> Element<'a, Message> {
         .width(Fill)
         .padding([8, 12])
         .style(theme::row_button)
-        .on_press(Message::Go(Route::Eval(e.id.clone())))
+        .on_press(Message::OpenOn {
+            server: server.to_string(),
+            route: Route::Eval(e.id.clone()),
+        })
         .into()
 }
 
-pub fn view_list(list: &List) -> Element<'_, Message> {
+pub fn view_list<'a>(list: &'a List, ctx: &Ctx) -> Element<'a, Message> {
     let lede = "An eval runs the same requests from the same commit under two harness configurations, A and B, that differ in one rung. Each run goes on without waiting and stops at its finish, so nothing lands.";
     let rows: Element<'_, Message> = if list.evals.is_empty() {
         container(text("No evals yet.").size(13).color(theme::MUTED))
             .padding([8, 12])
             .into()
     } else {
-        Column::with_children(list.evals.iter().map(summary_row)).into()
+        Column::with_children(list.evals.iter().map(|(s, e)| summary_row(s, e))).into()
     };
     let body = column![
         column![super::head("Evals", lede, vec![])]
             .extend(super::problem(&list.error))
             .spacing(8),
-        form_view(&list.form),
+        form_view(&list.form, &ctx.current),
         section("Evals".into(), rows, false),
     ];
     scrolled(body.spacing(12))

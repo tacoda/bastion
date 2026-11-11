@@ -162,7 +162,10 @@ fn session_row<'a>(server: &str, s: &SessionView, many: bool) -> Element<'a, Mes
         .on_press(open);
     let steps = button(text("steps").size(13))
         .style(theme::link)
-        .on_press(Message::Go(Route::Session(s.session.clone())));
+        .on_press(Message::OpenOn {
+            server: server.to_string(),
+            route: Route::Session(s.session.clone()),
+        });
     let mut line = row![].spacing(12).padding([4, 12]).align_y(iced::Center);
     if many {
         line = line.push(text(server.to_string()).size(13).color(theme::LINK));

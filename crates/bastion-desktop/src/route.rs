@@ -48,7 +48,10 @@ impl Route {
     /// A records page can show every server at once; a rules page and
     /// one record's page show one server (VISION.md).
     pub fn records(&self) -> bool {
-        matches!(self, Route::Jobs | Route::Audit | Route::Costs)
+        matches!(
+            self,
+            Route::Jobs | Route::Audit | Route::Costs | Route::Evals | Route::Verification
+        )
     }
 
     /// One record's page, which belongs to the server it was opened on.

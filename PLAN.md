@@ -88,11 +88,27 @@ ledes that still named stages, pipelines or review are rewritten. Live:
 every page checked at full size, and Jobs at 720 by 480, where the bar
 wraps to two rows and nothing is cut.
 
+### U5. Evals and Verification across servers
+
+- Evals and Verification are records pages too, and stay in the bar.
+- Each eval and each landed job names its server and opens on it.
+- A new eval runs on the last server picked, and the form names it.
+- An escape goes to the server that landed its commit, so it can be
+  reported from "All servers".
+- Exit, live: both pages show `local` and `two` together.
+
+Done 2026-11-11. Live, under "All servers": Evals listed each eval with its
+server and opened one on `local`, and Verification named each workspace
+with its server and added up 17 landed and 2 escapes. `two` has no eval
+and no landed job yet, so its rows could not show; the merge is covered by
+tests. A turn's steps on Costs now open on the turn's own server too.
+
 ## After this plan
 
 - A step is named `workflow/step`, and constraints and capabilities apply
   per workflow step, not per kind of step. This changes D42 and the gate.
-- A model per step, chosen in the workflow editor.
+- A model and a budget per step, chosen in the workflow editor: the most
+  revisions a step may take, and the most it may spend.
 - Workflows that branch: a step can name a step to go to on failure, so a
   workflow draws as a flowchart. Today a failure waits for you or goes back
   to the step that writes. This changes the core, so it needs a decision

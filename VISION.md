@@ -15,14 +15,14 @@ what its workflows say, so a gate you remove is gone.
 Every page shows one server, the one you pick at the top. Some pages can
 also show every server at once, and those are the ones about records.
 
-**Records, per server or across all.** Jobs, Audit Log and Costs read one
-server, or every server you added, side by side. All servers is one more
+**Records, per server or across all.** Jobs, Audit Log, Costs, Evals and
+Verification read one server, or every server you added, side by side. All servers is one more
 choice in the server picker, so you filter by server the same way on each
 of these pages. You open a job, an entry or a turn and act on it wherever
 it lives.
 
 **Rules, one server at a time.** Workflows, Constraints, Capabilities,
-Evals, Verification, Engine and Settings belong to the server you pick. A
+Engine and Settings belong to the server you pick. A
 rules page never mixes two servers, because each server's rules shape only
 its own jobs, and a sum of two rule sets means nothing.
 

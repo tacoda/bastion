@@ -10,7 +10,7 @@ use bastion_protocol::{PersonView, WorkflowView};
 use iced::widget::{button, column, container, pick_list, row, text, text_editor, text_input};
 use iced::{Element, Fill, Task};
 
-use super::drawing::{self, Drawing, Pointer, title};
+use super::drawing::{self, Drawing, Pointer};
 use super::edit::{self, Drag, Pick};
 use super::{Choice, Ctx, labeled, scrolled};
 use crate::app::Message;
@@ -43,6 +43,9 @@ pub struct State {
     results: String,
     /// A shell step's secrets, as typed.
     secrets: String,
+    /// The picked step's name, as typed: it renames the step once no
+    /// other step has it.
+    name: String,
     copy_name: String,
     said: String,
     no_marks: BTreeMap<String, String>,
@@ -51,6 +54,7 @@ pub struct State {
 /// A field of the picked step.
 #[derive(Clone, Copy, Debug)]
 pub enum StepField {
+    Name,
     Run,
     Results,
     Secrets,
@@ -142,6 +146,7 @@ impl State {
             _ => None,
         };
         self.text = text_editor::Content::with_text(&step.as_ref().map(shown).unwrap_or_default());
+        self.name = step.as_ref().map(|n| n.id.clone()).unwrap_or_default();
         self.secrets = step
             .as_ref()
             .map(|n| n.reach.secrets.join(", "))
@@ -240,6 +245,16 @@ fn on_pointer(state: &mut State, p: Pointer) {
     }
 }
 
+/// Rename the picked step to what was typed, once that name is free.
+fn rename(state: &mut State, typed: String) {
+    if let (Pick::Step(id), Some(w)) = (&state.picked, state.draft.as_mut())
+        && edit::rename_step(w, id, &typed).is_ok()
+    {
+        state.picked = Pick::Step(typed.trim().into());
+    }
+    state.name = typed;
+}
+
 /// A comma-separated list as typed, as its names.
 fn listed(typed: &str) -> Vec<String> {
     let names = typed.split(',').map(str::trim).filter(|r| !r.is_empty());
@@ -248,6 +263,7 @@ fn listed(typed: &str) -> Vec<String> {
 
 fn on_field(state: &mut State, field: StepField, value: String) {
     match field {
+        StepField::Name => rename(state, value),
         StepField::Run => state.step(|n| n.run = value),
         StepField::Results => {
             let results = listed(&value);
@@ -553,11 +569,10 @@ fn step_detail<'a>(state: &'a State, id: &str, editable: bool) -> Option<Element
         .and_then(|w| edit::node(w, id))?
         .clone();
     let on = |m: Msg| editable.then_some(wrap(m));
-    let head = row![
-        text(title(&n)).font(theme::BOLD),
-        text(n.id.clone()).size(13).color(theme::MUTED)
-    ]
-    .spacing(8);
+    let name = text_input("A name for this step", &state.name)
+        .on_input_maybe(editable.then_some(|v| wrap(Msg::Field(StepField::Name, v))))
+        .style(theme::field);
+    let head = labeled("Name", name);
     let how = how_row(state, &n, editable);
     let mut body = column![head, how];
     if text_of(&n) == Text::Nothing {
@@ -716,6 +731,37 @@ mod tests {
         on_field(&mut state, StepField::Results, "design-notes, ".into());
         assert_eq!(state.results, "design-notes, ");
         assert_eq!(state.draft.unwrap().nodes[0].results, ["design-notes"]);
+    }
+
+    #[test]
+    fn a_step_is_renamed_with_its_links_once_the_name_is_free() {
+        let mut w = workflow("mine", 1, false);
+        edit::add_step(&mut w, "prompt");
+        edit::add_step(&mut w, "shell");
+        assert_eq!(
+            (w.nodes[0].id.as_str(), w.nodes[1].id.as_str()),
+            ("step", "step2")
+        );
+        edit::add_link(&mut w, "step", "step2");
+        let mut state = State {
+            draft: Some(w),
+            admin: true,
+            ..State::default()
+        };
+        state.pick(Pick::Step("step".into()));
+        on_field(&mut state, StepField::Name, "step2".into());
+        assert_eq!(
+            state.picked,
+            Pick::Step("step".into()),
+            "a taken name waits"
+        );
+        on_field(&mut state, StepField::Name, "plan".into());
+        let w = state.draft.as_ref().unwrap();
+        assert_eq!(
+            (w.nodes[0].id.as_str(), w.links[0].from.as_str()),
+            ("plan", "plan")
+        );
+        assert_eq!(state.picked, Pick::Step("plan".into()));
     }
 
     #[test]

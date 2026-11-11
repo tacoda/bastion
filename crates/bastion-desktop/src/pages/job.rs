@@ -300,14 +300,9 @@ fn what_approve_does(d: &JobDetail) -> &'static str {
     }
 }
 
-/// A step's name: a workflow's own step's node id, else its stage.
+/// A step's name, which the workflow gives it.
 fn step_name(step: &StepView) -> String {
-    match step.stage.as_str() {
-        "prompt" | "agent" | "skill" | "command" | "shell" => {
-            format!("{} · {}", step.stage, step.id)
-        }
-        _ => step.stage.replace('_', " "),
-    }
+    step.id.replace('_', " ")
 }
 
 /// A report, an artifact or an error: monospace on the page color, scrolled
@@ -938,6 +933,6 @@ mod tests {
             stage: "skill".into(),
             state: "done".into(),
         };
-        assert_eq!(step_name(&custom), "skill · research");
+        assert_eq!(step_name(&custom), "research", "a step goes by its name");
     }
 }

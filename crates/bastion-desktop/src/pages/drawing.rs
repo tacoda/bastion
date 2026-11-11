@@ -20,16 +20,9 @@ fn words(word: &str) -> String {
     word.replace('_', " ")
 }
 
-/// A step's first line: an agent's, skill's or command's name, or a shell
-/// script's first line, else its stage.
+/// A step's first line: its name, which the workflow gives it.
 pub fn title(n: &NodeView) -> String {
-    let first = n.run.lines().next().unwrap_or_default().trim();
-    match n.stage.as_str() {
-        "agent" | "skill" | "command" | "shell" if !first.is_empty() => {
-            format!("{} · {first}", n.stage)
-        }
-        _ => words(&n.stage),
-    }
+    words(&n.id)
 }
 
 /// A step's second line: its dial and the results it gives.
@@ -301,8 +294,9 @@ mod tests {
 
     #[test]
     fn a_step_names_its_run_and_its_results() {
-        assert_eq!(title(&node("code_review", "", &[])), "code review");
-        assert_eq!(title(&node("skill", "research", &[])), "skill · research");
+        let mut review = node("skill", "research", &[]);
+        review.id = "code_review".into();
+        assert_eq!(title(&review), "code review", "a step goes by its name");
         assert_eq!(
             subtitle(&node("plan", "", &["design-notes"])),
             "→ design-notes"

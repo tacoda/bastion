@@ -166,10 +166,12 @@ fn fresh_id(w: &WorkflowView, base: &str) -> String {
     id
 }
 
-/// Add a lights-on step of `stage` right of the others.
+/// Add a lights-on step of `stage` right of the others, named `step`, or
+/// for a Bastion stage, the stage.
 pub fn add_step(w: &mut WorkflowView, stage: &str) {
     let x = w.nodes.iter().map(|n| n.x + 220).max().unwrap_or(0);
-    let id = fresh_id(w, stage);
+    let custom = ["prompt", "agent", "skill", "command", "shell"].contains(&stage);
+    let id = fresh_id(w, if custom { "step" } else { stage });
     w.nodes.push(NodeView {
         id,
         stage: stage.into(),
@@ -177,6 +179,27 @@ pub fn add_step(w: &mut WorkflowView, stage: &str) {
         x,
         ..NodeView::default()
     });
+}
+
+/// Give step `id` the name `to`, and its links with it. Refused when the
+/// name is empty or another step has it.
+pub fn rename_step(w: &mut WorkflowView, id: &str, to: &str) -> Result<(), String> {
+    let to = to.trim();
+    let taken = w.nodes.iter().any(|n| n.id == to && n.id != id);
+    if to.is_empty() || taken {
+        return Err(format!("{to:?} is empty or another step's name"));
+    }
+    for n in w.nodes.iter_mut().filter(|n| n.id == id) {
+        n.id = to.into();
+    }
+    for l in &mut w.links {
+        for end in [&mut l.from, &mut l.to] {
+            if end == id {
+                *end = to.into();
+            }
+        }
+    }
+    Ok(())
 }
 
 pub fn add_link(w: &mut WorkflowView, from: &str, to: &str) {
@@ -225,8 +248,8 @@ mod tests {
             ids,
             [
                 ("plan".to_string(), 0),
-                ("skill".into(), 220),
-                ("skill2".into(), 440)
+                ("step".into(), 220),
+                ("step2".into(), 440)
             ]
         );
     }
@@ -276,11 +299,11 @@ mod tests {
             w.links,
             [LinkView {
                 from: "plan".into(),
-                to: "skill".into()
+                to: "step".into()
             }]
         );
         let mid = Point::new(PAD + W + 26.0, PAD + H / 2.0);
-        assert_eq!(hit(&w, mid, true), Hit::Link("plan".into(), "skill".into()));
+        assert_eq!(hit(&w, mid, true), Hit::Link("plan".into(), "step".into()));
         assert_eq!(
             hit(&w, Point::new(PAD + W, PAD + H / 2.0), false),
             Hit::Step("plan".into())

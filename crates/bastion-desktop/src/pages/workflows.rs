@@ -17,11 +17,10 @@ use crate::app::Message;
 use crate::theme;
 
 /// The ways a workflow's own step runs, each with its one text.
-const CUSTOM: [(&str, &str); 5] = [
+const CUSTOM: [(&str, &str); 4] = [
     ("prompt", "Prompt"),
     ("agent", "Agent, in .claude/agents"),
     ("skill", "Skill, in .claude/skills"),
-    ("command", "Command, in .claude/commands"),
     ("shell", "Shell script"),
 ];
 const DIALS: [(&str, &str); 2] = [
@@ -505,7 +504,6 @@ fn name_label(stage: &str) -> Option<&'static str> {
     match stage {
         "agent" => Some("Agent: a file in .claude/agents, without .md"),
         "skill" => Some("Skill: a folder in .claude/skills"),
-        "command" => Some("Command: a file in .claude/commands, without .md"),
         _ => None,
     }
 }

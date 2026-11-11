@@ -33,7 +33,7 @@ A server is a factory, and everything that shapes it lives with it.
 - **Workspaces:** the repositories it works in, each with its checks, its
   setup, its VM image, and what happens to a job's branch at the end.
 - **Workflows:** series of steps. A step is a prompt, one of the
-  repository's agents, skills or commands, or a shell script. Each step has
+  repository's agents or skills, or a shell script. Each step has
   one text to edit, a dial (a sun when a person decides, a moon when it runs
   on its own), and the results it passes on.
 - **Capabilities and constraints:** what an agent may call, and the rules

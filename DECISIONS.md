@@ -68,6 +68,7 @@ retired with the old plan.
 | D42 | Governance is per step. A step may change files or only reads, and the gate refuses a write from a step that only reads. Dials, notices, artifacts and evals name steps. |
 | D43 | A step may name its own model and budget. The model wins over the job's and the server's. The budget is how often its failure may send work back (two by default) and the most its turns may cost; past the cost, the factory starts no more turns there by itself, but a person's retry, note or answer still runs. |
 | D44 | A step is known as `workflow/step`. A grant may be for one workflow step, and it wins over the grant for its kind; a constraint may apply at some steps only, and with none named it applies at every step. The gate reads the step from the turn. |
+| D45 | A step is a prompt, an agent, a skill or a shell script. A repository's command is not a kind of its own: a prompt that reads its file does what it did, and that is what migration 7 makes of each command step. This narrows D39. |
 
 ## Open questions
 

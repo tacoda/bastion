@@ -130,15 +130,12 @@ pub fn skill_name_ok(name: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
-/// What a node lacks to run: an agent, skill or command its name, a shell
-/// step its script, a prompt its instructions.
+/// What a node lacks to run: an agent or a skill its name, a shell step its
+/// script, a prompt its instructions.
 fn missing_run(n: &Node) -> Option<&'static str> {
     match n.stage {
         Stage::Agent if !skill_name_ok(&n.run) => Some("an agent needs its name in .claude/agents"),
         Stage::Skill if !skill_name_ok(&n.run) => Some("a skill needs its folder's name"),
-        Stage::Command if !skill_name_ok(&n.run) => {
-            Some("a command needs its name in .claude/commands")
-        }
         Stage::Shell if n.run.trim().is_empty() => Some("a shell step needs its script"),
         Stage::Prompt if n.note.trim().is_empty() => Some("a prompt needs its instructions"),
         _ => None,
@@ -389,7 +386,7 @@ mod tests {
     }
 
     #[test]
-    fn skills_prompts_and_commands_may_repeat_and_each_needs_what_it_runs() {
+    fn skills_prompts_and_agents_may_repeat_and_each_needs_what_it_runs() {
         let mut lint = node("lint", Shell, 0, &["lint-report"]);
         lint.run = "make lint".into();
         let mut review = node("review", Skill, 100, &[]);
@@ -413,18 +410,15 @@ mod tests {
         let mut bad = g;
         let mut agent = node("security", Agent, 250, &[]);
         agent.run = "reviewer".into();
-        let mut command = node("ship-notes", Command, 260, &[]);
-        command.run = "release-notes".into();
         bad.nodes.extend([agent.clone(), agent]);
         assert!(
             bad.check().unwrap_err().contains("taken"),
             "ids stay unique"
         );
         bad.nodes.pop();
-        bad.nodes.push(command);
         assert_eq!(bad.check(), Ok(()));
-        bad.nodes[5].run = "../x".into();
-        assert!(bad.check().unwrap_err().contains(".claude/commands"));
+        bad.nodes[4].run = "../x".into();
+        assert!(bad.check().unwrap_err().contains(".claude/agents"));
     }
 
     #[test]

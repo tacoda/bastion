@@ -153,6 +153,19 @@ writes at a step, deny `sandbox::exec` there too. A refusal now names the
 step. The grant showed under "For one workflow step" and its Remove took
 it back.
 
+### U9. No command steps (D45)
+
+- A step is a prompt, an agent, a skill or a shell script.
+- Migration 7 turns each command step into a prompt that reads its
+  command's file, and the grants for commands go.
+
+Done 2026-11-11. Each rebuild reads the old stage `command` as its own
+time meant it: a shell step before migration 4, a repository's command
+after. Live: a workflow saved with a command step before the restart came
+back after migration 7 as a prompt that reads
+`.claude/commands/release-notes.md`, its own words after; no command row
+was left.
+
 ## After this plan
 
 - Workflows that branch: a step can name a step to go to on failure, so a

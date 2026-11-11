@@ -13,7 +13,7 @@ const ASK: &str = "\
 If you cannot go on without the owner, reply with one line that starts with
 INTERRUPT: and then your question, and nothing else.";
 
-/// What an agent step is told first: an agent's, skill's or command's file
+/// What an agent step is told first: an agent's or a skill's file
 /// to follow, or the workflow's instructions for a prompt.
 fn intro(job: &Job) -> String {
     let lead = "You are carrying out one step of a workflow in the repository in /work/repo.";
@@ -25,9 +25,6 @@ fn intro(job: &Job) -> String {
         ),
         Stage::Skill => format!(
             "Read /work/repo/.claude/skills/{run}/SKILL.md and follow it for the request below."
-        ),
-        Stage::Command => format!(
-            "Read /work/repo/.claude/commands/{run}.md and carry it out for the request below."
         ),
         _ => "Do what the workflow says about this step, for the request below.".into(),
     };

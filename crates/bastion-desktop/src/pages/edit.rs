@@ -170,7 +170,7 @@ fn fresh_id(w: &WorkflowView, base: &str) -> String {
 /// for a Bastion stage, the stage.
 pub fn add_step(w: &mut WorkflowView, stage: &str) {
     let x = w.nodes.iter().map(|n| n.x + 220).max().unwrap_or(0);
-    let custom = ["prompt", "agent", "skill", "command", "shell"].contains(&stage);
+    let custom = ["prompt", "agent", "skill", "shell"].contains(&stage);
     let id = fresh_id(w, if custom { "step" } else { stage });
     w.nodes.push(NodeView {
         id,

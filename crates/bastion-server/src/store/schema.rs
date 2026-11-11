@@ -273,19 +273,22 @@ pub(super) fn migrations() -> Vec<Vec<String>> {
             (*table, columns, create.clone())
         })
         .collect();
+    // Before migration 4 the stage `command` was a shell step; from it until
+    // D45 it was one of the repository's commands, which is now a prompt.
+    let (old, new) = (|t| rebuild(t, "shell"), |t| rebuild(t, "prompt"));
     vec![
-        staged.iter().flat_map(rebuild).collect(),
+        staged.iter().flat_map(old).collect(),
         staged
             .iter()
             .filter(|t| t.0 == "turns")
-            .flat_map(rebuild)
+            .flat_map(old)
             .collect(),
-        current.iter().flat_map(rebuild).collect(),
+        current.iter().flat_map(old).collect(),
         // A shell step was the stage `command`; `command` now names one of
         // the repository's commands, and agents joined the stages.
         current
             .iter()
-            .flat_map(rebuild)
+            .flat_map(old)
             .chain(
                 staged
                     .iter()
@@ -301,17 +304,29 @@ pub(super) fn migrations() -> Vec<Vec<String>> {
         // factory ran goes with its links, as the finish lands the job.
         current
             .iter()
-            .flat_map(rebuild)
+            .flat_map(new)
             .chain(nodes_as_steps())
             .collect(),
         // A grant may be for one workflow step (D44), so its key gains the step.
         current
             .iter()
             .filter(|t| t.0 == "capabilities")
-            .flat_map(rebuild)
+            .flat_map(new)
+            .collect(),
+        // A repository's command is a prompt that reads its file (D45).
+        current
+            .iter()
+            .flat_map(new)
+            .chain([COMMANDS_AS_PROMPTS.to_string()])
             .collect(),
     ]
 }
+
+/// A command step as the prompt that does what it did: read the command's
+/// file and carry it out, then the step's own words.
+const COMMANDS_AS_PROMPTS: &str = "UPDATE workflow_nodes SET stage = 'prompt', \
+    note = 'Read /work/repo/.claude/commands/' || run || '.md and carry it out for the request. ' || note, \
+    run = '' WHERE stage = 'command'";
 
 /// The kept workflows' steps of before D39 as steps.
 fn nodes_as_steps() -> Vec<String> {
@@ -338,10 +353,13 @@ fn nodes_as_steps() -> Vec<String> {
 /// under the same name, so with deferred foreign keys the rows that reference
 /// it still resolve at commit. Renaming a new table into place does not:
 /// both were tried on a copy of `data/bastion.db` with foreign keys on.
-pub(super) fn rebuild((table, columns, create): &(&str, &str, String)) -> Vec<String> {
+pub(super) fn rebuild(
+    (table, columns, create): &(&str, &str, String),
+    command: &str,
+) -> Vec<String> {
     let copy = format!("{table}_copy");
     std::iter::once(format!("CREATE TEMP TABLE {copy} AS SELECT * FROM {table}"))
-        .chain(as_steps(table, &copy))
+        .chain(as_steps(table, &copy, command))
         .chain([
             format!("DROP TABLE {table}"),
             create.clone(),
@@ -362,14 +380,21 @@ const FACTORY_STAGES: &str = "'land','prepare','baseline','checks','verify','acc
 /// A copy's rows with the stages of before D39 as the step kinds that
 /// stand for them: an agent's stage as a prompt, the factory's as a shell
 /// step. A grant at an old stage has no kind to move to, so it goes.
-fn as_steps(table: &str, copy: &str) -> Vec<String> {
+fn as_steps(table: &str, copy: &str, command: &str) -> Vec<String> {
     if table == "capabilities" {
         let old = format!("{AGENT_STAGES},{FACTORY_STAGES}");
-        return vec![format!("DELETE FROM {copy} WHERE stage IN ({old})")];
+        let mut gone = vec![format!("DELETE FROM {copy} WHERE stage IN ({old})")];
+        // A command's grant goes with it, as a prompt has its own.
+        gone.push(match command {
+            "shell" => format!("UPDATE {copy} SET stage = 'shell' WHERE stage = 'command'"),
+            _ => format!("DELETE FROM {copy} WHERE stage = 'command'"),
+        });
+        return gone;
     }
     let mut mapped = vec![format!(
         "UPDATE {copy} SET stage = CASE WHEN stage IN ({AGENT_STAGES}) THEN 'prompt' \
-         WHEN stage IN ({FACTORY_STAGES}) THEN 'shell' ELSE stage END"
+         WHEN stage IN ({FACTORY_STAGES}) THEN 'shell' WHEN stage = 'command' THEN '{command}' \
+         ELSE stage END"
     )];
     if table == "jobs" {
         mapped.push(format!("UPDATE {copy} SET back_to = NULL"));

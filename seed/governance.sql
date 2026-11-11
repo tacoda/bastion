@@ -20,8 +20,7 @@ INSERT OR IGNORE INTO constraints (id, rule, function, contains, rung, source) V
 INSERT OR IGNORE INTO capabilities (stage, function, rung) VALUES
   ('prompt', 'sandbox::*', 'allowed'),
   ('agent', 'sandbox::*', 'allowed'),
-  ('skill', 'sandbox::*', 'allowed'),
-  ('command', 'sandbox::*', 'allowed');
+  ('skill', 'sandbox::*', 'allowed');
 
 -- Workflows (D35): starting points for engineers, managers, and platform
 -- and SRE teams. Each lands a reviewed change, a document under docs/ or code, and

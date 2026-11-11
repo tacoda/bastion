@@ -46,9 +46,6 @@ pub enum Stage {
     Agent,
     /// An agent follows a skill in the repository.
     Skill,
-    /// An agent carries out one of the repository's commands, in
-    /// `.claude/commands`.
-    Command,
     /// A shell script runs in the VM: a one-line CLI command, a script or a
     /// task runner.
     Shell,
@@ -64,13 +61,7 @@ pub enum Kind {
 
 impl Stage {
     /// Every kind, for the store's checks.
-    pub const ALL: [Stage; 5] = [
-        Stage::Prompt,
-        Stage::Agent,
-        Stage::Skill,
-        Stage::Command,
-        Stage::Shell,
-    ];
+    pub const ALL: [Stage; 4] = [Stage::Prompt, Stage::Agent, Stage::Skill, Stage::Shell];
 
     pub fn kind(self) -> Kind {
         match self {

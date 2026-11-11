@@ -2,8 +2,8 @@
 
 Bastion is a software factory you can govern. A request goes in, agents work
 it through a workflow, and a reviewed change comes out. A workflow is a graph
-of steps that you see on a canvas. Each step is a prompt, an agent, a skill, a
-command or a shell script, each with one text you edit, and each waits for
+of steps that you see on a canvas. Each step is a prompt, an agent, a skill
+or a shell script, each with one text you edit, and each waits for
 your approval or runs on its own, as you set it. Bastion ships the common
 workflows with their text filled in, and every word of them is yours to
 change. Bastion is a server and its clients: `bastion-server` runs the factory on

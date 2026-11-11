@@ -139,7 +139,7 @@ fn transactions_at(version: u64) -> Vec<Vec<String>> {
 #[test]
 fn migration_1_rebuilds_the_staged_tables_once_with_deferred_keys() {
     let fresh = transactions_at(0);
-    assert_eq!(fresh.len(), 7, "the schema, then migrations 1 to 6");
+    assert_eq!(fresh.len(), 8, "the schema, then migrations 1 to 7");
     let m1 = &fresh[1];
     assert_eq!(m1.first().unwrap(), "PRAGMA defer_foreign_keys = ON");
     assert_eq!(m1.last().unwrap(), "PRAGMA user_version = 1");
@@ -184,8 +184,25 @@ fn migration_1_rebuilds_the_staged_tables_once_with_deferred_keys() {
             .any(|s| s.contains("PRIMARY KEY (stage, step, function)")),
         "a grant's key gains its step: {m6:#?}"
     );
-    assert_eq!(transactions_at(4).len(), 3, "migrations 5 and 6 are left");
-    assert_eq!(transactions_at(6).len(), 1, "nothing left to migrate");
+    // `command` meant a shell step before migration 4 and a repository's
+    // command after it, so each rebuild reads it as its own time meant it.
+    let as_shell = |m: &Vec<String>| {
+        m.iter()
+            .any(|s| s.contains("WHEN stage = 'command' THEN 'shell'"))
+    };
+    let as_prompt = |m: &Vec<String>| {
+        m.iter()
+            .any(|s| s.contains("WHEN stage = 'command' THEN 'prompt'"))
+    };
+    assert!(as_shell(m4) && as_prompt(m5));
+    let m7 = &fresh[7];
+    assert!(
+        as_prompt(m7) && !m7.iter().any(|s| s.contains("'command',")),
+        "the check names no command"
+    );
+    assert!(m7.iter().any(|s| s.contains(".claude/commands/' || run")));
+    assert_eq!(transactions_at(4).len(), 4, "migrations 5 to 7 are left");
+    assert_eq!(transactions_at(7).len(), 1, "nothing left to migrate");
 }
 
 #[test]

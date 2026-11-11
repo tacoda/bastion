@@ -6,8 +6,8 @@
 set -euo pipefail
 
 version="${1:?usage: scripts/brew.sh <version> <SHA256SUMS> <tap>}"
-sums="${2:?the release's SHA256SUMS}"
-tap="${3:?the tap's checkout}"
+sums="${2:?the SHA256SUMS of the release}"
+tap="${3:?a checkout of the tap}"
 v="${version#v}"
 url="https://github.com/tacoda/bastion/releases/download/v$v"
 

@@ -1,6 +1,6 @@
 [package]
 name = "bastion-protocol"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 publish = false
 description = "The types and routes of the Bastion API, shared by the server and its clients."

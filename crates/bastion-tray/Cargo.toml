@@ -1,6 +1,6 @@
 [package]
 name = "bastion-tray"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 publish = false
 description = "Bastion's tray icon (F9): what the local Bastion server is doing, and approve, pause intake or open the window, while the window is closed. It reaches the server only through bastion-client."

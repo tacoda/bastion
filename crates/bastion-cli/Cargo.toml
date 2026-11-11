@@ -1,6 +1,6 @@
 [package]
 name = "bastion-cli"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 publish = false
 description = "Bastion's command line (PLAN.md I4): list jobs, submit a request, approve, send back, stop and follow, on any Bastion server, through the client library."

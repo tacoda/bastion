@@ -348,7 +348,7 @@ checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
 name = "bastion-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bastion-client",
  "bastion-protocol",
@@ -361,7 +361,7 @@ dependencies = [
 
 [[package]]
 name = "bastion-client"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bastion-protocol",
  "futures",
@@ -375,7 +375,7 @@ dependencies = [
 
 [[package]]
 name = "bastion-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "sha2",
@@ -383,7 +383,7 @@ dependencies = [
 
 [[package]]
 name = "bastion-desktop"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bastion-client",
  "bastion-protocol",
@@ -399,7 +399,7 @@ dependencies = [
 
 [[package]]
 name = "bastion-openai-compat"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "iii-sdk",
  "reqwest",
@@ -409,14 +409,14 @@ dependencies = [
 
 [[package]]
 name = "bastion-protocol"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "bastion-server"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "bastion-core",
@@ -436,7 +436,7 @@ dependencies = [
 
 [[package]]
 name = "bastion-tray"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bastion-client",
  "bastion-protocol",

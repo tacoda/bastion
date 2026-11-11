@@ -1,6 +1,6 @@
 [package]
 name = "bastion-client"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 publish = false
 description = "A client of Bastion servers (PLAN.md D38): the server list, the local server's start, the API calls and the event stream, for any interface."

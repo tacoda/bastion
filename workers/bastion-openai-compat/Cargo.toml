@@ -1,6 +1,6 @@
 [package]
 name = "bastion-openai-compat"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 publish = false
 description = "One llm-router provider per OpenAI-compatible host the admin lists."

@@ -1,6 +1,6 @@
 [package]
 name = "bastion-desktop"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 publish = false
 description = "Bastion's native client on iced (PLAN.md D37): the window, its pages, and the Bastion servers it talks to."

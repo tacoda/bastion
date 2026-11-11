@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bkg1iuzzd</task-id>
+<tool-use-id>toolu_01TeDzoHzhU5xqigFeX6ezDe</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/bkg1iuzzd.output</output-file>
+<status>completed</status>
+<summary>Background command "Run the packaging script for this machine" completed (exit code 0)</summary>
+</task-notification>

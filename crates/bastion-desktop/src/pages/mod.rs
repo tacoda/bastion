@@ -103,6 +103,38 @@ impl Ctx {
 /// Each server's answer by its name, and why each server that failed did.
 pub type Each<A> = (Vec<(String, A)>, Vec<String>);
 
+/// A page's head: its title, one line on what it shows, and its actions
+/// on the right.
+pub fn head<'a, M: 'a>(
+    title: impl Into<String>,
+    about: impl Into<String>,
+    actions: Vec<Element<'a, M>>,
+) -> Element<'a, M> {
+    let words = column![
+        text(title.into()).size(24).font(theme::BOLD),
+        text(about.into()).size(13).color(theme::MUTED)
+    ]
+    .spacing(4)
+    .width(iced::Fill);
+    iced::widget::row![words, iced::widget::row(actions).spacing(8)]
+        .align_y(iced::Center)
+        .into()
+}
+
+/// A problem in red, or nothing when there is none, so an empty one leaves
+/// no gap.
+pub fn problem<'a, M: 'a>(words: &str) -> Option<Element<'a, M>> {
+    (!words.trim().is_empty()).then(|| text(words.to_string()).color(theme::BAD).into())
+}
+
+/// What a page about one server calls it, such as "local".
+pub fn on(ctx: &Ctx) -> String {
+    match ctx.all {
+        true => "every Bastion server".into(),
+        false => ctx.current.clone(),
+    }
+}
+
 /// The states of a job or step still on its way; their marks turn.
 pub const IN_PROGRESS: [&str; 3] = ["queued", "provisioning", "running"];
 /// How often a turning mark is drawn again.
@@ -334,16 +366,16 @@ impl Page {
             Page::Jobs(s) => jobs::view(s, ctx),
             Page::NewRequest(s) => new_request::view(s, ctx),
             Page::Job(s) => job::view(s, ctx),
-            Page::Govern(s) => govern::view(s),
+            Page::Govern(s) => govern::view(s, ctx),
             Page::Audit(s) => audit::view(s, ctx),
-            Page::Engine(s) => engine::view(s),
+            Page::Engine(s) => engine::view(s, ctx),
             Page::Evals(s) => evals::view_list(s),
             Page::Costs(s) => costs::view(s, ctx),
             Page::Verification(s) => verification::view(s, ctx),
             Page::Session(s) => session::view(s, ctx),
             Page::Eval(s) => evals::view_one(s, ctx),
             Page::Settings(s) => settings::view(s, ctx),
-            Page::Workflows(s) => workflows::view(s),
+            Page::Workflows(s) => workflows::view(s, ctx),
             Page::Pending => {
                 let title = text(route.title()).size(24).font(theme::BOLD);
                 let note = text("Reaching the Bastion server…").color(theme::MUTED);

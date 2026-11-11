@@ -58,7 +58,11 @@ impl Bars {
             .map(|((name, _), v)| format!("{name} {}", (self.unit)(*v)))
             .collect();
         let total = (self.unit)(self.values[i].iter().sum());
-        format!("{}: {total} · {}", self.columns[i], parts.join(" · "))
+        let mut line = format!("{}: {total}", self.columns[i]);
+        if !parts.is_empty() {
+            line = format!("{line} · {}", parts.join(" · "));
+        }
+        line
     }
 }
 
@@ -253,6 +257,15 @@ mod tests {
         assert_eq!(bars.column_at(250.0, 200.0), None);
         assert_eq!(bars.about(0), "2026-11-10: 2 · local 2");
         assert_eq!(bars.about(1), "2026-11-11: 4 · local 1 · two 3");
+        let empty = Bars {
+            values: vec![vec![0.0, 0.0], vec![0.0, 0.0]],
+            ..bars
+        };
+        assert_eq!(
+            empty.about(0),
+            "2026-11-10: 0",
+            "an empty day names no parts"
+        );
         assert_eq!(short("2026-11-10"), "11-10");
     }
 }

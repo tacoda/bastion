@@ -471,13 +471,20 @@ fn queues(state: &State) -> Element<'_, Message> {
     )
 }
 
-pub fn view(state: &State) -> Element<'_, Message> {
+pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let link = state
         .link
         .as_ref()
         .map_or_else(|| "…".to_string(), describe_link);
     let body = column![
-        text("Engine").size(24).font(theme::BOLD),
+        super::head(
+            "Engine",
+            format!(
+                "The iii engine {} runs on: its link, its stack, Doctor and its workers.",
+                ctx.current
+            ),
+            vec![]
+        ),
         panel(column![heading("Link"), text(link)]),
         stack_panel(state),
         doctor(state),

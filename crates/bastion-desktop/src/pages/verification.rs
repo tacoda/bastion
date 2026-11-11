@@ -72,11 +72,38 @@ fn rates(landed: &[LandedView]) -> BTreeMap<&str, (u32, u32)> {
 }
 
 fn rates_view(landed: &[LandedView]) -> Element<'static, Message> {
-    let rows = rates(landed).into_iter().map(|(ws, (n, escaped))| {
-        let line = format!("{ws}: {n} landed, {escaped} with an escape");
-        text(line).size(13).into()
+    let all = rates(landed);
+    let (n, escaped) = all
+        .iter()
+        .fold((0, 0), |(n, e), (_, (dn, de))| (n + dn, e + de));
+    let rate = match n {
+        0 => "none landed".to_string(),
+        n => format!("{:.0}%", escaped as f64 * 100.0 / n as f64),
+    };
+    let tiles = row![
+        super::chart::tile(n.to_string(), "jobs landed", theme::OK),
+        super::chart::tile(escaped.to_string(), "with an escape", theme::BAD),
+        super::chart::tile(rate, "escape rate", theme::WARN),
+    ]
+    .spacing(12);
+    let rows = all.into_iter().map(|(ws, (n, escaped))| {
+        row![
+            text(ws.to_string()).size(13).width(Fill),
+            text(format!("{n} landed"))
+                .size(13)
+                .font(theme::MONO)
+                .width(110),
+            text(format!("{escaped} with an escape"))
+                .size(13)
+                .font(theme::MONO)
+                .width(150),
+        ]
+        .into()
     });
-    Column::with_children(rows).padding([4, 12]).into()
+    column![tiles, Column::with_children(rows).spacing(4)]
+        .spacing(12)
+        .padding([4, 12])
+        .into()
 }
 
 fn report_form(state: &State) -> Element<'_, Message> {
@@ -129,13 +156,16 @@ fn landed_view(l: &LandedView, ctx: &Ctx) -> Element<'static, Message> {
 }
 
 pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
-    let lede = "Each landed job with the decisions that let it through and the commits it landed. Report a defect found later by its commit; it is traced to the job that landed it.";
+    let lede = format!(
+        "Each job {} landed, with the decisions that let it through and its commits. Report a defect by its commit to trace it to its job.",
+        ctx.current
+    );
     let landed = state.landed.iter().map(|l| landed_view(l, ctx));
     scrolled(
         column![
-            text("Verification").size(24).font(theme::BOLD),
-            text(lede).size(13).color(theme::MUTED),
-            text(&state.error).color(theme::BAD),
+            column![super::head("Verification", lede, vec![])]
+                .extend(super::problem(&state.error))
+                .spacing(8),
             section("Escape rate".into(), rates_view(&state.landed), false),
             section("Report an escape".into(), report_form(state), false),
             section(

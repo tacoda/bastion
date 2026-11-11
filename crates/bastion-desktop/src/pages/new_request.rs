@@ -386,8 +386,12 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let back = button(text("← All jobs").size(13))
         .style(theme::link)
         .on_press(Message::Go(Route::Jobs));
-    let title = text("New request").size(24).font(theme::BOLD);
-    super::scrolled(column![back, title, form(state, ctx), issues(state)].spacing(12))
+    let head = super::head(
+        "New request",
+        "A change for one workspace, in your words.",
+        vec![],
+    );
+    super::scrolled(column![back, head, form(state, ctx), issues(state)].spacing(12))
 }
 
 #[cfg(test)]

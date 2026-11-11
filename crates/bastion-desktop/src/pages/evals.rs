@@ -320,7 +320,7 @@ fn summary_row<'a>(e: &EvalSummary) -> Element<'a, Message> {
 }
 
 pub fn view_list(list: &List) -> Element<'_, Message> {
-    let lede = "An eval runs the same requests from the same commit under two harness configurations, A and B, that differ in one rung. Runs approve their own plans and stop at review, so nothing lands.";
+    let lede = "An eval runs the same requests from the same commit under two harness configurations, A and B, that differ in one rung. Each run goes on without waiting and stops at its finish, so nothing lands.";
     let rows: Element<'_, Message> = if list.evals.is_empty() {
         container(text("No evals yet.").size(13).color(theme::MUTED))
             .padding([8, 12])
@@ -329,9 +329,9 @@ pub fn view_list(list: &List) -> Element<'_, Message> {
         Column::with_children(list.evals.iter().map(summary_row)).into()
     };
     let body = column![
-        text("Evals").size(24).font(theme::BOLD),
-        text(lede).size(13).color(theme::MUTED),
-        text(&list.error).color(theme::BAD),
+        column![super::head("Evals", lede, vec![])]
+            .extend(super::problem(&list.error))
+            .spacing(8),
         form_view(&list.form),
         section("Evals".into(), rows, false),
     ];

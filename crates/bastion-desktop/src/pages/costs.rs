@@ -186,19 +186,12 @@ fn session_row<'a>(server: &str, s: &SessionView, many: bool) -> Element<'a, Mes
 
 pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let many = ctx.all;
-    let lede = match many {
-        true => "What the turns on every Bastion server cost, as each turn's end metered it.",
-        false => "What the turns on this Bastion server cost, as each turn's end metered it.",
-    };
-    let failed = state
-        .failed
-        .iter()
-        .map(|f| text(f.clone()).color(theme::BAD).into());
-    let mut body = column![
-        text("Costs").size(24).font(theme::BOLD),
-        text(lede).size(13).color(theme::MUTED),
-    ]
-    .extend(failed);
+    let about = format!(
+        "What the turns on {} cost, as each turn's end metered it.",
+        super::on(ctx)
+    );
+    let failed = state.failed.iter().filter_map(|f| super::problem(f));
+    let mut body = column![super::head("Costs", about, vec![])].extend(failed);
     let Some(v) = &state.view else {
         return scrolled(body.spacing(12));
     };

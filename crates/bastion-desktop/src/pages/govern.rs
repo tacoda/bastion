@@ -406,9 +406,7 @@ fn add_form(state: &State) -> Element<'_, Message> {
 }
 
 fn constraints(state: &State) -> Element<'_, Message> {
-    let lede = "Each rule climbs told, then checked (recorded), then enforced (refused). The charter's rules come from each repository; the harness binds an agent's turn; the factory binds the pipeline.";
     column![
-        text(lede).size(13).color(theme::MUTED),
         charter_rules(state),
         layer(state, "harness"),
         layer(state, "factory"),
@@ -457,14 +455,14 @@ fn capabilities(state: &State) -> Element<'_, Message> {
     });
     column![
         section("Charter: what each repository allows".into(), Column::with_children(allows).into(), false),
-        section("Harness: what an agent's calls may do per stage: denied, then ask (held for you), then allowed".into(), Column::with_children(grants).into(), false),
+        section("Harness: what an agent's calls may do in each kind of step: denied, then ask (held for you), then allowed".into(), Column::with_children(grants).into(), false),
         section("Factory: what the factory may do, as Settings set it".into(), Column::with_children(factory).into(), false),
     ]
     .spacing(16)
     .into()
 }
 
-pub fn view(state: &State) -> Element<'_, Message> {
+pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let title = match state.which {
         Which::Constraints => "Constraints",
         Which::Capabilities => "Capabilities",
@@ -473,13 +471,21 @@ pub fn view(state: &State) -> Element<'_, Message> {
         Which::Constraints => constraints(state),
         Which::Capabilities => capabilities(state),
     };
+    let about = match state.which {
+        Which::Constraints => format!(
+            "The rules an agent's work must keep on {}. Each climbs told, then checked (recorded), then enforced (refused).",
+            ctx.current
+        ),
+        Which::Capabilities => format!(
+            "What an agent may call on {}, by the kind of step it runs in.",
+            ctx.current
+        ),
+    };
     scrolled(
-        column![
-            text(title).size(24).font(theme::BOLD),
-            text(&state.error).color(theme::BAD),
-            body
-        ]
-        .spacing(12),
+        column![super::head(title, about, vec![])]
+            .extend(super::problem(&state.error))
+            .push(body)
+            .spacing(12),
     )
 }
 

@@ -580,10 +580,13 @@ fn picked(state: &State) -> Option<Element<'_, Message>> {
     }
 }
 
-pub fn view(state: &State) -> Element<'_, Message> {
+pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let editable = state.editable();
-    let mut body =
-        column![text("Workflows").size(24).font(theme::BOLD), chooser(state)].spacing(12);
+    let about = format!(
+        "The series of steps a job on {} runs. Pick one to read or change it.",
+        ctx.current
+    );
+    let mut body = column![super::head("Workflows", about, vec![]), chooser(state)].spacing(12);
     if state.admin {
         body = body.push(manage_view(state));
     }

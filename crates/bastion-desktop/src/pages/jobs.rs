@@ -172,7 +172,7 @@ const TITLE_CHARS: usize = 120;
 
 /// A request as a row's title: its first line, cut at a word to
 /// [`TITLE_CHARS`], with an ellipsis when anything was cut.
-fn title(request: &str) -> String {
+pub(super) fn title(request: &str) -> String {
     let first = request.trim().lines().next().unwrap_or_default();
     let cut = first.char_indices().nth(TITLE_CHARS).map(|(i, _)| i);
     match cut {
@@ -368,18 +368,16 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         .padding([8, 12])
         .style(theme::primary)
         .on_press(Message::Go(Route::NewRequest));
-    let head = row![text("Jobs").size(24).font(theme::BOLD).width(Fill), new].align_y(iced::Center);
+    let about = format!(
+        "The jobs on {}, the ones waiting for you first.",
+        super::on(ctx)
+    );
     let down: Vec<String> = ctx.down.iter().cloned().collect();
-    let note = text(page_note(&down, &state.errors)).color(theme::BAD);
     let shown = state.shown(scope(ctx));
-    let body = column![
-        head,
-        note,
-        filters(state, ctx),
-        overview(&shown),
-        groups(state, ctx)
-    ]
-    .spacing(16);
+    let body = column![super::head("Jobs", about, vec![new.into()])]
+        .extend(super::problem(&page_note(&down, &state.errors)))
+        .extend([filters(state, ctx), overview(&shown), groups(state, ctx)])
+        .spacing(16);
     super::scrolled(body)
 }
 

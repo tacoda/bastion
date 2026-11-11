@@ -316,7 +316,12 @@ fn servers<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let s = &state.server;
     let form = row![
         field("Name", "", &s.name, Field::ServerName),
-        field("URL", "http://127.0.0.1:49191", &s.url, Field::ServerUrl),
+        field(
+            "URL",
+            "https://bastion.example.com",
+            &s.url,
+            Field::ServerUrl
+        ),
         field("Token", "", &s.token, Field::ServerToken),
         small("Add", Some(wrap(Msg::AddServer))),
     ];

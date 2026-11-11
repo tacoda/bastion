@@ -87,7 +87,11 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         workspaces,
         accounts,
     ];
-    let body = column![text("Settings").size(24).font(theme::BOLD)]
+    let about = format!(
+        "{}'s settings, and the Bastion servers this app knows.",
+        ctx.current
+    );
+    let body = column![crate::pages::head("Settings", about, vec![])]
         .extend(sections)
         .spacing(16);
     scrolled(body)

@@ -372,7 +372,12 @@ fn header<'a>(d: &JobDetail, server: &str) -> Element<'a, Message> {
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
     badges.extend(still_working(&d.job, now).map(|t| chip(t, theme::WARN)));
-    let head = column![text(d.job.request.clone()).size(24).font(theme::BOLD)].spacing(8);
+    // The title is the request's first line; a longer request reads in full under it.
+    let title = super::jobs::title(&d.job.request);
+    let mut head = column![text(title.clone()).size(20).font(theme::BOLD)].spacing(8);
+    if title != d.job.request.trim() {
+        head = head.push(text(d.job.request.clone()).size(14).color(theme::MUTED));
+    }
     head.push(row(badges).spacing(8).wrap()).into()
 }
 

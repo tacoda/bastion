@@ -79,6 +79,15 @@ only the entries the page read, the newest 200 per server, and says so.
 - Exit, live: every page is checked at the window's smallest size and at
   full screen.
 
+Done 2026-11-11, in a first pass. Every page has one head: its title, a
+line that says what it shows and on which server, and its actions. A
+problem line shows only when there is one, so an empty one leaves no gap.
+Verification gets tiles for jobs landed, escapes and the rate; a job's
+title is its request's first line, with the request in full under it. The
+ledes that still named stages, pipelines or review are rewritten. Live:
+every page checked at full size, and Jobs at 720 by 480, where the bar
+wraps to two rows and nothing is cut.
+
 ## After this plan
 
 - A step is named `workflow/step`, and constraints and capabilities apply

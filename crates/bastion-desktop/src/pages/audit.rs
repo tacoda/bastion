@@ -220,11 +220,11 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         .padding([4, 12])
         .style(theme::secondary)
         .on_press_maybe((!many).then_some(Message::Audit(Msg::Export)));
-    let head = row![
-        text("Audit Log").size(24).font(theme::BOLD).width(Fill),
-        export
-    ]
-    .align_y(iced::Center);
+    let about = format!(
+        "What happened on {}, as a chain in which each entry signs the one before it.",
+        super::on(ctx)
+    );
+    let head = super::head("Audit Log", about, vec![export.into()]);
     let entries = merged(&state.read);
     let counts: Vec<String> = tallies(entries.iter().map(|(_, e)| *e))
         .into_iter()

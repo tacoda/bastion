@@ -59,6 +59,7 @@ pub enum Msg {
     RemoveLink,
     CopyName(String),
     Copy,
+    New,
     Delete,
     Save,
     Done(Result<Done, String>),
@@ -94,8 +95,9 @@ where
 }
 
 impl State {
+    /// An admin changes any workflow; a built-in one changed is kept as theirs.
     fn editable(&self) -> bool {
-        self.admin && self.draft.as_ref().is_some_and(|w| !w.built_in)
+        self.admin && self.draft.is_some()
     }
 
     /// Show the chosen workflow, or the first, as the server has it. A draft
@@ -213,6 +215,14 @@ fn manage(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
             };
             return act(ctx, copy, Done::Copied);
         }
+        // A new workflow starts as plan, build and land, under the name typed.
+        Msg::New => {
+            let new = api::WorkflowCopy {
+                from: "short".into(),
+                name: state.copy_name.trim().into(),
+            };
+            return act(ctx, new, Done::Copied);
+        }
         Msg::Delete => {
             let id = state.chosen.clone();
             return act(ctx, api::WorkflowDelete { id }, |()| Done::Deleted);
@@ -275,7 +285,7 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
             (state.chosen, state.draft) = (c.id, None);
             state.show_latest();
         }
-        m @ (Msg::CopyName(_) | Msg::Copy | Msg::Delete | Msg::Save | Msg::Done(..)) => {
+        m @ (Msg::CopyName(_) | Msg::Copy | Msg::New | Msg::Delete | Msg::Save | Msg::Done(..)) => {
             return manage(state, m, ctx);
         }
         other => change(state, other),
@@ -316,19 +326,29 @@ fn chooser(state: &State) -> Element<'_, Message> {
     row![pick, facts].spacing(12).align_y(iced::Center).into()
 }
 
-/// Copy the shown workflow under a new name, and delete one not built in.
+/// What deleting the shown workflow does: a changed built-in resets to
+/// the original, one of the owner's goes, and an unchanged built-in stays.
+fn delete_label(w: &WorkflowView) -> Option<&'static str> {
+    match (w.ships, w.built_in) {
+        (true, true) => None,
+        (true, false) => Some("Reset to the original"),
+        (false, _) => Some("Delete"),
+    }
+}
+
+/// Start a new workflow, or copy the shown one, under the name typed; and
+/// delete or reset the shown one.
 fn manage_view(state: &State) -> Element<'_, Message> {
-    let name = text_input("Name of the copy", &state.copy_name)
+    let name = text_input("Name of a new workflow", &state.copy_name)
         .on_input(|n| wrap(Msg::CopyName(n)))
         .style(theme::field)
         .width(240);
-    let copy = small(
-        "Copy",
-        (!state.copy_name.trim().is_empty()).then_some(wrap(Msg::Copy)),
-    );
-    let built_in = state.draft.as_ref().is_none_or(|w| w.built_in);
-    let delete = (!built_in).then(|| small("Delete", Some(wrap(Msg::Delete))));
-    row![name, copy]
+    let named = !state.copy_name.trim().is_empty();
+    let new = small("New", named.then_some(wrap(Msg::New)));
+    let copy = small("Copy this", named.then_some(wrap(Msg::Copy)));
+    let label = state.draft.as_ref().and_then(delete_label);
+    let delete = label.map(|l| small(l, Some(wrap(Msg::Delete))));
+    row![name, new, copy]
         .extend(delete)
         .spacing(8)
         .align_y(iced::Center)
@@ -518,7 +538,7 @@ mod tests {
     }
 
     #[test]
-    fn only_an_admin_changes_a_workflow_that_is_not_built_in() {
+    fn an_admin_changes_any_workflow_and_resets_a_changed_built_in() {
         let mut state = State {
             draft: Some(workflow("mine", 1, false)),
             ..State::default()
@@ -526,8 +546,14 @@ mod tests {
         assert!(!state.editable());
         state.admin = true;
         assert!(state.editable());
-        state.draft = Some(workflow("short", 1, true));
-        assert!(!state.editable());
+        let mut short = workflow("short", 0, true);
+        short.ships = true;
+        state.draft = Some(short.clone());
+        assert!(state.editable(), "a built-in is changed as the admin's");
+        assert_eq!(delete_label(&short), None);
+        short.built_in = false;
+        assert_eq!(delete_label(&short), Some("Reset to the original"));
+        assert_eq!(delete_label(&workflow("mine", 1, false)), Some("Delete"));
     }
 
     #[test]

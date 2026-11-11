@@ -1,6 +1,7 @@
 //! Workflows (PLAN.md D35): graphs of steps, kept as versions. The
-//! built-in workflows are not kept here: they are the pipelines as chains,
-//! under the settings' dials, and cannot be changed or deleted, only copied.
+//! built-in workflows are the pipelines as chains, under the settings'
+//! dials. A person may change one: their version is kept under its id and
+//! takes its place, and deleting it brings the original back.
 //! `Store` extends this trait.
 
 use std::collections::BTreeMap;
@@ -21,9 +22,15 @@ pub struct Workflow {
 }
 
 impl Workflow {
+    /// A built-in workflow as Bastion ships it, not changed.
     pub fn built_in(&self) -> bool {
         self.version == 0
     }
+}
+
+/// Whether workflow `id` comes with Bastion, changed or not.
+pub fn ships(id: &str) -> bool {
+    pipeline_of(id).is_some()
 }
 
 pub trait WorkflowStore {
@@ -65,12 +72,17 @@ pub async fn all(store: &dyn Store, dials: &Dials) -> Result<Vec<Workflow>, Stri
         .collect();
     for (id, name, version) in store.workflows().await? {
         let graph = store.graph_at(&id, version).await?.unwrap_or_default();
-        all.push(Workflow {
+        let kept = Workflow {
             id,
             name,
             version,
             graph,
-        });
+        };
+        // A changed built-in takes the original's place.
+        match all.iter_mut().find(|w| w.id == kept.id) {
+            Some(original) => *original = kept,
+            None => all.push(kept),
+        }
     }
     Ok(all)
 }
@@ -83,11 +95,9 @@ pub async fn find(store: &dyn Store, dials: &Dials, id: &str) -> Result<Workflow
         .ok_or(format!("no workflow {id}"))
 }
 
-/// Keep `w` as a new version of a workflow that is not built in.
+/// Keep `w` as its workflow's next version; a built-in's is the first
+/// that takes its place.
 pub async fn save(store: &dyn Store, w: &Workflow, at: u64) -> Result<u64, String> {
-    if pipeline_of(&w.id).is_some() {
-        return Err(format!("{} is built in; copy it to change it", w.name));
-    }
     if w.name.trim().is_empty() {
         return Err("a workflow needs a name".into());
     }
@@ -103,10 +113,10 @@ pub async fn start_on(
     id: &str,
     job: bastion_core::Job,
 ) -> Result<(bastion_core::Job, Option<u64>), String> {
-    if let Some(pipeline) = pipeline_of(id) {
+    let w = find(store, dials, id).await?;
+    if let Some(pipeline) = pipeline_of(id).filter(|_| w.built_in()) {
         return Ok((job.on(pipeline), None));
     }
-    let w = find(store, dials, id).await?;
     Ok((job.running(w.graph.steps()?), Some(w.version)))
 }
 
@@ -373,16 +383,32 @@ mod tests {
     }
 
     #[test]
-    fn built_ins_follow_the_settings_dials_and_cannot_be_saved() {
+    fn a_built_in_follows_the_dials_until_changed_and_comes_back_when_deleted() {
         let store = FakeStore::default();
         let mut dials = Dials::default();
         dials.set(Stage::Build, Dial::Dark);
         crate::rt::block_on(async {
-            let short = find(&store, &dials, "short").await.unwrap();
+            let mut short = find(&store, &dials, "short").await.unwrap();
             assert_eq!(short.graph.nodes[1].dial, Dial::Dark);
-            assert!(short.built_in());
-            let refused = save(&store, &short, 1).await.unwrap_err();
-            assert!(refused.contains("built in"), "{refused}");
+            assert!(short.built_in() && ships("short"));
+            short.name = "Short, mine".into();
+            assert_eq!(save(&store, &short, 1).await, Ok(1));
+            let mine = find(&store, &dials, "short").await.unwrap();
+            assert_eq!(
+                (mine.name.as_str(), mine.built_in()),
+                ("Short, mine", false)
+            );
+            let listed = all(&store, &dials).await.unwrap();
+            assert_eq!(listed.iter().filter(|w| w.id == "short").count(), 1);
+            let job = bastion_core::Job::new("j1".into(), "w".into(), "r".into(), 1);
+            let (job, version) = start_on(&store, &dials, "short", job).await.unwrap();
+            assert_eq!(
+                (job.flow.len(), version),
+                (3, Some(1)),
+                "a changed built-in runs as kept"
+            );
+            store.delete_workflow("short").await.unwrap();
+            assert!(find(&store, &dials, "short").await.unwrap().built_in());
         });
     }
 

@@ -16,6 +16,7 @@ fn view_of(w: &Workflow) -> WorkflowView {
         id: w.id.clone(),
         name: w.name.clone(),
         built_in: w.built_in(),
+        ships: workflow_store::ships(&w.id),
         version: w.version,
         level: w.graph.level().map_or_else(|_| "dim".into(), name),
         nodes: w
@@ -121,10 +122,16 @@ pub async fn workflow_save(cell: &FactoryCell, id: String, v: WorkflowView) -> R
 }
 
 pub async fn workflow_delete(cell: &FactoryCell, id: String) -> Result<(), String> {
-    if workflow_store::pipeline_of(&id).is_some() {
-        return Err(format!("{id} is built in and cannot be deleted"));
+    let factory = factory(cell)?;
+    let kept = factory.store().workflows().await?;
+    // Deleting a changed built-in brings the original back; the original
+    // itself stays.
+    if workflow_store::ships(&id) && !kept.iter().any(|(k, ..)| *k == id) {
+        return Err(format!(
+            "{id} is as Bastion ships it; there is nothing to reset"
+        ));
     }
-    factory(cell)?.store().delete_workflow(&id).await
+    factory.store().delete_workflow(&id).await
 }
 
 #[cfg(test)]

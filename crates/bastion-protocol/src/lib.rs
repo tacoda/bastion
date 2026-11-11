@@ -56,7 +56,11 @@ pub struct TokenView {
 pub struct WorkflowView {
     pub id: String,
     pub name: String,
+    /// A built-in workflow as Bastion ships it, not changed.
     pub built_in: bool,
+    /// Comes with Bastion, changed or not: deleting a changed one resets it.
+    #[serde(default)]
+    pub ships: bool,
     pub version: u64,
     pub level: String,
     pub nodes: Vec<NodeView>,

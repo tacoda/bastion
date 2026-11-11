@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.12.2",
+  "checkpoint_id": "01M73ZQ4Y9DBVMYVW0M6K94XQM",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "crates/bastion-core/src/eval.rs",
+    "crates/bastion-desktop/src/pages/evals.rs",
+    "crates/bastion-protocol/src/lib.rs",
+    "crates/bastion-server/src/api/evals.rs",
+    "crates/bastion-server/src/eval_store.rs",
+    "crates/bastion-server/src/evals.rs",
+    "crates/bastion-server/src/factory.rs",
+    "crates/bastion-server/src/factory/gates.rs",
+    "crates/bastion-server/src/factory/tests.rs",
+    "crates/bastion-server/src/factory/verdict.rs",
+    "crates/bastion-server/src/store.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 48,
+    "cache_creation_tokens": 29601,
+    "cache_read_tokens": 4776562,
+    "output_tokens": 12989,
+    "api_call_count": 24
+  },
+  "redaction": {
+    "replacements": 776,
+    "layers": {
+      "betterleaks": 58,
+      "connection_string": 0,
+      "credential_key": 646,
+      "credential_value": 81,
+      "credentialed_uri": 0,
+      "entropy": 74,
+      "key_context": 0,
+      "provider_token": 7,
+      "shell_stdin": 0
+    }
+  }
+}

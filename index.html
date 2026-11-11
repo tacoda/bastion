@@ -8,7 +8,7 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-512.png">
 <meta name="voice-register" content="informational">
-<meta name="voice-first-person" content="exempt: product page, every claim comes from PLAN.md and its recorded exits, not from a story of mine">
+<meta name="voice-first-person" content="exempt: product page, every claim comes from Bastion's decisions and recorded runs, not from a story of mine">
 <style>
 :root {
   --bg:#0f1117; --panel:#171a23; --panel2:#12141c; --sel:#1f2430;
@@ -156,7 +156,6 @@ footer { padding: 48px 0; color: var(--dim); }
     <a href="#evals">evals</a>
     <a href="#workflows">workflows</a>
     <a href="#use-cases">use cases</a>
-    <a href="#watch">tray</a>
     <a href="#after">after the merge</a>
     <a href="#start">get started</a>
     <a href="https://github.com/tacoda/bastion">github</a>
@@ -291,14 +290,6 @@ footer { padding: 48px 0; color: var(--dim); }
   <p class="caption">The diff is an illustration. The refused call comes from a recorded run.</p>
 </section>
 
-<section id="watch">
-  <h2>Watch it with the window closed</h2>
-  <p class="title">Close the window. The server and the tray keep going.</p>
-  <p>The server outlives the window, and so does the tray icon beside it. The tray says how many jobs wait on you and how many run. It lists the waiting jobs so you can approve one, and it pauses or opens intake. A job that comes to wait, fails, or lands shows up as a system notification, and it can go to a chat webhook too.</p>
-  <div class="note"><b>j33b65192 waits for you at plan</b> · Add twice(x) to calc.py<br><span>the tray reads 2 waiting, the same count the server gives</span></div>
-  <p class="caption">From a recorded run. On macOS the count sits beside a white castle in the menu bar.</p>
-</section>
-
 <section id="after">
   <h2>After the merge</h2>
   <p class="title">A landed change still answers for itself.</p>
@@ -319,7 +310,7 @@ footer { padding: 48px 0; color: var(--dim); }
 
 <section id="start">
   <h2>Get started</h2>
-  <p>Install the server and the CLI, or add <code>--desktop</code> for the app and the tray too. The installer checks each download against the release's signed checksums.</p>
+  <p>Install the server and the CLI, or add <code>--desktop</code> for the app too. The installer checks each download against the release's signed checksums.</p>
 <pre>curl -fsSL https://tacoda.github.io/bastion/install.sh | sh
 curl -fsSL https://tacoda.github.io/bastion/install.sh | sh -s -- --desktop</pre>
   <p>Or use Homebrew. The cask adds the app, and the window's command, to what the formula installs.</p>

@@ -1,9 +1,9 @@
 #!/bin/sh
-# Install Bastion from its GitHub release (PLAN.md F10):
+# Install Bastion from its GitHub release:
 #   curl -fsSL https://tacoda.github.io/bastion/install.sh | sh
 #   curl -fsSL https://tacoda.github.io/bastion/install.sh | sh -s -- --desktop
 # Options:
-#   --desktop        the window and the tray too (macOS: Bastion.app in ~/Applications)
+#   --desktop        the window too (macOS: Bastion.app in ~/Applications)
 #   --service        Linux: run the server as a systemd user service, for a VM or VPS
 #   --version vX.Y.Z a release other than the newest
 #   --prefix DIR     where bin/ and lib/ go (default ~/.local)
@@ -91,13 +91,13 @@ elif [ "$desktop" = yes ]; then
   rm -rf "$prefix/lib/bastion-desktop-$v"
   tar -xzf "$work/bastion-desktop-$v-$target.tar.gz" -C "$prefix/lib"
   bin="$prefix/lib/bastion-desktop-$v/bin"
-  for b in bastion bastion-server bastion-desktop bastion-tray; do link "$bin/$b"; done
+  for b in bastion bastion-server bastion-desktop; do link "$bin/$b"; done
   apps="${XDG_DATA_HOME:-$HOME/.local/share}"
   mkdir -p "$apps/applications" "$apps/icons/hicolor/256x256/apps"
   sed "s|^Exec=.*|Exec=$bin/bastion-desktop|" \
     "$prefix/lib/bastion-desktop-$v/share/applications/bastion.desktop" > "$apps/applications/bastion.desktop"
   cp "$prefix/lib/bastion-desktop-$v/share/icons/hicolor/256x256/apps/bastion.png" "$apps/icons/hicolor/256x256/apps/"
-  say "installed the window and the tray"
+  say "installed the window"
 else
   verified "bastion-$v-$target.tar.gz"
   rm -rf "$prefix/lib/bastion-$v"

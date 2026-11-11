@@ -51,6 +51,15 @@ Each phase passes CI, is checked live, and is committed before the next.
   shell step and a network shell step that opens a pull request on
   `ianparo/bastion-demo`.
 
+Done 2026-11-11. On `demo-gh`, a workflow of a planning prompt, a
+building prompt, a test shell step and a network shell step ran to its
+end. Plan gave its `plan` result, build committed, the test step failed
+on the repository's own broken test and was shipped anyway, and the
+network step pushed with `GH_TOKEN` from the vault and opened PR #2 on
+`ianparo/bastion-demo`. The job then finished, and the workspace left its
+branch. The run found that an approved finish left the job waiting; that
+is fixed. The test workflow's own script misread GitHub's reply.
+
 ### S2. The seeded workflows are steps
 
 - Each seeded workflow becomes the five kinds, with its text filled in.

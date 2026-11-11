@@ -26,85 +26,87 @@ pub async fn run(machine: &dyn Machine, engine: &dyn Engine, checkout: &Path) ->
     DoctorReport { checks }
 }
 
-fn check(
-    name: &str,
+/// One check by name, ready to say how it went.
+struct Probe {
+    name: &'static str,
     required: bool,
-    state: CheckState,
-    detail: impl Into<String>,
-    fix: Option<String>,
-) -> Check {
-    Check {
-        name: name.into(),
-        required,
-        state,
-        detail: detail.into(),
-        fix,
-    }
 }
 
-fn failed(required: bool) -> CheckState {
-    if required {
-        CheckState::Fail
-    } else {
-        CheckState::Warn
+impl Probe {
+    fn required(name: &'static str) -> Self {
+        Probe {
+            name,
+            required: true,
+        }
+    }
+
+    /// A check whose failure only warns.
+    fn optional(name: &'static str) -> Self {
+        Probe {
+            name,
+            required: false,
+        }
+    }
+
+    fn report(&self, state: CheckState, detail: impl Into<String>, fix: Option<String>) -> Check {
+        Check {
+            name: self.name.into(),
+            required: self.required,
+            state,
+            detail: detail.into(),
+            fix,
+        }
+    }
+
+    fn pass(&self, detail: impl Into<String>) -> Check {
+        self.report(CheckState::Pass, detail, None)
+    }
+
+    /// A failure, or only a warning when the check is optional, with its fix.
+    fn fail(&self, detail: impl Into<String>, fix: impl Into<String>) -> Check {
+        let state = match self.required {
+            true => CheckState::Fail,
+            false => CheckState::Warn,
+        };
+        self.report(state, detail, Some(fix.into()))
+    }
+
+    fn skipped(&self, detail: impl Into<String>) -> Check {
+        self.report(CheckState::Skipped, detail, None)
     }
 }
 
 fn iii(machine: &dyn Machine) -> Check {
-    let fix = Some(format!(
-        "Install iii {III_VERSION} and put `iii` on the PATH Bastion starts with."
-    ));
+    let iii = Probe::required("iii");
+    let fix = format!("Install iii {III_VERSION} and put `iii` on the PATH Bastion starts with.");
     match machine.run("iii", &["--version"], None) {
-        Ok(out) if out.success && out.text.trim() == III_VERSION => check(
-            "iii",
-            true,
-            CheckState::Pass,
-            format!("iii {III_VERSION}"),
-            None,
-        ),
-        Ok(out) => check(
-            "iii",
-            true,
-            CheckState::Fail,
-            format!("found iii {}", out.text.trim()),
-            fix,
-        ),
-        Err(e) => check("iii", true, CheckState::Fail, e, fix),
+        Ok(out) if out.success && out.text.trim() == III_VERSION => {
+            iii.pass(format!("iii {III_VERSION}"))
+        }
+        Ok(out) => iii.fail(format!("found iii {}", out.text.trim()), fix),
+        Err(e) => iii.fail(e, fix),
     }
 }
 
 /// Every registry package in the compose file is pinned to one exact version.
 fn pins(machine: &dyn Machine, checkout: &Path) -> Check {
+    let pins = Probe::required("Pins");
     let path = checkout.join(COMPOSE_FILE);
     let text = match machine.read(&path) {
         Ok(text) => text,
         Err(e) => {
-            let fix = Some("Start the server with `--checkout` at a Bastion checkout.".into());
-            return check("Pins", true, CheckState::Fail, e, fix);
+            return pins.fail(
+                e,
+                "Start the server with `--checkout` at a Bastion checkout.",
+            );
         }
     };
     let loose = unpinned(&text);
     if loose.is_empty() {
-        check(
-            "Pins",
-            true,
-            CheckState::Pass,
-            format!("every package in {COMPOSE_FILE} is pinned"),
-            None,
-        )
-    } else {
-        let fix = Some(format!(
-            "Give each one `version: \"x.y.z\"` in {}.",
-            path.display()
-        ));
-        check(
-            "Pins",
-            true,
-            CheckState::Fail,
-            format!("not pinned: {}", loose.join(", ")),
-            fix,
-        )
+        return pins.pass(format!("every package in {COMPOSE_FILE} is pinned"));
     }
+    let fix = format!("Give each one `version: \"x.y.z\"` in {}.", path.display());
+    pins.fail(format!("not pinned: {}", loose.join(", ")), fix)
 }
 
 /// The packages with no exact `x.y.z` version after their `worker:` line.
@@ -115,14 +117,18 @@ fn unpinned(compose: &str) -> Vec<String> {
     for line in compose.lines().map(str::trim) {
         if let Some(name) = line.strip_prefix("worker: package://") {
             loose.extend(open.replace(name.into()));
-        } else if let Some(version) = line.strip_prefix("version:") {
-            let version = version.trim().trim_matches('"');
-            if let Some(name) = open.take()
-                && !exact(version)
-            {
-                loose.push(format!("{name} ({version})"));
-            }
+            continue;
         }
+        let Some(version) = line.strip_prefix("version:") else {
+            continue;
+        };
+        let version = version.trim().trim_matches('"');
+        let named = open.take();
+        loose.extend(
+            named
+                .filter(|_| !exact(version))
+                .map(|n| format!("{n} ({version})")),
+        );
     }
     loose.extend(open);
     loose
@@ -138,68 +144,39 @@ fn exact(version: &str) -> bool {
 
 /// Sandbox VMs need Apple Silicon, or Linux with `/dev/kvm`.
 fn sandbox(machine: &dyn Machine) -> Check {
+    let vms = Probe::required("Sandbox VMs");
     match machine.platform() {
-        ("macos", "aarch64") => check("Sandbox VMs", true, CheckState::Pass, "Apple Silicon", None),
-        ("linux", _) if machine.exists(Path::new("/dev/kvm")) => check(
-            "Sandbox VMs",
-            true,
-            CheckState::Pass,
-            "Linux with /dev/kvm",
-            None,
-        ),
-        ("linux", _) => check(
-            "Sandbox VMs",
-            true,
-            CheckState::Fail,
+        ("macos", "aarch64") => vms.pass("Apple Silicon"),
+        ("linux", _) if machine.exists(Path::new("/dev/kvm")) => vms.pass("Linux with /dev/kvm"),
+        ("linux", _) => vms.fail(
             "no /dev/kvm",
-            Some("Enable KVM and give your user access to /dev/kvm.".into()),
+            "Enable KVM and give your user access to /dev/kvm.",
         ),
-        (os, arch) => check(
-            "Sandbox VMs",
-            true,
-            CheckState::Fail,
+        (os, arch) => vms.fail(
             format!("{os} on {arch}"),
-            Some("Run Bastion on Apple Silicon, or on Linux with /dev/kvm.".into()),
+            "Run Bastion on Apple Silicon, or on Linux with /dev/kvm.",
         ),
     }
 }
 
 /// `gh` signs pushes and PRs on the host (D14). Landing locally works without it.
 fn github(machine: &dyn Machine) -> Check {
-    let fix = Some("Run `gh auth login`.".into());
+    let gh = Probe::optional("GitHub CLI");
     match machine.run("gh", &["auth", "status"], None) {
-        Ok(out) if out.success => check("GitHub CLI", false, CheckState::Pass, "signed in", None),
-        Ok(_) => check("GitHub CLI", false, failed(false), "not signed in", fix),
-        Err(e) => check(
-            "GitHub CLI",
-            false,
-            failed(false),
-            e,
-            Some("Install `gh`, then run `gh auth login`.".into()),
-        ),
+        Ok(out) if out.success => gh.pass("signed in"),
+        Ok(_) => gh.fail("not signed in", "Run `gh auth login`."),
+        Err(e) => gh.fail(e, "Install `gh`, then run `gh auth login`."),
     }
 }
 
 /// At least one model provider has a credential, as `llm-router` sees it.
 async fn providers(engine: &dyn Engine) -> Check {
     if engine.link() != Link::Up {
-        return check(
-            "Model providers",
-            true,
-            CheckState::Skipped,
-            "needs the engine; start the stack",
-            None,
-        );
+        return Probe::required("Model providers").skipped("needs the engine; start the stack");
     }
     match engine.call(NS, "router::provider::list", json!({})).await {
         Ok(out) => provider_check(&out),
-        Err(e) => check(
-            "Model providers",
-            true,
-            CheckState::Fail,
-            e,
-            Some("Check that `llm-router` is running.".into()),
-        ),
+        Err(e) => Probe::required("Model providers").fail(e, "Check that `llm-router` is running."),
     }
 }
 
@@ -216,17 +193,14 @@ fn provider_check(out: &Value) -> Check {
     };
     let (ready, missing) = (names(true), names(false));
     let detail = format!("ready: {}; no key: {}", list(&ready), list(&missing));
-    if ready.is_empty() {
-        let fix = "Add a key for a model provider in Settings, under Model providers.";
-        return check(
-            "Model providers",
-            true,
-            CheckState::Fail,
+    let check = Probe::required("Model providers");
+    match ready.is_empty() {
+        true => check.fail(
             detail,
-            Some(fix.into()),
-        );
+            "Add a key for a model provider in Settings, under Model providers.",
+        ),
+        false => check.pass(detail),
     }
-    check("Model providers", true, CheckState::Pass, detail, None)
 }
 
 fn list(names: &[String]) -> String {

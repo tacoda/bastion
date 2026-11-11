@@ -37,18 +37,29 @@ struct Reply {
 }
 
 /// Read a learn turn's reply: NOTHING TO LEARN, or one JSON object of
-/// proposals, fenced or bare, each with its evidence.
+/// proposals, each with its evidence. A model may think aloud first, so the
+/// object is read from wherever it sits, and the verdict from the last line.
 pub fn read(report: &str) -> Result<Vec<Proposal>, String> {
-    if report.trim() == NOTHING {
+    let body = object(report);
+    if body.is_none() && report.trim_end().ends_with(NOTHING) {
         return Ok(Vec::new());
     }
-    let body = fenced(report).unwrap_or(report);
+    let body = body.or(fenced(report)).unwrap_or(report);
     let reply: Reply = serde_json::from_str(body.trim())
         .map_err(|e| format!("The reply was not the JSON asked for: {e}."))?;
     for (n, p) in reply.proposals.iter().enumerate() {
         problem(p).map_or(Ok(()), |why| Err(format!("Proposal {}: {why}", n + 1)))?;
     }
     Ok(reply.proposals)
+}
+
+/// The JSON object that holds the last `"proposals"` key, to the reply's
+/// last closing brace.
+fn object(report: &str) -> Option<&str> {
+    let key = report.rfind("\"proposals\"")?;
+    let start = report[..key].rfind('{')?;
+    let end = report.rfind('}')?;
+    (end > key).then(|| &report[start..=end])
 }
 
 /// What makes a proposal one a person cannot accept as it is.
@@ -86,6 +97,17 @@ mod tests {
         assert_eq!(got.len(), 2);
         assert!(matches!(&got[1].change, Change::Gate { name, .. } if name == "lint"));
         assert_eq!(read("NOTHING TO LEARN\n").unwrap(), []);
+        assert_eq!(read("Nothing new here.\nNOTHING TO LEARN").unwrap(), []);
+    }
+
+    #[test]
+    fn proposals_after_the_reasoning_are_read() {
+        let reply = r#"The gate runs grep over {files}. Let me write JSON.
+
+{"proposals": [
+  {"kind": "gate", "name": "lint", "command": "ruff {files}", "why": "w", "evidence": "e"}
+]}"#;
+        assert_eq!(read(reply).unwrap().len(), 1);
     }
 
     #[test]

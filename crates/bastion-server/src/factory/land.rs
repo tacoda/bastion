@@ -162,6 +162,9 @@ impl Factory {
                     let (factory, job) = (factory.clone(), job.clone());
                     crate::rt::spawn(async move {
                         factory.release(&job);
+                        if landed {
+                            let _ = factory.sweep_reverts().await;
+                        }
                         let event = if landed {
                             Event::Landed
                         } else {
@@ -409,6 +412,7 @@ impl Factory {
         // Best effort: a workspace with local changes keeps them and stays behind.
         let pull = ["pull", "-q", "--ff-only", "origin", &ws.branch];
         let _ = self.machine.run("git", &pull, Some(Path::new(&ws.path)));
+        let _ = self.sweep_reverts().await;
         Ok(())
     }
 }

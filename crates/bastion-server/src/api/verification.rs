@@ -4,39 +4,33 @@
 
 use std::collections::HashMap;
 
-use bastion_core::audit::{Entry, Record};
+use bastion_core::State;
+use bastion_core::audit::Entry;
 use bastion_core::escape;
-use bastion_core::{Stage, State};
 use bastion_protocol::{EscapeReport, EscapeView, LandedView};
 
 use super::factory::{FactoryCell, factory};
-use crate::factory::Factory;
-
-/// The audit kind an escape is kept under.
-const KIND: &str = "escape";
+use crate::factory::ESCAPE;
 
 /// How many of the newest jobs the page looks through for landed ones.
 const LOOKED: usize = 200;
-
-/// Every land's commits as (job, workspace, artifact body), newest first.
-async fn lands(factory: &Factory) -> Result<Vec<(String, String, String)>, String> {
-    let mut all = factory.store().artifacts_at(Stage::Land).await?;
-    all.extend(factory.store().artifacts_at(Stage::Ship).await?);
-    Ok(all)
-}
 
 // ponytail: the newest LOOKED jobs only, and every decide and escape entry per
 // call; a landed-jobs query and an index on audit kind when a server keeps more.
 pub async fn verification(cell: &FactoryCell) -> Result<Vec<LandedView>, String> {
     let factory = factory(cell)?;
+    // A revert made since the last look is an escape before the page reads them.
+    if let Err(e) = factory.sweep_reverts().await {
+        eprintln!("the revert watch did not run: {e}");
+    }
     let store = factory.store();
     let mut commits: HashMap<String, Vec<String>> = HashMap::new();
-    for (job, _, body) in lands(&factory).await? {
+    for (job, _, body) in factory.lands().await? {
         let kept = commits.entry(job).or_default();
         kept.extend(escape::commits(&body).into_iter().map(String::from));
     }
     let mut checks = by_job(store.entries_of("decide").await?, |e| e.record.detail);
-    let mut escapes = by_job(store.entries_of(KIND).await?, escape_view);
+    let mut escapes = by_job(store.entries_of(ESCAPE).await?, escape_view);
     let landed = store.jobs(LOOKED, 0).await?.into_iter();
     Ok(landed
         .filter(|r| r.job.state == State::Landed)
@@ -90,17 +84,11 @@ pub async fn escape_add(cell: &FactoryCell, report: EscapeReport) -> Result<Esca
             escape::SHORTEST
         ));
     }
-    let job = lands(&factory)
+    let job = factory
+        .landed_in(&commit)
         .await?
-        .into_iter()
-        .find(|(_, _, body)| escape::holds(body, &commit))
-        .map(|(job, ..)| job)
         .ok_or_else(|| format!("no job on this server landed commit {commit}"))?;
-    factory.gate().audit()?.note(Record {
-        kind: KIND.into(),
-        subject: job.clone(),
-        detail: format!("{commit} {what}"),
-    });
+    factory.note_escape(&job, &commit, what)?;
     Ok(EscapeView {
         job,
         commit,
@@ -112,13 +100,14 @@ pub async fn escape_add(cell: &FactoryCell, report: EscapeReport) -> Result<Esca
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bastion_core::audit::Record;
 
     fn entry(subject: &str, detail: &str) -> Entry {
         Entry {
             seq: 1,
             at: 9,
             record: Record {
-                kind: KIND.into(),
+                kind: ESCAPE.into(),
                 subject: subject.into(),
                 detail: detail.into(),
             },

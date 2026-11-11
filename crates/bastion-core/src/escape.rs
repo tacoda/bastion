@@ -37,6 +37,27 @@ pub fn holds(body: &str, commit: &str) -> bool {
     commit.len() >= SHORTEST && commits(body).iter().any(|c| c.starts_with(&commit))
 }
 
+/// What `git revert` writes in the message of the commit it makes.
+pub const REVERTS: &str = "This reverts commit ";
+
+/// The commits a log reverts, as (the revert, the commit it reverts), from
+/// `git log --format=%H%x1f%B%x1e`: each commit's id, a unit separator, its
+/// message, and a record separator.
+pub fn reverts(log: &str) -> Vec<(&str, &str)> {
+    let mut all = Vec::new();
+    for commit in log.split('\u{1e}') {
+        let Some((id, message)) = commit.split_once('\u{1f}') else {
+            continue;
+        };
+        let undone = message
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix(REVERTS));
+        let ids = undone.map(|rest| rest.trim_end_matches('.').trim());
+        all.extend(ids.map(|undone| (id.trim(), undone)));
+    }
+    all
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -53,5 +74,13 @@ mod tests {
             "not a land's artifact"
         );
         assert_eq!(commits_artifact("  \n"), None);
+    }
+
+    #[test]
+    fn a_revert_names_the_commit_it_undoes() {
+        let log = "r1\u{1f}Revert \"Add cube\"\n\nThis reverts commit a1b2c3d4e5f6.\n\u{1e}\n\
+                   r2\u{1f}Fix a typo\n\u{1e}\n";
+        assert_eq!(reverts(log), [("r1", "a1b2c3d4e5f6")]);
+        assert_eq!(reverts(""), []);
     }
 }

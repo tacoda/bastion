@@ -961,3 +961,42 @@ fn a_preview_a_host_deployed_for_the_branch_is_kept_for_reviewers() {
         assert_eq!(listed, "repos/o/r/deployments?ref=bastion/j1&per_page=1");
     });
 }
+
+#[test]
+fn a_revert_of_a_landed_commit_is_an_escape_of_its_job_once() {
+    use crate::govern_store::GovernStore;
+    let log = "r9\u{1f}Revert it\n\nThis reverts commit a1b2c3d4e5f6.\n\u{1e}";
+    let key = "ab".repeat(32);
+    let machine = FakeMachine::new()
+        .run_ok("git", log)
+        .run_ok("security", &key);
+    let rig = rig_with(engine(), machine);
+    crate::rt::block_on(async {
+        rig.store
+            .insert(&record_at(Pipeline::Short, Stage::Land, State::Landed))
+            .await
+            .unwrap();
+        let commits = bastion_core::escape::commits_artifact("a1b2c3d4e5f6 Add cube").unwrap();
+        let kept = Artifact {
+            stage: Stage::Land,
+            body: commits,
+            created_at: 1,
+        };
+        rig.store.add_artifact("j1", &kept).await.unwrap();
+        let escapes = async || rig.store.entries_of(crate::factory::ESCAPE).await.unwrap();
+        rig.factory.sweep_reverts().await.unwrap();
+        assert!(
+            eventually(async || !escapes().await.is_empty()).await,
+            "no escape kept"
+        );
+        rig.factory.sweep_reverts().await.unwrap();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let all = escapes().await;
+        assert_eq!(all.len(), 1, "a revert is kept once");
+        let (job, detail) = (&all[0].record.subject, &all[0].record.detail);
+        assert_eq!(
+            (job.as_str(), detail.as_str()),
+            ("j1", "a1b2c3d4e5f6 reverted by r9")
+        );
+    });
+}

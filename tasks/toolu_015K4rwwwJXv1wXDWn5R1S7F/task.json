@@ -1,0 +1,18 @@
+{
+  "tool_use_id": "toolu_015K4rwwwJXv1wXDWn5R1S7F",
+  "agent_id": "aa7cfcf84c11914a9",
+  "subagent_type": "general-purpose",
+  "task_description": "Hetzner hosting plan for bastion-server",
+  "files": [
+    "docs/hosting/hetzner.md"
+  ],
+  "token_usage": {
+    "input_tokens": 90,
+    "cache_creation_tokens": 167084,
+    "cache_read_tokens": 5247685,
+    "output_tokens": 12251,
+    "api_call_count": 43
+  },
+  "started_at": "2026-11-11T15:24:15.737078-06:00",
+  "completed_at": "2026-11-11T15:31:01.346981-06:00"
+}

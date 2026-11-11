@@ -1,0 +1,18 @@
+{
+  "tool_use_id": "toolu_01LEujiZBhSXV33ojJ7fZxx3",
+  "agent_id": "a2e170f2af25d9c54",
+  "subagent_type": "general-purpose",
+  "task_description": "DigitalOcean hosting plan for bastion-server",
+  "files": [
+    "docs/hosting/digitalocean.md"
+  ],
+  "token_usage": {
+    "input_tokens": 94,
+    "cache_creation_tokens": 190782,
+    "cache_read_tokens": 5975541,
+    "output_tokens": 14623,
+    "api_call_count": 45
+  },
+  "started_at": "2026-11-11T15:24:15.846589-06:00",
+  "completed_at": "2026-11-11T15:30:19.051466-06:00"
+}

@@ -643,14 +643,15 @@ fn with_github_as_the_forge_a_reviewed_change_goes_up_as_a_pull_request_and_merg
         until(&rig, &id, Stage::Land, State::NeedsYou).await;
         rig.factory.apply(&id, Event::Approved).await.unwrap();
         until(&rig, &id, Stage::Land, State::Landed).await;
-        let merged = rig
-            .engine
-            .calls
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|c| c.1 == "github::exec" && c.2["args"][1] == "merge");
-        assert!(merged, "approve at land merges the pull request");
+        let calls = rig.engine.calls.lock().unwrap();
+        let gh: Vec<_> = calls.iter().filter(|c| c.1 == "github::exec").collect();
+        let at = |verb: &str| gh.iter().position(|c| c.2["args"][1] == verb);
+        assert!(
+            at("merge").is_some(),
+            "approve at land merges the pull request"
+        );
+        let edited = at("edit").is_some_and(|e| Some(e) < at("merge"));
+        assert!(edited, "the body is said again before the merge");
     });
 }
 

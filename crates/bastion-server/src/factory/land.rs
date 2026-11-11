@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bastion_core::settings::Forge;
-use bastion_core::{Effect, Event, escape};
+use bastion_core::{Effect, Event, Stage, escape};
 use serde_json::{Value, json};
 
 use super::{CI_POLLS, Factory, NS, REPO, SLOW_MS};
@@ -126,11 +126,8 @@ impl Factory {
         let slug = forge::slug(&*self.machine, path)?;
         // ponytail: a prefix changed while the PR is open sends a fix to a new branch; keep the pushed branch on the job if that bites.
         // The branch a job's change goes up on: its workspace's prefix, then its id.
-        let head = self.workspace(record).await?.branch_prefix + &job.id;
-        let pr = forge::describe(job, base, &head, record.runtime.issue.as_deref());
-        // Nothing leaves before its text passes the publishing gate.
-        forge::publishable(&pr)?;
-        forge::push(&*self.machine, path, &head)?;
+        let pr = self.pr_text(record, base).await?;
+        forge::push(&*self.machine, path, &pr.head)?;
         let url = match &job.pr {
             Some(url) => url.clone(),
             None => {
@@ -301,29 +298,52 @@ impl Factory {
             .ok_or(format!("no workspace {}", record.job.workspace))
     }
 
-    /// Merge the pull request, then bring the workspace's branch up to date.
+    /// The pull request's text as the job stands now, once it passes the
+    /// publishing gate: nothing leaves before it does.
+    async fn pr_text(&self, record: &Record, base: &str) -> Result<forge::PullRequest, String> {
+        let head = self.workspace(record).await?.branch_prefix + &record.job.id;
+        let pr = forge::describe(&record.job, base, &head, &self.notes(record).await?);
+        forge::publishable(&pr)?;
+        Ok(pr)
+    }
+
+    /// What the job's later steps wrote and what a person waived (F7).
+    async fn notes(&self, record: &Record) -> Result<forge::Notes, String> {
+        let id = &record.job.id;
+        let artifacts = self.store.artifacts(id).await?;
+        let last = |stage| {
+            let found = artifacts.iter().rev().find(|a| a.stage == stage);
+            found.map(|a| a.body.clone())
+        };
+        let decided = self.store.entries_of("decide").await?.into_iter();
+        let waived = decided
+            .filter(|e| e.record.subject == *id && e.record.detail.contains(", waiving: "))
+            .map(|e| e.record.detail)
+            .collect();
+        Ok(forge::Notes {
+            briefing: last(Stage::Comprehend),
+            proof: last(Stage::Prove),
+            waived,
+            issue: record.runtime.issue.clone(),
+        })
+    }
+
+    /// Say the pull request's text again with the proof and the briefing
+    /// that came after it opened, merge it, then bring the workspace's branch
+    /// up to date.
     pub(super) async fn merge(&self, record: &Record) -> Result<(), String> {
-        let pr = record.job.pr.clone().ok_or("the job has no pull request")?;
-        forge::GitHub {
+        let url = record.job.pr.clone().ok_or("the job has no pull request")?;
+        let ws = self.workspace(record).await?;
+        let pr = self.pr_text(record, &ws.branch).await?;
+        let hub = forge::GitHub {
             engine: &*self.engine,
             slug: self.slug(record).await?,
-        }
-        .merge(&pr)
-        .await?;
-        let ws = self
-            .store
-            .workspaces()
-            .await?
-            .into_iter()
-            .find(|w| w.name == record.job.workspace);
-        if let Some(ws) = ws {
-            // Best effort: a workspace with local changes keeps them and stays behind.
-            let _ = self.machine.run(
-                "git",
-                &["pull", "-q", "--ff-only", "origin", &ws.branch],
-                Some(Path::new(&ws.path)),
-            );
-        }
+        };
+        hub.edit(&url, &pr.body).await?;
+        hub.merge(&url).await?;
+        // Best effort: a workspace with local changes keeps them and stays behind.
+        let pull = ["pull", "-q", "--ff-only", "origin", &ws.branch];
+        let _ = self.machine.run("git", &pull, Some(Path::new(&ws.path)));
         Ok(())
     }
 }

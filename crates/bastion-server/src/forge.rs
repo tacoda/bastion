@@ -71,14 +71,41 @@ pub fn push(machine: &dyn Machine, path: &Path, head: &str) -> Result<(), String
     }
 }
 
+/// What a pull request carries beyond the request (F7): what the job's
+/// later steps wrote, what a person waived, and the issue it closes.
+#[derive(Clone, Debug, Default)]
+pub struct Notes {
+    pub briefing: Option<String>,
+    pub proof: Option<String>,
+    pub waived: Vec<String>,
+    pub issue: Option<String>,
+}
+
+/// The most of one section a pull request's body keeps; GitHub takes
+/// 65,536 characters in all.
+const SECTION_CHARS: usize = 8_000;
+
 /// What a pull request says: the request's first line as its title, the
-/// request in full, and a line that closes the issue it came from. It names
-/// no tool as its author.
-pub fn describe(job: &Job, base: &str, head: &str, issue: Option<&str>) -> PullRequest {
+/// request in full, then the plan, the briefing, the proof and what was
+/// waived, each when there is one, and a line that closes the issue it came
+/// from. It names no tool as its author.
+pub fn describe(job: &Job, base: &str, head: &str, notes: &Notes) -> PullRequest {
     let request = &job.request;
     let first = request.lines().next().unwrap_or_default();
     let title: String = first.chars().take(72).collect();
+    let waived = notes.waived.iter().map(|w| format!("- {w}\n")).collect();
+    let sections = [
+        ("Plan", job.plan.clone().unwrap_or_default()),
+        ("Briefing", notes.briefing.clone().unwrap_or_default()),
+        ("Proof", notes.proof.clone().unwrap_or_default()),
+        ("Waived", waived),
+    ];
     let mut body = request.clone();
+    for (heading, text) in sections.iter().filter(|(_, t)| !t.trim().is_empty()) {
+        let kept: String = text.trim().chars().take(SECTION_CHARS).collect();
+        body.push_str(&format!("\n\n## {heading}\n\n{kept}"));
+    }
+    let issue = notes.issue.as_deref();
     if let Some(number) = issue.and_then(|url| url.rsplit('/').next()) {
         body.push_str(&format!("\n\nCloses #{number}"));
     }
@@ -156,6 +183,13 @@ impl GitHub<'_> {
             );
         }
         Ok(Checks::Failed(for_fix(&log)))
+    }
+
+    /// Say the pull request's body again, as it stands before the merge.
+    pub async fn edit(&self, pr: &str, body: &str) -> Result<(), String> {
+        self.gh(&["pr", "edit", pr, "--body", body])
+            .await
+            .map(|_| ())
     }
 
     pub async fn merge(&self, pr: &str) -> Result<(), String> {
@@ -356,21 +390,48 @@ mod tests {
     fn a_pull_request_closes_its_issue() {
         let job = Job::new("j1".into(), "w".into(), "Add modulo\nwith a test".into(), 1);
         let head = "bastion/j1";
-        let pr = describe(&job, "main", head, Some("https://github.com/o/r/issues/4"));
+        let notes = Notes {
+            issue: Some("https://github.com/o/r/issues/4".into()),
+            ..Notes::default()
+        };
+        let pr = describe(&job, "main", head, &notes);
         assert_eq!(
             (pr.title.as_str(), pr.head.as_str()),
             ("Add modulo", "bastion/j1")
         );
         assert!(pr.body.ends_with("Closes #4"));
-        assert!(!describe(&job, "main", head, None).body.contains("Closes"));
+        assert!(
+            !describe(&job, "main", head, &Notes::default())
+                .body
+                .contains("Closes")
+        );
         assert!(publishable(&pr).is_ok());
+    }
+
+    #[test]
+    fn a_pull_request_carries_the_plan_briefing_proof_and_waivers() {
+        let mut job = Job::new("j1".into(), "w".into(), "Add modulo".into(), 1);
+        job.plan = Some("1. Add mod(a, b)".into());
+        let notes = Notes {
+            briefing: Some("Try mod(7, 3).".into()),
+            proof: Some("```\n3 passed\n```\nVERDICT: yes".into()),
+            waived: vec!["ci: shipped anyway by ada, waiving: lint".into()],
+            issue: None,
+        };
+        let body = describe(&job, "main", "bastion/j1", &notes).body;
+        let order = ["## Plan", "## Briefing", "## Proof", "## Waived"].map(|h| body.find(h));
+        assert!(order.iter().all(Option::is_some), "{body}");
+        assert!(order.is_sorted(), "{body}");
+        assert!(body.contains("- ci: shipped anyway by ada, waiving: lint"));
+        let bare = describe(&job, "main", "bastion/j1", &Notes::default()).body;
+        assert!(!bare.contains("## Proof") && !bare.contains("## Waived"));
     }
 
     #[test]
     fn a_pull_request_that_credits_an_ai_is_not_published() {
         let request = "Fix it\n\nCo-Authored-By: Claude <noreply@anthropic.com>";
         let job = Job::new("j1".into(), "w".into(), request.into(), 1);
-        let refused = publishable(&describe(&job, "main", "bastion/j1", None));
+        let refused = publishable(&describe(&job, "main", "bastion/j1", &Notes::default()));
         assert!(refused.unwrap_err().contains("credits an author"));
     }
 

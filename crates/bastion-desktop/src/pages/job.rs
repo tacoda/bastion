@@ -300,10 +300,12 @@ fn what_approve_does(d: &JobDetail) -> &'static str {
     }
 }
 
-/// A step's name: a skill's, prompt's or command's node id, else its stage.
+/// A step's name: a workflow's own step's node id, else its stage.
 fn step_name(step: &StepView) -> String {
     match step.stage.as_str() {
-        "skill" | "prompt" | "command" => format!("{} · {}", step.stage, step.id),
+        "prompt" | "agent" | "skill" | "command" | "shell" => {
+            format!("{} · {}", step.stage, step.id)
+        }
         _ => step.stage.replace('_', " "),
     }
 }

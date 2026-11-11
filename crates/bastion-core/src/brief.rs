@@ -147,6 +147,13 @@ const ASK: &str = "\
 If you cannot go on without the owner, reply with one line that starts with
 INTERRUPT: and then your question, and nothing else.";
 
+/// A Bastion stage's built-in instructions, which a workflow's step may
+/// replace with its own: none for a workflow's own steps or for a stage no
+/// agent runs.
+pub fn instructions(stage: Stage) -> Option<&'static str> {
+    (stage.kind() == crate::Kind::Turn && !crate::workflow::custom(stage)).then(|| intro(stage))
+}
+
 /// What a stage's turn is for, and the reply it gives.
 // ponytail: every other new stage reads the plan brief until it has a brief of its own.
 fn intro(stage: Stage) -> &'static str {
@@ -167,21 +174,36 @@ fn intro(stage: Stage) -> &'static str {
     }
 }
 
-/// What a workflow's own agent step is told first (D35): a skill's file
-/// to follow, or the workflow's instructions, which `workflow_step` adds.
+/// What a workflow's step is told first (D35): an agent's, skill's or
+/// command's file to follow, the workflow's instructions, which
+/// `workflow_step` adds, or a stage's instructions as the workflow rewrote
+/// them.
 fn custom_intro(job: &Job) -> Option<String> {
     let lead = "You are carrying out one step of a workflow in the repository in /work/repo.";
     let tail = "Commit what you change with git, then reply with what you did.";
-    match (job.stage, job.step()) {
-        (Stage::Skill, Some(step)) => Some(format!(
-            "{lead}\nRead /work/repo/.claude/skills/{}/SKILL.md and follow it for the request below.\n{tail}",
-            step.run
-        )),
+    let follow = |file: String, how: &str| {
+        Some(format!(
+            "{lead}\nRead /work/repo/.claude/{file} and {how} for the request below.\n{tail}"
+        ))
+    };
+    let step = job.step();
+    match (job.stage, step) {
+        (Stage::Agent, Some(step)) => {
+            follow(format!("agents/{}.md", step.run), "act as that agent")
+        }
+        (Stage::Skill, Some(step)) => follow(format!("skills/{}/SKILL.md", step.run), "follow it"),
+        (Stage::Command, Some(step)) => follow(format!("commands/{}.md", step.run), "carry it out"),
         (Stage::Prompt, _) => Some(format!(
             "{lead}\nDo what the workflow says about this step, for the request below.\n{tail}"
         )),
+        (stage, Some(step)) if rewritten(stage, step) => Some(step.note.trim().to_string()),
         _ => None,
     }
+}
+
+/// Whether a step's note stands in for its stage's built-in instructions.
+fn rewritten(stage: Stage, step: &crate::workflow::Step) -> bool {
+    instructions(stage).is_some() && !step.note.trim().is_empty()
 }
 
 /// The brief for the job's current agent stage.
@@ -283,7 +305,7 @@ fn workflow_step(job: &Job) -> Vec<String> {
         return Vec::new();
     };
     let mut parts = Vec::new();
-    if !step.note.trim().is_empty() {
+    if !step.note.trim().is_empty() && !rewritten(job.stage, step) {
         parts.push(format!(
             "The workflow says about this step:\n{}",
             step.note.trim()

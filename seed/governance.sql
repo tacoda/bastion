@@ -47,7 +47,9 @@ INSERT OR IGNORE INTO capabilities (stage, function, rung) VALUES
   ('ci_fix', 'sandbox::*', 'allowed'),
   ('falsify', 'sandbox::*', 'allowed'),
   ('skill', 'sandbox::*', 'allowed'),
-  ('prompt', 'sandbox::*', 'allowed');
+  ('prompt', 'sandbox::*', 'allowed'),
+  ('agent', 'sandbox::*', 'allowed'),
+  ('command', 'sandbox::*', 'allowed');
 
 -- Workflows (D35): starting points for engineers, managers, and platform
 -- and SRE teams. Each lands a reviewed change, a document under docs/ or code, and
@@ -70,7 +72,7 @@ SELECT column1, column2, 1, 0 FROM (VALUES
 WHERE NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow = column1);
 
 INSERT OR IGNORE INTO workflow_nodes (workflow, version, id, stage, run, dial, note, x, y) VALUES
-  ('incident-response', 1, 'recent-changes', 'command', 'git log --since="3 days ago" --no-merges --stat --date=iso --pretty=format:"%h %an %ad %s"', 'dark', 'The changes that could have caused the incident.', 0, 0),
+  ('incident-response', 1, 'recent-changes', 'shell', 'git log --since="3 days ago" --no-merges --stat --date=iso --pretty=format:"%h %an %ad %s"', 'dark', 'The changes that could have caused the incident.', 0, 0),
   ('incident-response', 1, 'plan', 'plan', '', 'dark', 'Triage the incident in the request: its symptoms, when it started and what it hits. Match it against the recent changes, the code and the config. Name the most likely cause with its evidence, and plan the smallest change that stops the impact.', 220, 0),
   ('incident-response', 1, 'build', 'build', '', 'dark', 'Make the smallest change that stops the impact: a revert, a feature flag turned off, or a config rollback. Write what you changed, why, and how to check that the impact stopped into docs/incidents/, named for the date and the incident.', 440, 0),
   ('incident-response', 1, 'land', 'land', '', 'lights_on', '', 660, 0),
@@ -86,7 +88,7 @@ INSERT OR IGNORE INTO workflow_nodes (workflow, version, id, stage, run, dial, n
   ('test-coverage', 1, 'plan', 'plan', '', 'dark', 'Find the code paths the request names, or the riskiest untested ones. For each, say why it matters and which test would cover it.', 0, 0),
   ('test-coverage', 1, 'build', 'build', '', 'dark', 'Add a test for each gap. Change no product code. If a test finds a bug, mark the test as expected to fail and say so.', 220, 0),
   ('test-coverage', 1, 'land', 'land', '', 'lights_on', '', 440, 0),
-  ('weekly-status', 1, 'changes', 'command', 'git log --since="7 days ago" --no-merges --stat --pretty=format:"%h %an %s"', 'dark', 'What changed in the last week.', 0, 0),
+  ('weekly-status', 1, 'changes', 'shell', 'git log --since="7 days ago" --no-merges --stat --pretty=format:"%h %an %s"', 'dark', 'What changed in the last week.', 0, 0),
   ('weekly-status', 1, 'status', 'prompt', '', 'dark', 'Write a status update for stakeholders from the changes: what shipped, what is in progress, and the risks or blockers. Group by theme, not by commit, in plain words.', 220, 0),
   ('weekly-status', 1, 'build', 'build', '', 'dark', 'Write the status update into docs/status/, named for today. Change no other file.', 440, 0),
   ('weekly-status', 1, 'land', 'land', '', 'lights_on', '', 660, 0),

@@ -24,7 +24,9 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-pub use brief::{BASE_TAG, Discovery, QUESTION_MARKER, brief, discovery, listed, outcome};
+pub use brief::{
+    BASE_TAG, Discovery, QUESTION_MARKER, brief, discovery, instructions, listed, outcome,
+};
 pub use pipeline::{Kind, Pipeline, folded};
 pub use workflow::results;
 
@@ -107,13 +109,19 @@ pub enum Stage {
     Skill,
     /// An agent follows the workflow's instructions for the step.
     Prompt,
-    /// A shell line runs in the VM: a bash command, a script or a task runner.
+    /// An agent acts as one of the repository's agents, in `.claude/agents`.
+    Agent,
+    /// An agent carries out one of the repository's commands, in
+    /// `.claude/commands`.
     Command,
+    /// A shell script runs in the VM: a one-line CLI command, a script or a
+    /// task runner.
+    Shell,
 }
 
 impl Stage {
     /// Every stage, for the store's checks. A new stage goes here too.
-    pub const ALL: [Stage; 34] = {
+    pub const ALL: [Stage; 36] = {
         use Stage::*;
         [
             Plan,
@@ -149,7 +157,9 @@ impl Stage {
             Falsify,
             Skill,
             Prompt,
+            Agent,
             Command,
+            Shell,
         ]
     };
 
@@ -160,11 +170,10 @@ impl Stage {
                 Kind::Checkpoint
             }
             Land | Prepare | Baseline | Checks | Verify | Acceptance | Ship | Ci | Merge
-            | Deploy | Command => Kind::Factory,
+            | Deploy | Shell => Kind::Factory,
             Plan | Build | Scope | Discover | Define | Specify | Implement | Refactor
-            | CodeReview | CiFix | Prove | Comprehend | Uat | Learn | Falsify | Skill | Prompt => {
-                Kind::Turn
-            }
+            | CodeReview | CiFix | Prove | Comprehend | Uat | Learn | Falsify | Skill | Prompt
+            | Agent | Command => Kind::Turn,
         }
     }
 
@@ -836,8 +845,8 @@ fn factory(job: &mut Job, event: &Event, dials: &Dials) -> Option<Vec<Effect>> {
         (_, Event::StepFailed { detail }) if runs => step_failed(job, detail, dials),
         (_, Event::StepStuck { detail }) if runs => stuck(job, detail),
         (Stage::Baseline, Event::ChecksGreen) => checks_green(job, dials),
-        // A command's output is each result it declares.
-        (Stage::Command, Event::Ran { output }) => {
+        // A shell script's output is each result it declares.
+        (Stage::Shell, Event::Ran { output }) => {
             for name in job.step().map(|s| s.gives.clone()).unwrap_or_default() {
                 job.results.insert(name, output.clone());
             }

@@ -778,7 +778,7 @@ impl Factory {
                 self.acceptance_step(record, stage).await
             }
             Stage::Checks => self.checks_step(record).await,
-            Stage::Command => self.command_step(record).await,
+            Stage::Shell => self.command_step(record).await,
             Stage::Ship => self
                 .ship(record)
                 .await

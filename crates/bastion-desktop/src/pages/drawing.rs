@@ -20,24 +20,32 @@ fn words(word: &str) -> String {
     word.replace('_', " ")
 }
 
-/// A step's first line: a skill's or command's run, else its stage.
+/// A step's first line: an agent's, skill's or command's name, or a shell
+/// script's first line, else its stage.
 pub fn title(n: &NodeView) -> String {
+    let first = n.run.lines().next().unwrap_or_default().trim();
     match n.stage.as_str() {
-        "skill" | "command" if !n.run.is_empty() => format!("{} · {}", n.stage, n.run),
+        "agent" | "skill" | "command" | "shell" if !first.is_empty() => {
+            format!("{} · {first}", n.stage)
+        }
         _ => words(&n.stage),
     }
 }
 
 /// A step's second line: its dial and the results it gives.
 pub fn subtitle(n: &NodeView) -> String {
-    let dial = if n.dial == "dark" {
-        "dark"
-    } else {
-        "lights-on"
-    };
     match n.results.is_empty() {
-        true => dial.into(),
-        false => format!("{dial} → {}", n.results.join(", ")),
+        true => String::new(),
+        false => format!("→ {}", n.results.join(", ")),
+    }
+}
+
+/// A step's dial as an icon: a moon when it runs on its own, a sun when a
+/// person decides.
+fn dial_icon(n: &NodeView) -> &'static str {
+    match n.dial.as_str() {
+        "dark" => crate::icons::MOON,
+        _ => crate::icons::SUN,
     }
 }
 
@@ -130,9 +138,14 @@ fn step(frame: &mut Frame, n: &NodeView, look: Look) {
         theme::INK,
         14.0,
     ));
+    let icon = crate::icons::colored(dial_icon(n), theme::MUTED);
+    frame.draw_svg(
+        iced::Rectangle::new(Point::new(at.x + 10.0, at.y + 33.0), Size::new(13.0, 13.0)),
+        &icon,
+    );
     frame.fill_text(caption(
         subtitle(n),
-        Point::new(at.x + 10.0, at.y + 32.0),
+        Point::new(at.x + 29.0, at.y + 32.0),
         theme::MUTED,
         12.0,
     ));
@@ -278,6 +291,7 @@ mod tests {
             run: run.into(),
             dial: "lights_on".into(),
             note: String::new(),
+            builtin: String::new(),
             results: results.iter().map(|r| r.to_string()).collect(),
             x: 200,
             y: 100,
@@ -290,8 +304,12 @@ mod tests {
         assert_eq!(title(&node("skill", "research", &[])), "skill · research");
         assert_eq!(
             subtitle(&node("plan", "", &["design-notes"])),
-            "lights-on → design-notes"
+            "→ design-notes"
         );
+        let mut dark = node("plan", "", &[]);
+        assert_eq!(dial_icon(&dark), crate::icons::SUN);
+        dark.dial = "dark".into();
+        assert_eq!(dial_icon(&dark), crate::icons::MOON);
     }
 
     #[test]

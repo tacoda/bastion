@@ -29,6 +29,9 @@ fn view_of(w: &Workflow) -> WorkflowView {
                 run: n.run.clone(),
                 dial: name(n.dial),
                 note: n.note.clone(),
+                builtin: bastion_core::instructions(n.stage)
+                    .unwrap_or_default()
+                    .into(),
                 results: n.results.clone(),
                 x: n.x,
                 y: n.y,

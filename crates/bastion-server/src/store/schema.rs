@@ -247,6 +247,19 @@ pub(super) const ALTERS: [&str; 23] = [
 /// migration 3 rebuilds them all for a workflow's own steps (D35).
 pub(super) fn migrations() -> Vec<Vec<String>> {
     let staged = staged_tables();
+    // Every column now, as the alters ran before the migrations: a rebuild
+    // with fewer would drop the alters' columns' values.
+    let current: Vec<_> = staged
+        .iter()
+        .map(|(table, columns, create)| {
+            let columns = if *table == "jobs" {
+                JOB_COLUMNS
+            } else {
+                columns
+            };
+            (*table, columns, create.clone())
+        })
+        .collect();
     vec![
         staged.iter().flat_map(rebuild).collect(),
         staged
@@ -254,20 +267,21 @@ pub(super) fn migrations() -> Vec<Vec<String>> {
             .filter(|t| t.0 == "turns")
             .flat_map(rebuild)
             .collect(),
-        // Every column now, as the alters ran before the migrations.
-        staged
-            .iter()
-            .map(|(table, columns, create)| {
-                let columns = if *table == "jobs" {
-                    JOB_COLUMNS
-                } else {
-                    columns
-                };
-                (*table, columns, create.clone())
-            })
-            .collect::<Vec<_>>()
+        current.iter().flat_map(rebuild).collect(),
+        // A shell step was the stage `command`; `command` now names one of
+        // the repository's commands, and agents joined the stages.
+        current
             .iter()
             .flat_map(rebuild)
+            .chain(
+                staged
+                    .iter()
+                    .map(|t| t.0)
+                    .chain(["workflow_nodes"])
+                    .map(|table| {
+                        format!("UPDATE {table} SET stage = 'shell' WHERE stage = 'command'")
+                    }),
+            )
             .collect(),
     ]
 }

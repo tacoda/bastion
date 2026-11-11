@@ -81,12 +81,17 @@ pub struct WorkflowView {
 pub struct NodeView {
     /// Unique in its workflow; links name it.
     pub id: String,
-    /// `skill`, `prompt`, `command`, or a Bastion stage.
+    /// `prompt`, `agent`, `skill`, `command`, `shell`, or a Bastion stage.
     pub stage: String,
-    /// A skill's name or a command line.
+    /// An agent's, skill's or command's name, or a shell script.
     pub run: String,
     pub dial: String,
+    /// The step's instructions; empty keeps the stage's built-in ones.
     pub note: String,
+    /// The stage's built-in instructions, which an empty note keeps: what
+    /// the editor shows to start from. Empty for a step no agent runs.
+    #[serde(default)]
+    pub builtin: String,
     pub results: Vec<String>,
     pub x: i32,
     pub y: i32,

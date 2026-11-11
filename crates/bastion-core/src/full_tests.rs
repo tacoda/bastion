@@ -666,7 +666,7 @@ fn custom_flow() -> Job {
     let g = Graph {
         nodes: vec![
             node("tidy", Stage::Skill, "tidy-imports", &[], 0),
-            node("lint", Stage::Command, "make lint", &["lint-report"], 100),
+            node("lint", Stage::Shell, "make lint", &["lint-report"], 100),
             node("land", Stage::Land, "", &[], 200),
         ],
         links: vec![Link {
@@ -685,11 +685,11 @@ fn a_skill_step_follows_its_skill_and_a_command_gives_its_output_as_its_result()
     let j = custom_flow();
     assert!(brief(&j).contains("/work/repo/.claude/skills/tidy-imports/SKILL.md"));
     let (j, effects) = go(&j, &done());
-    assert_eq!((j.stage, j.node.as_deref()), (Stage::Command, Some("lint")));
+    assert_eq!((j.stage, j.node.as_deref()), (Stage::Shell, Some("lint")));
     assert_eq!(
         effects.last(),
         Some(&Effect::RunStep {
-            stage: Stage::Command
+            stage: Stage::Shell
         })
     );
     let (j, _) = go(
@@ -703,14 +703,51 @@ fn a_skill_step_follows_its_skill_and_a_command_gives_its_output_as_its_result()
 }
 
 #[test]
+fn a_stage_step_runs_on_its_rewritten_instructions_and_an_agent_on_its_file() {
+    use crate::workflow::{Graph, Node};
+    let node = |id: &str, stage, run: &str, note: &str, x| Node {
+        id: id.into(),
+        stage,
+        run: run.into(),
+        dial: Dial::Dark,
+        note: note.into(),
+        results: Vec::new(),
+        x,
+        y: 0,
+    };
+    let g = Graph {
+        nodes: vec![
+            node("plan", Stage::Plan, "", "Plan in three numbered lines.", 0),
+            node("security", Stage::Agent, "reviewer", "", 100),
+            node("notes", Stage::Command, "release-notes", "", 200),
+            node("land", Stage::Land, "", "", 300),
+        ],
+        links: Vec::new(),
+    };
+    assert_eq!(g.check(), Ok(()));
+    let mut j = job(Pipeline::Short).running(g.steps().unwrap());
+    let plan = brief(&j);
+    assert!(plan.starts_with("Plan in three numbered lines."), "{plan}");
+    assert!(!plan.contains("You are planning") && !plan.contains("The workflow says"));
+    j.stage = Stage::Agent;
+    j.node = Some("security".into());
+    assert!(brief(&j).contains("/work/repo/.claude/agents/reviewer.md"));
+    j.stage = Stage::Command;
+    j.node = Some("notes".into());
+    assert!(brief(&j).contains("/work/repo/.claude/commands/release-notes.md"));
+    assert_eq!(crate::instructions(Stage::Agent), None);
+    assert!(crate::instructions(Stage::Plan).is_some_and(|t| t.contains("planning")));
+}
+
+#[test]
 fn a_failing_command_waits_on_a_person() {
     let mut j = custom_flow();
-    j.stage = Stage::Command;
+    j.stage = Stage::Shell;
     j.node = Some("lint".into());
     let (j, _) = go(&j, &failed("3 problems"));
     assert_eq!(
         (j.stage, j.state, j.error.as_deref()),
-        (Stage::Command, State::NeedsYou, Some("3 problems"))
+        (Stage::Shell, State::NeedsYou, Some("3 problems"))
     );
 }
 

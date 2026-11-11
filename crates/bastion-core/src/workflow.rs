@@ -1,6 +1,6 @@
 //! Workflows (DECISIONS.md D35): a graph of steps on a canvas. A step is a
-//! skill (the preferred building block), a prompt, a command, or a Bastion
-//! stage. A link sends one step's results to another, and carries no
+//! prompt, one of the repository's agents, skills or commands, a shell
+//! script, or a Bastion stage. A link sends one step's results to another, and carries no
 //! condition: a step's entry criteria are the results linked into it, and
 //! its exit criteria are the results it declares.
 
@@ -15,13 +15,16 @@ use crate::{Dial, Kind, Level, Stage};
 pub struct Node {
     /// Unique in its workflow; a built-in step's is its stage's name.
     pub id: String,
-    /// What runs: `skill`, `prompt`, `command`, or a Bastion stage.
+    /// What runs: `prompt`, `agent`, `skill`, `command`, `shell`, or a
+    /// Bastion stage.
     pub stage: Stage,
-    /// The skill's name, or the command line. Empty for anything else.
+    /// The agent's, skill's or command's name, or the shell script. Empty
+    /// for anything else.
     pub run: String,
     pub dial: Dial,
-    /// What the step should know, shown when the node is expanded. A
-    /// prompt's instructions; for any agent step, part of its brief.
+    /// The step's instructions. A prompt's whole brief; for a Bastion
+    /// stage's turn, its instructions in place of the built-in ones; for an
+    /// agent, skill or command, what to add to it. Empty keeps the built-in.
     pub note: String,
     /// The results it declares, by name, such as `design-notes`.
     pub results: Vec<String>,
@@ -78,8 +81,15 @@ pub fn level_of(steps: &[(Stage, Dial)]) -> Level {
     }
 }
 
-/// A skill's name is a folder under `.claude/skills`: letters, digits,
-/// `-` and `_` only, so it cannot leave that folder.
+/// A workflow's own step, which may repeat: a prompt, an agent, a skill, a
+/// command or a shell script.
+pub fn custom(stage: Stage) -> bool {
+    use Stage::*;
+    matches!(stage, Prompt | Agent | Skill | Command | Shell)
+}
+
+/// An agent's, skill's or command's name is a file or folder under
+/// `.claude`: letters, digits, `-` and `_` only, so it cannot leave it.
 pub fn skill_name_ok(name: &str) -> bool {
     !name.is_empty()
         && name
@@ -87,12 +97,16 @@ pub fn skill_name_ok(name: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
-/// What a node lacks to run: a skill its folder's name, a command its
-/// line, a prompt its instructions.
+/// What a node lacks to run: an agent, skill or command its name, a shell
+/// step its script, a prompt its instructions.
 fn missing_run(n: &Node) -> Option<&'static str> {
     match n.stage {
+        Stage::Agent if !skill_name_ok(&n.run) => Some("an agent needs its name in .claude/agents"),
         Stage::Skill if !skill_name_ok(&n.run) => Some("a skill needs its folder's name"),
-        Stage::Command if n.run.trim().is_empty() => Some("a command needs its command line"),
+        Stage::Command if !skill_name_ok(&n.run) => {
+            Some("a command needs its name in .claude/commands")
+        }
+        Stage::Shell if n.run.trim().is_empty() => Some("a shell step needs its script"),
         Stage::Prompt if n.note.trim().is_empty() => Some("a prompt needs its instructions"),
         _ => None,
     }
@@ -104,7 +118,7 @@ fn what_runs(n: &Node) -> Result<(), String> {
     if let Some(why) = missing_run(n) {
         return Err(format!("{}: {why}", n.id));
     }
-    let gives = n.stage.kind() == Kind::Turn || n.stage == Stage::Command;
+    let gives = n.stage.kind() == Kind::Turn || n.stage == Stage::Shell;
     if !gives && !n.results.is_empty() {
         return Err(format!("{}: {:?} gives no results", n.id, n.stage));
     }
@@ -234,7 +248,7 @@ impl Graph {
         if !n.stage.dialed() {
             return Err(format!("{:?} is not a step", n.stage));
         }
-        let custom = matches!(n.stage, Stage::Skill | Stage::Prompt | Stage::Command);
+        let custom = custom(n.stage);
         if !custom && before.iter().any(|m| m.stage == n.stage) {
             return Err(format!("{:?} is in the workflow twice", n.stage));
         }
@@ -335,11 +349,11 @@ mod tests {
 
     #[test]
     fn skills_prompts_and_commands_may_repeat_and_each_needs_what_it_runs() {
-        let mut lint = node("lint", Command, 0, &["lint-report"]);
+        let mut lint = node("lint", Shell, 0, &["lint-report"]);
         lint.run = "make lint".into();
         let mut review = node("review", Skill, 100, &[]);
         review.run = "code-review".into();
-        let mut tests = node("tests", Command, 200, &[]);
+        let mut tests = node("tests", Shell, 200, &[]);
         tests.run = "npm test".into();
         let g = Graph {
             nodes: vec![lint, review, tests, node("land", Land, 300, &[])],
@@ -351,10 +365,25 @@ mod tests {
         assert!(bad.check().unwrap_err().contains("skill"));
         let mut bad = g.clone();
         bad.nodes[2].run = " ".into();
-        assert!(bad.check().unwrap_err().contains("command line"));
-        let mut bad = g;
+        assert!(bad.check().unwrap_err().contains("script"));
+        let mut bad = g.clone();
         bad.nodes.push(node("ask", Prompt, 250, &[]));
         assert!(bad.check().unwrap_err().contains("instructions"));
+        let mut bad = g;
+        let mut agent = node("security", Agent, 250, &[]);
+        agent.run = "reviewer".into();
+        let mut command = node("ship-notes", Command, 260, &[]);
+        command.run = "release-notes".into();
+        bad.nodes.extend([agent.clone(), agent]);
+        assert!(
+            bad.check().unwrap_err().contains("taken"),
+            "ids stay unique"
+        );
+        bad.nodes.pop();
+        bad.nodes.push(command);
+        assert_eq!(bad.check(), Ok(()));
+        bad.nodes[5].run = "../x".into();
+        assert!(bad.check().unwrap_err().contains(".claude/commands"));
     }
 
     #[test]

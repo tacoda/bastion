@@ -16,7 +16,14 @@ use super::{Choice, Ctx, labeled, scrolled};
 use crate::app::Message;
 use crate::theme;
 
-const CUSTOM: [&str; 3] = ["skill", "prompt", "command"];
+/// The ways a workflow's own step runs, each with its one text.
+const CUSTOM: [(&str, &str); 5] = [
+    ("prompt", "Prompt"),
+    ("agent", "Agent, in .claude/agents"),
+    ("skill", "Skill, in .claude/skills"),
+    ("command", "Command, in .claude/commands"),
+    ("shell", "Shell script"),
+];
 const DIALS: [(&str, &str); 2] = [
     ("lights_on", "lights-on: a person decides"),
     ("dark", "dark: runs on its own"),
@@ -30,8 +37,9 @@ pub struct State {
     picked: Pick,
     drag: Option<Drag>,
     admin: bool,
-    /// The picked step's note and results as typed.
-    note: text_editor::Content,
+    /// The picked step's text (its instructions, or a shell step's script)
+    /// and its results, as typed.
+    text: text_editor::Content,
     results: String,
     copy_name: String,
     said: String,
@@ -52,8 +60,10 @@ pub enum Msg {
     Choose(Choice),
     Pointer(Pointer),
     AddStep(String),
+    /// How the picked step runs: one of `CUSTOM`, or a Bastion stage.
+    Kind(Choice),
     Field(StepField, String),
-    Note(text_editor::Action),
+    Text(text_editor::Action),
     Dial(Choice),
     RemoveStep,
     RemoveLink,
@@ -126,7 +136,7 @@ impl State {
             Pick::Step(id) => self.draft.as_ref().and_then(|w| edit::node(w, id)).cloned(),
             _ => None,
         };
-        self.note = text_editor::Content::with_text(step.as_ref().map_or("", |n| n.note.as_str()));
+        self.text = text_editor::Content::with_text(&step.as_ref().map(shown).unwrap_or_default());
         self.results = step.map(|n| n.results.join(", ")).unwrap_or_default();
         self.picked = pick;
     }
@@ -142,6 +152,59 @@ impl State {
             f(n);
         }
     }
+}
+
+/// What a step's one text box holds.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Text {
+    /// The instructions, or for a stage, its instructions in place of the
+    /// built-in ones.
+    Note,
+    /// A shell step's script.
+    Script,
+    /// A step Bastion does itself, with nothing to write.
+    Nothing,
+}
+
+fn text_of(n: &bastion_protocol::NodeView) -> Text {
+    let custom = CUSTOM.iter().any(|(s, _)| *s == n.stage);
+    match n.stage.as_str() {
+        "shell" => Text::Script,
+        _ if custom || !n.builtin.is_empty() => Text::Note,
+        _ => Text::Nothing,
+    }
+}
+
+/// The text a step's box starts with: its script, its note, or a stage's
+/// built-in instructions while the note is empty.
+fn shown(n: &bastion_protocol::NodeView) -> String {
+    match text_of(n) {
+        Text::Script => n.run.clone(),
+        Text::Note if n.note.trim().is_empty() => n.builtin.clone(),
+        Text::Note => n.note.clone(),
+        Text::Nothing => String::new(),
+    }
+}
+
+/// Keep what was typed: a script as the step's run, instructions as its
+/// note, and instructions left as built in as no note, so the step keeps
+/// following the built-in ones.
+fn keep_text(n: &mut bastion_protocol::NodeView, typed: String) {
+    match text_of(n) {
+        Text::Script => n.run = typed,
+        Text::Note if !n.builtin.is_empty() && typed.trim() == n.builtin.trim() => n.note.clear(),
+        Text::Note => n.note = typed,
+        Text::Nothing => {}
+    }
+}
+
+/// A Bastion stage's built-in instructions, as any workflow shown has them.
+fn builtin_of(all: &[WorkflowView], stage: &str) -> String {
+    all.iter()
+        .flat_map(|w| &w.nodes)
+        .find(|n| n.stage == stage && !n.builtin.is_empty())
+        .map(|n| n.builtin.clone())
+        .unwrap_or_default()
 }
 
 fn on_pointer(state: &mut State, p: Pointer) {
@@ -251,10 +314,16 @@ fn change(state: &mut State, msg: Msg) {
             .iter_mut()
             .for_each(|w| edit::add_step(w, &stage)),
         Msg::Field(f, v) => on_field(state, f, v),
-        Msg::Note(a) => {
-            state.note.perform(a);
-            let note = state.note.text();
-            state.step(|n| n.note = note);
+        Msg::Kind(_) if !state.editable() => {}
+        Msg::Kind(c) => {
+            let builtin = builtin_of(&state.all, &c.id);
+            state.step(|n| (n.stage, n.builtin) = (c.id, builtin));
+            state.pick(state.picked.clone());
+        }
+        Msg::Text(a) => {
+            state.text.perform(a);
+            let typed = state.text.text();
+            state.step(|n| keep_text(n, typed));
         }
         Msg::Dial(c) => state.step(|n| n.dial = c.id),
         Msg::RemoveStep => {
@@ -355,31 +424,53 @@ fn manage_view(state: &State) -> Element<'_, Message> {
         .into()
 }
 
-/// Add a skill, a prompt, a command, or a Bastion stage not used yet.
+/// Add a step: a prompt, which the step's panel turns into any other kind.
 fn palette(state: &State) -> Element<'_, Message> {
+    let add = state
+        .editable()
+        .then(|| wrap(Msg::AddStep("prompt".into())));
+    row![small("Add a step", add)].into()
+}
+
+/// The kinds a step may become: a workflow's own, then each Bastion stage
+/// not used by another step.
+fn kinds(state: &State, own: &str) -> Vec<Choice> {
     let used: Vec<&str> = state
         .draft
         .iter()
         .flat_map(|w| &w.nodes)
         .map(|n| n.stage.as_str())
+        .filter(|s| *s != own)
         .collect();
-    let unused: Vec<Choice> = edit::stages(&state.all)
-        .iter()
-        .filter(|s| !used.contains(&s.as_str()))
-        .map(|s| Choice::new(s, &s.replace('_', " ")))
-        .collect();
-    let stage = pick_list(unused, None::<Choice>, |c| wrap(Msg::AddStep(c.id)))
-        .placeholder("a Bastion stage…")
-        .style(theme::select);
-    let custom = CUSTOM
-        .iter()
-        .map(|s| small(s, Some(wrap(Msg::AddStep(s.to_string())))));
-    row![text("Add a step").size(13).color(theme::MUTED)]
-        .extend(custom)
-        .push(stage)
-        .spacing(8)
-        .align_y(iced::Center)
-        .into()
+    let custom = CUSTOM.iter().map(|(id, name)| Choice::new(id, name));
+    let stages = edit::stages(&state.all)
+        .into_iter()
+        .filter(|s| !CUSTOM.iter().any(|(c, _)| c == s) && !used.contains(&s.as_str()))
+        .map(|s| Choice::new(&s, &format!("Bastion stage: {}", s.replace('_', " "))));
+    custom.chain(stages).collect()
+}
+
+/// The name an agent, skill or command step runs, and where it lives.
+fn name_label(stage: &str) -> Option<&'static str> {
+    match stage {
+        "agent" => Some("Agent: a file in .claude/agents, without .md"),
+        "skill" => Some("Skill: a folder in .claude/skills"),
+        "command" => Some("Command: a file in .claude/commands, without .md"),
+        _ => None,
+    }
+}
+
+/// What the step's one text box is for.
+fn text_label(n: &bastion_protocol::NodeView) -> &'static str {
+    match (text_of(n), n.stage.as_str()) {
+        (Text::Script, _) => "Script, run by sh in the repository in the job's VM",
+        (Text::Note, "prompt") => "Instructions",
+        (Text::Note, _) if !n.builtin.is_empty() => {
+            "Instructions (Bastion's own until you change them; clear to restore)"
+        }
+        (Text::Note, _) => "Added instructions (optional)",
+        (Text::Nothing, _) => "Bastion does this step itself; it runs no agent and no script.",
+    }
 }
 
 fn step_detail<'a>(state: &'a State, id: &str, editable: bool) -> Option<Element<'a, Message>> {
@@ -389,24 +480,16 @@ fn step_detail<'a>(state: &'a State, id: &str, editable: bool) -> Option<Element
         .and_then(|w| edit::node(w, id))?
         .clone();
     let on = |m: Msg| editable.then_some(wrap(m));
-    let mut body = column![
-        row![
-            text(title(&n)).font(theme::BOLD),
-            text(n.id.clone()).size(13).color(theme::MUTED)
-        ]
-        .spacing(8)
-    ];
-    let run_label = match n.stage.as_str() {
-        "skill" => Some("Skill: the folder under .claude/skills"),
-        "command" => Some("Command line, run in the repository"),
-        _ => None,
-    };
-    if let Some(label) = run_label {
-        let input = text_input("", &n.run)
-            .on_input_maybe(editable.then_some(|v| wrap(Msg::Field(StepField::Run, v))))
-            .style(theme::field);
-        body = body.push(labeled(label, input));
-    }
+    let head = row![
+        text(title(&n)).font(theme::BOLD),
+        text(n.id.clone()).size(13).color(theme::MUTED)
+    ]
+    .spacing(8);
+    let all = kinds(state, &n.stage);
+    let kind = all.iter().find(|c| c.id == n.stage).cloned();
+    let kind = pick_list(all, kind, |c| wrap(Msg::Kind(c)))
+        .width(Fill)
+        .style(theme::select);
     let dials: Vec<Choice> = DIALS
         .iter()
         .map(|(id, name)| Choice::new(id, name))
@@ -416,26 +499,41 @@ fn step_detail<'a>(state: &'a State, id: &str, editable: bool) -> Option<Element
         .find(|c| c.id == n.dial)
         .cloned()
         .or_else(|| dials.first().cloned());
-    let dial = pick_list(dials, dial, |c| wrap(Msg::Dial(c))).style(theme::select);
-    let note_label = if n.stage == "prompt" {
-        "Instructions"
+    let dial = pick_list(dials, dial, |c| wrap(Msg::Dial(c)))
+        .width(Fill)
+        .style(theme::select);
+    let mut how = row![
+        container(labeled("Runs as", kind)).width(Fill),
+        container(labeled("Dial", dial)).width(Fill),
+    ]
+    .spacing(12);
+    if let Some(label) = name_label(&n.stage) {
+        let input = text_input("", &n.run)
+            .on_input_maybe(editable.then_some(|v| wrap(Msg::Field(StepField::Run, v))))
+            .style(theme::field);
+        how = how.push(container(labeled(label, input)).width(Fill));
+    }
+    let mut body = column![head, how];
+    if text_of(&n) == Text::Nothing {
+        body = body.push(text(text_label(&n)).size(13).color(theme::MUTED));
     } else {
-        "Note to the agent"
-    };
-    let mut note = text_editor(&state.note).height(96);
-    if editable {
-        note = note.on_action(|a| wrap(Msg::Note(a)));
+        let mut words = text_editor(&state.text).height(240);
+        if text_of(&n) == Text::Script {
+            words = words.font(theme::MONO);
+        }
+        if editable {
+            words = words.on_action(|a| wrap(Msg::Text(a)));
+        }
+        body = body.push(labeled(text_label(&n), words));
     }
     let results = text_input("", &state.results)
         .on_input_maybe(editable.then_some(|v| wrap(Msg::Field(StepField::Results, v))))
         .style(theme::field);
     body = body
-        .push(labeled("Dial", dial))
-        .push(labeled(note_label, note))
         .push(labeled("Results it gives, comma-separated", results))
         .push(small("Remove step", on(Msg::RemoveStep)));
     Some(
-        container(body.spacing(10))
+        container(body.spacing(12))
             .padding(16)
             .width(Fill)
             .style(theme::panel)
@@ -569,5 +667,56 @@ mod tests {
         on_field(&mut state, StepField::Results, "design-notes, ".into());
         assert_eq!(state.results, "design-notes, ");
         assert_eq!(state.draft.unwrap().nodes[0].results, ["design-notes"]);
+    }
+
+    #[test]
+    fn a_step_shows_its_text_and_keeps_only_what_differs_from_the_built_in() {
+        let mut w = workflow("mine", 1, false);
+        edit::add_step(&mut w, "plan");
+        w.nodes[0].builtin = "Plan the change.".into();
+        let mut short = workflow("short", 1, true);
+        short.nodes = w.nodes.clone();
+        let mut state = State {
+            all: vec![short],
+            draft: Some(w),
+            admin: true,
+            ..State::default()
+        };
+        let node = |state: &State| state.draft.as_ref().unwrap().nodes[0].clone();
+        state.pick(Pick::Step("plan".into()));
+        assert_eq!(state.text.text(), "Plan the change.", "the built-in shows");
+        let typed = |state: &mut State, words: &str| {
+            state.text = text_editor::Content::with_text(words);
+            let words = state.text.text();
+            state.step(|n| keep_text(n, words));
+        };
+        typed(&mut state, "Plan in three lines.");
+        assert_eq!(node(&state).note, "Plan in three lines.");
+        typed(&mut state, "Plan the change.");
+        assert_eq!(
+            node(&state).note,
+            "",
+            "the built-in text is kept as no note"
+        );
+        change(&mut state, Msg::Kind(Choice::new("shell", "Shell script")));
+        assert_eq!(
+            (node(&state).stage.as_str(), node(&state).builtin.as_str()),
+            ("shell", "")
+        );
+        typed(&mut state, "make lint\nmake test");
+        assert_eq!(
+            node(&state).run,
+            "make lint\nmake test",
+            "a script is the step's run"
+        );
+        change(&mut state, Msg::Kind(Choice::new("plan", "plan")));
+        assert_eq!(
+            node(&state).builtin,
+            "Plan the change.",
+            "a stage finds its built-in"
+        );
+        state.admin = false;
+        change(&mut state, Msg::Kind(Choice::new("prompt", "Prompt")));
+        assert_eq!(node(&state).stage, "plan", "a reader cannot change a step");
     }
 }

@@ -139,7 +139,7 @@ fn transactions_at(version: u64) -> Vec<Vec<String>> {
 #[test]
 fn migration_1_rebuilds_the_staged_tables_once_with_deferred_keys() {
     let fresh = transactions_at(0);
-    assert_eq!(fresh.len(), 4, "the schema, then migrations 1 to 3");
+    assert_eq!(fresh.len(), 5, "the schema, then migrations 1 to 4");
     let m1 = &fresh[1];
     assert_eq!(m1.first().unwrap(), "PRAGMA defer_foreign_keys = ON");
     assert_eq!(m1.last().unwrap(), "PRAGMA user_version = 1");
@@ -156,7 +156,22 @@ fn migration_1_rebuilds_the_staged_tables_once_with_deferred_keys() {
         m3.iter()
             .any(|s| s.starts_with("INSERT INTO jobs") && s.contains("workflow_version, node"))
     );
-    assert_eq!(transactions_at(3).len(), 1, "nothing left to migrate");
+    let m4 = &transactions_at(3)[1];
+    assert!(
+        m4.iter()
+            .any(|s| s.contains("'shell'") && s.starts_with("CREATE TABLE"))
+    );
+    let jobs_copied =
+        format!("INSERT INTO jobs ({JOB_COLUMNS}) SELECT {JOB_COLUMNS} FROM jobs_copy");
+    assert!(
+        m4.contains(&jobs_copied),
+        "every column the alters added is kept"
+    );
+    for table in ["jobs", "artifacts", "turns", "workflow_nodes"] {
+        let renamed = format!("UPDATE {table} SET stage = 'shell' WHERE stage = 'command'");
+        assert!(m4.contains(&renamed), "{table}");
+    }
+    assert_eq!(transactions_at(4).len(), 1, "nothing left to migrate");
 }
 
 #[test]

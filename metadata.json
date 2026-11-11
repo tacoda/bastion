@@ -1,0 +1,88 @@
+{
+  "cli_version": "0.12.2",
+  "checkpoint_id": "01M75VSVPYEEYRBQ5E502JZKF1",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "README.md",
+    "crates/bastion-cli/src/update.rs",
+    "crates/bastion-client/src/client.rs",
+    "crates/bastion-client/src/start.rs",
+    "crates/bastion-core/src/escape.rs",
+    "crates/bastion-core/src/eval.rs",
+    "crates/bastion-core/src/gates.rs",
+    "crates/bastion-core/src/lib.rs",
+    "crates/bastion-core/src/media.rs",
+    "crates/bastion-core/src/notice.rs",
+    "crates/bastion-core/src/publish.rs",
+    "crates/bastion-core/src/request.rs",
+    "crates/bastion-core/src/settings.rs",
+    "crates/bastion-desktop/Cargo.toml",
+    "crates/bastion-desktop/src/app.rs",
+    "crates/bastion-desktop/src/pages/costs.rs",
+    "crates/bastion-desktop/src/pages/job.rs",
+    "crates/bastion-desktop/src/pages/learn.rs",
+    "crates/bastion-desktop/src/pages/new_request.rs",
+    "crates/bastion-desktop/src/pages/session.rs",
+    "crates/bastion-desktop/src/pages/settings/notify.rs",
+    "crates/bastion-desktop/src/pages/verification.rs",
+    "crates/bastion-protocol/src/api.rs",
+    "crates/bastion-protocol/src/lib.rs",
+    "crates/bastion-server/src/access.rs",
+    "crates/bastion-server/src/api/costs.rs",
+    "crates/bastion-server/src/api/factory.rs",
+    "crates/bastion-server/src/api/learn.rs",
+    "crates/bastion-server/src/api/sessions.rs",
+    "crates/bastion-server/src/api/verification.rs",
+    "crates/bastion-server/src/factory.rs",
+    "crates/bastion-server/src/factory/gates.rs",
+    "crates/bastion-server/src/factory/land.rs",
+    "crates/bastion-server/src/factory/media.rs",
+    "crates/bastion-server/src/factory/reverts.rs",
+    "crates/bastion-server/src/factory/verdict.rs",
+    "crates/bastion-server/src/forge.rs",
+    "crates/bastion-server/src/http.rs",
+    "crates/bastion-server/src/learn.rs",
+    "crates/bastion-server/src/server.rs",
+    "crates/bastion-server/src/store.rs",
+    "worker-compose.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 42,
+    "cache_creation_tokens": 22299,
+    "cache_read_tokens": 5205376,
+    "output_tokens": 11057,
+    "api_call_count": 21,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 880,
+    "layers": {
+      "betterleaks": 58,
+      "connection_string": 0,
+      "credential_key": 740,
+      "credential_value": 85,
+      "credentialed_uri": 0,
+      "entropy": 86,
+      "key_context": 0,
+      "provider_token": 7,
+      "shell_stdin": 0
+    }
+  }
+}

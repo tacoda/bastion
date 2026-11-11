@@ -1,0 +1,3 @@
+push, then we will start the page by page work
+Before we do take a look at the repository
+If there is anything out-of-date or leftover, clean it up.

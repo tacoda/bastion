@@ -17,6 +17,10 @@ const FORGES: [(&str, &str); 2] = [
     ("local", "Merged here, into the workspace's branch"),
     ("github", "Pushed and opened as a GitHub pull request"),
 ];
+const INTAKE: [(&str, &str); 2] = [
+    ("open", "Open: queued requests start as room frees"),
+    ("paused", "Paused: requests queue, and nothing new starts"),
+];
 const TRACKERS: [(&str, &str); 2] = [
     ("none", "Only what you type"),
     ("github_issues", "Also GitHub issues"),
@@ -38,6 +42,7 @@ pub enum Pick {
     BuildModel,
     Forge,
     Tracker,
+    Intake,
 }
 
 #[derive(Clone, Debug)]
@@ -98,6 +103,7 @@ fn apply(mut s: SettingsView, pick: Pick, choice: &str) -> SettingsView {
         Pick::BuildModel => (s.build_provider, s.build_model) = model(),
         Pick::Forge => s.forge = choice.into(),
         Pick::Tracker => s.tracker = choice.into(),
+        Pick::Intake => s.intake_paused = choice == "paused",
     }
     s
 }
@@ -209,7 +215,13 @@ fn factory(state: &State) -> Element<'_, Message> {
                     ),
                 ]
                 .spacing(16),
-            );
+            )
+            .push(picker(
+                "Intake",
+                choices(&INTAKE),
+                INTAKE[usize::from(s.intake_paused)].0.into(),
+                Pick::Intake,
+            ));
     }
     card(
         "Factory",
@@ -301,8 +313,9 @@ mod tests {
             ("localfake", "echo-1", "github")
         );
         assert_eq!(
-            apply(s, Pick::Tracker, "github_issues").tracker,
+            apply(s.clone(), Pick::Tracker, "github_issues").tracker,
             "github_issues"
         );
+        assert!(apply(s, Pick::Intake, "paused").intake_paused);
     }
 }

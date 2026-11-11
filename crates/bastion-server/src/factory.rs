@@ -356,6 +356,10 @@ impl Factory {
                 let error = "the part before it ended without landing".into();
                 let _ = factory.apply(&id, Event::Abandoned { error }).await;
             }
+            let settings = settings_store::current(&*factory.store).await;
+            if settings.is_ok_and(|s| s.intake_paused) {
+                return;
+            }
             let workspaces = factory.store.workspaces().await.unwrap_or_default();
             let cap = |name: &str| {
                 let w = workspaces.iter().find(|w| w.name == name)?;

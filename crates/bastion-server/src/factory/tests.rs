@@ -1003,3 +1003,29 @@ fn a_revert_of_a_landed_commit_is_an_escape_of_its_job_once() {
         );
     });
 }
+
+#[test]
+fn a_paused_intake_admits_nothing_until_it_opens() {
+    use crate::settings_store::SettingsStore;
+    let rig = rig();
+    crate::rt::block_on(async {
+        let paused = bastion_core::settings::Settings {
+            intake_paused: true,
+            ..Default::default()
+        };
+        rig.store.add_version(&paused, "paused", 1).await.unwrap();
+        let id = rig.factory.submit("w", "x").await.unwrap();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(
+            job_of(&rig, &id).await.state,
+            State::Queued,
+            "held while paused"
+        );
+        rig.store
+            .add_version(&Default::default(), "open", 2)
+            .await
+            .unwrap();
+        rig.factory.pump();
+        until(&rig, &id, Stage::Plan, State::Running).await;
+    });
+}

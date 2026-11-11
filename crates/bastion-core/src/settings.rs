@@ -77,6 +77,17 @@ pub struct Settings {
     pub build_model: Model,
     pub forge: Forge,
     pub tracker: Tracker,
+    /// No queued job is admitted while intake is paused (F8). Requests
+    /// still queue, and jobs already admitted go on.
+    pub intake_paused: bool,
+}
+
+/// How a version says whether intake is paused.
+fn intake(paused: bool) -> &'static str {
+    match paused {
+        true => "paused",
+        false => "open",
+    }
 }
 
 /// The key a version keeps a step's dial by, such as `step.code_review`:
@@ -171,6 +182,7 @@ impl Settings {
                     ("model.build.model", self.build_model.model.clone()),
                     ("forge", word(&FORGES, self.forge)),
                     ("tracker", word(&TRACKERS, self.tracker)),
+                    ("intake", intake(self.intake_paused).into()),
                 ]
                 .map(|(k, v)| (k.to_string(), v)),
             )
@@ -203,6 +215,7 @@ impl Settings {
         s.tracker = get("tracker")
             .and_then(|w| from_word(&TRACKERS, w))
             .unwrap_or_default();
+        s.intake_paused = get("intake") == Some(intake(true));
         s
     }
 
@@ -232,8 +245,11 @@ mod tests {
             build_model: Model::default(),
             forge: Forge::Github,
             tracker: Tracker::GithubIssues,
+            intake_paused: true,
         };
         assert_eq!(Settings::from_pairs(&s.to_pairs()), s);
+        let open = Settings::default().to_pairs();
+        assert!(open.contains(&("intake".into(), "open".into())));
     }
 
     #[test]

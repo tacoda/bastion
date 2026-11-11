@@ -703,6 +703,9 @@ pub struct SettingsView {
     pub forge: String,
     /// `none` or `github_issues`.
     pub tracker: String,
+    /// No queued job is admitted while true (F8).
+    #[serde(default)]
+    pub intake_paused: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

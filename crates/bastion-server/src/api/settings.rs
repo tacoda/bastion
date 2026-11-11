@@ -32,6 +32,7 @@ fn view_of(s: &Settings) -> SettingsView {
         build_model: s.build_model.model.clone(),
         forge: name(s.forge),
         tracker: name(s.tracker),
+        intake_paused: s.intake_paused,
     }
 }
 
@@ -47,6 +48,7 @@ fn settings_of(v: &SettingsView, was: Settings) -> Result<Settings, String> {
         build_model: model(&v.build_provider, &v.build_model),
         forge: word::<Forge>(&v.forge, "forge")?,
         tracker: word::<Tracker>(&v.tracker, "tracker")?,
+        intake_paused: v.intake_paused,
     })
 }
 
@@ -61,9 +63,12 @@ pub async fn settings_set(
     cell: &FactoryCell,
     settings: SettingsView,
 ) -> Result<(), String> {
-    let store = factory(cell)?.store().clone();
+    let factory = factory(cell)?;
+    let store = factory.store().clone();
     let next = settings_of(&settings, settings_store::current(&*store).await?)?;
     settings_store::change(&*store, &next, now()).await?;
+    // Intake opened again admits what queued meanwhile.
+    factory.pump();
     changed(events);
     Ok(())
 }

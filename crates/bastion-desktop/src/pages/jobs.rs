@@ -340,6 +340,7 @@ mod tests {
                 requester: None,
                 parent: parent.map(String::from),
                 part: None,
+                parts: Vec::new(),
             },
         }
     }

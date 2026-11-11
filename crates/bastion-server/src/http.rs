@@ -12,7 +12,7 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
-use bastion_core::Pipeline;
+use bastion_core::{Event as JobEvent, Pipeline};
 use bastion_protocol::{
     Change, ConstraintView, EscapeReport, HeldCallRef, HostView, LogRequest, NewEval,
     ProposalDecision, SettingsView, Workspace,
@@ -161,6 +161,7 @@ fn factory_routes() -> Router<App> {
         .route("/jobs/{id}", get(job))
         .route("/jobs/{id}/approve", post(job_approve))
         .route("/jobs/{id}/comment", post(job_comment))
+        .route("/jobs/{id}/parts", post(job_parts))
         .route("/jobs/{id}/stop", post(job_stop))
         .route("/jobs/{id}/retry", post(job_retry))
         .route("/jobs/{id}/extend", post(job_extend))
@@ -473,7 +474,9 @@ async fn job_approve(
 ) -> Response {
     let by = person.name.clone();
     match access::approve(&app.server, &person, &id).await {
-        Ok(()) => answer(api::factory::job_approve(&app.server.factory, id, by).await),
+        Ok(()) => {
+            answer(api::factory::job_decide(&app.server.factory, id, JobEvent::Approved, by).await)
+        }
         Err(why) => refused(why),
     }
 }
@@ -481,6 +484,13 @@ async fn job_approve(
 #[derive(Deserialize)]
 struct Text {
     text: String,
+}
+
+/// A person's decision on job `id`, under their access to it.
+async fn decide_as(app: &App, person: &Person, id: String, event: JobEvent) -> Response {
+    let by = person.name.clone();
+    let decide = api::factory::job_decide(&app.server.factory, id.clone(), event, by);
+    on_job(app, person, &id, async { answer(decide.await) }).await
 }
 
 async fn job_comment(
@@ -492,6 +502,20 @@ async fn job_comment(
     let by = person.name.clone();
     let comment = api::factory::job_comment(&app.server.factory, id.clone(), b.text, by);
     on_job(&app, &person, &id, async { answer(comment.await) }).await
+}
+
+#[derive(Deserialize)]
+struct Parts {
+    parts: Vec<String>,
+}
+
+async fn job_parts(
+    State(app): State<App>,
+    Extension(person): Extension<Person>,
+    Path(id): Path<String>,
+    Json(b): Json<Parts>,
+) -> Response {
+    decide_as(&app, &person, id, JobEvent::PartsSet { parts: b.parts }).await
 }
 
 async fn job_stop(
@@ -508,9 +532,7 @@ async fn job_retry(
     Extension(person): Extension<Person>,
     Path(id): Path<String>,
 ) -> Response {
-    let by = person.name.clone();
-    let retry = api::factory::job_retry(&app.server.factory, id.clone(), by);
-    on_job(&app, &person, &id, async { answer(retry.await) }).await
+    decide_as(&app, &person, id, JobEvent::Retried).await
 }
 
 async fn job_extend(
@@ -518,9 +540,7 @@ async fn job_extend(
     Extension(person): Extension<Person>,
     Path(id): Path<String>,
 ) -> Response {
-    let by = person.name.clone();
-    let extend = api::factory::job_extend(&app.server.factory, id.clone(), by);
-    on_job(&app, &person, &id, async { answer(extend.await) }).await
+    decide_as(&app, &person, id, JobEvent::Extended).await
 }
 
 async fn dials(State(app): State<App>) -> Response {
@@ -985,6 +1005,10 @@ mod tests {
         reads::<Text>(api::JobComment {
             id: s("j1"),
             text: s("x"),
+        });
+        reads::<Parts>(api::JobParts {
+            id: s("j1"),
+            parts: vec![s("a")],
         });
         reads::<SetDial>(api::DialsSet {
             stage: s("plan"),

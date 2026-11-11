@@ -859,3 +859,53 @@ fn a_spent_revision_budget_stops_the_steps_sending_work_back() {
         "no budget: the step's own limit"
     );
 }
+
+#[test]
+fn a_lights_on_scope_keeps_its_parts_until_a_person_approves_them_as_set() {
+    let lights_on = Dials::default();
+    let (j, effects) = step(
+        &at(Stage::Scope, State::Running),
+        &reply(THREE_PARTS),
+        AT,
+        &lights_on,
+    );
+    assert_eq!((j.stage, j.state), (Stage::Scope, State::NeedsYou));
+    assert!(
+        !effects.iter().any(|e| matches!(e, Effect::Split { .. })),
+        "no split before approval"
+    );
+    assert_eq!(crate::proposed(&j).len(), 3);
+
+    let set = Event::PartsSet {
+        parts: vec![
+            "Add the model and endpoint".into(),
+            " ".into(),
+            "Add the page".into(),
+        ],
+    };
+    let (j, _) = step(&j, &set, AT, &lights_on);
+    assert_eq!(
+        crate::proposed(&j),
+        ["Add the model and endpoint", "Add the page"]
+    );
+    let (j, effects) = step(&j, &Event::Approved, AT, &lights_on);
+    assert_eq!(j.part.as_deref(), Some("Add the model and endpoint"));
+    let split = effects.iter().find_map(|e| match e {
+        Effect::Split { parts } => Some(parts.len()),
+        _ => None,
+    });
+    assert_eq!(split, Some(1), "one later part");
+
+    let (j, _) = step(
+        &at(Stage::Scope, State::Running),
+        &reply(THREE_PARTS),
+        AT,
+        &lights_on,
+    );
+    let one = Event::PartsSet {
+        parts: vec!["All of it".into()],
+    };
+    let (j, _) = step(&j, &one, AT, &lights_on);
+    let (j, effects) = step(&j, &Event::Approved, AT, &lights_on);
+    assert!(j.part.is_none() && !effects.iter().any(|e| matches!(e, Effect::Split { .. })));
+}

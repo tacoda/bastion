@@ -295,6 +295,11 @@ pub enum Event {
     Commented {
         text: String,
     },
+    /// A person set the parts scope proposed, while it waits (F8). No parts,
+    /// or one, means the request stays one job.
+    PartsSet {
+        parts: Vec<String>,
+    },
     Landed,
     LandFailed {
         error: String,
@@ -571,10 +576,12 @@ pub fn step(job: &Job, event: &Event, at: u64, dials: &Dials) -> (Job, Vec<Effec
     let mut next = job.clone();
     next.updated_at = at;
     let effects = match (job.state, event) {
-        (_, Event::Retried | Event::Extended) => match by_person(&mut next, event, dials) {
-            Some(effects) => effects,
-            None => return (job.clone(), Vec::new()),
-        },
+        (_, Event::Retried | Event::Extended | Event::PartsSet { .. }) => {
+            match by_person(&mut next, event, dials) {
+                Some(effects) => effects,
+                None => return (job.clone(), Vec::new()),
+            }
+        }
         (state, _) if state.finished() => return (job.clone(), Vec::new()),
         (_, Event::Stopped) => {
             next.state = State::Stopped;
@@ -666,6 +673,10 @@ fn by_person(job: &mut Job, event: &Event, dials: &Dials) -> Option<Vec<Effect>>
         }
         // The cap counts from `updated_at`, which `step` moved to now.
         Event::Extended if extends(job) => Some(Vec::new()),
+        Event::PartsSet { parts } if (job.stage, job.state) == (Stage::Scope, State::NeedsYou) => {
+            propose(job, parts);
+            Some(Vec::new())
+        }
         _ => None,
     }
 }
@@ -912,6 +923,13 @@ fn approved(job: &mut Job, dials: &Dials) -> Vec<Effect> {
             job.state = State::Running;
             vec![Effect::Merge]
         }
+        // An approved scope splits by the parts it kept, as a person left them.
+        Stage::Scope => {
+            let parts = proposed(job);
+            let mut effects = split(job, &parts);
+            effects.extend(advance(job, dials));
+            effects
+        }
         stage if stage.acts() => start(job, dials),
         _ => advance(job, dials),
     }
@@ -1033,11 +1051,7 @@ fn turn_finished(job: &mut Job, outcome: &Outcome, dials: &Dials) -> Vec<Effect>
 fn after_report(job: &mut Job, report: &str, dials: &Dials) -> Vec<Effect> {
     match job.stage {
         Stage::Discover => discovered(job, report),
-        Stage::Scope => {
-            let mut effects = split(job, &parts(report));
-            effects.extend(after_turn(job, dials));
-            return effects;
-        }
+        Stage::Scope => propose(job, &parts(report)),
         Stage::Define => job.criteria = Some(report.into()),
         Stage::Specify => job.falsify_tried = false,
         Stage::Prove => return proved(job, report, dials),
@@ -1092,6 +1106,33 @@ fn parts(report: &str) -> Vec<String> {
         .filter_map(brief::item)
         .map(String::from)
         .collect()
+}
+
+/// The result scope's parts are kept under until its approval splits them.
+pub const PARTS: &str = "parts";
+
+/// Keep `parts` as scope's proposal, one per line, for a person to approve
+/// or set again.
+fn propose(job: &mut Job, parts: &[String]) {
+    let kept: Vec<&str> = parts
+        .iter()
+        .map(|p| p.trim())
+        .filter(|p| !p.is_empty())
+        .collect();
+    match kept.is_empty() {
+        true => job.results.remove(PARTS),
+        false => job.results.insert(PARTS.into(), kept.join("\n")),
+    };
+}
+
+/// The parts scope proposed, as a person left them.
+pub fn proposed(job: &Job) -> Vec<String> {
+    let kept = job
+        .results
+        .get(PARTS)
+        .map(String::as_str)
+        .unwrap_or_default();
+    kept.lines().map(String::from).collect()
 }
 
 /// Scope named several parts: this job does the first, and each later part

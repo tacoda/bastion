@@ -25,6 +25,9 @@ pub struct State {
     id: String,
     detail: Option<JobDetail>,
     note: text_editor::Content,
+    /// Scope's parts, one per line, as the person is setting them (F8).
+    parts: text_editor::Content,
+    parts_edited: bool,
     error: String,
     /// What the owner typed to refuse each held call, by call id.
     feedback: BTreeMap<String, String>,
@@ -43,6 +46,8 @@ impl State {
             id,
             detail: None,
             note: text_editor::Content::new(),
+            parts: text_editor::Content::new(),
+            parts_edited: false,
             error: String::new(),
             feedback: BTreeMap::new(),
             toggled: BTreeSet::new(),
@@ -63,6 +68,7 @@ impl State {
 pub enum Msg {
     Read(Result<Box<JobDetail>, String>),
     Edit(text_editor::Action),
+    EditParts(text_editor::Action),
     CommentAt(String),
     Act(Action),
     Acted(Result<(), String>),
@@ -78,6 +84,7 @@ pub enum Msg {
 pub enum Action {
     Approve,
     Comment,
+    SetParts,
     Retry,
     Extend,
     Stop,
@@ -132,6 +139,10 @@ fn act(state: &State, ctx: &Ctx, action: Action) -> Task<Message> {
             let text = state.note.text().trim().to_string();
             ask(ctx, api::JobComment { id, text })
         }
+        Action::SetParts => {
+            let parts = lines(&state.parts.text());
+            ask(ctx, api::JobParts { id, parts })
+        }
     }
 }
 
@@ -156,13 +167,22 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
                 .map(|s| (s.id.clone(), s.state.clone()))
                 .collect();
             state.docs = parsed(&d.artifacts);
+            // A read again keeps what the person is typing.
+            if !state.parts_edited {
+                state.parts = text_editor::Content::with_text(&d.job.parts.join("\n"));
+            }
             state.detail = Some(*d);
         }
         Msg::Read(Err(e)) | Msg::Acted(Err(e)) => state.error = e,
         Msg::Edit(action) => state.note.perform(action),
+        Msg::EditParts(action) => {
+            state.parts_edited |= action.is_edit();
+            state.parts.perform(action);
+        }
         Msg::CommentAt(at) => append(&mut state.note, &at),
         Msg::Act(action) => return act(state, ctx, action),
         Msg::Acted(Ok(_)) => {
+            state.parts_edited = false;
             state.note = text_editor::Content::new();
             state.error.clear();
         }
@@ -422,6 +442,31 @@ fn actions(state: &State) -> Element<'_, Message> {
     buttons.into()
 }
 
+/// The non-blank lines of `text`, each trimmed.
+fn lines(text: &str) -> Vec<String> {
+    let kept = text.lines().map(str::trim).filter(|l| !l.is_empty());
+    kept.map(String::from).collect()
+}
+
+/// While scope waits: the parts it proposed, one per line, for the person to
+/// set before approving. One line, or none, keeps the request one job.
+fn parts(state: &State) -> Option<Element<'_, Message>> {
+    let job = &state.detail.as_ref()?.job;
+    if (job.stage.as_str(), job.state.as_str()) != ("scope", "needs_you") {
+        return None;
+    }
+    let label = "Parts, one per line, landed in this order (one line keeps it one job)";
+    let editor = text_editor(&state.parts)
+        .on_action(|a| Message::Job(Msg::EditParts(a)))
+        .height(96);
+    let set = button("Set parts")
+        .padding([8, 12])
+        .style(theme::secondary)
+        .on_press(Message::Job(Msg::Act(Action::SetParts)));
+    let body = column![text(label).size(13).color(theme::MUTED), editor, set].spacing(4);
+    Some(body.into())
+}
+
 fn note(state: &State) -> Option<Element<'_, Message>> {
     let answer = state.allows("answer");
     if !(answer || state.allows("comment")) {
@@ -468,6 +513,7 @@ fn waiting<'a>(state: &'a State, d: &'a JobDetail) -> Element<'a, Message> {
             body = body.push(diff::view(&change, |at| Message::Job(Msg::CommentAt(at))));
         }
     }
+    body = body.extend(parts(state));
     body = body.extend(note(state));
     container(body.push(actions(state)))
         .padding(16)
@@ -734,6 +780,15 @@ mod tests {
         let items = docs.values().next().unwrap().items();
         assert!(matches!(items[0], markdown::Item::Paragraph(_)));
         assert!(matches!(items[1], markdown::Item::List { .. }));
+    }
+
+    #[test]
+    fn parts_are_the_lines_typed_without_the_blank_ones() {
+        assert_eq!(
+            lines(" Add the model \n\n  \nAdd the page"),
+            ["Add the model", "Add the page"]
+        );
+        assert!(lines("").is_empty());
     }
 
     #[test]

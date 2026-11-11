@@ -476,6 +476,9 @@ pub struct JobSummary {
     /// The part of the request this job does.
     #[serde(default)]
     pub part: Option<String>,
+    /// The parts scope proposed, while a person may still set them (F8).
+    #[serde(default)]
+    pub parts: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -52,6 +52,7 @@ fn summary(r: &Record) -> JobSummary {
         requester: r.runtime.requester.clone(),
         parent: j.parent.clone(),
         part: j.part.clone(),
+        parts: bastion_core::proposed(j),
     }
 }
 
@@ -333,18 +334,15 @@ pub async fn job_submit(
         .await
 }
 
-pub async fn job_approve(cell: &FactoryCell, id: String, by: String) -> Result<(), String> {
-    factory(cell)?.decide(&id, Event::Approved, &by).await
-}
-
-/// Run a failed job, or its stuck step, again.
-pub async fn job_retry(cell: &FactoryCell, id: String, by: String) -> Result<(), String> {
-    factory(cell)?.decide(&id, Event::Retried, &by).await
-}
-
-/// Give the job's running turn its full cap again, from now.
-pub async fn job_extend(cell: &FactoryCell, id: String, by: String) -> Result<(), String> {
-    factory(cell)?.decide(&id, Event::Extended, &by).await
+/// A person's decision on job `id`, kept in the audit under their name:
+/// approve, retry, extend or set scope's parts.
+pub async fn job_decide(
+    cell: &FactoryCell,
+    id: String,
+    event: Event,
+    by: String,
+) -> Result<(), String> {
+    factory(cell)?.decide(&id, event, &by).await
 }
 
 /// A note from `by`: an answer to the job's question, or the step sent back.

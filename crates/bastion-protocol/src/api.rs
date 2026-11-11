@@ -209,6 +209,25 @@ impl Request for JobComment {
     }
 }
 
+/// Set the parts scope proposed, while it waits (F8). One part, or none,
+/// keeps the request as one job.
+#[derive(Clone, Debug, Serialize)]
+pub struct JobParts {
+    #[serde(skip)]
+    pub id: String,
+    pub parts: Vec<String>,
+}
+
+impl Request for JobParts {
+    const METHOD: &'static str = "POST";
+    const ROUTE: &'static str = "/jobs/{id}/parts";
+    const BODY: bool = true;
+    type Answer = ();
+    fn path(&self) -> String {
+        fill(Self::ROUTE, "id", &self.id)
+    }
+}
+
 // Governance.
 bare!(Dials, "GET", "/dials", DialsView);
 
@@ -565,6 +584,7 @@ fn factory_requests() -> Vec<(&'static str, &'static str)> {
         JobSubmit,
         JobApprove,
         JobComment,
+        JobParts,
         JobStop,
         JobRetry,
         JobExtend,
@@ -640,6 +660,6 @@ mod tests {
         assert_eq!(comment.path(), "/jobs/j1/comment");
         let spaced = WorkflowDelete { id: "a b/c".into() };
         assert_eq!(spaced.path(), "/workflows/a%20b%2Fc");
-        assert_eq!(every().len(), 72);
+        assert_eq!(every().len(), 73);
     }
 }

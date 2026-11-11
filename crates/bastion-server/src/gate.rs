@@ -4,6 +4,7 @@
 //! memory and hands every record to the audit writer, so a slow store never
 //! stalls a turn. Without an audit writer it refuses every call.
 
+use bastion_protocol::Change;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -104,6 +105,11 @@ fn text_result(text: &str, details: Value, is_error: bool) -> Value {
 }
 
 impl Gate {
+    /// Tell the server's clients the job changed.
+    fn changed(&self, id: &str) {
+        (self.on_change)(Change::Job { id: id.into() });
+    }
+
     pub fn new(
         store: Arc<dyn Store>,
         engine: Arc<dyn Engine>,
@@ -375,7 +381,9 @@ impl Gate {
         let (store, on_change) = (self.store.clone(), self.on_change.clone());
         crate::rt::spawn(async move {
             match store.hold(&held).await {
-                Ok(()) => on_change(&held.job),
+                Ok(()) => on_change(Change::Job {
+                    id: held.job.clone(),
+                }),
                 Err(e) => eprintln!("job {}: the held call was not saved: {e}", held.job),
             }
         });
@@ -414,7 +422,7 @@ impl Gate {
             .call(NS, "harness::function::resolve", payload)
             .await?;
         self.note(kind, &held.job, detail);
-        (self.on_change)(&held.job);
+        self.changed(&held.job);
         Ok(())
     }
 
@@ -678,7 +686,7 @@ mod tests {
         let gate = Gate::new(
             store.clone(),
             engine.clone(),
-            Arc::new(|_: &str| {}),
+            Arc::new(|_: Change| {}),
             Ok(log),
         );
         crate::rt::block_on(gate.reload()).unwrap();
@@ -794,14 +802,14 @@ mod tests {
         let unloaded = Gate::new(
             r.store.clone(),
             r.engine.clone(),
-            Arc::new(|_: &str| {}),
+            Arc::new(|_: Change| {}),
             Ok(log),
         );
         assert_eq!(unloaded.judge(&write())["decision"], "deny");
         let unkeyed = Gate::new(
             r.store.clone(),
             r.engine.clone(),
-            Arc::new(|_: &str| {}),
+            Arc::new(|_: Change| {}),
             Err("no key".into()),
         );
         crate::rt::block_on(unkeyed.reload()).unwrap();

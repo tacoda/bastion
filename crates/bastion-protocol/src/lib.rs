@@ -20,6 +20,16 @@ pub enum Change {
     },
     /// A worker joined or left the engine.
     Console,
+    /// A job came to wait on a person, failed or landed (F9), with how many
+    /// jobs on the server wait on a person now.
+    Notice {
+        job: String,
+        workspace: String,
+        /// `needs_you`, `failed` or `landed`.
+        state: String,
+        text: String,
+        waiting: u32,
+    },
 }
 
 /// A Bastion server a client talks to (D28, D30): its name, its base URL and

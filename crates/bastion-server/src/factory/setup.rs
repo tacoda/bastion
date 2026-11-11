@@ -285,7 +285,7 @@ mod live {
                 engine as Arc<dyn Engine>,
                 store as Arc<dyn Store>,
                 Arc::new(ThisMachine),
-                Arc::new(|_| {}),
+                Arc::new(|_: bastion_protocol::Change| {}),
                 scratch.to_str().unwrap().into(),
             );
             let bundle = factory.bundle("live", &dir.join("repo"), "main").unwrap();

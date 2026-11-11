@@ -1126,7 +1126,7 @@ mod tests {
             s.engine.clone(),
             store.clone(),
             s.machine.clone(),
-            Arc::new(|_| {}),
+            Arc::new(|_: bastion_protocol::Change| {}),
             "/scratch".into(),
         );
         let _ = s.factory.set(factory);

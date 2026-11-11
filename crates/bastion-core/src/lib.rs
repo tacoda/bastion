@@ -10,6 +10,7 @@ pub mod escape;
 pub mod eval;
 pub mod gates;
 pub mod govern;
+pub mod notice;
 pub mod people;
 mod pipeline;
 pub mod publish;

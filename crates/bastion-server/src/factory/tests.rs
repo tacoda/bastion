@@ -47,6 +47,8 @@ struct Rig {
     engine: Arc<FakeEngine>,
     store: Arc<FakeStore>,
     machine: Arc<FakeMachine>,
+    /// Every change the factory told its clients, in order.
+    told: Arc<std::sync::Mutex<Vec<bastion_protocol::Change>>>,
 }
 
 fn rig() -> Rig {
@@ -62,11 +64,13 @@ fn rig_with(engine: FakeEngine, machine: FakeMachine) -> Rig {
     let (engine, machine) = (Arc::new(engine), Arc::new(machine));
     let store = Arc::new(FakeStore::default());
     store.workspaces.lock().unwrap().push(workspace());
+    let told = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let keep = told.clone();
     let factory = Factory::new(
         engine.clone() as Arc<dyn Engine>,
         store.clone() as Arc<dyn Store>,
         machine.clone(),
-        Arc::new(|_| {}),
+        Arc::new(move |c| keep.lock().unwrap().push(c)),
         "/s".into(),
     );
     Rig {
@@ -74,6 +78,7 @@ fn rig_with(engine: FakeEngine, machine: FakeMachine) -> Rig {
         engine,
         store,
         machine,
+        told,
     }
 }
 
@@ -1089,5 +1094,35 @@ fn a_requests_screenshots_are_kept_and_put_in_its_vm() {
             c.1 == "sandbox::fs::write" && c.2["path"] == "/work/request/broken.png"
         };
         assert!(calls.iter().any(|c| put(&c)), "the screenshot is in the VM");
+    });
+}
+
+#[test]
+fn a_job_that_comes_to_wait_is_a_notice_with_the_count_waiting() {
+    use bastion_protocol::Change;
+    let rig = rig();
+    crate::rt::block_on(async {
+        let id = rig.factory.submit("w", "Add /health").await.unwrap();
+        until(&rig, &id, Stage::Plan, State::Running).await;
+        finish_turn(&rig, &id).await;
+        until(&rig, &id, Stage::Plan, State::NeedsYou).await;
+        let told = rig.told.lock().unwrap().clone();
+        let notices: Vec<_> = told
+            .iter()
+            .filter(|c| matches!(c, Change::Notice { .. }))
+            .collect();
+        let Some(Change::Notice {
+            job,
+            state,
+            text,
+            waiting,
+            ..
+        }) = notices.first()
+        else {
+            panic!("no notice in {told:?}");
+        };
+        assert_eq!((job, state.as_str(), *waiting), (&id, "needs_you", 1));
+        assert!(text.contains("waits for you at plan"), "{text}");
+        assert_eq!(notices.len(), 1, "the job's other changes are not notices");
     });
 }

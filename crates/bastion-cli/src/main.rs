@@ -180,6 +180,9 @@ async fn follow(server: Server) -> Result<(), String> {
             Feed::Change(Change::Job { id }) => format!("job {id} changed"),
             Feed::Change(Change::Engine { status }) => format!("engine {:?}", status.link),
             Feed::Change(Change::Console) => "a worker joined or left".into(),
+            Feed::Change(Change::Notice { text, waiting, .. }) => {
+                format!("{text} ({waiting} waiting on a person)")
+            }
         };
         println!("{name}: {said}");
     }

@@ -14,6 +14,8 @@ use bastion_core::{
 use bastion_core::{request, review};
 use serde_json::{Value, json};
 
+use bastion_protocol::Change;
+
 use crate::audit_log::{self, AuditLog};
 use crate::charter;
 use crate::engine::NS;
@@ -76,7 +78,8 @@ const SAVE_TRIES: usize = 3;
 /// How many times CI is polled, 20 s apart, before the land gives up.
 const CI_POLLS: u32 = 90;
 
-pub type OnChange = Arc<dyn Fn(&str) + Send + Sync>;
+/// Tell the server's clients what changed: a job, or a notice about one.
+pub type OnChange = Arc<dyn Fn(Change) + Send + Sync>;
 /// A condition on a job, checked in the same save as a change.
 pub type Holds = Arc<dyn Fn(&Record) -> bool + Send + Sync>;
 type BoxFuture<T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send>>;
@@ -233,7 +236,7 @@ impl Factory {
             created_at: at,
         };
         self.store.insert(&record).await?;
-        (self.on_change)(&id);
+        self.changed(&id);
         self.pump();
         Ok(id)
     }
@@ -256,7 +259,7 @@ impl Factory {
         self.store.insert(&record).await?;
         run.job = id.clone();
         self.store.add_eval_run(&run).await?;
-        (self.on_change)(&id);
+        self.changed(&id);
         self.pump();
         Ok(id)
     }
@@ -321,6 +324,7 @@ impl Factory {
                 match self.store.save(&record).await {
                     Ok(rev) => {
                         record.rev = rev;
+                        self.notice(&before, &record.job).await;
                         self.after_save(record, effects).await;
                         return Ok(Some(before));
                     }
@@ -350,7 +354,7 @@ impl Factory {
         for effect in first {
             self.clone().run(record.clone(), effect).await;
         }
-        (self.on_change)(&record.job.id);
+        self.changed(&record.job.id);
         for effect in rest {
             let (factory, record) = (self.clone(), record.clone());
             crate::rt::spawn(factory.run(record, effect));
@@ -383,6 +387,30 @@ impl Factory {
             for id in admit(&jobs, MAX_VMS, cap) {
                 let _ = factory.apply(&id, Event::Admitted).await;
             }
+        });
+    }
+
+    /// Tell the server's clients the job changed.
+    pub(crate) fn changed(&self, id: &str) {
+        (self.on_change)(Change::Job { id: id.into() });
+    }
+
+    /// Tell them too when the job came to wait on a person, failed or
+    /// landed (F9), with how many jobs wait on a person now.
+    async fn notice(&self, before: &Job, after: &Job) {
+        let Some(state) = bastion_core::notice::entered(before, after) else {
+            return;
+        };
+        let active = self.store.active().await.unwrap_or_default();
+        let waiting = active
+            .iter()
+            .filter(|r| r.job.state == bastion_core::State::NeedsYou);
+        (self.on_change)(Change::Notice {
+            job: after.id.clone(),
+            workspace: after.workspace.clone(),
+            state: crate::store::name(state),
+            text: bastion_core::notice::text(after),
+            waiting: waiting.count() as u32,
         });
     }
 
@@ -885,7 +913,7 @@ impl Factory {
                 return;
             };
             match evals::grade(&*factory.engine, &*factory.store, &run).await {
-                Ok(_) => (factory.on_change)(&id),
+                Ok(_) => factory.changed(&id),
                 Err(e) => eprintln!("job {id}: the run was not graded: {e}"),
             }
         });

@@ -174,7 +174,7 @@ mod tests {
             engine.clone() as Arc<dyn Engine>,
             Arc::new(FakeStore::default()) as Arc<dyn Store>,
             Arc::new(FakeMachine::new().run_ok("git", "")),
-            Arc::new(|_| {}),
+            Arc::new(|_: bastion_protocol::Change| {}),
             "/scratch".into(),
         );
         crate::rt::block_on(async {

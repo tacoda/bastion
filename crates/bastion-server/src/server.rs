@@ -99,7 +99,7 @@ impl Server {
 
     fn run(&self, store: SqlStore, scratch: PathBuf) {
         let bus = self.events.clone();
-        let on_change = Arc::new(move |id: &str| bus.publish(Change::Job { id: id.into() }));
+        let on_change = Arc::new(move |change: Change| bus.publish(change));
         let factory = Factory::new(
             self.engine.clone(),
             Arc::new(store),

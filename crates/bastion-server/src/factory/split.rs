@@ -30,7 +30,7 @@ impl Factory {
                 created_at: now(),
             };
             self.store.insert(&record).await?;
-            (self.on_change)(&id);
+            self.changed(&id);
         }
         Ok(())
     }

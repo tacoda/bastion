@@ -1,13 +1,11 @@
-//! The shell: the sidebar, the page it shows, the server
-//! picker, each server's pushes, and the question on quit while the stack
-//! runs.
+//! The shell: the top bar with its pages and the server switcher, the
+//! page it shows, each server's pushes, and the question on quit while the
+//! stack runs.
 
 use std::collections::BTreeSet;
 
 use bastion_protocol::{Change, LOCAL, Server, StackState, api};
-use iced::widget::{
-    Column, button, center, column, container, opaque, pick_list, row, stack, text,
-};
+use iced::widget::{Row, button, center, column, container, opaque, row, stack, svg, text};
 use iced::{Element, Fill, Subscription, Task, window};
 
 use crate::client;
@@ -21,7 +19,10 @@ pub enum Message {
     Started(Result<Server, String>),
     Servers(Result<Vec<Server>, String>),
     Go(Route),
+    /// Show one server, by name.
     Choose(String),
+    /// Show every server on the records pages.
+    ChooseAll,
     Feed((String, Feed)),
     CloseRequested,
     StackRunning(bool),
@@ -58,7 +59,10 @@ pub enum Message {
 pub struct App {
     http: reqwest::Client,
     servers: Vec<Server>,
+    /// The server the pages show, or the last one picked while `all` is on.
     current: String,
+    /// Whether the records pages show every server.
+    all: bool,
     route: Route,
     /// Servers whose stream is down, so what was read from them may be stale.
     down: BTreeSet<String>,
@@ -77,6 +81,7 @@ impl App {
             http: client::http(),
             servers: vec![],
             current: LOCAL.into(),
+            all: true,
             route: Route::Jobs,
             down: BTreeSet::new(),
             page: Page::Pending,
@@ -102,6 +107,7 @@ impl App {
             http: self.http.clone(),
             servers: self.servers.clone(),
             current: self.current.clone(),
+            all: self.all && self.route.records(),
             down: self.down.clone(),
             shift: self.shift,
         }
@@ -119,6 +125,16 @@ impl App {
                 .map_err(|e| e.to_string())?
         };
         Task::perform(every, Message::Servers)
+    }
+
+    /// The page to show after the server changes: the same one, or for one
+    /// record's page, the list it sits under, as the record is the old
+    /// server's.
+    fn again(&self) -> Route {
+        match self.route.one_record() {
+            true => self.route.section(),
+            false => self.route.clone(),
+        }
     }
 
     /// Show `route`'s page and read it.
@@ -149,8 +165,12 @@ impl App {
             Message::Started(Err(why)) => self.problem = Some(why),
             Message::Go(route) => return self.go(route),
             Message::Choose(name) => {
-                self.current = name;
-                return self.go(self.route.clone());
+                (self.current, self.all) = (name, false);
+                return self.go(self.again());
+            }
+            Message::ChooseAll => {
+                self.all = true;
+                return self.go(self.again());
             }
             Message::OpenJob { server, id } => {
                 // The job's page talks to the server it runs on.
@@ -268,11 +288,11 @@ impl App {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
-        let main = column![self.picker(), self.page()]
-            .spacing(16)
-            .padding(32)
-            .width(Fill);
-        let shell = container(row![self.sidebar(), main])
+        let main = container(self.page())
+            .padding([24, 32])
+            .width(Fill)
+            .height(Fill);
+        let shell = container(column![self.bar(), main])
             .width(Fill)
             .height(Fill)
             .style(theme::page);
@@ -286,63 +306,58 @@ impl App {
         .into()
     }
 
-    fn sidebar(&self) -> Element<'_, Message> {
+    /// The castle, the pages, and the server switcher.
+    fn bar(&self) -> Element<'_, Message> {
+        let castle = svg(svg::Handle::from_memory(CASTLE)).width(28).height(28);
+        let brand = row![castle, text("Bastion").size(17).font(theme::BOLD)]
+            .spacing(8)
+            .align_y(iced::Center);
+        let waiting: u32 = self.waiting.values().sum();
         let here = self.route.section();
-        let mut items = vec![text("Bastion").size(18).font(theme::BOLD).into()];
-        for (route, label, glyph) in PAGES {
-            let on = route == here;
-            let color = if on { iced::Color::WHITE } else { theme::INK };
-            let waiting: u32 = self.waiting.values().sum();
+        let pages = PAGES.into_iter().map(|(route, label, glyph)| {
             let label = match (route == Route::Jobs, waiting) {
                 (true, n) if n > 0 => format!("{label} ({n})"),
                 _ => label.to_string(),
             };
-            let entry = row![icons::icon(glyph, color), text(label)]
-                .spacing(8)
-                .align_y(iced::Center);
-            items.push(
-                button(entry)
-                    .width(Fill)
-                    .padding([6, 8])
-                    .style(theme::nav(on))
-                    .on_press(Message::Go(route))
-                    .into(),
-            );
-        }
-        let list = Column::with_children(items).spacing(4);
-        let body = column![list, iced::widget::space::vertical(), self.reach()];
-        container(body)
-            .width(200)
-            .height(Fill)
-            .padding(12)
-            .style(theme::sidebar)
+            tab(label, glyph, route == here, Message::Go(route))
+        });
+        let top = row![brand, iced::widget::space::horizontal(), self.switcher()]
+            .spacing(16)
+            .align_y(iced::Center);
+        let nav = Row::with_children(pages).spacing(2).wrap();
+        container(column![top, nav].spacing(10))
+            .padding([12, 24])
+            .width(Fill)
+            .style(theme::bar)
             .into()
     }
 
-    /// Each server and whether its stream is up.
-    fn reach(&self) -> Element<'_, Message> {
-        let rows = self.servers.iter().map(|s| {
-            let up = !self.down.contains(&s.name);
-            let mark =
-                text(if up { "●" } else { "○" }).color(if up { theme::OK } else { theme::BAD });
-            row![mark, text(&s.name).size(12).color(theme::MUTED)]
-                .spacing(6)
-                .into()
-        });
-        Column::with_children(rows).spacing(2).into()
-    }
-
-    /// Which Bastion server a page about one server shows (D30).
-    fn picker(&self) -> Element<'_, Message> {
-        if !self.route.about_one_server() {
-            return column![].into();
+    /// One button per server, each with a dot for its stream, and All
+    /// servers on a records page (VISION.md).
+    fn switcher(&self) -> Element<'_, Message> {
+        let all_on = self.all && self.route.records();
+        let mut choices: Vec<Element<'_, Message>> = Vec::new();
+        if self.route.records() {
+            choices.push(choice(
+                "All servers".into(),
+                None,
+                all_on,
+                Message::ChooseAll,
+            ));
         }
-        let names: Vec<String> = self.servers.iter().map(|s| s.name.clone()).collect();
-        let pick =
-            pick_list(names, Some(self.current.clone()), Message::Choose).style(theme::select);
-        row![text("Bastion server").color(theme::MUTED), pick]
-            .spacing(8)
-            .align_y(iced::Center)
+        for s in &self.servers {
+            let up = !self.down.contains(&s.name);
+            let on = !all_on && s.name == self.current;
+            choices.push(choice(
+                s.name.clone(),
+                Some(up),
+                on,
+                Message::Choose(s.name.clone()),
+            ));
+        }
+        container(Row::with_children(choices).spacing(2).wrap())
+            .padding(3)
+            .style(theme::panel)
             .into()
     }
 
@@ -352,6 +367,41 @@ impl App {
         }
         self.page.view(&self.route, &self.ctx())
     }
+}
+
+/// The castle, from the app's icon.
+const CASTLE: &[u8] = include_bytes!("../../../assets/icon/bastion.svg");
+
+/// One page in the top bar.
+fn tab<'a>(label: String, glyph: &str, on: bool, go: Message) -> Element<'a, Message> {
+    let color = if on { iced::Color::WHITE } else { theme::INK };
+    let body = row![icons::icon(glyph, color), text(label).size(13)]
+        .spacing(6)
+        .align_y(iced::Center);
+    button(body)
+        .padding([6, 10])
+        .style(theme::nav(on))
+        .on_press(go)
+        .into()
+}
+
+/// One choice in the server switcher, with its stream's dot when it is a
+/// server.
+fn choice<'a>(label: String, up: Option<bool>, on: bool, pick: Message) -> Element<'a, Message> {
+    let mut body = row![].spacing(6).align_y(iced::Center);
+    if let Some(up) = up {
+        let (mark, color) = if up {
+            ("●", theme::OK)
+        } else {
+            ("○", theme::BAD)
+        };
+        body = body.push(text(mark).size(10).color(color));
+    }
+    button(body.push(text(label).size(13)))
+        .padding([4, 10])
+        .style(theme::nav(on))
+        .on_press(pick)
+        .into()
 }
 
 /// Open `url` in the browser.

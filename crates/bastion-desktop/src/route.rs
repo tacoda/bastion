@@ -1,4 +1,4 @@
-//! Where the window is, and the sidebar's pages.
+//! Where the window is, and the top bar's pages.
 
 use crate::icons;
 
@@ -20,7 +20,7 @@ pub enum Route {
     Settings,
 }
 
-/// The sidebar's pages. A job and New request belong to Jobs.
+/// The top bar's pages. A job and New request belong to Jobs.
 pub const PAGES: [(Route, &str, &str); 10] = [
     (Route::Jobs, "Jobs", icons::JOBS),
     (Route::Workflows, "Workflows", icons::WORKFLOWS),
@@ -35,7 +35,7 @@ pub const PAGES: [(Route, &str, &str); 10] = [
 ];
 
 impl Route {
-    /// The sidebar entry this page sits under.
+    /// The top bar entry this page sits under.
     pub fn section(&self) -> Route {
         match self {
             Route::NewRequest | Route::Job(_) => Route::Jobs,
@@ -45,9 +45,15 @@ impl Route {
         }
     }
 
-    /// A page about one Bastion server shows the server picker (D30).
-    pub fn about_one_server(&self) -> bool {
-        !matches!(self, Route::Jobs | Route::NewRequest | Route::Job(_))
+    /// A records page can show every server at once; a rules page and
+    /// one record's page show one server (VISION.md).
+    pub fn records(&self) -> bool {
+        matches!(self, Route::Jobs | Route::Audit | Route::Costs)
+    }
+
+    /// One record's page, which belongs to the server it was opened on.
+    pub fn one_record(&self) -> bool {
+        matches!(self, Route::Job(_) | Route::Eval(_) | Route::Session(_))
     }
 
     pub fn title(&self) -> &'static str {
@@ -64,12 +70,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_job_sits_under_jobs_and_shows_no_server_picker() {
+    fn a_job_sits_under_jobs_and_only_record_lists_span_servers() {
         let job = Route::Job("j1".into());
         assert_eq!(job.section(), Route::Jobs);
         assert_eq!(job.title(), "Jobs");
-        assert!(!job.about_one_server());
-        assert!(Route::Settings.about_one_server());
+        assert!(!job.records() && job.one_record());
+        assert!(Route::Costs.records() && !Route::Settings.records());
         assert_eq!(Route::Eval("e1".into()).title(), "Evals");
     }
 }

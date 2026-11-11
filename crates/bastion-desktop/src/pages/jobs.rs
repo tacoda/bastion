@@ -1,6 +1,6 @@
-//! The Jobs page: every job on every Bastion server, the ones
-//! waiting on the owner first, after wipp's Jobs page and GitHub Actions'
-//! runs list.
+//! The Jobs page: the jobs on the server the switcher shows, or on every
+//! server, the ones waiting on the owner first, after wipp's Jobs page and
+//! GitHub Actions' runs list.
 
 use bastion_protocol::{JobSummary, api};
 use iced::widget::{Column, button, column, container, pick_list, row, text, text_input};
@@ -13,7 +13,6 @@ use crate::theme;
 
 const FINISHED: [&str; 3] = ["landed", "failed", "stopped"];
 const EVERY: &str = "Every workspace";
-const EVERY_SERVER: &str = "Every server";
 
 /// A job, and the Bastion server it runs on (D30).
 #[derive(Clone, Debug)]
@@ -26,7 +25,6 @@ pub struct ServerJob {
 pub struct State {
     jobs: Vec<ServerJob>,
     errors: Vec<String>,
-    server: Option<String>,
     place: Option<String>,
     search: String,
     show_finished: bool,
@@ -35,7 +33,6 @@ pub struct State {
 #[derive(Clone, Debug)]
 pub enum Msg {
     Read((Vec<ServerJob>, Vec<String>)),
-    Server(String),
     Place(String),
     Search(String),
     ToggleFinished,
@@ -77,17 +74,6 @@ async fn read_all(ctx: Ctx, before: Vec<ServerJob>) -> (Vec<ServerJob>, Vec<Stri
 pub fn update(state: &mut State, msg: Msg) {
     match msg {
         Msg::Read((jobs, errors)) => (state.jobs, state.errors) = (jobs, errors),
-        Msg::Server(s) => {
-            state.server = (s != EVERY_SERVER).then_some(s);
-            // A workspace the server does not have would show nothing.
-            if state
-                .place
-                .as_ref()
-                .is_some_and(|p| !state.places().contains(p))
-            {
-                state.place = None;
-            }
-        }
         Msg::Place(p) => state.place = (p != EVERY).then_some(p),
         Msg::Search(s) => state.search = s,
         Msg::ToggleFinished => state.show_finished = !state.show_finished,
@@ -120,16 +106,18 @@ fn unreachable_note(down: &[String]) -> String {
 }
 
 impl State {
-    fn on_server(&self, j: &ServerJob) -> bool {
-        self.server.as_ref().is_none_or(|s| j.server == *s)
+    /// The workspace picked, while the servers shown have it.
+    fn place(&self, scope: Option<&str>) -> Option<&String> {
+        let have = self.places(scope);
+        self.place.as_ref().filter(|p| have.contains(p))
     }
 
-    /// The jobs the filters and the search let through.
-    fn shown(&self) -> Vec<ServerJob> {
+    /// The jobs the switcher, the filter and the search let through.
+    fn shown(&self, scope: Option<&str>) -> Vec<ServerJob> {
         let words = self.search.to_lowercase();
-        let in_place = |j: &&ServerJob| {
-            self.on_server(j) && self.place.as_ref().is_none_or(|p| j.job.workspace == *p)
-        };
+        let place = self.place(scope);
+        let in_place =
+            |j: &&ServerJob| on_server(scope, j) && place.is_none_or(|p| j.job.workspace == *p);
         let matches = |j: &&ServerJob| {
             words.is_empty()
                 || j.job.request.to_lowercase().contains(&words)
@@ -143,23 +131,24 @@ impl State {
             .collect()
     }
 
-    /// The workspaces with jobs on the chosen server, or on any.
-    fn places(&self) -> Vec<String> {
-        let on = self.jobs.iter().filter(|j| self.on_server(j));
+    /// The workspaces with jobs on the servers shown.
+    fn places(&self, scope: Option<&str>) -> Vec<String> {
+        let on = self.jobs.iter().filter(|j| on_server(scope, j));
         let mut all: Vec<String> = on.map(|j| j.job.workspace.clone()).collect();
         all.sort();
         all.dedup();
         all.insert(0, EVERY.into());
         all
     }
+}
 
-    fn servers(&self) -> Vec<String> {
-        let mut all: Vec<String> = self.jobs.iter().map(|j| j.server.clone()).collect();
-        all.sort();
-        all.dedup();
-        all.insert(0, EVERY_SERVER.into());
-        all
-    }
+/// The one server the switcher shows, or none for every server.
+fn scope(ctx: &Ctx) -> Option<&str> {
+    (!ctx.all).then_some(ctx.current.as_str())
+}
+
+fn on_server(scope: Option<&str>, j: &ServerJob) -> bool {
+    scope.is_none_or(|s| j.server == s)
 }
 
 fn line(job: &JobSummary, server: &str, down: bool) -> String {
@@ -249,28 +238,22 @@ fn group<'a>(title: String, jobs: Vec<ServerJob>, ctx: &Ctx, accent: bool) -> El
     section(title, body, accent)
 }
 
-fn filters(state: &State) -> Element<'_, Message> {
-    let server = Some(state.server.clone().unwrap_or_else(|| EVERY_SERVER.into()));
-    let server =
-        pick_list(state.servers(), server, |s| Message::Jobs(Msg::Server(s))).style(theme::select);
-    let shown = Some(state.place.clone().unwrap_or_else(|| EVERY.into()));
-    let place =
-        pick_list(state.places(), shown, |p| Message::Jobs(Msg::Place(p))).style(theme::select);
+fn filters<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
+    let scope = scope(ctx);
+    let shown = Some(state.place(scope).cloned().unwrap_or_else(|| EVERY.into()));
+    let place = pick_list(state.places(scope), shown, |p| Message::Jobs(Msg::Place(p)))
+        .style(theme::select);
     let search = text_input("Request or id", &state.search)
         .on_input(|s| Message::Jobs(Msg::Search(s)))
         .style(theme::field)
         .width(260);
-    row![
-        labeled("Bastion server", server),
-        labeled("Workspace", place),
-        labeled("Search", search)
-    ]
-    .spacing(12)
-    .into()
+    row![labeled("Workspace", place), labeled("Search", search)]
+        .spacing(12)
+        .into()
 }
 
 fn groups<'a>(state: &State, ctx: &Ctx) -> Element<'a, Message> {
-    let all = state.shown();
+    let all = state.shown(scope(ctx));
     let pick = |states: &[&str]| -> Vec<ServerJob> {
         all.iter()
             .filter(|j| states.contains(&j.job.state.as_str()))
@@ -321,7 +304,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let head = row![text("Jobs").size(24).font(theme::BOLD).width(Fill), new].align_y(iced::Center);
     let down: Vec<String> = ctx.down.iter().cloned().collect();
     let note = text(page_note(&down, &state.errors)).color(theme::BAD);
-    let body = column![head, note, filters(state), groups(state, ctx)].spacing(16);
+    let body = column![head, note, filters(state, ctx), groups(state, ctx)].spacing(16);
     super::scrolled(body)
 }
 
@@ -375,19 +358,18 @@ mod tests {
             server: "team".into(),
             ..job("j3", "c")
         });
-        assert_eq!(state.places(), [EVERY, "a", "b", "c"]);
-        assert_eq!(state.servers(), [EVERY_SERVER, "local", "team"]);
+        assert_eq!(state.places(None), [EVERY, "a", "b", "c"]);
         update(&mut state, Msg::Place("c".into()));
-        update(&mut state, Msg::Server("local".into()));
-        assert_eq!(state.place, None, "team's workspace is not on local");
-        assert_eq!(state.places(), [EVERY, "a", "b"]);
-        assert_eq!(state.shown().len(), 2);
+        let local = Some("local");
+        assert_eq!(state.place(local), None, "team's workspace is not on local");
+        assert_eq!(state.places(local), [EVERY, "a", "b"]);
+        assert_eq!(state.shown(local).len(), 2);
+        assert_eq!(state.shown(None).len(), 1, "c again, across servers");
         update(&mut state, Msg::Place("b".into()));
-        assert_eq!(state.shown().len(), 1);
-        update(&mut state, Msg::Server(EVERY_SERVER.into()));
+        assert_eq!(state.shown(local).len(), 1);
         update(&mut state, Msg::Place(EVERY.into()));
         update(&mut state, Msg::Search("REQUEST J1".into()));
-        assert_eq!(state.shown()[0].job.id, "j1");
+        assert_eq!(state.shown(None)[0].job.id, "j1");
     }
 
     #[test]

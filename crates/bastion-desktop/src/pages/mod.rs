@@ -37,6 +37,8 @@ pub struct Ctx {
     pub http: reqwest::Client,
     pub servers: Vec<Server>,
     pub current: String,
+    /// Whether a records page shows every server, not only `current`.
+    pub all: bool,
     pub down: BTreeSet<String>,
     /// Whether shift is held now.
     pub shift: bool,

@@ -84,8 +84,8 @@ pub fn page(_: &Theme) -> container::Style {
     }
 }
 
-/// The sidebar: the panel color, a line on its right.
-pub fn sidebar(_: &Theme) -> container::Style {
+/// The top bar: the panel color, with a line.
+pub fn bar(_: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(PANEL)),
         border: Border {
@@ -117,7 +117,8 @@ pub fn veil(_: &Theme) -> container::Style {
     }
 }
 
-/// A sidebar entry: purple when its page is shown, a line on hover.
+/// A top bar entry or a server in the switcher: purple when chosen, a
+/// line on hover.
 pub fn nav(here: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
     move |_, status| {
         let background = match (here, status) {

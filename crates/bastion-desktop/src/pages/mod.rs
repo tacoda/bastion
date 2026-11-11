@@ -10,7 +10,6 @@ pub mod evals;
 pub mod govern;
 pub mod job;
 pub mod jobs;
-pub mod learn;
 pub mod new_request;
 pub mod session;
 pub mod settings;
@@ -193,7 +192,6 @@ pub enum Page {
     Engine(Box<engine::State>),
     Evals(Box<evals::List>),
     Costs(Box<costs::State>),
-    Learn(Box<learn::State>),
     Verification(Box<verification::State>),
     Session(Box<session::State>),
     Eval(Box<evals::One>),
@@ -225,7 +223,6 @@ impl Page {
             Route::Engine => Page::Engine(Box::default()),
             Route::Evals => Page::Evals(Box::default()),
             Route::Costs => Page::Costs(Box::default()),
-            Route::Learn => Page::Learn(Box::default()),
             Route::Verification => Page::Verification(Box::default()),
             Route::Session(id) => Page::Session(Box::new(session::State::new(id.clone()))),
             Route::Eval(id) => Page::Eval(Box::new(evals::One::new(id.clone()))),
@@ -257,7 +254,6 @@ impl Page {
             Page::Engine(_) => engine::load(ctx),
             Page::Evals(_) => evals::load_list(ctx),
             Page::Costs(_) => costs::load(ctx),
-            Page::Learn(_) => learn::load(ctx),
             Page::Verification(_) => verification::load(ctx),
             Page::Session(s) => session::load(s, ctx),
             Page::Eval(s) => evals::load_one(s, ctx),
@@ -287,7 +283,6 @@ impl Page {
             (Page::Engine(s), Message::Engine(m)) => return engine::update(s, m, ctx),
             (Page::Evals(s), Message::Evals(m)) => return evals::update_list(s, m, ctx),
             (Page::Costs(s), Message::Costs(m)) => costs::update(s, m),
-            (Page::Learn(s), Message::Learn(m)) => return learn::update(s, m, ctx),
             (Page::Verification(s), Message::Verification(m)) => {
                 return verification::update(s, m, ctx);
             }
@@ -309,7 +304,6 @@ impl Page {
             Page::Engine(s) => engine::view(s),
             Page::Evals(s) => evals::view_list(s),
             Page::Costs(s) => costs::view(s, ctx),
-            Page::Learn(s) => learn::view(s, ctx),
             Page::Verification(s) => verification::view(s, ctx),
             Page::Session(s) => session::view(s, ctx),
             Page::Eval(s) => evals::view_one(s, ctx),

@@ -15,7 +15,7 @@ use axum::{Json, Router};
 use bastion_core::{Event as JobEvent, Pipeline};
 use bastion_protocol::{
     Change, ConstraintView, EscapeReport, HeldCallRef, HostView, LogRequest, NewEval, NotifySet,
-    NotifyView, ProposalDecision, SettingsView, Workspace,
+    NotifyView, SettingsView, Workspace,
 };
 use futures_util::{Stream, stream};
 use serde::{Deserialize, Serialize};
@@ -154,8 +154,6 @@ fn factory_routes() -> Router<App> {
         .route("/jobs", get(jobs).post(job_submit))
         .route("/costs", get(costs))
         .route("/sessions/{id}", get(session))
-        .route("/proposals", get(proposals))
-        .route("/proposals/decide", post(proposal_decide))
         .route("/verification", get(verification))
         .route("/escapes", post(escape_add))
         .route("/jobs/{id}", get(job))
@@ -399,14 +397,6 @@ async fn workspace_edit(
 
 async fn session(State(app): State<App>, Path(id): Path<String>) -> Response {
     answer(api::sessions::session(&app.server.factory, id).await)
-}
-
-async fn proposals(State(app): State<App>) -> Response {
-    answer(api::learn::proposals(&app.server.factory).await)
-}
-
-async fn proposal_decide(State(app): State<App>, Json(d): Json<ProposalDecision>) -> Response {
-    answer(api::learn::decide(&app.server.factory, d).await)
 }
 
 async fn verification(State(app): State<App>) -> Response {

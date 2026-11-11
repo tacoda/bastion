@@ -14,8 +14,8 @@ use super::resume::cap_left;
 use super::{Factory, NS, now, outcome, short_id};
 use crate::engine::Engine;
 use crate::evals;
+use crate::spec;
 use crate::store::{Record, name};
-use crate::{learn, spec};
 
 /// One turn: the job it runs for and its session.
 #[derive(Clone, Debug)]
@@ -194,12 +194,11 @@ impl Factory {
     }
 }
 
-/// A specify or learn reply the server cannot read goes back to the core as
+/// A specify reply the server cannot read goes back to the core as
 /// unusable, so the turn gets one more try with the reason.
 pub(super) fn usable(stage: Stage, outcome: Outcome) -> Outcome {
     let read = match (stage, &outcome) {
         (Stage::Specify, Outcome::Done { report }) => spec::read(report).err(),
-        (Stage::Learn, Outcome::Done { report }) => learn::read(report).err(),
         _ => None,
     };
     match (read, outcome) {

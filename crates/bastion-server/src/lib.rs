@@ -16,7 +16,6 @@ pub mod forge;
 pub mod gate;
 pub mod govern_store;
 pub mod http;
-pub mod learn;
 pub mod machine;
 pub mod notify;
 pub mod people_store;

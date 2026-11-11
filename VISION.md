@@ -21,7 +21,7 @@ they are.
 
 **One server at a time.** Every other page belongs to the server you pick
 at the top: Workflows, Constraints, Capabilities, Audit Log, Evals, Costs,
-Learning, Verification, Engine and Settings. A page never mixes two
+Verification, Engine and Settings. A page never mixes two
 servers, because each server has its own rules and its own records.
 
 ## What a server holds
@@ -38,7 +38,7 @@ A server is a factory, and everything that shapes it lives with it.
   its work must keep, each on a ladder from told to enforced.
 - **Settings:** its model providers, its people and their roles, its
   notifications, and its secrets.
-- **Records:** its audit log, its evals, its costs, and what it learned.
+- **Records:** its audit log, its evals, its costs, and what landed.
 
 These are live controls, not a configuration file you edit and restart.
 A server runs on the iii engine, and each value you change in the app

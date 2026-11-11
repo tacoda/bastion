@@ -45,7 +45,7 @@ pub struct Workspace {
     pub gates: String,
     /// A command run once when a gate fails, before the gates run again.
     pub autofix: String,
-    /// The VM image jobs boot: `python`, `node` or `browser` (F11); empty
+    /// The VM image jobs boot: `python`, `node` or `browser`; empty
     /// is `python`.
     pub image: String,
 }
@@ -71,7 +71,7 @@ pub struct Runtime {
     /// The person who asked for the job (D31).
     pub requester: Option<String>,
     /// The model the job's turns run on, as `provider/model`, when its
-    /// request named one (F8); else the settings' plan and build models.
+    /// request named one; else the settings' plan and build models.
     pub model: Option<String>,
     /// The workflow the job runs (D35), and the version it started on.
     pub workflow: Option<String>,

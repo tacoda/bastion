@@ -1,4 +1,4 @@
-//! One turn, step by step (F5): what the agent was asked, said and thought,
+//! One turn, step by step: what the agent was asked, said and thought,
 //! each call it made with the gate's verdict on it, and what each returned.
 
 use bastion_protocol::{SessionDetail, TurnStep};

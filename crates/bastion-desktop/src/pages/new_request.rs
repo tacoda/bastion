@@ -18,7 +18,7 @@ fn default_workflow() -> Choice {
     Choice::new("", "The server's default")
 }
 
-/// A request's kinds, with "none" first (F8).
+/// A request's kinds, with "none" first.
 const KINDS: [(&str, &str); 5] = [
     ("", "No kind"),
     ("feature", "Feature"),
@@ -45,7 +45,7 @@ pub struct State {
     workspace: Option<String>,
     workflows: Vec<Choice>,
     workflow: Choice,
-    /// The model every turn runs on, as `provider/model` (F8).
+    /// The model every turn runs on, as `provider/model`.
     models: Vec<Choice>,
     model: Choice,
     request: text_editor::Content,
@@ -260,7 +260,7 @@ fn screenshot(path: &str) -> Result<Screenshot, String> {
     })
 }
 
-/// The kind, criteria, links and screenshots a request may carry (F8).
+/// The kind, criteria, links and screenshots a request may carry.
 fn details(state: &State) -> Element<'_, Message> {
     let msg = Message::NewRequest;
     let kind = pick_list(kinds(), Some(state.kind.clone()), move |c| {

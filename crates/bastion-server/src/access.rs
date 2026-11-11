@@ -129,7 +129,7 @@ pub async fn on_job(server: &Server, person: &Person, id: &str) -> Result<(), Re
 }
 
 /// Run `on_job`, and at a UAT step also require the job's requester: the
-/// sign-off is theirs, so not even an admin gives it for them (F7).
+/// sign-off is theirs, so not even an admin gives it for them.
 pub async fn approve(server: &Server, person: &Person, id: &str) -> Result<(), Refusal> {
     on_job(server, person, id).await?;
     let factory = server.factory.get().ok_or(Refusal::NotReady)?;

@@ -1,4 +1,4 @@
-//! What checked each landed change, and what escaped it (F6). A landed job
+//! What checked each landed change, and what escaped it. A landed job
 //! shows each step's decision from the audit, the commits its land kept,
 //! and the escapes a person traced to those commits.
 

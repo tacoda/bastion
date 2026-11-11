@@ -1,4 +1,4 @@
-//! Screenshots and recordings a turn keeps (F11): files under
+//! Screenshots and recordings a turn keeps: files under
 //! /work/artifacts in its VM, copied out after the turn and recorded on the
 //! job, one artifact line each.
 

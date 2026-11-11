@@ -1,4 +1,4 @@
-//! `bastion update` (F10): replace this install with the newest release,
+//! `bastion update`: replace this install with the newest release,
 //! once the release's sums carry the release key's signature and the
 //! download matches its sum. A running server goes on with the old build
 //! until it is started again.

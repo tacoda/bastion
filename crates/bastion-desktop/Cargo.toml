@@ -14,7 +14,7 @@ futures-util = "0.3"
 serde_json = "1"
 tokio = { version = "1", features = ["time"] }
 
-# The Dock shows a bare binary's generic icon; AppKit sets the castle (F9).
+# The Dock shows a bare binary's generic icon; AppKit sets the castle.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSImage", "NSResponder"] }

@@ -1,4 +1,4 @@
-//! Escapes (F6): a defect found after a change landed, traced to the job
+//! Escapes: a defect found after a change landed, traced to the job
 //! whose commits hold it. A land keeps its commits as an artifact; a
 //! reported commit names the job whose list holds it.
 

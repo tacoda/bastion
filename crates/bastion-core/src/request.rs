@@ -1,4 +1,4 @@
-//! A request as a person writes it (F8): what should change, its kind, the
+//! A request as a person writes it: what should change, its kind, the
 //! criteria it must meet, the links that explain it, and the screenshots
 //! that show it. The factory keeps it as one text, which a brief quotes.
 

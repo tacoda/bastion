@@ -20,7 +20,7 @@ pub enum Change {
     },
     /// A worker joined or left the engine.
     Console,
-    /// A job came to wait on a person, failed or landed (F9), with how many
+    /// A job came to wait on a person, failed or landed, with how many
     /// jobs on the server wait on a person now.
     Notice {
         job: String,
@@ -338,7 +338,7 @@ pub struct Workspace {
     /// A command run once when a gate fails, before the gates run again.
     #[serde(default)]
     pub autofix: String,
-    /// The VM image jobs boot: `python`, `node` or `browser` (F11).
+    /// The VM image jobs boot: `python`, `node` or `browser`.
     #[serde(default)]
     pub image: String,
 }
@@ -383,7 +383,7 @@ pub struct SessionDetail {
     pub steps: Vec<TurnStep>,
 }
 
-/// One change a learn turn proposed (F6), and what a person decided.
+/// One change a learn turn proposed, and what a person decided.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProposalView {
     pub job: String,
@@ -402,7 +402,7 @@ pub struct ProposalView {
     pub decision: String,
 }
 
-/// A defect found after a change landed (F6): the commit it is in and what
+/// A defect found after a change landed: the commit it is in and what
 /// went wrong.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EscapeReport {
@@ -493,7 +493,7 @@ pub struct JobSummary {
     /// The part of the request this job does.
     #[serde(default)]
     pub part: Option<String>,
-    /// The parts scope proposed, while a person may still set them (F8).
+    /// The parts scope proposed, while a person may still set them.
     #[serde(default)]
     pub parts: Vec<String>,
 }
@@ -536,7 +536,7 @@ pub struct JobDetail {
     pub workflow: WorkflowView,
     /// Each result its steps gave, by name.
     pub results: std::collections::BTreeMap<String, String>,
-    /// The screenshots and recordings its turns kept, by file name (F11).
+    /// The screenshots and recordings its turns kept, by file name.
     #[serde(default)]
     pub media: Vec<String>,
 }
@@ -723,7 +723,7 @@ pub struct SettingsView {
     pub forge: String,
     /// `none` or `github_issues`.
     pub tracker: String,
-    /// No queued job is admitted while true (F8).
+    /// No queued job is admitted while true.
     #[serde(default)]
     pub intake_paused: bool,
 }
@@ -735,7 +735,7 @@ pub struct VersionView {
     pub note: String,
 }
 
-/// Where notices go besides the clients (F9): a chat webhook, shown only
+/// Where notices go besides the clients: a chat webhook, shown only
 /// as a hint of its address.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NotifyView {

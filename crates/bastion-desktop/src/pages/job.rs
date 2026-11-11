@@ -25,7 +25,7 @@ pub struct State {
     id: String,
     detail: Option<JobDetail>,
     note: text_editor::Content,
-    /// Scope's parts, one per line, as the person is setting them (F8).
+    /// Scope's parts, one per line, as the person is setting them.
     parts: text_editor::Content,
     parts_edited: bool,
     error: String,
@@ -77,7 +77,7 @@ pub enum Msg {
     Refuse(String),
     ToggleStep(String),
     ToggleTurn,
-    /// Open a kept screenshot or recording with the system's viewer (F11).
+    /// Open a kept screenshot or recording with the system's viewer.
     OpenMedia(String),
 }
 

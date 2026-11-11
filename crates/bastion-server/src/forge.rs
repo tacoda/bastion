@@ -71,7 +71,7 @@ pub fn push(machine: &dyn Machine, path: &Path, head: &str) -> Result<(), String
     }
 }
 
-/// What a pull request carries beyond the request (F7): what the job's
+/// What a pull request carries beyond the request: what the job's
 /// later steps wrote, what a person waived, and the issue it closes.
 #[derive(Clone, Debug, Default)]
 pub struct Notes {
@@ -120,7 +120,7 @@ pub fn describe(job: &Job, base: &str, head: &str, notes: &Notes) -> PullRequest
 }
 
 /// Refuse a pull request whose title or body credits an AI or holds a
-/// secret (F3).
+/// secret.
 pub fn publishable(pr: &PullRequest) -> Result<(), String> {
     let found = bastion_core::publish::findings(&format!("{}\n{}", pr.title, pr.body));
     match found.is_empty() {

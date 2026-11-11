@@ -1,4 +1,4 @@
-//! Screenshots and recordings (F11): after a turn, each image or recording
+//! Screenshots and recordings: after a turn, each image or recording
 //! the turn left under /work/artifacts in its VM is copied to the host and
 //! recorded on the job, once.
 

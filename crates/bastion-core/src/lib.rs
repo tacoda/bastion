@@ -298,7 +298,7 @@ pub enum Event {
     Commented {
         text: String,
     },
-    /// A person set the parts scope proposed, while it waits (F8). No parts,
+    /// A person set the parts scope proposed, while it waits. No parts,
     /// or one, means the request stays one job.
     PartsSet {
         parts: Vec<String>,
@@ -752,7 +752,7 @@ fn wait(job: &mut Job, dials: &Dials) -> Vec<Effect> {
         job.state = State::Stopped;
         return vec![Effect::Teardown];
     }
-    // The requester signs off a UAT script, so it waits whatever its dial (F7).
+    // The requester signs off a UAT script, so it waits whatever its dial.
     let dial = match job.stage {
         Stage::Uat => Dial::LightsOn,
         _ => job.step().map_or_else(|| dials.at(job.stage), |s| s.dial),

@@ -1,4 +1,4 @@
-//! What the turns on this server cost (F5): in all, by workspace, by step
+//! What the turns on this server cost: in all, by workspace, by step
 //! and by day, from the usage each turn's end metered.
 
 use std::collections::BTreeMap;

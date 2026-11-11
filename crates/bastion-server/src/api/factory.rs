@@ -129,7 +129,7 @@ pub struct WorkspaceSettings {
 }
 
 /// The images a workspace's VMs may boot: the sandbox's presets, and the
-/// browser image the stack registers (F11).
+/// browser image the stack registers.
 const IMAGES: [&str; 3] = ["python", "node", "browser"];
 
 /// Change a workspace's settings. Its name and its path stay.

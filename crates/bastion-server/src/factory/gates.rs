@@ -1,5 +1,5 @@
 //! A workspace's quality gates, run in the job's VM over the files its
-//! change touched, before the change is pushed (F3). A failing gate gets
+//! change touched, before the change is pushed. A failing gate gets
 //! the workspace's autofix once; a gate that still fails stops the push.
 
 use bastion_core::BASE_TAG;

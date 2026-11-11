@@ -1,4 +1,4 @@
-//! What a learn turn proposes (F6): each proposal a constraint for the gate
+//! What a learn turn proposes: each proposal a constraint for the gate
 //! or a gate for the workspace, with why and the evidence from the job. A
 //! person accepts or declines each one.
 

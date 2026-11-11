@@ -36,7 +36,7 @@ pub fn stream_http() -> reqwest::Client {
 
 /// Send `request` to `server`, and read its answer, or the server's
 /// refusal as text.
-/// The bytes of `job`'s kept screenshot or recording `name` (F11).
+/// The bytes of `job`'s kept screenshot or recording `name`.
 pub async fn media(
     http: &reqwest::Client,
     server: &Server,

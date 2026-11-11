@@ -1,5 +1,5 @@
-//! Escapes traced to the job that landed them (F6), and the revert watch
-//! (F7): a commit on a workspace's branch that reverts a job's commit is
+//! Escapes traced to the job that landed them, and the revert watch
+//!: a commit on a workspace's branch that reverts a job's commit is
 //! an escape of that job.
 
 use bastion_core::audit::Record;

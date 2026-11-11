@@ -89,7 +89,7 @@ pub struct Settings {
     pub build_model: Model,
     pub forge: Forge,
     pub tracker: Tracker,
-    /// No queued job is admitted while intake is paused (F8). Requests
+    /// No queued job is admitted while intake is paused. Requests
     /// still queue, and jobs already admitted go on.
     pub intake_paused: bool,
 }
@@ -174,7 +174,7 @@ fn from_word<T: Copy>(table: &[(T, &'static str)], text: &str) -> Option<T> {
 impl Settings {
     /// The model an agent stage runs on.
     /// The model a turn at `stage` runs on: the job's own when it named one
-    /// (F8), else the plan model for plan and the build model for the rest.
+    ///, else the plan model for plan and the build model for the rest.
     pub fn model_for(&self, stage: Stage, job_model: Option<&str>) -> Model {
         job_model
             .and_then(Model::named)

@@ -1,4 +1,4 @@
-//! The Costs page (F5): what the turns on the server shown cost, in all, by
+//! The Costs page: what the turns on the server shown cost, in all, by
 //! workspace, by step and by day, and the newest turns one by one.
 
 use bastion_protocol::api;

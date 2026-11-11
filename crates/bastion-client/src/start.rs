@@ -18,7 +18,7 @@ const DEV_SERVER: &str = concat!(
 );
 const IDENTIFIER: &str = "dev.tacoda.bastion";
 
-/// Where the local server's pieces are (F10): its binary, the stack it runs
+/// Where the local server's pieces are: its binary, the stack it runs
 /// (`worker-compose.yaml`, the seed, Bastion's own workers) and its data.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Layout {

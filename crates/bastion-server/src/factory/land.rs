@@ -234,7 +234,7 @@ impl Factory {
     }
 
     /// Keep the preview a host deployed for the pull request's branch, so a
-    /// reviewer can try the change (F7). A branch nothing deploys has none.
+    /// reviewer can try the change. A branch nothing deploys has none.
     pub(super) async fn keep_preview(&self, record: &Record, hub: &forge::GitHub<'_>) {
         let Ok(ws) = self.workspace(record).await else {
             return;
@@ -251,7 +251,7 @@ impl Factory {
         let _ = self.store.add_artifact(&record.job.id, &artifact).await;
     }
 
-    /// Watch the merge commit's deployment (F7) in the background, then
+    /// Watch the merge commit's deployment in the background, then
     /// report it. A job with no pull request has nothing to watch.
     pub(super) fn watch_deploy(self: &Arc<Self>, record: &Record) {
         let (factory, record) = (self.clone(), record.clone());
@@ -373,7 +373,7 @@ impl Factory {
         Ok(pr)
     }
 
-    /// What the job's later steps wrote and what a person waived (F7).
+    /// What the job's later steps wrote and what a person waived.
     async fn notes(&self, record: &Record) -> Result<forge::Notes, String> {
         let id = &record.job.id;
         let artifacts = self.store.artifacts(id).await?;

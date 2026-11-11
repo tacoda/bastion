@@ -1,4 +1,4 @@
-//! Notifications (F9): the chat webhook a Bastion server posts each notice
+//! Notifications: the chat webhook a Bastion server posts each notice
 //! to. The address is a credential, so the page shows only its hint.
 
 use bastion_protocol::api::{self, Request};

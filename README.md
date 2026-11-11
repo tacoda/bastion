@@ -5,9 +5,26 @@ it through a workflow, and a reviewed change comes out. A workflow is a graph
 of steps (Bastion's own stages, skills, prompts and commands) that you see on
 a canvas, and each step waits for your approval or runs on its own, as you set
 it. Bastion is a server and its clients: `bastion-server` runs the factory on
-the [iii](https://iii.dev) engine, and the desktop client (Rust, on
-[iced](https://iced.rs)) talks to it over HTTP. It's early, and
-[DECISIONS.md](DECISIONS.md) holds the goals and the decisions behind it.
+the [iii](https://iii.dev) engine, and the desktop app (on
+[iced](https://iced.rs)) and the `bastion` command line talk to it over HTTP.
+It's early, and [DECISIONS.md](DECISIONS.md) holds the goals and the decisions
+behind it.
+
+## Install
+
+On an Apple Silicon Mac or on Linux, install the server and the CLI, and add
+`--desktop` for the app:
+
+```sh
+curl -fsSL https://tacoda.github.io/bastion/install.sh | sh -s -- --desktop
+```
+
+On a Mac, Homebrew works too: `brew install --cask tacoda/bastion/bastion`.
+The installer checks each download against the release's signed checksums,
+and `bastion update` moves you to the newest release. On a Linux VM, add
+`--service` to run the server as a systemd user service.
+
+## Run it from source
 
 ```sh
 cargo build -p bastion-server
@@ -46,7 +63,9 @@ fix it. A failed required check stops the start.
 | Protocol | `crates/bastion-protocol` | The API's types and routes, shared by the server and its clients. |
 | Server | `crates/bastion-server` | The HTTP API and its events, the factory, the store, the gate, the audit and the stack. |
 | Engine adapter | `crates/bastion-server/src/engine/` | The only server code that imports `iii-sdk`. |
+| Client library | `crates/bastion-client` | What every client uses to reach a server: the server list, the local server's start, the calls and the event stream. |
 | Desktop client | `crates/bastion-desktop` | The pages, on iced. |
+| Command line | `crates/bastion-cli` | `bastion`: list and follow jobs, submit a request, approve, send back, stop, update. |
 | Workers | `workers/` | Bastion's own iii workers. |
 
 `scripts/check-seams.sh` fails the build when code crosses a seam (DECISIONS.md

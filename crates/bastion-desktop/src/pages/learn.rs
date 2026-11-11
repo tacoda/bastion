@@ -1,4 +1,4 @@
-//! The Learning page (F6): what learn turns proposed, each with why and the
+//! The Learning page: what learn turns proposed, each with why and the
 //! evidence from its job, open ones first. A person accepts one, which adds
 //! the constraint or the gate, or declines it.
 

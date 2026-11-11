@@ -29,7 +29,7 @@ pub enum Message {
     Stay,
     /// A minute passed: draw the page again, for its times.
     Tick,
-    /// How many jobs on a server wait on a person (F9).
+    /// How many jobs on a server wait on a person.
     Waiting(String, u32),
     /// A job's page, on the server it runs on.
     OpenJob {
@@ -64,7 +64,7 @@ pub struct App {
     page: Page,
     asking: bool,
     problem: Option<String>,
-    /// How many jobs wait on a person, by server (F9).
+    /// How many jobs wait on a person, by server.
     waiting: std::collections::BTreeMap<String, u32>,
 }
 

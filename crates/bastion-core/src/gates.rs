@@ -1,4 +1,4 @@
-//! A workspace's quality gates (F3): lint, static analysis, coverage or
+//! A workspace's quality gates: lint, static analysis, coverage or
 //! mutation commands run over a change's files before it is pushed.
 
 /// One gate: its name and its command.

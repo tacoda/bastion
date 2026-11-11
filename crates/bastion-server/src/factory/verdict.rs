@@ -1,4 +1,4 @@
-//! A machine verdict on promotion (F4). A repository that commits a
+//! A machine verdict on promotion. A repository that commits a
 //! `verify.yaml` contract has each change judged by opengantry's
 //! `gantry-verify` before it is pushed or landed. The verify runs the
 //! contract's checks, which run the agent's code, so it runs in a VM of its
@@ -37,7 +37,7 @@ impl Factory {
         Ok(false)
     }
 
-    /// A trial's contract as a grader (F6): the workspace's gates over the
+    /// A trial's contract as a grader: the workspace's gates over the
     /// change, with no autofix, then opengantry's verdict. None when the
     /// workspace has no gates and the repository no contract.
     pub(super) async fn contract_holds(&self, record: &Record) -> Result<Option<bool>, String> {

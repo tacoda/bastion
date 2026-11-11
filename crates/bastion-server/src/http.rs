@@ -441,7 +441,7 @@ struct Submit {
     pipeline: Option<Pipeline>,
     /// A workflow's id (D35), which takes the place of `pipeline`.
     workflow: Option<String>,
-    /// `provider/model` for every turn (F8).
+    /// `provider/model` for every turn.
     #[serde(default)]
     model: Option<String>,
     #[serde(default)]
@@ -551,7 +551,7 @@ async fn job_parts(
     decide_as(&app, &person, id, JobEvent::PartsSet { parts: b.parts }).await
 }
 
-/// A job's kept screenshot or recording, as its bytes (F11).
+/// A job's kept screenshot or recording, as its bytes.
 async fn job_media(State(app): State<App>, Path((id, name)): Path<(String, String)>) -> Response {
     let found = app
         .server

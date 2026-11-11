@@ -1,4 +1,4 @@
-//! The Verification page (F6): each landed job with what checked it, the
+//! The Verification page: each landed job with what checked it, the
 //! commits it landed and the escapes found in them, and a form to report
 //! an escape by its commit.
 

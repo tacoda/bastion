@@ -27,7 +27,7 @@ pub struct Server {
     /// Where the server writes what it keeps outside the database, such as
     /// an audit export.
     pub data: PathBuf,
-    /// Where notices go besides the event stream (F9).
+    /// Where notices go besides the event stream.
     pub webhook: Arc<crate::notify::Webhook>,
 }
 

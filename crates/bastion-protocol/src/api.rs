@@ -32,7 +32,7 @@ fn fill(route: &str, name: &str, value: &str) -> String {
     route.replace(&format!("{{{name}}}"), &encode(value))
 }
 
-/// The route a job's kept screenshot or recording is read from (F11). It
+/// The route a job's kept screenshot or recording is read from. It
 /// answers with the file's bytes, not JSON, so it is no `Request`.
 pub const MEDIA_ROUTE: &str = "/jobs/{id}/media/{name}";
 
@@ -194,10 +194,10 @@ pub struct JobSubmit {
     pub pipeline: Option<String>,
     pub workflow: Option<String>,
     /// The model every turn runs on, as `provider/model`; the server's
-    /// plan and build models when none (F8).
+    /// plan and build models when none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    /// `feature`, `bug`, `chore` or `docs` (F8).
+    /// `feature`, `bug`, `chore` or `docs`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
     /// What the change must do, in the requester's words.
@@ -241,7 +241,7 @@ impl Request for JobComment {
     }
 }
 
-/// Set the parts scope proposed, while it waits (F8). One part, or none,
+/// Set the parts scope proposed, while it waits. One part, or none,
 /// keeps the request as one job.
 #[derive(Clone, Debug, Serialize)]
 pub struct JobParts {

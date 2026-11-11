@@ -30,7 +30,7 @@ engine:
     iii-sandbox:
       auto_install: true
       image_allowlist: [python, node, browser]
-      # A workspace set to `browser` boots this (F11): Playwright with
+      # A workspace set to `browser` boots this: Playwright with
       # Chromium, Firefox and WebKit, git, Node and ffmpeg, on Ubuntu 24.04.
       custom_images:
         browser: mcr.microsoft.com/playwright:v1.65.0-noble

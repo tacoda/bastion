@@ -102,7 +102,7 @@ pub struct Run {
     pub seconds: u64,
     /// The judge's grade from 0 to 10, once graded.
     pub grade: Option<u8>,
-    /// Runs whose contract held, and runs whose contract failed (F6).
+    /// Runs whose contract held, and runs whose contract failed.
     pub contract_held: u32,
     pub contract_failed: u32,
 }

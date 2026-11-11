@@ -1,4 +1,4 @@
-//! What learn turns proposed, and a person's decision on each (F6). An
+//! What learn turns proposed, and a person's decision on each. An
 //! accepted constraint joins the gate's rules as told; an accepted gate
 //! joins its workspace's gates. Each decision is an audit entry.
 

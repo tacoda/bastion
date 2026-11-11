@@ -1,4 +1,4 @@
-//! The publishing gate (F3): text that leaves for the world, such as a pull
+//! The publishing gate: text that leaves for the world, such as a pull
 //! request's, names no AI or tool as its author and carries no secret. A
 //! finding names what it found, never the secret itself.
 

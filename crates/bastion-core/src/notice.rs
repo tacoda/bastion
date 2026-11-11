@@ -1,4 +1,4 @@
-//! Notices (F9): a job that comes to wait on a person, fails, or lands is
+//! Notices: a job that comes to wait on a person, fails, or lands is
 //! worth telling someone about. Each other change only refreshes a page.
 
 use crate::{Job, State};

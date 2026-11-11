@@ -1,4 +1,4 @@
-//! One turn, step by step (F5): each step the agent took, each call with
+//! One turn, step by step: each step the agent took, each call with
 //! the gate's verdict on it, and what each call returned.
 
 use bastion_protocol::api;

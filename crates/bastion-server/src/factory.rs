@@ -50,14 +50,14 @@ pub struct Submission {
     pub requester: Option<String>,
     /// The workflow to run, by id (D35); none runs `pipeline`.
     pub workflow: Option<String>,
-    /// The model every turn runs on, as `provider/model` (F8).
+    /// The model every turn runs on, as `provider/model`.
     pub model: Option<String>,
-    /// What the change must do, in the requester's words (F8).
+    /// What the change must do, in the requester's words.
     pub criteria: Option<String>,
-    /// Images that show the request, as (file name, bytes) (F8).
+    /// Images that show the request, as (file name, bytes).
     pub screenshots: Vec<(String, Vec<u8>)>,
 }
-/// What a turn on the browser image is told it has (F11).
+/// What a turn on the browser image is told it has.
 const BROWSER_GUIDE: &str = "\
 This VM has Node and Playwright's Chromium, Firefox and WebKit under
 /ms-playwright, but not the playwright npm package; a workspace whose setup
@@ -409,7 +409,7 @@ impl Factory {
     }
 
     /// Tell them too when the job came to wait on a person, failed or
-    /// landed (F9), with how many jobs wait on a person now.
+    /// landed, with how many jobs wait on a person now.
     async fn notice(&self, before: &Job, after: &Job) {
         let Some(state) = bastion_core::notice::entered(before, after) else {
             return;

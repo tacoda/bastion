@@ -1,0 +1,2 @@
+The notification popped up
+restarted, continue

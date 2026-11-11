@@ -3,11 +3,13 @@
 
 use std::fs::File;
 use std::net::TcpStream;
-use std::path::{Path, PathBuf};
+
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use bastion_protocol::{LOCAL, Server};
+
+use crate::start::Layout;
 
 /// The engine the local server's stack runs.
 const ENGINE: &str = "ws://127.0.0.1:49160";
@@ -16,18 +18,12 @@ pub const PORT: u16 = 49190;
 /// How long a start may take before the client gives up on it.
 const START_WAIT: Duration = Duration::from_secs(20);
 
-/// The server binary this build runs.
-// ponytail: the dev build's path; F10 ships it beside the client.
-const BINARY: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../target/debug/bastion-server"
-);
-
 /// Attach to the local server, starting it first if nothing listens on its
-/// port. `data` holds its token and its log.
-pub fn start(checkout: &Path, data: &Path) -> Result<Server, String> {
+/// port. Its data folder holds its token and its log.
+pub fn start(at: &Layout) -> Result<Server, String> {
+    let data = &at.data;
     if !listening() {
-        spawn(checkout, data)?;
+        spawn(at)?;
     }
     let token = data.join("token");
     let since = Instant::now();
@@ -56,10 +52,11 @@ fn listening() -> bool {
 }
 
 /// Start the server in its own process group, so quitting the client leaves it running.
-fn spawn(checkout: &Path, data: &Path) -> Result<(), String> {
+fn spawn(at: &Layout) -> Result<(), String> {
+    let (checkout, data) = (&at.stack, &at.data);
     std::fs::create_dir_all(data).map_err(|e| format!("{}: {e}", data.display()))?;
     let log = File::create(data.join("server.log")).map_err(|e| e.to_string())?;
-    let mut command = Command::new(PathBuf::from(BINARY));
+    let mut command = Command::new(&at.server);
     command
         .args(["--checkout", &checkout.display().to_string()])
         .args(["--data", &data.display().to_string()])
@@ -74,5 +71,5 @@ fn spawn(checkout: &Path, data: &Path) -> Result<(), String> {
     command
         .spawn()
         .map(|_| ())
-        .map_err(|e| format!("{BINARY}: {e}"))
+        .map_err(|e| format!("{}: {e}", at.server.display()))
 }

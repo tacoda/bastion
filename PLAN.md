@@ -262,7 +262,8 @@ value; each is a phase of its own when it starts.
 - **F9, notifications.** A notification on `needs_you`, `failed` and
   `landed`, with a tray count, and a chat adapter (D23).
 - **F10, packaging and updates.** A signed macOS build and a Linux build of
-  the server and the client, with signed updates.
+  the server and the client, with signed updates, installed through a
+  Homebrew tap or an install script run as `curl … | sh`.
 - **F11, the browser agent.** Browser tools for turns, with screenshots and
   recordings as artifacts.
 

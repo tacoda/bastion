@@ -10,19 +10,21 @@ under. Bastion seeds the common workflows with their text filled in, and
 you can change every step of them. The cost is honest: a factory does only
 what its workflows say, so a gate you remove is gone.
 
-## Two levels: your jobs, and each server
+## Two levels: each server, and all of them
 
-The app has two levels, and every page sits on one of them.
+Every page shows one server, the one you pick at the top. Some pages can
+also show every server at once, and those are the ones about records.
 
-**Your jobs, across servers.** The Jobs pages list every job on every
-server you added, side by side. You filter them by server and by
-workspace, open one, and act on it wherever it runs. These pages stay as
-they are.
+**Records, per server or across all.** Jobs, Audit Log and Costs read one
+server, or every server you added, side by side. All servers is one more
+choice in the server picker, so you filter by server the same way on each
+of these pages. You open a job, an entry or a turn and act on it wherever
+it lives.
 
-**One server at a time.** Every other page belongs to the server you pick
-at the top: Workflows, Constraints, Capabilities, Audit Log, Evals, Costs,
-Verification, Engine and Settings. A page never mixes two
-servers, because each server has its own rules and its own records.
+**Rules, one server at a time.** Workflows, Constraints, Capabilities,
+Evals, Verification, Engine and Settings belong to the server you pick. A
+rules page never mixes two servers, because each server's rules shape only
+its own jobs, and a sum of two rule sets means nothing.
 
 ## What a server holds
 

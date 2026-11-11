@@ -2,7 +2,7 @@
 # Build one platform's release files into dist/:
 #   bastion-<version>-<target>.tar.gz          the server and the CLI, with the stack
 #   bastion-desktop-<version>-<target>.zip     macOS: Bastion.app, which holds the server too
-#   bastion-desktop-<version>-<target>.tar.gz  Linux: the window and the tray, with the server
+#   bastion-desktop-<version>-<target>.tar.gz  Linux: the window, with the server
 # Usage: scripts/package.sh <version> [target]. The target defaults to this machine's.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -15,7 +15,7 @@ rel="target/$target/release"
 # The version a release build carries, which `bastion update` compares.
 export BASTION_VERSION="$version"
 cargo build --release --locked --target "$target" \
-  -p bastion-server -p bastion-cli -p bastion-openai-compat -p bastion-desktop -p bastion-tray
+  -p bastion-server -p bastion-cli -p bastion-openai-compat -p bastion-desktop
 
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
@@ -45,7 +45,7 @@ case "$target" in
   *apple-darwin)
     app="$stage/Bastion.app/Contents"
     mkdir -p "$app/MacOS" "$app/Resources"
-    cp "$rel/bastion-desktop" "$rel/bastion-tray" "$rel/bastion-server" "$rel/bastion" "$app/MacOS/"
+    cp "$rel/bastion-desktop" "$rel/bastion-server" "$rel/bastion" "$app/MacOS/"
     cp assets/icon/bastion.icns "$app/Resources/"
     sed "s/@VERSION@/$version/g" scripts/Info.plist > "$app/Info.plist"
     stack "$app"
@@ -57,7 +57,7 @@ case "$target" in
   *linux*)
     desk="$stage/bastion-desktop-$version"
     mkdir -p "$desk/bin" "$desk/share/applications" "$desk/share/icons/hicolor/256x256/apps"
-    cp "$rel/bastion-desktop" "$rel/bastion-tray" "$rel/bastion-server" "$rel/bastion" "$desk/bin/"
+    cp "$rel/bastion-desktop" "$rel/bastion-server" "$rel/bastion" "$desk/bin/"
     cp scripts/bastion.desktop "$desk/share/applications/"
     cp assets/icon/bastion-256.png "$desk/share/icons/hicolor/256x256/apps/bastion.png"
     stack "$desk"

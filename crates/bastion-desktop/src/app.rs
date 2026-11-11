@@ -204,7 +204,7 @@ impl App {
                 let page = self.page.reload(&self.ctx(), Push::All);
                 return Task::batch([self.count_waiting(&server), page]);
             }
-            // The tray shows the notice itself; the window counts it.
+            // The window counts the notice.
             Feed::Change(Change::Notice { waiting, .. }) => {
                 self.waiting.insert(server, waiting);
                 Push::Job

@@ -1,0 +1,1 @@
+First, I want to get rid of the tray client - it's unnecessary and buggy

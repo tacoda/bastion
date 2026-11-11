@@ -54,6 +54,11 @@ const BUILT_IN: [(&str, &str, Pipeline); 3] = [
     ),
 ];
 
+/// The built-in workflow that runs `pipeline`.
+pub fn id_of(pipeline: Pipeline) -> Option<&'static str> {
+    BUILT_IN.iter().find(|b| b.2 == pipeline).map(|b| b.0)
+}
+
 /// The pipeline a built-in workflow runs, if `id` is one.
 pub fn pipeline_of(id: &str) -> Option<Pipeline> {
     BUILT_IN.iter().find(|b| b.0 == id).map(|b| b.2)
@@ -278,8 +283,18 @@ impl WorkflowStore for SqlStore {
 
     fn save_workflow<'a>(&'a self, w: &'a Workflow, at: u64) -> Answer<'a, u64> {
         Box::pin(async move {
-            let kept = self.workflows().await?;
-            let version = kept.iter().find(|k| k.0 == w.id).map_or(0, |k| k.2) + 1;
+            // A deleted workflow's versions stay for the jobs that ran them,
+            // so the next version comes after every one kept.
+            let kept = self
+                .query(
+                    "SELECT max(version) AS v FROM workflow_nodes WHERE workflow = ?",
+                    json!([w.id]),
+                )
+                .await?;
+            let newest = kept.first().and_then(|r| r["v"].as_u64()).unwrap_or(0);
+            let listed = self.workflows().await?;
+            let listed = listed.iter().find(|k| k.0 == w.id).map_or(0, |k| k.2);
+            let version = newest.max(listed) + 1;
             let head = json!({
                 "sql": "INSERT INTO workflows (id, name, version, updated_at) VALUES (?, ?, ?, ?)
                         ON CONFLICT (id) DO UPDATE SET name = excluded.name, version = excluded.version, updated_at = excluded.updated_at",

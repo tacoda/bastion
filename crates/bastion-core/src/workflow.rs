@@ -171,19 +171,25 @@ pub fn results(report: &str) -> BTreeMap<String, String> {
             .strip_prefix("RESULT ")
             .and_then(|r| r.strip_suffix(':'));
         if let Some(name) = header {
-            if let Some((n, text)) = current.take() {
-                found.insert(n, text.join("\n").trim().to_string());
-            }
+            keep(&mut found, current.take());
             current = Some((name.trim().to_string(), Vec::new()));
         } else if let Some((_, text)) = &mut current {
             text.push(line);
         }
     }
-    if let Some((n, text)) = current {
-        found.insert(n, text.join("\n").trim().to_string());
-    }
-    found.retain(|_, text| !text.is_empty());
+    keep(&mut found, current);
     found
+}
+
+/// Keep a result's text, unless it is empty: a header said again with
+/// nothing under it, as a model may end its reply, keeps what came before.
+fn keep(found: &mut BTreeMap<String, String>, result: Option<(String, Vec<&str>)>) {
+    if let Some((name, text)) = result {
+        let text = text.join("\n").trim().to_string();
+        if !text.is_empty() {
+            found.insert(name, text);
+        }
+    }
 }
 
 impl Graph {
@@ -501,5 +507,12 @@ mod tests {
         let mut bad = g;
         bad.nodes[1].reach.secrets = vec!["gh token".into()];
         assert!(bad.check().unwrap_err().contains("not a secret's name"));
+    }
+
+    #[test]
+    fn a_result_said_again_with_nothing_under_it_keeps_its_text() {
+        let reply = "Thinking first.\nRESULT plan:\n1. Add triple.\n2. Test it.\n\nRESULT plan:\n";
+        assert_eq!(results(reply)["plan"], "1. Add triple.\n2. Test it.");
+        assert!(results("RESULT plan:\n").is_empty());
     }
 }

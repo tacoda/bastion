@@ -218,17 +218,6 @@ pub fn remove_step(w: &mut WorkflowView, id: &str) {
     w.links.retain(|l| l.from != id && l.to != id);
 }
 
-/// The Bastion stages the built-in workflows use, in their order.
-pub fn stages(all: &[WorkflowView]) -> Vec<String> {
-    let mut found: Vec<String> = Vec::new();
-    for n in all.iter().filter(|w| w.built_in).flat_map(|w| &w.nodes) {
-        if !found.contains(&n.stage) {
-            found.push(n.stage.clone());
-        }
-    }
-    found
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

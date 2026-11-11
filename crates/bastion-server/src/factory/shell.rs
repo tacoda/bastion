@@ -19,17 +19,19 @@ fn quoted(text: &str) -> String {
 impl Factory {
     /// The line a script starts with: `BASTION_BRANCH`, the job's branch;
     /// `BASTION_BASE`, the workspace's; `BASTION_REPO`, its GitHub
-    /// `owner/name`, empty without an `origin`.
+    /// `owner/name`, empty without an `origin`; `BASTION_CHECKS`, the
+    /// workspace's checks.
     pub(super) async fn shell_env(&self, record: &Record) -> Result<String, String> {
         let ws = self.workspace(record).await?;
         let worktree = record.runtime.worktree.clone().ok_or("no worktree")?;
         let (path, branch) = self.worktree_path(&worktree).await?;
         let repo = forge::slug(&*self.machine, &path).unwrap_or_default();
         Ok(format!(
-            "export BASTION_BRANCH={} BASTION_BASE={} BASTION_REPO={}",
+            "export BASTION_BRANCH={} BASTION_BASE={} BASTION_REPO={} BASTION_CHECKS={}",
             quoted(&branch),
             quoted(&ws.branch),
-            quoted(&repo)
+            quoted(&repo),
+            quoted(&ws.checks)
         ))
     }
 

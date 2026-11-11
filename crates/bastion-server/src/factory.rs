@@ -228,7 +228,12 @@ impl Factory {
         let at = now();
         let mut job = Job::new(id.clone(), workspace.into(), request.into(), at).on(how.pipeline);
         let mut workflow_version = None;
-        if let Some(w) = &how.workflow {
+        // A request with no workflow runs its pipeline's (D39).
+        let workflow = how
+            .workflow
+            .clone()
+            .or_else(|| workflow_store::id_of(how.pipeline).map(String::from));
+        if let Some(w) = &workflow {
             let dials = settings_store::current(&*self.store).await?.dials;
             (job, workflow_version) =
                 workflow_store::start_on(&*self.store, &dials, w, job).await?;
@@ -241,7 +246,7 @@ impl Factory {
                 issue: how.issue,
                 requester: how.requester,
                 model: how.model,
-                workflow: how.workflow,
+                workflow,
                 workflow_version,
                 ..Runtime::default()
             },

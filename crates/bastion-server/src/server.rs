@@ -79,6 +79,9 @@ impl Server {
             if let Err(e) = store.add_person(&admin).await {
                 eprintln!("the owner was not added: {e}");
             }
+            if let Err(e) = crate::seed_flows::seed(&store).await {
+                eprintln!("the shipped workflows were not seeded: {e}");
+            }
             server.run(store, scratch);
         });
     }

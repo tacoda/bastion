@@ -69,6 +69,19 @@ is fixed. The test workflow's own script misread GitHub's reply.
 - Exit, live: the seeded short workflow lands a change on `demo-local`, and
   the seeded pull request workflow opens and merges a pull request.
 
+Done 2026-11-11. Short, Pull request, Full and the full workflow without
+acceptance tests ship as steps, saved at startup while no workflow has
+their id; the eleven older seeded workflows turn into steps while their
+first version is unchanged. Live: Short landed `negate(x)` on
+`demo-local`, and Pull request planned, built, passed its checks, opened
+PR #3 on `ianparo/bastion-demo` and merged it. The run found that the
+sandbox stops a command after five minutes, so the CI step waits four and
+a half and then asks for a retry; GitHub's own CI for the PR failed, and
+the step was shipped anyway to merge. It also found that a failed store
+transaction was silent, that a deleted workflow's next version collided
+with its kept ones, and that a result said again empty dropped the first;
+all three are fixed.
+
 ### S3. Everything names steps
 
 - Governance per step (D42), dials per step only, notices and the job

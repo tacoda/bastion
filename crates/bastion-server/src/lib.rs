@@ -21,6 +21,7 @@ pub mod machine;
 pub mod notify;
 pub mod people_store;
 pub mod rt;
+pub mod seed_flows;
 pub mod server;
 pub mod settings_store;
 pub mod spec;

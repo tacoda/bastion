@@ -13,6 +13,19 @@ pub struct SqlStore {
     engine: Arc<dyn Engine>,
 }
 
+/// A transaction's answer as a result: an error unless it committed.
+pub(super) fn committed(out: &Value) -> Result<(), String> {
+    match out["committed"].as_bool() {
+        Some(false) => Err(format!(
+            "the transaction did not commit: {}",
+            out["error"]["message"]
+                .as_str()
+                .unwrap_or("no reason given")
+        )),
+        _ => Ok(()),
+    }
+}
+
 impl SqlStore {
     /// Make the tables if they are missing, then run the seed file's statements.
     pub async fn open(engine: Arc<dyn Engine>, seed: &str) -> Result<Self, String> {
@@ -27,13 +40,14 @@ impl SqlStore {
             .map(|sql| json!({ "sql": sql, "params": [] }))
             .chain(seed_statements(seed))
             .collect();
-        engine
+        let out = engine
             .call(
                 NS,
                 "database::transaction",
                 json!({ "statements": statements }),
             )
             .await?;
+        committed(&out)?;
         for sql in ALTERS {
             let applied = engine
                 .call(NS, "database::execute", json!({ "sql": sql, "params": [] }))
@@ -72,16 +86,18 @@ impl SqlStore {
         Ok(())
     }
 
-    /// Run statements in one transaction.
+    /// Run `statements` in one transaction. The worker answers a failed
+    /// one with `committed: false` and its error, not with an error.
     pub(crate) async fn transaction(&self, statements: Vec<Value>) -> Result<(), String> {
-        self.engine
+        let out = self
+            .engine
             .call(
                 NS,
                 "database::transaction",
                 json!({ "statements": statements }),
             )
-            .await
-            .map(|_| ())
+            .await?;
+        committed(&out)
     }
 
     pub(crate) async fn query(&self, sql: &str, params: Value) -> Result<Vec<Value>, String> {

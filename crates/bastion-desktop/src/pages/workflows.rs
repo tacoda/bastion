@@ -464,22 +464,17 @@ fn palette(state: &State) -> Element<'_, Message> {
     row![small("Add a step", add)].into()
 }
 
-/// The kinds a step may become: a workflow's own, then each Bastion stage
-/// not used by another step.
-fn kinds(state: &State, own: &str) -> Vec<Choice> {
-    let used: Vec<&str> = state
-        .draft
+/// The kinds a step may become (D39). A step of an old workflow keeps its
+/// stage listed, so its picker still shows what it runs.
+fn kinds(own: &str) -> Vec<Choice> {
+    let mut all: Vec<Choice> = CUSTOM
         .iter()
-        .flat_map(|w| &w.nodes)
-        .map(|n| n.stage.as_str())
-        .filter(|s| *s != own)
+        .map(|(id, name)| Choice::new(id, name))
         .collect();
-    let custom = CUSTOM.iter().map(|(id, name)| Choice::new(id, name));
-    let stages = edit::stages(&state.all)
-        .into_iter()
-        .filter(|s| !CUSTOM.iter().any(|(c, _)| c == s) && !used.contains(&s.as_str()))
-        .map(|s| Choice::new(&s, &format!("Bastion stage: {}", s.replace('_', " "))));
-    custom.chain(stages).collect()
+    if !CUSTOM.iter().any(|(id, _)| *id == own) {
+        all.push(Choice::new(own, &own.replace('_', " ")));
+    }
+    all
 }
 
 /// The name an agent, skill or command step runs, and where it lives.
@@ -507,12 +502,8 @@ fn text_label(n: &bastion_protocol::NodeView) -> &'static str {
 
 /// How a step runs: its kind, its dial, and an agent's, skill's or
 /// command's name.
-fn how_row<'a>(
-    state: &'a State,
-    n: &bastion_protocol::NodeView,
-    editable: bool,
-) -> Element<'a, Message> {
-    let all = kinds(state, &n.stage);
+fn how_row<'a>(n: &bastion_protocol::NodeView, editable: bool) -> Element<'a, Message> {
+    let all = kinds(&n.stage);
     let kind = all.iter().find(|c| c.id == n.stage).cloned();
     let kind = pick_list(all, kind, |c| wrap(Msg::Kind(c)))
         .width(Fill)
@@ -573,7 +564,7 @@ fn step_detail<'a>(state: &'a State, id: &str, editable: bool) -> Option<Element
         .on_input_maybe(editable.then_some(|v| wrap(Msg::Field(StepField::Name, v))))
         .style(theme::field);
     let head = labeled("Name", name);
-    let how = how_row(state, &n, editable);
+    let how = how_row(&n, editable);
     let mut body = column![head, how];
     if text_of(&n) == Text::Nothing {
         body = body.push(text(text_label(&n)).size(13).color(theme::MUTED));

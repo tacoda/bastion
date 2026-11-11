@@ -269,3 +269,16 @@ fn a_job_row_that_does_not_parse_is_left_out_of_the_list() {
         assert_eq!(listed[0].job.id, "j1");
     });
 }
+
+#[test]
+fn a_transaction_that_did_not_commit_is_an_error_with_its_reason() {
+    let refused = json!({
+        "committed": false,
+        "error": { "message": "NOT NULL constraint failed: workflows.name" },
+    });
+    assert_eq!(
+        sql::committed(&refused),
+        Err("the transaction did not commit: NOT NULL constraint failed: workflows.name".into())
+    );
+    assert_eq!(sql::committed(&json!({ "committed": true })), Ok(()));
+}

@@ -1,0 +1,26 @@
+I stored the token, go ahead
+
+---
+
+<task-notification>
+<task-id>b2lbkgq1w</task-id>
+<tool-use-id>toolu_01SeZQDmPRWpYNGYSHzzdVzP</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/b2lbkgq1w.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the test job to stop" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+The title shouldn't be the type it is - it should be its title
+[Image #15]
+
+---
+
+<task-notification>
+<task-id>bglno7wdw</task-id>
+<tool-use-id>toolu_015WMcD5HZCxfTkB85utuWTK</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/bglno7wdw.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the new test job" completed (exit code 0)</summary>
+</task-notification>

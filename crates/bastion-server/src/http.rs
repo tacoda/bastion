@@ -438,6 +438,9 @@ struct Submit {
     pipeline: Option<Pipeline>,
     /// A workflow's id (D35), which takes the place of `pipeline`.
     workflow: Option<String>,
+    /// `provider/model` for every turn (F8).
+    #[serde(default)]
+    model: Option<String>,
 }
 
 async fn job_submit(
@@ -448,6 +451,7 @@ async fn job_submit(
     let how = Submission {
         pipeline: b.pipeline.unwrap_or_default(),
         workflow: b.workflow,
+        model: b.model.filter(|m| !m.trim().is_empty()),
         requester: Some(person.name),
         ..Submission::default()
     };
@@ -1001,6 +1005,7 @@ mod tests {
             request: s("r"),
             pipeline: Some(s("full_no_acceptance")),
             workflow: None,
+            model: Some(s("deepseek/deepseek-flash")),
         });
         reads::<Text>(api::JobComment {
             id: s("j1"),

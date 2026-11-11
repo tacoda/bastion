@@ -48,6 +48,8 @@ pub struct Submission {
     pub requester: Option<String>,
     /// The workflow to run, by id (D35); none runs `pipeline`.
     pub workflow: Option<String>,
+    /// The model every turn runs on, as `provider/model` (F8).
+    pub model: Option<String>,
 }
 /// The VM tag a read-only turn's tree is put back to.
 const BEFORE_TURN: &str = "bastion-before-turn";
@@ -196,6 +198,10 @@ impl Factory {
         request: &str,
         how: Submission,
     ) -> Result<String, String> {
+        let named = how.model.as_deref();
+        if let Some(m) = named.filter(|m| bastion_core::settings::Model::named(m).is_none()) {
+            return Err(format!("{m:?} is not a model as provider/model"));
+        }
         let id = format!("j{}", short_id());
         let at = now();
         let mut job = Job::new(id.clone(), workspace.into(), request.into(), at).on(how.pipeline);
@@ -210,6 +216,7 @@ impl Factory {
             runtime: Runtime {
                 issue: how.issue,
                 requester: how.requester,
+                model: how.model,
                 workflow: how.workflow,
                 workflow_version,
                 ..Runtime::default()
@@ -596,7 +603,7 @@ impl Factory {
         message.push_str(&self.gate.rules(&job.id));
         message.push_str(brief);
         let settings = settings_store::current(&*self.store).await?;
-        let model = settings.model(stage);
+        let model = settings.model_for(stage, record.runtime.model.as_deref());
         turn::provider_ready(&*self.engine, &model.provider).await?;
         self.engine
             .call(

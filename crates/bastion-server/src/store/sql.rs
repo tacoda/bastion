@@ -233,6 +233,7 @@ pub(super) fn record(row: &Value) -> Result<Record, String> {
             session: text(row, "session"),
             issue: text(row, "issue"),
             requester: text(row, "requester"),
+            model: text(row, "model"),
             workflow: text(row, "workflow"),
             workflow_version: row["workflow_version"].as_u64(),
             approved: text(row, "approved")
@@ -285,7 +286,8 @@ pub(super) fn job_params(r: &Record) -> Value {
         j.parent,
         j.after,
         j.part,
-        approved(r)
+        approved(r),
+        r.runtime.model
     ])
 }
 

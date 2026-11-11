@@ -57,6 +57,9 @@ pub struct Runtime {
     pub issue: Option<String>,
     /// The person who asked for the job (D31).
     pub requester: Option<String>,
+    /// The model the job's turns run on, as `provider/model`, when its
+    /// request named one (F8); else the settings' plan and build models.
+    pub model: Option<String>,
     /// The workflow the job runs (D35), and the version it started on.
     pub workflow: Option<String>,
     pub workflow_version: Option<u64>,

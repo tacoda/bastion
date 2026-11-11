@@ -13,6 +13,18 @@ pub struct Model {
     pub model: String,
 }
 
+impl Model {
+    /// A model named `provider/model`, as a request may name one.
+    pub fn named(text: &str) -> Option<Model> {
+        let (provider, model) = text.trim().split_once('/')?;
+        let (provider, model) = (provider.trim(), model.trim());
+        (!provider.is_empty() && !model.is_empty()).then(|| Model {
+            provider: provider.into(),
+            model: model.into(),
+        })
+    }
+}
+
 impl Default for Model {
     fn default() -> Self {
         Model {
@@ -161,6 +173,14 @@ fn from_word<T: Copy>(table: &[(T, &'static str)], text: &str) -> Option<T> {
 
 impl Settings {
     /// The model an agent stage runs on.
+    /// The model a turn at `stage` runs on: the job's own when it named one
+    /// (F8), else the plan model for plan and the build model for the rest.
+    pub fn model_for(&self, stage: Stage, job_model: Option<&str>) -> Model {
+        job_model
+            .and_then(Model::named)
+            .unwrap_or_else(|| self.model(stage).clone())
+    }
+
     pub fn model(&self, stage: Stage) -> &Model {
         if stage == Stage::Plan {
             &self.plan_model
@@ -233,6 +253,19 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_job_that_names_a_model_runs_its_turns_on_it() {
+        let s = Settings::default();
+        let own = s.model_for(Stage::Build, Some("deepseek/deepseek-flash"));
+        assert_eq!(
+            (own.provider.as_str(), own.model.as_str()),
+            ("deepseek", "deepseek-flash")
+        );
+        assert_eq!(s.model_for(Stage::Plan, None), s.plan_model);
+        assert_eq!(Model::named("no-slash"), None);
+        assert_eq!(Model::named("openai/ "), None);
+    }
 
     #[test]
     fn settings_round_trip_through_their_pairs() {

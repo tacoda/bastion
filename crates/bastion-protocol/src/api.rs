@@ -182,6 +182,10 @@ pub struct JobSubmit {
     /// `short`, `full` or `full_no_acceptance`; the server's default when none.
     pub pipeline: Option<String>,
     pub workflow: Option<String>,
+    /// The model every turn runs on, as `provider/model`; the server's
+    /// plan and build models when none (F8).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 impl Request for JobSubmit {

@@ -3,7 +3,7 @@
 //! issue.
 
 use bastion_protocol::api::{self, Request};
-use bastion_protocol::{IssueView, LOCAL, WorkflowView, Workspace};
+use bastion_protocol::{IssueView, LOCAL, ModelOption, WorkflowView, Workspace};
 use iced::widget::{Column, button, column, container, pick_list, row, text, text_editor};
 use iced::{Element, Fill, Task};
 
@@ -16,6 +16,10 @@ fn default_workflow() -> Choice {
     Choice::new("", "The server's default")
 }
 
+fn default_model() -> Choice {
+    Choice::new("", "The server's plan and build models")
+}
+
 pub struct State {
     /// A request runs on `local` unless the owner picks another server (D30).
     server: String,
@@ -23,6 +27,9 @@ pub struct State {
     workspace: Option<String>,
     workflows: Vec<Choice>,
     workflow: Choice,
+    /// The model every turn runs on, as `provider/model` (F8).
+    models: Vec<Choice>,
+    model: Choice,
     request: text_editor::Content,
     issues: Vec<IssueView>,
     issue_note: String,
@@ -37,6 +44,8 @@ impl Default for State {
             workspace: None,
             workflows: vec![default_workflow()],
             workflow: default_workflow(),
+            models: vec![default_model()],
+            model: default_model(),
             request: text_editor::Content::new(),
             issues: vec![],
             issue_note: String::new(),
@@ -52,6 +61,8 @@ pub enum Msg {
     Workflows(Result<Vec<WorkflowView>, String>),
     Workspace(String),
     Workflow(Choice),
+    Models(Result<Vec<ModelOption>, String>),
+    Model(Choice),
     Edit(text_editor::Action),
     Submit,
     LoadIssues,
@@ -68,10 +79,12 @@ fn wrap(task: Task<Msg>) -> Task<Message> {
 pub fn load(state: &State, ctx: &Ctx) -> Task<Message> {
     let on = state.server.clone();
     let spaces = ctx.clone().get(on.clone(), api::Workspaces);
-    let flows = ctx.clone().get(on, api::Workflows);
+    let flows = ctx.clone().get(on.clone(), api::Workflows);
+    let models = ctx.clone().get(on, api::Models);
     wrap(Task::batch([
         Task::perform(spaces, Msg::Workspaces),
         Task::perform(flows, Msg::Workflows),
+        Task::perform(models, Msg::Models),
     ]))
 }
 
@@ -107,6 +120,7 @@ impl State {
             request: self.request.text().trim().into(),
             pipeline: None,
             workflow: (!self.workflow.id.is_empty()).then(|| self.workflow.id.clone()),
+            model: (!self.model.id.is_empty()).then(|| self.model.id.clone()),
         };
         self.ask(ctx, submit, Msg::Started)
     }
@@ -138,7 +152,15 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
             });
             state.workflows = std::iter::once(default_workflow()).chain(named).collect();
         }
-        Msg::Workspaces(Err(e)) | Msg::Workflows(Err(e)) => state.error = e,
+        Msg::Models(Ok(all)) => {
+            let named = all.into_iter().map(|m| {
+                let id = format!("{}/{}", m.provider, m.id);
+                Choice::new(&id, &format!("{} ({})", m.name, m.provider))
+            });
+            state.models = std::iter::once(default_model()).chain(named).collect();
+        }
+        Msg::Model(choice) => state.model = choice,
+        Msg::Workspaces(Err(e)) | Msg::Workflows(Err(e)) | Msg::Models(Err(e)) => state.error = e,
         Msg::Workspace(name) => state.workspace = Some(name),
         Msg::Workflow(choice) => state.workflow = choice,
         Msg::Edit(action) => state.request.perform(action),
@@ -181,6 +203,10 @@ fn form<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         move |c| msg(Msg::Workflow(c)),
     )
     .style(theme::select);
+    let model = pick_list(state.models.clone(), Some(state.model.clone()), move |c| {
+        msg(Msg::Model(c))
+    })
+    .style(theme::select);
     let editor = text_editor(&state.request)
         .on_action(move |a| msg(Msg::Edit(a)))
         .height(128);
@@ -199,6 +225,7 @@ fn form<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         labeled("Bastion server", server),
         labeled("Workspace", space),
         labeled("Workflow", flow),
+        labeled("Model", model),
         labeled("What should change?", editor),
         text(empty).size(13).color(theme::MUTED),
         text(&state.error).color(theme::BAD),

@@ -1029,3 +1029,31 @@ fn a_paused_intake_admits_nothing_until_it_opens() {
         until(&rig, &id, Stage::Plan, State::Running).await;
     });
 }
+
+#[test]
+fn a_job_that_names_a_model_runs_its_turns_on_it() {
+    use super::Submission;
+    let rig = rig();
+    crate::rt::block_on(async {
+        let how = |model: &str| Submission {
+            model: Some(model.into()),
+            ..Submission::default()
+        };
+        let refused = rig.factory.submit_with("w", "x", how("no-slash")).await;
+        assert!(refused.unwrap_err().contains("provider/model"));
+        let id = rig
+            .factory
+            .submit_with("w", "x", how("deepseek/deepseek-flash"))
+            .await
+            .unwrap();
+        until(&rig, &id, Stage::Plan, State::Running).await;
+        let sent = async || rig.engine.called("harness::send");
+        assert!(eventually(sent).await, "no turn started");
+        let calls = rig.engine.calls.lock().unwrap();
+        let send = calls.iter().find(|c| c.1 == "harness::send").unwrap();
+        assert_eq!(
+            (&send.2["provider"], &send.2["model"]),
+            (&json!("deepseek"), &json!("deepseek-flash"))
+        );
+    });
+}

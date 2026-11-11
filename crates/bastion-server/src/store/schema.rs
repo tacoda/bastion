@@ -88,7 +88,8 @@ pub(super) fn jobs_table(stage: &str) -> (&'static str, &'static str, String) {
         parent TEXT,
         after_job TEXT,
         part TEXT,
-        approved TEXT)"
+        approved TEXT,
+        model TEXT)"
             ),
     )
 }
@@ -202,7 +203,7 @@ pub fn seed_statements(sql: &str) -> Vec<Value> {
         .collect()
 }
 
-pub(super) const JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue, pipeline, back_to, last_refusal, done_tasks, criteria, falsify_tried, requester, workflow, workflow_version, node, parent, after_job, part, approved";
+pub(super) const JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue, pipeline, back_to, last_refusal, done_tasks, criteria, falsify_tried, requester, workflow, workflow_version, node, parent, after_job, part, approved, model";
 /// The jobs the admission pump and resume need: every unfinished one, and
 /// every job a queued part waits on, so a part whose earlier part failed
 /// is seen as abandoned rather than admitted.
@@ -213,7 +214,7 @@ pub(super) const LEGACY_JOB_COLUMNS: &str = "id, workspace, request, stage, stat
 /// Columns added after a table was first made. Each runs once; on a table
 /// that already has the column it fails, and that failure is expected.
 // They run before the numbered migrations, which need these columns to exist.
-pub(super) const ALTERS: [&str; 21] = [
+pub(super) const ALTERS: [&str; 22] = [
     "ALTER TABLE jobs ADD COLUMN pr TEXT",
     "ALTER TABLE jobs ADD COLUMN ci_fixes INTEGER NOT NULL DEFAULT 0 CHECK (ci_fixes >= 0)",
     "ALTER TABLE jobs ADD COLUMN issue TEXT",
@@ -235,6 +236,7 @@ pub(super) const ALTERS: [&str; 21] = [
     "ALTER TABLE workspaces ADD COLUMN autofix TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE workspaces ADD COLUMN revision_budget INTEGER CHECK (revision_budget > 0)",
     "ALTER TABLE eval_runs ADD COLUMN contract INTEGER CHECK (contract IN (0, 1))",
+    "ALTER TABLE jobs ADD COLUMN model TEXT",
 ];
 
 /// Numbered migrations, each run once in order; `PRAGMA user_version` is the

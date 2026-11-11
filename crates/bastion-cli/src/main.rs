@@ -133,6 +133,7 @@ async fn act(command: Command, server: Server) -> Result<(), String> {
                 request,
                 pipeline: None,
                 workflow: None,
+                model: None,
             };
             println!("{}", send(&http, &server, &submit).await?);
             Ok(())

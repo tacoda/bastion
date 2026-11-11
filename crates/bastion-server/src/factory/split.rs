@@ -21,6 +21,7 @@ impl Factory {
                 job,
                 runtime: Runtime {
                     requester: of.runtime.requester.clone(),
+                    model: of.runtime.model.clone(),
                     workflow: of.runtime.workflow.clone(),
                     workflow_version: of.runtime.workflow_version,
                     ..Runtime::default()

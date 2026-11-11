@@ -74,8 +74,7 @@ cask "bastion" do
   homepage "https://tacoda.github.io/bastion/"
 
   depends_on arch: :arm64
-  depends_on macos: ">= :ventura"
-  conflicts_with formula: "bastion"
+  depends_on macos: :ventura
 
   app "Bastion.app"
   binary "#{appdir}/Bastion.app/Contents/MacOS/bastion"

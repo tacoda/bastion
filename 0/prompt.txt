@@ -1,0 +1,13 @@
+push
+
+---
+
+continue with F7
+
+---
+
+I also need the curl install methods to be able to install the server or both the server and desktop app
+
+---
+
+the bastion-server should be able to be installed on any virtual machine or vps

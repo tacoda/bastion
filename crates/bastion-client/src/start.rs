@@ -49,7 +49,9 @@ pub fn layout_from(exe_dir: &Path, data_home: &Path) -> Layout {
 
 /// This program's layout, from where it runs.
 pub fn layout() -> Layout {
+    // A link in a bin folder points at the binary in its install; follow it.
     let exe = std::env::current_exe().unwrap_or_default();
+    let exe = exe.canonicalize().unwrap_or(exe);
     let exe_dir = exe.parent().map(Path::to_path_buf).unwrap_or_default();
     layout_from(&exe_dir, &dir("XDG_DATA_HOME", ".local/share"))
 }

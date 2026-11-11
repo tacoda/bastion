@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Bastion
+Comment=Watch and steer the Bastion software factory
+Exec=bastion-desktop
+Icon=bastion
+Categories=Development;

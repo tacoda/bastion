@@ -1,0 +1,72 @@
+# A release (PLAN.md F10): each platform's files from scripts/package.sh,
+# their SHA256SUMS signed with the release minisign key, on a GitHub release.
+# Push a tag such as v0.1.0 to run it. Needs the secret MINISIGN_SECRET_KEY:
+# the contents of a key made with `minisign -G -W` (no password, for CI).
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14, target: aarch64-apple-darwin }
+          - { os: ubuntu-24.04, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libxdo-dev libayatana-appindicator3-dev
+
+      - name: Target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Package
+        run: scripts/package.sh "${GITHUB_REF_NAME#v}" ${{ matrix.target }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.target }}
+          path: dist/*
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
+
+      - name: Sums, signed
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          sudo apt-get update && sudo apt-get install -y minisign
+          cd dist
+          sha256sum * > SHA256SUMS
+          key="$(mktemp)"
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > "$key"
+          minisign -S -s "$key" -m SHA256SUMS -t "bastion $GITHUB_REF_NAME"
+          rm -f "$key"
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Bastion $GITHUB_REF_NAME" \
+            --notes "Install: curl -fsSL https://tacoda.github.io/bastion/install.sh | sh"

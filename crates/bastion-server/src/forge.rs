@@ -185,6 +185,26 @@ impl GitHub<'_> {
         Ok(Checks::Failed(for_fix(&log)))
     }
 
+    /// The newest deployment of a branch (`ref=`) or a commit (`sha=`), and
+    /// its newest status; none when nothing deploys it.
+    pub async fn deployment(&self, filter: &str) -> Result<Option<Deployment>, String> {
+        let api = |path: String| async move { gh(self.engine, &["api", &path]).await };
+        let listed = api(format!(
+            "repos/{}/deployments?{filter}&per_page=1",
+            self.slug
+        ))
+        .await?;
+        let Some(id) = first(&listed)["id"].as_u64() else {
+            return Ok(None);
+        };
+        let statuses = api(format!(
+            "repos/{}/deployments/{id}/statuses?per_page=1",
+            self.slug
+        ))
+        .await?;
+        Ok(Some(deployment_of(first(&statuses))))
+    }
+
     /// Say the pull request's body again, as it stands before the merge.
     pub async fn edit(&self, pr: &str, body: &str) -> Result<(), String> {
         self.gh(&["pr", "edit", pr, "--body", body])
@@ -265,6 +285,41 @@ fn last_chars(lines: Vec<&str>) -> String {
     chars[chars.len().saturating_sub(LOG_CHARS)..]
         .iter()
         .collect()
+}
+
+/// Where a deployment stands, and the address it serves, if it gave one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Deployment {
+    pub state: Deployed,
+    pub url: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Deployed {
+    Pending,
+    Succeeded,
+    Failed,
+}
+
+/// The first item of a JSON array `gh api` printed, or null.
+fn first(text: &str) -> Value {
+    let all: Value = serde_json::from_str(text).unwrap_or(Value::Null);
+    all.get(0).cloned().unwrap_or(Value::Null)
+}
+
+/// A deployment status as GitHub gives it; a deployment with no status yet
+/// is pending.
+fn deployment_of(status: Value) -> Deployment {
+    let state = match status["state"].as_str() {
+        Some("success") => Deployed::Succeeded,
+        Some("failure" | "error") => Deployed::Failed,
+        _ => Deployed::Pending,
+    };
+    let url = status["environment_url"].as_str().filter(|u| !u.is_empty());
+    Deployment {
+        state,
+        url: url.map(String::from),
+    }
 }
 
 /// Where CI stands on a pull request.
@@ -425,6 +480,25 @@ mod tests {
         assert!(body.contains("- ci: shipped anyway by ada, waiving: lint"));
         let bare = describe(&job, "main", "bastion/j1", &Notes::default()).body;
         assert!(!bare.contains("## Proof") && !bare.contains("## Waived"));
+    }
+
+    #[test]
+    fn a_deployment_reads_its_newest_status_and_address() {
+        let ok = json!({ "state": "success", "environment_url": "https://pr-1.example.dev" });
+        assert_eq!(
+            deployment_of(ok),
+            Deployment {
+                state: Deployed::Succeeded,
+                url: Some("https://pr-1.example.dev".into())
+            }
+        );
+        assert_eq!(
+            deployment_of(json!({ "state": "error" })).state,
+            Deployed::Failed
+        );
+        let none = deployment_of(Value::Null);
+        assert_eq!((none.state, none.url), (Deployed::Pending, None));
+        assert_eq!(first("[]"), Value::Null);
     }
 
     #[test]

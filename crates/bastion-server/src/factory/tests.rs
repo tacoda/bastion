@@ -939,3 +939,25 @@ fn a_turn_the_harness_lost_starts_again_on_resume() {
         assert!(eventually(again).await, "the lost turn did not start again");
     });
 }
+
+#[test]
+fn a_preview_a_host_deployed_for_the_branch_is_kept_for_reviewers() {
+    let deployed =
+        json!({ "id": 1, "state": "success", "environment_url": "https://pr-1.example.dev" });
+    let gh = json!({ "exit_code": 0, "stdout": json!([deployed]).to_string() });
+    let rig = rig_on(engine().answer("github::exec", Ok(gh)));
+    crate::rt::block_on(async {
+        let record = record_at(Pipeline::Full, Stage::Ci, State::Running);
+        rig.store.insert(&record).await.unwrap();
+        let hub = crate::forge::GitHub {
+            engine: &*rig.engine,
+            slug: "o/r".into(),
+        };
+        rig.factory.keep_preview(&record, &hub).await;
+        let kept = rig.store.artifacts("j1").await.unwrap();
+        assert_eq!(kept[0].body, "Preview: <https://pr-1.example.dev>");
+        let calls = rig.engine.calls.lock().unwrap();
+        let listed = &calls.iter().find(|c| c.1 == "github::exec").unwrap().2["args"][1];
+        assert_eq!(listed, "repos/o/r/deployments?ref=bastion/j1&per_page=1");
+    });
+}

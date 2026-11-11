@@ -215,7 +215,10 @@ impl Factory {
                 };
                 let event = match hub.checks(&pr).await {
                     Ok(forge::Checks::Pending) => continue,
-                    Ok(forge::Checks::Passed) => Event::CiPassed,
+                    Ok(forge::Checks::Passed) => {
+                        factory.keep_preview(&record, &hub).await;
+                        Event::CiPassed
+                    }
                     Ok(forge::Checks::Failed(log)) => Event::CiFailed { log },
                     Err(error) => Event::LandFailed { error },
                 };
@@ -225,6 +228,24 @@ impl Factory {
             let error = "CI did not finish within 30 minutes".into();
             let _ = factory.apply(&id, Event::LandFailed { error }).await;
         });
+    }
+
+    /// Keep the preview a host deployed for the pull request's branch, so a
+    /// reviewer can try the change (F7). A branch nothing deploys has none.
+    pub(super) async fn keep_preview(&self, record: &Record, hub: &forge::GitHub<'_>) {
+        let Ok(ws) = self.workspace(record).await else {
+            return;
+        };
+        let head = format!("ref={}{}", ws.branch_prefix, record.job.id);
+        let Ok(Some(forge::Deployment { url: Some(url), .. })) = hub.deployment(&head).await else {
+            return;
+        };
+        let artifact = Artifact {
+            stage: record.job.stage,
+            body: format!("Preview: <{url}>"),
+            created_at: super::now(),
+        };
+        let _ = self.store.add_artifact(&record.job.id, &artifact).await;
     }
 
     /// Watch CI on the job's pull request, or merge it.

@@ -354,6 +354,12 @@ fn a_failure_goes_along_its_link_and_a_step_only_a_failure_reaches_is_skipped() 
         (Some("notify"), vec!["artifact", "run"]),
         "past build, which would otherwise fix it"
     );
+    let shown = |j: &Job| -> Vec<StepState> { steps(j).into_iter().map(|s| s.2).collect() };
+    assert_eq!(
+        shown(&branched)[2..],
+        [StepState::Failed, StepState::Running],
+        "tests failed; notify runs"
+    );
     assert!(
         branched
             .feedback
@@ -370,6 +376,11 @@ fn a_failure_goes_along_its_link_and_a_step_only_a_failure_reaches_is_skipped() 
         (passed.node.clone(), passed.finishing()),
         (None, true),
         "a pass skips notify and finishes"
+    );
+    assert_eq!(
+        shown(&passed)[2..],
+        [StepState::Running, StepState::Skipped],
+        "the finish stands on tests, and notify was passed by"
     );
 }
 

@@ -215,6 +215,11 @@ pub(super) fn record(row: &Value) -> Result<Record, String> {
             flow: Vec::new(),
             node: text(row, "node"),
             results: Default::default(),
+            failed: text(row, "failed_steps")
+                .unwrap_or_default()
+                .split_whitespace()
+                .map(String::from)
+                .collect(),
         },
         runtime: Runtime {
             worktree: text(row, "worktree"),
@@ -276,8 +281,14 @@ pub(super) fn job_params(r: &Record) -> Value {
         Value::Null,
         Value::Null,
         approved(r),
-        r.runtime.model
+        r.runtime.model,
+        failed_steps(j)
     ])
+}
+
+/// The steps whose last run failed, as the row keeps them.
+fn failed_steps(j: &Job) -> String {
+    j.failed.iter().cloned().collect::<Vec<_>>().join(" ")
 }
 
 /// A job's results and revision counts, written whole over what was there.
@@ -416,12 +427,12 @@ impl Store for SqlStore {
             let rows = self
                 .execute(
                     "UPDATE jobs SET stage = ?, state = ?, question = ?, feedback = ?, failures = ?, error = ?, worktree = ?, sandbox = ?, session = ?, updated_at = ?, issue = ?,
-                     last_refusal = ?, node = ?, approved = ?, rev = rev + 1
+                     last_refusal = ?, node = ?, approved = ?, failed_steps = ?, rev = rev + 1
                      WHERE id = ? AND rev = ? RETURNING rev",
                     json!([
                         name(j.stage), name(j.state), j.question, j.feedback, j.failures, j.error,
                         r.runtime.worktree, r.runtime.sandbox, r.runtime.session, j.updated_at, r.runtime.issue,
-                        j.last_refusal, j.node, approved(r), j.id, r.rev
+                        j.last_refusal, j.node, approved(r), failed_steps(j), j.id, r.rev
                     ]),
                 )
                 .await?;

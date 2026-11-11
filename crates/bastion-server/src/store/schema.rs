@@ -91,7 +91,8 @@ pub(super) fn jobs_table(stage: &str) -> (&'static str, &'static str, String) {
         after_job TEXT,
         part TEXT,
         approved TEXT,
-        model TEXT)"
+        model TEXT,
+        failed_steps TEXT NOT NULL DEFAULT '')"
             ),
     )
 }
@@ -207,7 +208,7 @@ pub fn seed_statements(sql: &str) -> Vec<Value> {
         .collect()
 }
 
-pub(super) const JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue, pipeline, back_to, last_refusal, done_tasks, criteria, falsify_tried, requester, workflow, workflow_version, node, parent, after_job, part, approved, model";
+pub(super) const JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue, pipeline, back_to, last_refusal, done_tasks, criteria, falsify_tried, requester, workflow, workflow_version, node, parent, after_job, part, approved, model, failed_steps";
 /// The jobs the admission pump and resume need: every unfinished one, and
 /// every job a queued part waits on, so a part whose earlier part failed
 /// is seen as abandoned rather than admitted.
@@ -218,7 +219,7 @@ pub(super) const LEGACY_JOB_COLUMNS: &str = "id, workspace, request, stage, stat
 /// Columns added after a table was first made. Each runs once; on a table
 /// that already has the column it fails, and that failure is expected.
 // They run before the numbered migrations, which need these columns to exist.
-pub(super) const ALTERS: [&str; 34] = [
+pub(super) const ALTERS: [&str; 35] = [
     "ALTER TABLE jobs ADD COLUMN pr TEXT",
     "ALTER TABLE jobs ADD COLUMN ci_fixes INTEGER NOT NULL DEFAULT 0 CHECK (ci_fixes >= 0)",
     "ALTER TABLE jobs ADD COLUMN issue TEXT",
@@ -253,6 +254,7 @@ pub(super) const ALTERS: [&str; 34] = [
     "ALTER TABLE capabilities ADD COLUMN step TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE constraints ADD COLUMN steps TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE workflow_links ADD COLUMN failure INTEGER NOT NULL DEFAULT 0 CHECK (failure IN (0, 1))",
+    "ALTER TABLE jobs ADD COLUMN failed_steps TEXT NOT NULL DEFAULT ''",
 ];
 
 /// Numbered migrations, each run once in order; `PRAGMA user_version` is the

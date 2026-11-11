@@ -127,6 +127,9 @@ pub struct Job {
     pub node: Option<String>,
     /// The results its steps gave, by name.
     pub results: BTreeMap<String, String>,
+    /// The steps whose last run failed; one that passes later comes off.
+    #[serde(default)]
+    pub failed: std::collections::BTreeSet<String>,
 }
 
 /// Something that happened to a job.
@@ -284,6 +287,7 @@ impl Job {
             flow: Vec::new(),
             node: None,
             results: BTreeMap::new(),
+            failed: Default::default(),
         }
     }
 
@@ -493,6 +497,7 @@ fn shell_ran(job: &mut Job, event: &Event, bounds: &Bounds) -> Vec<Effect> {
     let step = at_step(job);
     let (body, effects) = match event {
         Event::Ran { output } => {
+            job.failed.remove(&step);
             for name in job.step().map(|s| s.gives.clone()).unwrap_or_default() {
                 job.results.insert(name, output.clone());
             }
@@ -515,6 +520,7 @@ fn shell_ran(job: &mut Job, event: &Event, bounds: &Bounds) -> Vec<Effect> {
 /// them, or when the same failure comes back word for word, the job waits
 /// on a person.
 fn step_failed(job: &mut Job, detail: &str, bounds: &Bounds) -> Vec<Effect> {
+    job.failed.extend(job.node.clone());
     // A failure link wins over sending the work back to be fixed (D47).
     let branch = job.step().and_then(|s| s.on_failure.clone());
     let to = match &branch {
@@ -737,15 +743,33 @@ pub enum StepState {
     Stopped,
     /// Not reached yet.
     Pending,
+    /// Passed by: a step only a failure leads to, when none did (D47).
+    Skipped,
 }
 
 /// Every step of the job's workflow, in order: its id, its kind and its
 /// state.
 pub fn steps(job: &Job) -> Vec<(String, Stage, StepState)> {
-    // Finishing, the last step stands for the finish.
-    let current = job.position().unwrap_or(job.flow.len().saturating_sub(1));
+    // A step only failures lead to ran when a failed step leads to it.
+    let reached = |id: &str| {
+        let failed = job.flow.iter().filter(|s| job.failed.contains(&s.id));
+        failed
+            .into_iter()
+            .any(|s| s.on_failure.as_deref() == Some(id))
+    };
+    // Finishing, the last step that ran stands for the finish.
+    let ran = |s: &workflow::Step| !s.failure_only || reached(&s.id);
+    let last_ran = job.flow.iter().rposition(ran).unwrap_or_default();
+    let current = job.position().unwrap_or(last_ran);
+    let behind = |s: &workflow::Step| match (job.failed.contains(&s.id), s.failure_only) {
+        (true, _) => StepState::Failed,
+        (false, true) if !reached(&s.id) => StepState::Skipped,
+        _ => StepState::Done,
+    };
     let state = |i: usize| match i.cmp(&current) {
-        std::cmp::Ordering::Less => StepState::Done,
+        std::cmp::Ordering::Less => behind(&job.flow[i]),
+        // Past the finish, a later step was passed by, not still to come.
+        std::cmp::Ordering::Greater if job.finishing() => StepState::Skipped,
         std::cmp::Ordering::Greater => StepState::Pending,
         std::cmp::Ordering::Equal => match job.state {
             State::Queued => StepState::Queued,

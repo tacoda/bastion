@@ -149,6 +149,7 @@ pub fn mark(state: &str) -> (&'static str, Color) {
         "waiting" | "needs_you" => ("!", theme::WARN),
         "failed" => ("✕", theme::BAD),
         "stopped" => ("■", theme::MUTED),
+        "skipped" => ("↷", theme::MUTED),
         "queued" => ("◌", theme::MUTED),
         _ => ("○", theme::MUTED),
     }

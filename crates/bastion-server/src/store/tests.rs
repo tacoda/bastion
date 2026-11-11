@@ -256,6 +256,7 @@ fn a_row_reads_back_as_the_record_it_was_written_from() {
     r.job.state = State::NeedsYou;
     r.job.stage = Stage::Shell;
     r.job.node = Some("lint".into());
+    r.job.failed = ["checks".to_string(), "lint".to_string()].into();
     r.runtime.sandbox = Some("vm-1".into());
     r.runtime.workflow = Some("w1".into());
     r.runtime.workflow_version = Some(3);

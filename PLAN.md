@@ -196,8 +196,16 @@ checks failed, the job went to `report` instead of back to build,
 `report` ran, and the job waited there; it was stopped so nothing
 landed. The canvas drew the link red and dashed.
 
-Known gap: the job's steps show a step that failed and branched as done,
-as the job keeps no outcome per step.
+### U12. A step that failed shows failed
+
+- A job keeps which steps last failed; a step that passes later comes off.
+- A step behind the current one shows failed when it last failed, and
+  skipped when only a failure leads to it and none did. Past the finish,
+  a later step shows skipped, and the finish stands on the last step
+  that ran.
+
+Done 2026-11-11. Live, the branching job again: plan done, build done,
+checks failed, report waiting.
 
 ## Open questions
 

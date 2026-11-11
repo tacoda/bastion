@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01PeNQatRdeLSbjE6EN8RD9c",
+  "agent_id": "a1979865bcc2f8d0f",
+  "subagent_type": "general-purpose",
+  "task_description": "Score Code Health of all files",
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 122611,
+    "cache_read_tokens": 752223,
+    "output_tokens": 228,
+    "api_call_count": 9
+  },
+  "started_at": "2026-11-10T19:28:41.655715-06:00",
+  "completed_at": "2026-11-10T19:30:51.94788-06:00"
+}

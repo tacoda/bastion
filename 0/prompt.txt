@@ -1,0 +1,11 @@
+<task-notification>
+<task-id>b0b08j6yq</task-id>
+<tool-use-id>toolu_014E343r54egz8rLA4am9C1j</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/b0b08j6yq.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the new CI run" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Red CI again

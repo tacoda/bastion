@@ -70,6 +70,7 @@ pub struct App {
 
 impl App {
     pub fn new() -> (Self, Task<Message>) {
+        crate::dock::show_icon();
         let app = App {
             http: client::http(),
             servers: vec![],

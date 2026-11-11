@@ -2,6 +2,7 @@
 //! on iced. It reaches a server only through its HTTP API and its events.
 
 mod app;
+mod dock;
 mod events;
 mod icons;
 mod pages;

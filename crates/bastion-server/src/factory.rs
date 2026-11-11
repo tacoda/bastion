@@ -863,7 +863,7 @@ impl Factory {
             return;
         }
         let text = format!(
-            "Bastion sent this back: {} {}. Put them back as they were, with the same names.",
+            "Bastion sent this back. The rule: {} What broke it: {} Fix the change so it keeps the rule.",
             f.rule, f.detail
         );
         let (factory, id) = (self.clone(), id.to_string());

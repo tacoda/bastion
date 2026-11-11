@@ -202,7 +202,13 @@ impl Gate {
     pub fn reviewed(&self, job: &str, findings: &[bastion_core::review::Finding]) -> bool {
         let lines: Vec<String> = findings
             .iter()
-            .map(|f| format!("{} ({:?}): {}", f.constraint, f.rung, f.detail))
+            .map(|f| {
+                let rung = match f.rung {
+                    bastion_core::govern::Enforcement::Enforced => "enforced: the build goes back",
+                    _ => "checked: noted, the build goes on",
+                };
+                format!("{} {} ({}, {rung})", f.rule, f.detail, f.constraint)
+            })
             .collect();
         for line in &lines {
             self.note("review", job, line.clone());

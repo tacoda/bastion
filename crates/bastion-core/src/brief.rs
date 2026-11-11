@@ -9,7 +9,11 @@ pub const QUESTION_MARKER: &str = "INTERRUPT:";
 const PLAN: &str = "\
 You are planning a change to the repository in /work/repo. Do not change any file.
 Read what you need, then reply with a numbered plan: the files to change, what
-changes in each, and the tests that prove it. Keep it short enough to review.";
+changes in each, and the tests that prove it. Keep it short enough to review.
+Start the reply with the plan; leave out how you found it. Write it in ASD-STE100
+Simplified Technical English: one idea per sentence, at most 20 words in an
+instruction and 25 in an explanation, active voice that names what acts, and one
+word for each thing. Keep file, function and command names exact.";
 
 const SCOPE: &str = "\
 You are scoping a request for the repository in /work/repo. Do not change any file.

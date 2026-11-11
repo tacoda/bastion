@@ -339,20 +339,24 @@ fn doc<'a>(state: &'a State, body: String) -> Element<'a, Message> {
     let style = markdown::Style {
         font: theme::FONT,
         inline_code_font: theme::MONO,
-        inline_code_color: theme::INK,
-        inline_code_padding: iced::Padding::from([0, 3]),
+        inline_code_color: theme::LINK,
+        inline_code_padding: iced::Padding::from([0, 2]),
         inline_code_highlight: markdown::Highlight {
-            background: theme::LINE.into(),
-            border: iced::border::rounded(4),
+            background: theme::PANEL.into(),
+            border: iced::border::rounded(3),
         },
         code_block_font: theme::MONO,
         ..markdown::Style::from(&theme::bastion())
     };
-    let shown = markdown::view(
-        content.items(),
-        markdown::Settings::with_text_size(14, style),
-    )
-    .map(Message::OpenUrl);
+    // A report's headings sit just above its text, not at twice its size.
+    let settings = markdown::Settings {
+        h1_size: 18.into(),
+        h2_size: 16.into(),
+        h3_size: 15.into(),
+        h4_size: 14.into(),
+        ..markdown::Settings::with_text_size(14, style)
+    };
+    let shown = markdown::view(content.items(), settings).map(Message::OpenUrl);
     let body = container(shown).padding(12).width(Fill);
     container(scrollable(body).height(iced::Length::Shrink))
         .max_height(384)

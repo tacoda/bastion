@@ -67,7 +67,35 @@ fn check(diff: &str, name: &str) -> Option<String> {
         SKIP_MARKERS => diff.skip_markers(),
         _ => Vec::new(),
     };
-    (!found.is_empty()).then(|| format!("{name}: {}", found.join(", ")))
+    let what = match name {
+        DELETED_TESTS => "Tests the change removes",
+        SECRETS => "A secret the change adds",
+        REMOVED_ASSERTIONS => "Assertions the change removes",
+        SKIP_MARKERS => "Tests the change marks to skip",
+        _ => name,
+    };
+    (!found.is_empty()).then(|| format!("{what}: {}.", found.join(", ")))
+}
+
+/// One line a diff adds: its file, its number in the new file, its code.
+struct Added<'a> {
+    path: &'a str,
+    line: u32,
+    code: &'a str,
+}
+
+impl Added<'_> {
+    /// The skip mark this line starts a word with, so `xit(` is a mark and
+    /// `process.exit(` is not.
+    fn skip_mark(&self) -> Option<&'static str> {
+        let code = self.code;
+        SKIPS.iter().copied().find(|mark| {
+            code.match_indices(mark).any(|(i, _)| {
+                let before = code[..i].chars().next_back();
+                !before.is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '$')
+            })
+        })
+    }
 }
 
 /// A unified diff.
@@ -80,6 +108,34 @@ impl<'a> Diff<'a> {
         self.changed('+').collect::<Vec<_>>().join("\n")
     }
 
+    /// Each line the diff adds, with its file and its number in the new file.
+    fn added_lines(self) -> Vec<Added<'a>> {
+        let (mut path, mut line) = ("", 1);
+        let mut found = Vec::new();
+        for l in self.0.lines() {
+            if let Some(p) = l.strip_prefix("+++ ") {
+                path = p.strip_prefix("b/").unwrap_or(p);
+            } else if let Some(h) = l.strip_prefix("@@ ") {
+                // `@@ -1,5 +1,6 @@` starts the new file's lines at 1.
+                line = h
+                    .split(' ')
+                    .find_map(|part| part.strip_prefix('+'))
+                    .and_then(|part| part.split(',').next()?.parse().ok())
+                    .unwrap_or(1);
+            } else if let Some(code) = l.strip_prefix('+') {
+                found.push(Added {
+                    path,
+                    line,
+                    code: code.trim(),
+                });
+                line += 1;
+            } else if !l.starts_with(['-', '\\']) {
+                line += 1;
+            }
+        }
+        found
+    }
+
     /// How many assertions the diff takes away, net of those it adds.
     pub fn removed_assertions(self) -> Vec<String> {
         let count = |sign| {
@@ -89,16 +145,19 @@ impl<'a> Diff<'a> {
         };
         let (gone, new) = (count('-'), count('+'));
         match gone > new {
-            true => vec![format!("{} fewer", gone - new)],
+            true => vec![format!("{} more removed than added", gone - new)],
             false => Vec::new(),
         }
     }
 
-    /// The skip marks the diff adds, as written.
+    /// The skip marks the diff adds, each as `file:line mark`.
     pub fn skip_markers(self) -> Vec<String> {
-        self.changed('+')
-            .filter(|code| SKIPS.iter().any(|s| code.contains(s)))
-            .map(String::from)
+        self.added_lines()
+            .into_iter()
+            .filter_map(|a| {
+                let mark = a.skip_mark()?.trim_end_matches('(');
+                Some(format!("{}:{} {mark}", a.path, a.line))
+            })
             .collect()
     }
 
@@ -174,14 +233,29 @@ mod tests {
         );
         let found = review(&diff, &rules);
         let by = |id: &str| found.iter().find(|f| f.constraint == id).unwrap();
-        assert_eq!(by("no-secrets").detail, "secrets: it holds a GitHub token");
+        assert_eq!(
+            by("no-secrets").detail,
+            "A secret the change adds: it holds a GitHub token."
+        );
         assert_eq!(by("no-secrets").rung, Enforcement::Enforced);
-        assert_eq!(by("assertions-kept").detail, "removed assertions: 1 fewer");
+        assert_eq!(
+            by("assertions-kept").detail,
+            "Assertions the change removes: 1 more removed than added."
+        );
         assert_eq!(
             by("no-skipped-tests").detail,
-            "skip markers: @pytest.mark.skip"
+            "Tests the change marks to skip: t.py:2 @pytest.mark.skip."
         );
         assert!(found.iter().all(|f| !f.detail.contains(&key)));
+    }
+
+    #[test]
+    fn a_skip_mark_is_a_whole_word_and_is_found_at_its_line() {
+        let diff = "+++ b/record.js\n@@ -0,0 +1,3 @@\n+main().then(() => process.exit(0));\n+// ok\n+xit('later', () => {});\n";
+        assert_eq!(Diff(diff).skip_markers(), ["record.js:3 xit"]);
+        let python =
+            "+++ b/t.py\n@@ -4,2 +4,3 @@\n def a():\n-    pass\n+    pass\n+@unittest.skip\n";
+        assert_eq!(Diff(python).skip_markers(), ["t.py:6 @unittest.skip"]);
     }
 
     #[test]

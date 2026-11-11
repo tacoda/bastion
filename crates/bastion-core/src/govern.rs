@@ -291,9 +291,9 @@ pub fn default_capabilities() -> Vec<Capability> {
         rung,
     };
     vec![
-        grant(Stage::Plan, "sandbox::*", Access::Allowed),
-        grant(Stage::Plan, "sandbox::fs::write", Access::Ask),
-        grant(Stage::Build, "sandbox::*", Access::Allowed),
+        grant(Stage::Agent, "sandbox::*", Access::Allowed),
+        grant(Stage::Agent, "sandbox::fs::write", Access::Ask),
+        grant(Stage::Prompt, "sandbox::*", Access::Allowed),
     ]
 }
 
@@ -359,12 +359,12 @@ mod tests {
     #[test]
     fn plan_asks_before_a_write_and_build_allows_it() {
         assert!(matches!(
-            decide(&write(), Stage::Plan, &[]),
+            decide(&write(), Stage::Agent, &[]),
             Decision::Hold { .. }
         ));
-        assert_eq!(decide(&write(), Stage::Build, &[]), Decision::Continue);
+        assert_eq!(decide(&write(), Stage::Prompt, &[]), Decision::Continue);
         assert_eq!(
-            decide(&exec("pytest -q"), Stage::Plan, &[]),
+            decide(&exec("pytest -q"), Stage::Agent, &[]),
             Decision::Continue
         );
     }
@@ -384,10 +384,10 @@ mod tests {
             ..write()
         };
         assert!(matches!(
-            decide(&pickled, Stage::Build, std::slice::from_ref(&rule)),
+            decide(&pickled, Stage::Prompt, std::slice::from_ref(&rule)),
             Decision::Deny { .. }
         ));
-        assert_eq!(decide(&write(), Stage::Build, &[rule]), Decision::Continue);
+        assert_eq!(decide(&write(), Stage::Prompt, &[rule]), Decision::Continue);
     }
 
     #[test]
@@ -398,11 +398,11 @@ mod tests {
             text: String::new(),
         };
         assert!(matches!(
-            decide(&call, Stage::Build, &[]),
+            decide(&call, Stage::Prompt, &[]),
             Decision::Deny { .. }
         ));
         assert!(matches!(
-            decide(&write(), Stage::Review, &[]),
+            decide(&write(), Stage::Shell, &[]),
             Decision::Deny { .. }
         ));
     }
@@ -410,11 +410,11 @@ mod tests {
     #[test]
     fn a_denied_grant_refuses() {
         let grants = [Capability {
-            stage: Stage::Build,
+            stage: Stage::Prompt,
             function: "sandbox::exec".into(),
             rung: Access::Denied,
         }];
-        let verdict = gate(&exec("ls"), Stage::Build, &[], &grants);
+        let verdict = gate(&exec("ls"), Stage::Prompt, &[], &grants);
         assert!(matches!(verdict.decision, Decision::Deny { .. }));
     }
 
@@ -423,7 +423,7 @@ mod tests {
         let mut rules = default_constraints();
         let call = exec("git -C /work/repo rm test_calc.py");
         assert_eq!(
-            gate(&call, Stage::Build, &rules, &default_capabilities()),
+            gate(&call, Stage::Prompt, &rules, &default_capabilities()),
             Verdict {
                 decision: Decision::Continue,
                 flagged: vec![],
@@ -432,13 +432,13 @@ mod tests {
 
         let keep = rules.iter_mut().find(|c| c.id == "keep-tests").unwrap();
         keep.rung = keep.rung.promote();
-        let checked = gate(&call, Stage::Build, &rules, &default_capabilities());
+        let checked = gate(&call, Stage::Prompt, &rules, &default_capabilities());
         assert_eq!(checked.decision, Decision::Continue);
         assert_eq!(checked.flagged, vec!["keep-tests".to_string()]);
 
         let keep = rules.iter_mut().find(|c| c.id == "keep-tests").unwrap();
         keep.rung = keep.rung.promote();
-        let Decision::Deny { reason } = decide(&call, Stage::Build, &rules) else {
+        let Decision::Deny { reason } = decide(&call, Stage::Prompt, &rules) else {
             panic!("an enforced constraint must refuse the call");
         };
         assert!(reason.contains("keep-tests"), "{reason}");
@@ -448,11 +448,11 @@ mod tests {
     fn an_enforced_constraint_wins_over_an_allowed_grant() {
         let rules = default_constraints();
         assert!(matches!(
-            decide(&exec("bash -lc pytest"), Stage::Build, &rules),
+            decide(&exec("bash -lc pytest"), Stage::Prompt, &rules),
             Decision::Deny { .. }
         ));
         assert_eq!(
-            decide(&exec("pytest -q"), Stage::Build, &rules),
+            decide(&exec("pytest -q"), Stage::Prompt, &rules),
             Decision::Continue
         );
     }
@@ -478,7 +478,7 @@ mod tests {
             let mut promoted = rule.clone();
             promoted.rung = Enforcement::Enforced;
             assert_eq!(
-                decide(&exec(""), Stage::Build, &[promoted]),
+                decide(&exec(""), Stage::Prompt, &[promoted]),
                 Decision::Continue
             );
         }

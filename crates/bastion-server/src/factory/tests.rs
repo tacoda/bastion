@@ -1,9 +1,9 @@
-//! The short pipeline end to end, on the fake engine, store and machine.
+//! The shipped Short workflow end to end, on the fake engine, store and machine.
 
 use std::sync::Arc;
 use std::time::Duration;
 
-use bastion_core::{Event, Job, Pipeline, Stage, State};
+use bastion_core::{Event, Job, State};
 use bastion_protocol::Link;
 use serde_json::json;
 
@@ -12,7 +12,7 @@ use crate::engine::Engine;
 use crate::engine::fake::FakeEngine;
 use crate::machine::fake::FakeMachine;
 use crate::store::fake::FakeStore;
-use crate::store::{Artifact, Record, Runtime, Store, Workspace};
+use crate::store::{Record, Runtime, Store, Workspace};
 
 pub(super) fn engine() -> FakeEngine {
     FakeEngine::new(Link::Up)
@@ -36,7 +36,7 @@ pub(super) fn engine() -> FakeEngine {
             "session::messages",
             Ok(json!({ "messages": [
                 { "message": { "role": "user", "content": [{ "type": "text", "text": "plan it" }] } },
-                { "message": { "role": "assistant", "content": [{ "type": "text", "text": "1. Add /health" }] } },
+                { "message": { "role": "assistant", "content": [{ "type": "text", "text": "Planned.\nRESULT plan:\n1. Add /health" }] } },
             ]})),
         )
         .answer("worktree::land", Ok(json!({ "queued": true })))
@@ -64,6 +64,7 @@ pub(super) fn rig_with(engine: FakeEngine, machine: FakeMachine) -> Rig {
     let (engine, machine) = (Arc::new(engine), Arc::new(machine));
     let store = Arc::new(FakeStore::default());
     store.workspaces.lock().unwrap().push(workspace());
+    crate::rt::block_on(crate::seed_flows::seed(&*store)).unwrap();
     let told = Arc::new(std::sync::Mutex::new(Vec::new()));
     let keep = told.clone();
     let factory = Factory::new(
@@ -109,10 +110,22 @@ pub(super) async fn job_of(rig: &Rig, id: &str) -> Job {
     rig.store.load(id).await.unwrap().job
 }
 
-/// Job `j1` on `pipeline` at `stage` and `state`, on worktree `wt1` and VM `vm1`.
-pub(super) fn record_at(pipeline: Pipeline, stage: Stage, state: State) -> Record {
-    let mut job = Job::new("j1".into(), "w".into(), "r".into(), 1).on(pipeline);
-    (job.stage, job.state) = (stage, state);
+/// Job `j1` on the Short workflow at step `node` and `state`, on
+/// worktree `wt1` and VM `vm1`.
+pub(super) fn record_at(node: &str, state: State) -> Record {
+    let graph = crate::seed_flows::graph_of("short").unwrap();
+    let job = Job::new("j1".into(), "w".into(), "r".into(), 1);
+    let mut job = job.running(graph.steps().unwrap());
+    while job.node.as_deref() != Some(node) {
+        let at = job
+            .flow
+            .iter()
+            .position(|s| Some(&s.id) == job.node.as_ref());
+        let next = &job.flow[at.unwrap() + 1];
+        (job.node, job.stage) = (Some(next.id.clone()), next.stage);
+        job.results.insert("plan".into(), "1. Add /health".into());
+    }
+    job.state = state;
     let runtime = Runtime {
         worktree: Some("wt1".into()),
         sandbox: Some("vm1".into()),
@@ -126,19 +139,20 @@ pub(super) fn record_at(pipeline: Pipeline, stage: Stage, state: State) -> Recor
     }
 }
 
-/// Wait until the job reaches `stage` and `state`, or fail after two seconds.
-pub(super) async fn until(rig: &Rig, id: &str, stage: Stage, state: State) {
+/// Wait until the job reaches step `node` (none for the finish) and
+/// `state`, or fail after two seconds.
+pub(super) async fn until(rig: &Rig, id: &str, node: Option<&str>, state: State) {
     let at = async || {
         let j = job_of(rig, id).await;
-        (j.stage, j.state) == (stage, state)
+        (j.node.as_deref(), j.state) == (node, state)
     };
     if eventually(at).await {
         return;
     }
     let job = job_of(rig, id).await;
     panic!(
-        "job is at {:?} {:?}, not {stage:?} {state:?}: {:?}",
-        job.stage, job.state, job.error
+        "job is at {:?} {:?}, not {node:?} {state:?}: {:?}",
+        job.node, job.state, job.error
     );
 }
 
@@ -160,18 +174,6 @@ pub(super) async fn finish_turn(rig: &Rig, id: &str) {
     );
 }
 
-/// Run a submitted job through its plan, the approval and its build, to
-/// the build's wait for review.
-async fn to_review(rig: &Rig, id: &str) {
-    until(rig, id, Stage::Plan, State::Running).await;
-    finish_turn(rig, id).await;
-    until(rig, id, Stage::Plan, State::NeedsYou).await;
-    rig.factory.apply(id, Event::Approved).await.unwrap();
-    until(rig, id, Stage::Build, State::Running).await;
-    finish_turn(rig, id).await;
-    until(rig, id, Stage::Build, State::NeedsYou).await;
-}
-
 /// The `argv` of each command the factory ran in the VM.
 fn vm_commands(rig: &Rig) -> Vec<String> {
     let calls = rig.engine.calls.lock().unwrap();
@@ -188,111 +190,6 @@ fn vm_commands(rig: &Rig) -> Vec<String> {
             argv.join(" ")
         })
         .collect()
-}
-
-#[test]
-fn a_full_request_prepares_and_its_read_only_turns_put_the_tree_back_to_a_tag() {
-    let rig = rig();
-    *rig.store.dials.lock().unwrap() = bastion_core::Dials::all(bastion_core::Dial::Dark);
-    crate::rt::block_on(async {
-        let id = rig
-            .factory
-            .submit_with(
-                "w",
-                "Add a health check",
-                super::Submission {
-                    pipeline: Pipeline::Full,
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
-        until(&rig, &id, Stage::Scope, State::Running).await;
-        finish_turn(&rig, &id).await;
-        until(&rig, &id, Stage::Discover, State::Running).await;
-        let commands = vm_commands(&rig);
-        assert!(commands.contains(&"git -C /work/repo tag -f bastion-before-turn".to_string()));
-        assert!(commands.contains(&"git -C /work/repo tag -f bastion-base HEAD".to_string()));
-        assert!(
-            commands.contains(&"git -C /work/repo reset -q --hard bastion-before-turn".to_string())
-        );
-        finish_turn(&rig, &id).await;
-        until(&rig, &id, Stage::Plan, State::Running).await;
-        let stages: Vec<Stage> = rig
-            .store
-            .artifacts(&id)
-            .await
-            .unwrap()
-            .iter()
-            .map(|a| a.stage)
-            .collect();
-        assert_eq!(stages, [Stage::Prepare, Stage::Scope, Stage::Discover]);
-    });
-}
-
-#[test]
-fn checks_that_pass_before_the_build_go_to_falsify_and_one_that_stays_green_goes_back_to_specify() {
-    let rig = rig();
-    crate::rt::block_on(async {
-        let mut record = record_at(Pipeline::Full, Stage::Baseline, State::Running);
-        record.job.request = "Add a health check".into();
-        rig.store.insert(&record).await.unwrap();
-        let spec = r#"{"checks": [{"criterion": "C1", "run": "pytest -k c1", "files": ["tests/test_c1.py"]}]}"#;
-        let artifact = Artifact {
-            stage: Stage::Specify,
-            body: spec.into(),
-            created_at: 1,
-        };
-        rig.store.add_artifact("j1", &artifact).await.unwrap();
-
-        // The fake VM exits 0 for every command, so C1 passes before the build.
-        rig.factory.run_step(&record, Stage::Baseline).await;
-        until(&rig, "j1", Stage::Falsify, State::Running).await;
-        finish_turn(&rig, "j1").await;
-        // And it passes against the broken code too, so it checks nothing.
-        until(&rig, "j1", Stage::Specify, State::Running).await;
-        let job = job_of(&rig, "j1").await;
-        assert!(job.feedback.unwrap().contains("C1 stayed green"));
-        let commands = vm_commands(&rig);
-        for expected in [
-            "sh -c cd /work/repo && pytest -k c1",
-            "git -C /work/repo tag -f bastion-before-turn",
-            "sh -c cd /work/repo && git reset -q --hard bastion-before-turn && git clean -qfd",
-        ] {
-            assert!(commands.iter().any(|c| c == expected), "{expected}");
-        }
-    });
-}
-
-#[test]
-fn the_checks_step_runs_the_workspaces_command_and_passes_on_exit_0() {
-    let rig = rig();
-    rig.store.workspaces.lock().unwrap()[0].checks = "pytest -q".into();
-    crate::rt::block_on(async {
-        let record = record_at(Pipeline::Full, Stage::Checks, State::Running);
-        rig.store.insert(&record).await.unwrap();
-        rig.factory.run_step(&record, Stage::Checks).await;
-        let job = job_of(&rig, "j1").await;
-        assert_eq!((job.stage, job.state), (Stage::Checks, State::NeedsYou));
-        assert!(vm_commands(&rig).contains(&"sh -c cd /work/repo && pytest -q".to_string()));
-    });
-}
-
-#[test]
-fn with_the_local_forge_ship_brings_the_commits_back_and_prove_starts() {
-    let rig = rig();
-    crate::rt::block_on(async {
-        let record = record_at(Pipeline::Full, Stage::Ship, State::Running);
-        rig.store.insert(&record).await.unwrap();
-        rig.factory.run_step(&record, Stage::Ship).await;
-        until(&rig, "j1", Stage::Prove, State::Running).await;
-        assert!(
-            vm_commands(&rig)
-                .iter()
-                .any(|c| c.contains("bundle create /work/out.bundle"))
-        );
-        assert_eq!(job_of(&rig, "j1").await.pr, None);
-    });
 }
 
 /// A rig whose every VM dies at the first turn, with one job that keeps
@@ -316,7 +213,7 @@ async fn failed_after(rig: &Rig, vms: usize) -> Record {
 
 /// Start the job on a VM that dies, and wait until it fails.
 async fn lose_vms(rig: &Rig) -> Record {
-    let mut record = record_at(Pipeline::Full, Stage::Implement, State::Provisioning);
+    let mut record = record_at("build", State::Provisioning);
     record.runtime.worktree = Some("wt-kept".into());
     rig.store.insert(&record).await.unwrap();
     rig.factory.apply("j1", Event::Provisioned).await.unwrap();
@@ -361,11 +258,11 @@ fn a_failed_job_retried_gets_a_new_vm_on_the_same_worktree() {
 }
 
 #[test]
-fn a_request_runs_the_short_pipeline_to_landed() {
+fn a_request_runs_the_short_workflow_to_landed() {
     let rig = rig();
     crate::rt::block_on(async {
         let id = rig.factory.submit("w", "Add a health check").await.unwrap();
-        until(&rig, &id, Stage::Plan, State::Running).await;
+        until(&rig, &id, Some("plan"), State::Running).await;
         let record = rig.store.load(&id).await.unwrap();
         assert_eq!(
             (
@@ -377,25 +274,33 @@ fn a_request_runs_the_short_pipeline_to_landed() {
         assert!(rig.engine.called("harness::send"));
 
         finish_turn(&rig, &id).await;
-        until(&rig, &id, Stage::Plan, State::NeedsYou).await;
-        let plan = rig.store.artifacts(&id).await.unwrap();
-        assert_eq!(
-            (plan[0].stage, plan[0].body.as_str()),
-            (Stage::Plan, "1. Add /health")
+        until(&rig, &id, Some("plan"), State::NeedsYou).await;
+        assert_eq!(job_of(&rig, &id).await.results["plan"], "1. Add /health");
+        let reset = "git -C /work/repo reset -q --hard bastion-before-turn";
+        assert!(
+            vm_commands(&rig).iter().any(|c| c == reset),
+            "a step that only reads puts the tree back"
         );
 
         rig.factory.apply(&id, Event::Approved).await.unwrap();
-        until(&rig, &id, Stage::Build, State::Running).await;
+        until(&rig, &id, Some("build"), State::Running).await;
         finish_turn(&rig, &id).await;
-        until(&rig, &id, Stage::Build, State::NeedsYou).await;
+        // The build is dark, so the checks run at once; they wait lit.
+        until(&rig, &id, Some("checks"), State::NeedsYou).await;
         let artifacts = rig.store.artifacts(&id).await.unwrap();
-        let diff = artifacts.iter().find(|a| a.stage == Stage::Review).unwrap();
-        assert_eq!(diff.body, "No commits: the build left nothing to land.");
+        let diff = artifacts.iter().find(|a| super::is_diff(&a.body)).unwrap();
+        assert_eq!(
+            (diff.stage, diff.step.as_str(), diff.body.as_str()),
+            (
+                bastion_core::Stage::Prompt,
+                "build",
+                "No commits: the build left nothing to land."
+            ),
+            "the build's change, though the job is at the checks"
+        );
 
         rig.factory.apply(&id, Event::Approved).await.unwrap();
-        until(&rig, &id, Stage::Land, State::NeedsYou).await;
-        rig.factory.apply(&id, Event::Approved).await.unwrap();
-        until(&rig, &id, Stage::Land, State::Running).await;
+        until(&rig, &id, None, State::Running).await;
         let landed = json!({ "worktree_id": "wt1" });
         let fire = async || {
             !rig.engine
@@ -403,7 +308,7 @@ fn a_request_runs_the_short_pipeline_to_landed() {
                 .is_empty()
         };
         eventually(fire).await;
-        until(&rig, &id, Stage::Land, State::Landed).await;
+        until(&rig, &id, None, State::Landed).await;
         let land = rig
             .engine
             .calls
@@ -439,7 +344,7 @@ fn setup_runs_with_the_network_in_a_vm_of_its_own_and_cleanup_runs_at_the_end() 
     }
     crate::rt::block_on(async {
         let id = rig.factory.submit("w", "x").await.unwrap();
-        until(&rig, &id, Stage::Plan, State::Running).await;
+        until(&rig, &id, Some("plan"), State::Running).await;
         let vms = payloads(&rig, "sandbox::create");
         let nets: Vec<_> = vms.iter().map(|v| v["network"].clone()).collect();
         assert_eq!(
@@ -480,7 +385,7 @@ fn a_failed_provision_fails_the_job_with_its_reason() {
     let rig = rig_with(failing, FakeMachine::new());
     crate::rt::block_on(async {
         let id = rig.factory.submit("w", "x").await.unwrap();
-        until(&rig, &id, Stage::Plan, State::Failed).await;
+        until(&rig, &id, Some("plan"), State::Failed).await;
         let job = job_of(&rig, &id).await;
         assert!(job.error.unwrap().contains("W503"));
     });
@@ -489,21 +394,23 @@ fn a_failed_provision_fails_the_job_with_its_reason() {
 #[test]
 fn a_dark_plan_goes_on_without_the_owner() {
     let rig = rig();
-    rig.store
-        .dials
-        .lock()
-        .unwrap()
-        .set(Stage::Plan, bastion_core::Dial::Dark);
     crate::rt::block_on(async {
+        let mut short = crate::workflow_store::find(&*rig.store, "short")
+            .await
+            .unwrap();
+        short.graph.nodes[0].dial = bastion_core::Dial::Dark;
+        crate::workflow_store::save(&*rig.store, &short, 1)
+            .await
+            .unwrap();
         let id = rig.factory.submit("w", "x").await.unwrap();
-        until(&rig, &id, Stage::Plan, State::Running).await;
+        until(&rig, &id, Some("plan"), State::Running).await;
         finish_turn(&rig, &id).await;
-        until(&rig, &id, Stage::Build, State::Running).await;
+        until(&rig, &id, Some("build"), State::Running).await;
     });
 }
 
 #[test]
-fn a_trial_runs_from_its_eval_commit_under_its_arm_and_stops_at_review() {
+fn a_trial_runs_from_its_eval_commit_under_its_arm_and_stops_at_the_finish() {
     use crate::eval_store::{Eval, EvalStore};
     use bastion_core::eval::Override;
     use bastion_core::govern::Enforcement;
@@ -532,7 +439,7 @@ fn a_trial_runs_from_its_eval_commit_under_its_arm_and_stops_at_review() {
             contract: None,
         };
         let id = rig.factory.submit_trial(&e, run).await.unwrap();
-        until(&rig, &id, Stage::Plan, State::Running).await;
+        until(&rig, &id, Some("plan"), State::Running).await;
         let create = rig
             .engine
             .calls
@@ -548,171 +455,16 @@ fn a_trial_runs_from_its_eval_commit_under_its_arm_and_stops_at_review() {
         );
 
         finish_turn(&rig, &id).await;
-        until(&rig, &id, Stage::Build, State::Running).await;
+        until(&rig, &id, Some("build"), State::Running).await;
         finish_turn(&rig, &id).await;
-        until(&rig, &id, Stage::Review, State::Stopped).await;
+        until(&rig, &id, Some("checks"), State::Stopped).await;
         let artifacts = rig.store.artifacts(&id).await.unwrap();
-        assert!(artifacts.iter().any(|a| a.stage == Stage::Review));
+        assert!(artifacts.iter().any(|a| super::is_diff(&a.body)));
         assert!(!rig.engine.called("worktree::land"), "a trial never lands");
         assert!(
             rig.engine.called("harness::metrics"),
             "each turn is metered"
         );
-        let checked = contract_before_stop(&rig);
-        assert!(
-            checked,
-            "the contract is checked in the trial's VM before it stops"
-        );
-    });
-}
-
-/// Whether the contract's `verify.yaml` was read in the VM before it stopped.
-fn contract_before_stop(rig: &Rig) -> bool {
-    let calls = rig.engine.calls.lock().unwrap();
-    let at = |name: &str, holds: &str| {
-        (calls.iter()).position(|c| c.1 == name && c.2.to_string().contains(holds))
-    };
-    matches!((at("sandbox::exec", "verify.yaml"), at("sandbox::stop", "")), (Some(c), Some(s)) if c < s)
-}
-
-/// A rig whose workspace's origin is on GitHub, where every gh call
-/// answers with the pull request's URL.
-fn github_rig(pr: &str) -> Rig {
-    let engine = engine()
-        .answer(
-            "sandbox::exec",
-            Ok(json!({ "exit_code": 0, "stdout": "+x" })),
-        )
-        .answer(
-            "github::exec",
-            Ok(json!({ "exit_code": 0, "stdout": format!("{pr}\n") })),
-        );
-    // The repository has a verify.yaml, so the push waits on a verdict;
-    // the verify package is already on the host.
-    let machine = FakeMachine::new()
-        .run_ok("git", "git@github.com:o/r.git\n")
-        .file("/s/opengantry-verify-4.0.2/kit.tgz", "kit");
-    rig_with(engine, machine)
-}
-
-#[test]
-fn with_github_as_the_forge_a_reviewed_change_goes_up_as_a_pull_request_and_merges() {
-    use crate::settings_store::SettingsStore;
-    use bastion_core::settings::{Forge, Settings};
-
-    let pr = "https://github.com/o/r/pull/1";
-    let rig = github_rig(pr);
-    crate::rt::block_on(async {
-        let github = Settings {
-            forge: Forge::Github,
-            ..Settings::default()
-        };
-        rig.store
-            .add_version(&github, "forge: local -> github", 1)
-            .await
-            .unwrap();
-        let id = rig.factory.submit("w", "Add modulo").await.unwrap();
-        to_review(&rig, &id).await;
-        rig.factory.apply(&id, Event::Approved).await.unwrap();
-        until(&rig, &id, Stage::Land, State::NeedsYou).await;
-        rig.factory.apply(&id, Event::Approved).await.unwrap();
-        eventually(async || job_of(&rig, &id).await.pr.is_some()).await;
-        let job = job_of(&rig, &id).await;
-        assert_eq!(
-            (job.pr.as_deref(), job.state),
-            (Some(pr), State::Running),
-            "the pull request is up and CI runs"
-        );
-        assert!(!rig.engine.called("worktree::land"), "nothing merges here");
-        let calls = rig.engine.calls.lock().unwrap().clone();
-        let judge = calls
-            .iter()
-            .find(|c| c.1 == "sandbox::create" && c.2["image"] == "node")
-            .expect("the verdict ran in a VM of its own");
-        assert_eq!(judge.2["network"], false, "the verdict's VM is offline");
-        let created = rig
-            .engine
-            .calls
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|c| c.1 == "github::exec")
-            .map(|c| c.2.clone())
-            .unwrap();
-        assert_eq!(
-            (&created["args"][0], &created["args"][1]),
-            (&json!("pr"), &json!("create"))
-        );
-
-        rig.factory.apply(&id, Event::CiPassed).await.unwrap();
-        until(&rig, &id, Stage::Land, State::NeedsYou).await;
-        rig.factory.apply(&id, Event::Approved).await.unwrap();
-        until(&rig, &id, Stage::Land, State::Landed).await;
-        let kept = rig.store.artifacts(&id).await.unwrap();
-        let merge = |a: &&Artifact| a.stage == Stage::Merge && a.body.contains("pull/1");
-        assert!(kept.iter().any(|a| merge(&a)), "the merge commit is kept");
-        let calls = rig.engine.calls.lock().unwrap();
-        let gh: Vec<_> = calls.iter().filter(|c| c.1 == "github::exec").collect();
-        let at = |verb: &str| gh.iter().position(|c| c.2["args"][1] == verb);
-        assert!(
-            at("merge").is_some(),
-            "approve at land merges the pull request"
-        );
-        let edited = at("edit").is_some_and(|e| Some(e) < at("merge"));
-        assert!(edited, "the body is said again before the merge");
-    });
-}
-
-#[test]
-fn a_specify_reply_that_is_not_a_spec_is_unusable_and_other_replies_pass_through() {
-    use bastion_core::Outcome;
-    let done = |r: &str| Outcome::Done { report: r.into() };
-    assert!(matches!(
-        super::turn::usable(Stage::Specify, done("no json")),
-        Outcome::Unusable { .. }
-    ));
-    let spec = r#"{"checks": [{"criterion": "C1", "run": "x", "files": ["t.py"]}]}"#;
-    assert_eq!(super::turn::usable(Stage::Specify, done(spec)), done(spec));
-    assert_eq!(
-        super::turn::usable(Stage::Plan, done("no json")),
-        done("no json")
-    );
-}
-
-#[test]
-fn a_scope_that_names_parts_keeps_each_later_part_as_a_job_that_waits() {
-    let parts = "PARTS:\n1. Add the model\n2. Add the endpoint";
-    let reply = json!({ "messages": [
-        { "message": { "role": "assistant", "content": [{ "type": "text", "text": parts }] } },
-    ]});
-    let rig = rig_on(engine().answer("session::messages", Ok(reply)));
-    *rig.store.dials.lock().unwrap() = bastion_core::Dials::all(bastion_core::Dial::Dark);
-    crate::rt::block_on(async {
-        let how = super::Submission {
-            pipeline: Pipeline::Full,
-            requester: Some("ana".into()),
-            ..Default::default()
-        };
-        let id = rig
-            .factory
-            .submit_with("w", "Add a health check", how)
-            .await
-            .unwrap();
-        until(&rig, &id, Stage::Scope, State::Running).await;
-        finish_turn(&rig, &id).await;
-        until(&rig, &id, Stage::Discover, State::Running).await;
-        let first = rig.store.load(&id).await.unwrap();
-        assert_eq!(first.job.part.as_deref(), Some("Add the model"));
-        let second = rig.store.load(&format!("{id}-2")).await.unwrap();
-        assert_eq!(
-            (
-                second.job.state,
-                second.job.after.as_deref(),
-                second.job.part.as_deref()
-            ),
-            (State::Queued, Some(id.as_str()), Some("Add the endpoint"))
-        );
-        assert_eq!(second.runtime.requester.as_deref(), Some("ana"));
     });
 }
 
@@ -721,7 +473,7 @@ fn a_turn_that_ends_twice_counts_once_and_a_stale_one_changes_nothing() {
     let rig = rig();
     crate::rt::block_on(async {
         let id = rig.factory.submit("w", "x").await.unwrap();
-        until(&rig, &id, Stage::Plan, State::Running).await;
+        until(&rig, &id, Some("plan"), State::Running).await;
         // The turn's event and its cap (or a resume) end the same turn.
         let plan = loop {
             let record = rig.store.load(&id).await.unwrap();
@@ -739,10 +491,10 @@ fn a_turn_that_ends_twice_counts_once_and_a_stale_one_changes_nothing() {
         let first = tokio::spawn(async move { a.turn_done(&t1, false).await });
         let second = tokio::spawn(async move { b.turn_done(&t2, false).await });
         let _ = (first.await, second.await);
-        until(&rig, &id, Stage::Plan, State::NeedsYou).await;
+        until(&rig, &id, Some("plan"), State::NeedsYou).await;
         let plans = |all: &[(String, crate::store::Artifact)]| {
             all.iter()
-                .filter(|(j, a)| *j == id && a.stage == Stage::Plan)
+                .filter(|(j, a)| *j == id && a.body.contains("RESULT plan:"))
                 .count()
         };
         assert_eq!(
@@ -751,11 +503,14 @@ fn a_turn_that_ends_twice_counts_once_and_a_stale_one_changes_nothing() {
             "one plan artifact"
         );
         rig.factory.apply(&id, Event::Approved).await.unwrap();
-        until(&rig, &id, Stage::Build, State::Running).await;
+        until(&rig, &id, Some("build"), State::Running).await;
         // The plan's session, found again later, does not finish the build.
         rig.factory.turn_done(&plan, false).await;
         let job = job_of(&rig, &id).await;
-        assert_eq!((job.stage, job.state), (Stage::Build, State::Running));
+        assert_eq!(
+            (job.node.as_deref(), job.state),
+            (Some("build"), State::Running)
+        );
     });
 }
 
@@ -764,7 +519,7 @@ fn a_turn_reads_the_charter_from_the_base_commit_not_the_worktree() {
     let rig = rig();
     crate::rt::block_on(async {
         let id = rig.factory.submit("w", "x").await.unwrap();
-        until(&rig, &id, Stage::Plan, State::Running).await;
+        until(&rig, &id, Some("plan"), State::Running).await;
         // The merge base is empty in the fake, so the base is HEAD.
         for name in ["CLAUDE.md", "AGENTS.md", ".claude/settings.json"] {
             assert!(
@@ -780,7 +535,7 @@ fn approved_tests_stay_protected_after_a_restart() {
     let rig = rig();
     crate::rt::block_on(async {
         let id = rig.factory.submit("w", "x").await.unwrap();
-        until(&rig, &id, Stage::Plan, State::Running).await;
+        until(&rig, &id, Some("plan"), State::Running).await;
         // As a baseline before a restart left it: stored, not in the gate.
         let files = vec!["tests/test_c1.py".to_string()];
         rig.factory
@@ -789,9 +544,9 @@ fn approved_tests_stay_protected_after_a_restart() {
             .unwrap();
         assert!(rig.factory.gate.protected(&id).is_empty());
         finish_turn(&rig, &id).await;
-        until(&rig, &id, Stage::Plan, State::NeedsYou).await;
+        until(&rig, &id, Some("plan"), State::NeedsYou).await;
         rig.factory.apply(&id, Event::Approved).await.unwrap();
-        until(&rig, &id, Stage::Build, State::Running).await;
+        until(&rig, &id, Some("build"), State::Running).await;
         let building = async || {
             let session = rig.store.load(&id).await.unwrap().runtime.session;
             session.is_some_and(|s| s.contains("-build-"))
@@ -806,7 +561,7 @@ fn stopping_a_job_cancels_its_turn() {
     let rig = rig();
     crate::rt::block_on(async {
         let id = rig.factory.submit("w", "x").await.unwrap();
-        until(&rig, &id, Stage::Plan, State::Running).await;
+        until(&rig, &id, Some("plan"), State::Running).await;
         let session = loop {
             if let Some(s) = rig.store.load(&id).await.unwrap().runtime.session {
                 break s;
@@ -814,7 +569,7 @@ fn stopping_a_job_cancels_its_turn() {
             tokio::time::sleep(Duration::from_millis(10)).await;
         };
         rig.factory.apply(&id, Event::Stopped).await.unwrap();
-        until(&rig, &id, Stage::Plan, State::Stopped).await;
+        until(&rig, &id, Some("plan"), State::Stopped).await;
         let stop = |c: &(String, String, serde_json::Value)| {
             c.1 == "harness::stop" && c.2["session_id"] == session
         };
@@ -828,15 +583,18 @@ fn an_event_reports_the_job_it_moved_and_none_when_it_moved_nothing() {
     let rig = rig();
     crate::rt::block_on(async {
         let id = rig.factory.submit("w", "x").await.unwrap();
-        until(&rig, &id, Stage::Plan, State::Running).await;
+        until(&rig, &id, Some("plan"), State::Running).await;
         let always = || Arc::new(|_: &Record| true);
         let early = rig.factory.apply_when(&id, Event::Approved, always());
         assert_eq!(early.await.unwrap(), None, "an approval before the plan");
         finish_turn(&rig, &id).await;
-        until(&rig, &id, Stage::Plan, State::NeedsYou).await;
+        until(&rig, &id, Some("plan"), State::NeedsYou).await;
         let moved = rig.factory.apply_when(&id, Event::Approved, always());
         let before = moved.await.unwrap().expect("the approval moved the job");
-        assert_eq!((before.stage, before.state), (Stage::Plan, State::NeedsYou));
+        assert_eq!(
+            (before.node.as_deref(), before.state),
+            (Some("plan"), State::NeedsYou)
+        );
     });
 }
 
@@ -845,7 +603,7 @@ fn a_turn_on_a_job_whose_vm_went_while_it_waited_gets_a_new_vm_first() {
     let lost = Err("sandbox not found: vm-gone".into());
     let rig = rig_on(engine().answer("sandbox::exec", lost));
     crate::rt::block_on(async {
-        let mut record = record_at(Pipeline::Short, Stage::Build, State::NeedsYou);
+        let mut record = record_at("build", State::NeedsYou);
         record.runtime.sandbox = Some("vm-gone".into());
         rig.store.insert(&record).await.unwrap();
         let sent_back = Event::Commented {
@@ -864,8 +622,8 @@ fn a_turn_on_a_job_whose_vm_went_while_it_waited_gets_a_new_vm_first() {
 
 /// A job at a running plan turn whose step began at `at`.
 async fn planning(rig: &Rig, id: &str, at: u64) -> super::turn::Turn {
-    let mut job = Job::new(id.into(), "w".into(), "r".into(), at);
-    job.state = State::Running;
+    let mut job = record_at("plan", State::Running).job;
+    (job.id, job.updated_at) = (id.into(), at);
     let session = format!("{id}-plan-abc");
     let record = Record {
         job,
@@ -924,19 +682,9 @@ fn a_revived_vm_with_no_new_commits_lands_what_the_worktree_holds() {
 fn a_turn_the_harness_lost_starts_again_on_resume() {
     let lost = Err("handler error: session/not_found: session j1-build-old does not exist".into());
     let rig = rig_on(engine().answer("harness::status", lost));
-    let mut job = Job::new("j1".into(), "w".into(), "r".into(), super::now());
-    (job.stage, job.state) = (Stage::Build, State::Running);
-    let record = Record {
-        job,
-        runtime: Runtime {
-            worktree: Some("wt1".into()),
-            sandbox: Some("vm1".into()),
-            session: Some("j1-build-old".into()),
-            ..Runtime::default()
-        },
-        rev: 1,
-        created_at: 1,
-    };
+    let mut record = record_at("build", State::Running);
+    record.job.updated_at = super::now();
+    record.runtime.session = Some("j1-build-old".into());
     crate::rt::block_on(async {
         rig.store.insert(&record).await.unwrap();
         rig.factory.clone().resume().await;

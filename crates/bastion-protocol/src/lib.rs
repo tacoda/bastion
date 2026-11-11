@@ -61,13 +61,11 @@ pub struct TokenView {
 /// A model provider and where its credential comes from: `secret` (a key
 /// A workflow (DECISIONS.md D35): its steps on the canvas and the links between
 /// them. Each node's `stage` and `dial` are their words, and `level` is
-/// `lights_on`, `dim` or `dark`. A built-in workflow can only be copied.
+/// `lights_on`, `dim` or `dark`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkflowView {
     pub id: String,
     pub name: String,
-    /// A built-in workflow as Bastion ships it, not changed.
-    pub built_in: bool,
     /// Comes with Bastion, changed or not: deleting a changed one resets it.
     #[serde(default)]
     pub ships: bool,
@@ -88,10 +86,6 @@ pub struct NodeView {
     pub dial: String,
     /// The step's instructions; empty keeps the stage's built-in ones.
     pub note: String,
-    /// The stage's built-in instructions, which an empty note keeps: what
-    /// the editor shows to start from. Empty for a step no agent runs.
-    #[serde(default)]
-    pub builtin: String,
     pub results: Vec<String>,
     /// A shell step's network and the vault's secrets it gets (D40).
     #[serde(default)]
@@ -465,8 +459,12 @@ pub struct JobSummary {
     pub id: String,
     pub workspace: String,
     pub request: String,
-    /// `plan`, `approve`, `build`, `review` or `land`.
+    /// The kind of step the job is at: `prompt`, `agent`, `skill`,
+    /// `command` or `shell`.
     pub stage: String,
+    /// The id of the step the job is at; none at the finish.
+    #[serde(default)]
+    pub node: Option<String>,
     /// `queued`, `provisioning`, `running`, `needs_you`, `landed`, `failed` or `stopped`.
     pub state: String,
     pub question: Option<String>,
@@ -475,27 +473,19 @@ pub struct JobSummary {
     pub updated_at: u64,
     /// What the owner may do now: `approve`, `comment`, `answer`, `stop`.
     pub actions: Vec<String>,
-    /// The job's pull request, when the forge is GitHub.
-    pub pr: Option<String>,
     /// The tracker issue the request came from.
     pub issue: Option<String>,
     /// Who asked for the job (D31).
     #[serde(default)]
     pub requester: Option<String>,
-    /// The job this one is a part of, when scope split it.
-    #[serde(default)]
-    pub parent: Option<String>,
-    /// The part of the request this job does.
-    #[serde(default)]
-    pub part: Option<String>,
-    /// The parts scope proposed, while a person may still set them.
-    #[serde(default)]
-    pub parts: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArtifactView {
     pub stage: String,
+    /// The id of the step it came from; empty from before steps had ids.
+    #[serde(default)]
+    pub step: String,
     pub body: String,
     pub created_at: u64,
 }
@@ -516,7 +506,7 @@ pub struct StepView {
     pub state: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JobDetail {
     pub job: JobSummary,
     pub steps: Vec<StepView>,
@@ -613,27 +603,6 @@ pub struct AuditView {
     pub last_error: Option<String>,
 }
 
-/// Each step's dial (DECISIONS.md D33), by pipeline.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DialsView {
-    pub short: PipelineDials,
-    pub full: PipelineDials,
-}
-
-/// A pipeline's steps in order, each `lights_on` or `dark`, and the level
-/// they make: `lights_on`, `dim` or `dark`.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PipelineDials {
-    pub level: String,
-    pub steps: Vec<StepDial>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StepDial {
-    pub stage: String,
-    pub dial: String,
-}
-
 /// An eval to run: its requests, and the one rung its two arms
 /// set differently. `target` is `constraint:<id>` or
 /// `capability:<stage>:<function>`.
@@ -714,8 +683,6 @@ pub struct SettingsView {
     pub plan_model: String,
     pub build_provider: String,
     pub build_model: String,
-    /// `local` or `github`.
-    pub forge: String,
     /// `none` or `github_issues`.
     pub tracker: String,
     /// No queued job is admitted while true.

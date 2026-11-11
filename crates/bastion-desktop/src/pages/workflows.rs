@@ -67,7 +67,7 @@ pub enum Msg {
     Choose(Choice),
     Pointer(Pointer),
     AddStep(String),
-    /// How the picked step runs: one of `CUSTOM`, or a Bastion stage.
+    /// How the picked step runs: one of `CUSTOM`.
     Kind(Choice),
     Field(StepField, String),
     Text(text_editor::Action),
@@ -170,57 +170,25 @@ impl State {
     }
 }
 
-/// What a step's one text box holds.
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Text {
-    /// The instructions, or for a stage, its instructions in place of the
-    /// built-in ones.
-    Note,
-    /// A shell step's script.
-    Script,
-    /// A step Bastion does itself, with nothing to write.
-    Nothing,
+/// Whether a step's one text box holds a script, not instructions.
+fn is_script(n: &bastion_protocol::NodeView) -> bool {
+    n.stage == "shell"
 }
 
-fn text_of(n: &bastion_protocol::NodeView) -> Text {
-    let custom = CUSTOM.iter().any(|(s, _)| *s == n.stage);
-    match n.stage.as_str() {
-        "shell" => Text::Script,
-        _ if custom || !n.builtin.is_empty() => Text::Note,
-        _ => Text::Nothing,
-    }
-}
-
-/// The text a step's box starts with: its script, its note, or a stage's
-/// built-in instructions while the note is empty.
+/// The text a step's box shows: its script or its instructions.
 fn shown(n: &bastion_protocol::NodeView) -> String {
-    match text_of(n) {
-        Text::Script => n.run.clone(),
-        Text::Note if n.note.trim().is_empty() => n.builtin.clone(),
-        Text::Note => n.note.clone(),
-        Text::Nothing => String::new(),
+    match is_script(n) {
+        true => n.run.clone(),
+        false => n.note.clone(),
     }
 }
 
-/// Keep what was typed: a script as the step's run, instructions as its
-/// note, and instructions left as built in as no note, so the step keeps
-/// following the built-in ones.
+/// Keep what was typed: a script as the step's run, instructions as its note.
 fn keep_text(n: &mut bastion_protocol::NodeView, typed: String) {
-    match text_of(n) {
-        Text::Script => n.run = typed,
-        Text::Note if !n.builtin.is_empty() && typed.trim() == n.builtin.trim() => n.note.clear(),
-        Text::Note => n.note = typed,
-        Text::Nothing => {}
+    match is_script(n) {
+        true => n.run = typed,
+        false => n.note = typed,
     }
-}
-
-/// A Bastion stage's built-in instructions, as any workflow shown has them.
-fn builtin_of(all: &[WorkflowView], stage: &str) -> String {
-    all.iter()
-        .flat_map(|w| &w.nodes)
-        .find(|n| n.stage == stage && !n.builtin.is_empty())
-        .map(|n| n.builtin.clone())
-        .unwrap_or_default()
 }
 
 fn on_pointer(state: &mut State, p: Pointer) {
@@ -349,8 +317,7 @@ fn change(state: &mut State, msg: Msg) {
         Msg::Field(f, v) => on_field(state, f, v),
         Msg::Kind(_) if !state.editable() => {}
         Msg::Kind(c) => {
-            let builtin = builtin_of(&state.all, &c.id);
-            state.step(|n| (n.stage, n.builtin) = (c.id, builtin));
+            state.step(|n| n.stage = c.id);
             state.pick(state.picked.clone());
         }
         Msg::Network(on) => state.step(|n| n.reach.network = on),
@@ -397,12 +364,12 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
     Task::none()
 }
 
-/// The shown workflow's facts: built in or not, its version and its level.
+/// The shown workflow's facts: shipped or not, its version and its level.
 fn facts(w: &WorkflowView) -> String {
-    let kind = if w.built_in {
-        "built in, copy it to change it"
+    let kind = if w.ships {
+        "ships with Bastion"
     } else {
-        "yours to change"
+        "yours"
     };
     let level = w.level.replace('_', " ").replace("lights on", "lights-on");
     format!("{kind} · version {} · runs {level}", w.version)
@@ -430,13 +397,12 @@ fn chooser(state: &State) -> Element<'_, Message> {
     row![pick, facts].spacing(12).align_y(iced::Center).into()
 }
 
-/// What deleting the shown workflow does: a changed built-in resets to
-/// the original, one of the owner's goes, and an unchanged built-in stays.
-fn delete_label(w: &WorkflowView) -> Option<&'static str> {
-    match (w.ships, w.built_in) {
-        (true, true) => None,
-        (true, false) => Some("Reset to the original"),
-        (false, _) => Some("Delete"),
+/// What deleting the shown workflow does: a shipped one resets to the
+/// original, and one of the owner's goes.
+fn delete_label(w: &WorkflowView) -> &'static str {
+    match w.ships {
+        true => "Reset to the original",
+        false => "Delete",
     }
 }
 
@@ -450,7 +416,7 @@ fn manage_view(state: &State) -> Element<'_, Message> {
     let named = !state.copy_name.trim().is_empty();
     let new = small("New", named.then_some(wrap(Msg::New)));
     let copy = small("Copy this", named.then_some(wrap(Msg::Copy)));
-    let label = state.draft.as_ref().and_then(delete_label);
+    let label = state.draft.as_ref().map(delete_label);
     let delete = label.map(|l| small(l, Some(wrap(Msg::Delete))));
     row![name, new, copy]
         .extend(delete)
@@ -467,17 +433,12 @@ fn palette(state: &State) -> Element<'_, Message> {
     row![small("Add a step", add)].into()
 }
 
-/// The kinds a step may become (D39). A step of an old workflow keeps its
-/// stage listed, so its picker still shows what it runs.
-fn kinds(own: &str) -> Vec<Choice> {
-    let mut all: Vec<Choice> = CUSTOM
+/// The kinds a step may be (D39).
+fn kinds() -> Vec<Choice> {
+    CUSTOM
         .iter()
         .map(|(id, name)| Choice::new(id, name))
-        .collect();
-    if !CUSTOM.iter().any(|(id, _)| *id == own) {
-        all.push(Choice::new(own, &own.replace('_', " ")));
-    }
-    all
+        .collect()
 }
 
 /// The name an agent, skill or command step runs, and where it lives.
@@ -492,21 +453,17 @@ fn name_label(stage: &str) -> Option<&'static str> {
 
 /// What the step's one text box is for.
 fn text_label(n: &bastion_protocol::NodeView) -> &'static str {
-    match (text_of(n), n.stage.as_str()) {
-        (Text::Script, _) => "Script, run by sh in the repository in the job's VM",
-        (Text::Note, "prompt") => "Instructions",
-        (Text::Note, _) if !n.builtin.is_empty() => {
-            "Instructions (Bastion's own until you change them; clear to restore)"
-        }
-        (Text::Note, _) => "Added instructions (optional)",
-        (Text::Nothing, _) => "Bastion does this step itself; it runs no agent and no script.",
+    match n.stage.as_str() {
+        "shell" => "Script, run by sh in the repository in the job's VM",
+        "prompt" => "Instructions",
+        _ => "Added instructions (optional)",
     }
 }
 
 /// How a step runs: its kind, its dial, and an agent's, skill's or
 /// command's name.
 fn how_row<'a>(n: &bastion_protocol::NodeView, editable: bool) -> Element<'a, Message> {
-    let all = kinds(&n.stage);
+    let all = kinds();
     let kind = all.iter().find(|c| c.id == n.stage).cloned();
     let kind = pick_list(all, kind, |c| wrap(Msg::Kind(c)))
         .width(Fill)
@@ -569,21 +526,17 @@ fn step_detail<'a>(state: &'a State, id: &str, editable: bool) -> Option<Element
     let head = labeled("Name", name);
     let how = how_row(&n, editable);
     let mut body = column![head, how];
-    if text_of(&n) == Text::Nothing {
-        body = body.push(text(text_label(&n)).size(13).color(theme::MUTED));
-    } else {
-        let mut words = text_editor(&state.text).height(240);
-        if text_of(&n) == Text::Script {
-            words = words.font(theme::MONO);
-        }
-        if editable {
-            words = words.on_action(|a| wrap(Msg::Text(a)));
-        }
-        body = body.push(labeled(text_label(&n), words));
+    let mut words = text_editor(&state.text).height(240);
+    if is_script(&n) {
+        words = words.font(theme::MONO);
     }
-    if n.stage == "shell" {
+    if editable {
+        words = words.on_action(|a| wrap(Msg::Text(a)));
+    }
+    body = body.push(labeled(text_label(&n), words));
+    if is_script(&n) {
         body = body.push(reach_fields(state, &n, editable));
-    } else if text_of(&n) != Text::Nothing {
+    } else {
         let reads = iced::widget::checkbox(n.reach.reads_only)
             .label("Only reads: the agent may not write a file")
             .on_toggle_maybe(editable.then_some(|on| wrap(Msg::ReadsOnly(on))));
@@ -664,12 +617,12 @@ pub fn view(state: &State) -> Element<'_, Message> {
 mod tests {
     use super::*;
 
-    fn workflow(id: &str, version: u64, built_in: bool) -> WorkflowView {
+    fn workflow(id: &str, version: u64, ships: bool) -> WorkflowView {
         WorkflowView {
             id: id.into(),
             name: id.into(),
             version,
-            built_in,
+            ships,
             ..WorkflowView::default()
         }
     }
@@ -699,7 +652,7 @@ mod tests {
     }
 
     #[test]
-    fn an_admin_changes_any_workflow_and_resets_a_changed_built_in() {
+    fn an_admin_changes_any_workflow_and_resets_a_shipped_one() {
         let mut state = State {
             draft: Some(workflow("mine", 1, false)),
             ..State::default()
@@ -707,14 +660,11 @@ mod tests {
         assert!(!state.editable());
         state.admin = true;
         assert!(state.editable());
-        let mut short = workflow("short", 0, true);
-        short.ships = true;
+        let short = workflow("short", 0, true);
         state.draft = Some(short.clone());
-        assert!(state.editable(), "a built-in is changed as the admin's");
-        assert_eq!(delete_label(&short), None);
-        short.built_in = false;
-        assert_eq!(delete_label(&short), Some("Reset to the original"));
-        assert_eq!(delete_label(&workflow("mine", 1, false)), Some("Delete"));
+        assert!(state.editable(), "a shipped one is changed as the admin's");
+        assert_eq!(delete_label(&short), "Reset to the original");
+        assert_eq!(delete_label(&workflow("mine", 1, false)), "Delete");
     }
 
     #[test]
@@ -764,21 +714,19 @@ mod tests {
     }
 
     #[test]
-    fn a_step_shows_its_text_and_keeps_only_what_differs_from_the_built_in() {
+    fn a_step_shows_its_text_and_keeps_what_is_typed_by_its_kind() {
         let mut w = workflow("mine", 1, false);
-        edit::add_step(&mut w, "plan");
-        w.nodes[0].builtin = "Plan the change.".into();
-        let mut short = workflow("short", 1, true);
-        short.nodes = w.nodes.clone();
+        edit::add_step(&mut w, "prompt");
+        w.nodes[0].note = "Plan the change.".into();
         let mut state = State {
-            all: vec![short],
             draft: Some(w),
             admin: true,
             ..State::default()
         };
         let node = |state: &State| state.draft.as_ref().unwrap().nodes[0].clone();
-        state.pick(Pick::Step("plan".into()));
-        assert_eq!(state.text.text(), "Plan the change.", "the built-in shows");
+        let id = node(&state).id;
+        state.pick(Pick::Step(id));
+        assert_eq!(state.text.text(), "Plan the change.");
         let typed = |state: &mut State, words: &str| {
             state.text = text_editor::Content::with_text(words);
             let words = state.text.text();
@@ -786,31 +734,15 @@ mod tests {
         };
         typed(&mut state, "Plan in three lines.");
         assert_eq!(node(&state).note, "Plan in three lines.");
-        typed(&mut state, "Plan the change.");
-        assert_eq!(
-            node(&state).note,
-            "",
-            "the built-in text is kept as no note"
-        );
         change(&mut state, Msg::Kind(Choice::new("shell", "Shell script")));
-        assert_eq!(
-            (node(&state).stage.as_str(), node(&state).builtin.as_str()),
-            ("shell", "")
-        );
         typed(&mut state, "make lint\nmake test");
         assert_eq!(
-            node(&state).run,
-            "make lint\nmake test",
+            (node(&state).run.as_str(), node(&state).note.as_str()),
+            ("make lint\nmake test", "Plan in three lines."),
             "a script is the step's run"
-        );
-        change(&mut state, Msg::Kind(Choice::new("plan", "plan")));
-        assert_eq!(
-            node(&state).builtin,
-            "Plan the change.",
-            "a stage finds its built-in"
         );
         state.admin = false;
         change(&mut state, Msg::Kind(Choice::new("prompt", "Prompt")));
-        assert_eq!(node(&state).stage, "plan", "a reader cannot change a step");
+        assert_eq!(node(&state).stage, "shell", "a reader cannot change a step");
     }
 }

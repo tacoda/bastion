@@ -8,9 +8,9 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+use bastion_core::Job;
 use bastion_core::audit::Record;
 use bastion_core::eval::{self, Override, Run, Usage};
-use bastion_core::{Job, Stage};
 use serde_json::json;
 
 use crate::engine::Engine;
@@ -60,7 +60,7 @@ pub async fn grade(engine: &dyn Engine, store: &dyn Store, run: &EvalRun) -> Res
     let diff = artifacts
         .iter()
         .rev()
-        .find(|a| a.stage == Stage::Review)
+        .find(|a| crate::factory::is_diff(&a.body))
         .map(|a| a.body.clone())
         .ok_or("the run has no diff to grade")?;
     let session = format!("{}-grade-{}", run.job, short_id());
@@ -185,7 +185,8 @@ pub async fn read_run(
         .await?
         .iter()
         .fold(Usage::default(), |u, t| u + t.usage);
-    tally.reviewed = record.job.stage == Stage::Review;
+    // A trial that ran its last step stops there, with its change.
+    tally.reviewed = record.job.state == bastion_core::State::Stopped && record.job.node.is_some();
     tally.seconds = record.job.updated_at.saturating_sub(record.created_at);
     tally.grade = run.grade;
     tally.contract_held = u32::from(run.contract == Some(true));
@@ -226,7 +227,7 @@ mod tests {
         );
         let store = FakeStore::default();
         let mut job = Job::new("j1".into(), "w".into(), "r".into(), 1);
-        job.stage = Stage::Build;
+        job.stage = bastion_core::Stage::Prompt;
         crate::rt::block_on(meter(&engine, &store, &job, "s1"));
         let turns = store.eval_rows.turns.lock().unwrap().clone();
         assert_eq!(
@@ -262,8 +263,9 @@ mod tests {
         crate::rt::block_on(async {
             assert!(grade(&engine, &store, &run).await.is_err(), "no diff yet");
             let diff = Artifact {
-                stage: Stage::Review,
-                body: "+x".into(),
+                stage: bastion_core::Stage::Shell,
+                step: "build".into(),
+                body: "diff --git a/x b/x\n+x".into(),
                 created_at: 1,
             };
             store.add_artifact("j1", &diff).await.unwrap();

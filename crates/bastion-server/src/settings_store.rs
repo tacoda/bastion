@@ -27,15 +27,12 @@ pub trait SettingsStore {
     -> Answer<'a, u64>;
 }
 
-/// The settings in force: the newest version, or, before the first one, the
-/// defaults with the checkpoint dials as they were kept before settings had versions.
+/// The settings in force: the newest version, or the defaults before the
+/// first one.
 pub async fn current(store: &dyn Store) -> Result<Settings, String> {
     match store.versions().await?.first() {
         Some(v) => Ok(store.settings_at(v.version).await?.unwrap_or_default()),
-        None => Ok(Settings {
-            dials: store.dials().await?,
-            ..Settings::default()
-        }),
+        None => Ok(Settings::default()),
     }
 }
 
@@ -193,7 +190,7 @@ pub mod fake {
 
 #[cfg(test)]
 mod tests {
-    use bastion_core::settings::{Forge, Model};
+    use bastion_core::settings::{Model, Tracker};
 
     use super::*;
     use crate::store::fake::FakeStore;
@@ -209,7 +206,7 @@ mod tests {
                 "nothing moved from the defaults"
             );
             let github = Settings {
-                forge: Forge::Github,
+                tracker: Tracker::GithubIssues,
                 ..Settings::default()
             };
             assert_eq!(change(&store, &github, 2).await, Ok(Some(1)));
@@ -226,8 +223,8 @@ mod tests {
             assert_eq!(restore(&store, 1, 4).await, Ok(3));
             let now = current(&store).await.unwrap();
             assert_eq!(
-                (now.build_model.model.as_str(), now.forge),
-                ("gpt-5-mini", Forge::Github)
+                (now.build_model.model.as_str(), now.tracker),
+                ("gpt-5-mini", Tracker::GithubIssues)
             );
             let newest = store.versions().await.unwrap()[0].clone();
             assert_eq!(

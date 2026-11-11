@@ -61,7 +61,8 @@ fn live_store() {
             .add_artifact(
                 &tag,
                 &Artifact {
-                    stage: Stage::Plan,
+                    stage: Stage::Agent,
+                    step: "build".into(),
                     body: "1. x".into(),
                     created_at: 8,
                 },

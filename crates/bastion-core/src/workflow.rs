@@ -88,34 +88,15 @@ pub struct Step {
     pub reach: Reach,
 }
 
-/// The id a chained stage's node has.
-pub fn chain_id(stage: Stage) -> String {
-    format!("{stage:?}").to_lowercase()
-}
-
-/// The level of steps in this order with these dials (D33): lights-on when
-/// every step is, dim when at least one up to the merge is, and dark when
-/// none up to the merge is. Land is the short pipeline's merge.
-pub fn level_of(steps: &[(Stage, Dial)]) -> Level {
-    let on = |s: &(Stage, Dial)| s.1 == Dial::LightsOn;
-    let merge = steps
-        .iter()
-        .position(|s| matches!(s.0, Stage::Merge | Stage::Land))
-        .map_or(steps.len(), |i| i + 1);
-    if steps.iter().all(on) {
-        Level::LightsOn
-    } else if steps[..merge].iter().any(on) {
-        Level::Dim
-    } else {
-        Level::Dark
+/// The level of a workflow's steps by their dials (D33): lights-on when
+/// every step is, dark when none is, and dim between.
+pub fn level_of(dials: &[Dial]) -> Level {
+    let on = dials.iter().filter(|d| **d == Dial::LightsOn).count();
+    match on {
+        0 => Level::Dark,
+        n if n == dials.len() => Level::LightsOn,
+        _ => Level::Dim,
     }
-}
-
-/// A workflow's own step, which may repeat: a prompt, an agent, a skill, a
-/// command or a shell script.
-pub fn custom(stage: Stage) -> bool {
-    use Stage::*;
-    matches!(stage, Prompt | Agent | Skill | Command | Shell)
 }
 
 /// An agent's, skill's or command's name is a file or folder under
@@ -147,10 +128,6 @@ fn missing_run(n: &Node) -> Option<&'static str> {
 fn what_runs(n: &Node) -> Result<(), String> {
     if let Some(why) = missing_run(n) {
         return Err(format!("{}: {why}", n.id));
-    }
-    let gives = n.stage.kind() == Kind::Turn || n.stage == Stage::Shell;
-    if !gives && !n.results.is_empty() {
-        return Err(format!("{}: {:?} gives no results", n.id, n.stage));
     }
     reach_fits(n).map_err(|why| format!("{}: {why}", n.id))
 }
@@ -204,31 +181,6 @@ fn keep(found: &mut BTreeMap<String, String>, result: Option<(String, Vec<&str>)
 }
 
 impl Graph {
-    /// `stages` linked one after another, with each stage's dial: a
-    /// built-in workflow.
-    pub fn chain(stages: &[Stage], dial: impl Fn(Stage) -> Dial) -> Graph {
-        let id = |s: &Stage| chain_id(*s);
-        let nodes = stages.iter().enumerate().map(|(i, s)| Node {
-            id: id(s),
-            stage: *s,
-            run: String::new(),
-            dial: dial(*s),
-            note: String::new(),
-            results: Vec::new(),
-            reach: Reach::default(),
-            x: 220 * i as i32,
-            y: 0,
-        });
-        let links = stages.windows(2).map(|w| Link {
-            from: id(&w[0]),
-            to: id(&w[1]),
-        });
-        Graph {
-            nodes: nodes.collect(),
-            links: links.collect(),
-        }
-    }
-
     fn node(&self, id: &str) -> Option<&Node> {
         self.nodes.iter().find(|n| n.id == id)
     }
@@ -262,13 +214,12 @@ impl Graph {
 
     /// The workflow's level, its nodes in link order.
     pub fn level(&self) -> Result<Level, String> {
-        let steps: Vec<(Stage, Dial)> = self.order()?.iter().map(|n| (n.stage, n.dial)).collect();
-        Ok(level_of(&steps))
+        let dials: Vec<Dial> = self.order()?.iter().map(|n| n.dial).collect();
+        Ok(level_of(&dials))
     }
 
     /// Whether the graph makes a workflow: each node sound, results named
-    /// once, links between its own nodes, no circle, and one node that lands
-    /// the change with only deploy and learn after it.
+    /// once, links between its own nodes, and no circle.
     pub fn check(&self) -> Result<(), String> {
         for (i, n) in self.nodes.iter().enumerate() {
             self.check_node(i, n)?;
@@ -285,29 +236,14 @@ impl Graph {
                 l.from
             ));
         }
-        let stages: Vec<Stage> = self.order()?.iter().map(|n| n.stage).collect();
-        // A workflow of steps only lands by finishing (D41).
-        match stages.iter().all(|s| custom(*s)) {
-            true => Ok(()),
-            false => crate::pipeline::check_landing(&stages),
-        }
+        self.order().map(|_| ())
     }
 
-    /// The `i`th node: its id new, a step a person can oversee, a Bastion
-    /// stage at most once, a skill or command with what it runs, a prompt
-    /// with its instructions, and results only where an agent or a command
-    /// gives them.
+    /// The `i`th node: its id new, with what it runs and what it reaches.
     fn check_node(&self, i: usize, n: &Node) -> Result<(), String> {
         let before = &self.nodes[..i];
         if n.id.trim().is_empty() || before.iter().any(|m| m.id == n.id) {
             return Err(format!("the step id {:?} is empty or taken", n.id));
-        }
-        if !n.stage.dialed() {
-            return Err(format!("{:?} is not a step", n.stage));
-        }
-        let custom = custom(n.stage);
-        if !custom && before.iter().any(|m| m.stage == n.stage) {
-            return Err(format!("{:?} is in the workflow twice", n.stage));
         }
         what_runs(n)
     }
@@ -367,22 +303,30 @@ mod tests {
         g.order().unwrap().iter().map(|n| n.id.clone()).collect()
     }
 
+    /// A prompt with its instructions, so it is sound.
+    fn prompt(id: &str, x: i32, results: &[&str]) -> Node {
+        Node {
+            note: "Do it.".into(),
+            ..node(id, Prompt, x, results)
+        }
+    }
+
     #[test]
     fn nodes_run_in_link_order_and_free_ones_left_to_right() {
         let g = Graph {
             nodes: vec![
-                node("land", Land, 0, &[]),
-                node("build", Build, 50, &[]),
-                node("plan", Plan, 100, &[]),
+                prompt("land", 0, &[]),
+                prompt("build", 50, &[]),
+                prompt("plan", 100, &[]),
             ],
             links: vec![link("plan", "build"), link("build", "land")],
         };
         assert_eq!(ids(&g), ["plan", "build", "land"]);
         let free = Graph {
             nodes: vec![
-                node("plan", Plan, 100, &[]),
-                node("scope", Scope, 0, &[]),
-                node("land", Land, 200, &[]),
+                prompt("plan", 100, &[]),
+                prompt("scope", 0, &[]),
+                prompt("land", 200, &[]),
             ],
             links: vec![],
         };
@@ -393,17 +337,15 @@ mod tests {
     fn a_step_needs_the_results_linked_into_it() {
         let g = Graph {
             nodes: vec![
-                node("plan", Plan, 0, &["design-notes"]),
-                node("build", Build, 100, &[]),
-                node("land", Land, 200, &[]),
+                prompt("plan", 0, &["design-notes"]),
+                prompt("build", 100, &[]),
             ],
-            links: vec![link("plan", "build"), link("build", "land")],
+            links: vec![link("plan", "build")],
         };
         assert_eq!(g.check(), Ok(()));
         let steps = g.steps().unwrap();
         assert_eq!(steps[0].gives, ["design-notes"]);
         assert_eq!(steps[1].needs, ["design-notes"]);
-        assert!(steps[2].needs.is_empty());
     }
 
     #[test]
@@ -415,7 +357,7 @@ mod tests {
         let mut tests = node("tests", Shell, 200, &[]);
         tests.run = "npm test".into();
         let g = Graph {
-            nodes: vec![lint, review, tests, node("land", Land, 300, &[])],
+            nodes: vec![lint, review, tests, prompt("build", 300, &[])],
             links: vec![link("lint", "review")],
         };
         assert_eq!(g.check(), Ok(()));
@@ -448,57 +390,33 @@ mod tests {
     #[test]
     fn a_bad_graph_says_what_is_wrong() {
         let circle = Graph {
-            nodes: vec![
-                node("plan", Plan, 0, &[]),
-                node("build", Build, 100, &[]),
-                node("land", Land, 200, &[]),
-            ],
+            nodes: vec![prompt("plan", 0, &[]), prompt("build", 100, &[])],
             links: vec![link("plan", "build"), link("build", "plan")],
         };
         assert!(circle.check().unwrap_err().contains("circle"));
-        let results_on_land = Graph {
-            nodes: vec![
-                node("plan", Plan, 0, &[]),
-                node("land", Land, 100, &["notes"]),
-            ],
-            links: vec![],
-        };
-        assert!(results_on_land.check().unwrap_err().contains("no results"));
-        let no_land = Graph {
-            nodes: vec![node("plan", Plan, 0, &[])],
-            links: vec![],
-        };
-        assert!(no_land.check().unwrap_err().contains("nothing lands"));
-        let twice = Graph {
-            nodes: vec![
-                node("a", Plan, 0, &[]),
-                node("b", Plan, 50, &[]),
-                node("land", Land, 100, &[]),
-            ],
-            links: vec![],
-        };
-        assert!(twice.check().unwrap_err().contains("twice"));
         let stray = Graph {
-            nodes: vec![node("plan", Plan, 0, &[]), node("land", Land, 100, &[])],
-            links: vec![link("build", "land")],
+            nodes: vec![prompt("plan", 0, &[])],
+            links: vec![link("build", "plan")],
         };
         assert!(stray.check().unwrap_err().contains("not a step here"));
+        let named_twice = Graph {
+            nodes: vec![prompt("a", 0, &["notes"]), prompt("b", 50, &["notes"])],
+            links: vec![],
+        };
+        assert!(named_twice.check().unwrap_err().contains("taken"));
     }
 
     #[test]
-    fn a_chain_is_a_valid_workflow_with_the_dials_given() {
-        let dark_build = |s| {
-            if s == Build {
-                Dial::Dark
-            } else {
-                Dial::LightsOn
-            }
+    fn a_workflows_level_follows_its_dials() {
+        let mut g = Graph {
+            nodes: vec![prompt("plan", 0, &[]), prompt("build", 100, &[])],
+            links: vec![link("plan", "build")],
         };
-        let g = Graph::chain(&[Plan, Build, Land], dark_build);
-        assert_eq!(g.check(), Ok(()));
-        assert_eq!(g.nodes[1].dial, Dial::Dark);
-        assert_eq!(ids(&g), ["plan", "build", "land"]);
+        assert_eq!(g.level(), Ok(Level::LightsOn));
+        g.nodes[1].dial = Dial::Dark;
         assert_eq!(g.level(), Ok(Level::Dim));
+        g.nodes[0].dial = Dial::Dark;
+        assert_eq!(g.level(), Ok(Level::Dark));
     }
 
     #[test]

@@ -3,34 +3,12 @@
 
 use std::time::Duration;
 
-use bastion_core::{Pipeline, Stage, State};
+use bastion_core::{Stage, State};
 use serde_json::json;
 
 use super::tests::*;
 use crate::machine::fake::FakeMachine;
 use crate::store::{Artifact, Store};
-
-#[test]
-fn a_preview_a_host_deployed_for_the_branch_is_kept_for_reviewers() {
-    let deployed =
-        json!({ "id": 1, "state": "success", "environment_url": "https://pr-1.example.dev" });
-    let gh = json!({ "exit_code": 0, "stdout": json!([deployed]).to_string() });
-    let rig = rig_on(engine().answer("github::exec", Ok(gh)));
-    crate::rt::block_on(async {
-        let record = record_at(Pipeline::Full, Stage::Ci, State::Running);
-        rig.store.insert(&record).await.unwrap();
-        let hub = crate::forge::GitHub {
-            engine: &*rig.engine,
-            slug: "o/r".into(),
-        };
-        rig.factory.keep_preview(&record, &hub).await;
-        let kept = rig.store.artifacts("j1").await.unwrap();
-        assert_eq!(kept[0].body, "Preview: <https://pr-1.example.dev>");
-        let calls = rig.engine.calls.lock().unwrap();
-        let listed = &calls.iter().find(|c| c.1 == "github::exec").unwrap().2["args"][1];
-        assert_eq!(listed, "repos/o/r/deployments?ref=bastion/j1&per_page=1");
-    });
-}
 
 #[test]
 fn a_revert_of_a_landed_commit_is_an_escape_of_its_job_once() {
@@ -42,13 +20,13 @@ fn a_revert_of_a_landed_commit_is_an_escape_of_its_job_once() {
         .run_ok("security", &key);
     let rig = rig_with(engine(), machine);
     crate::rt::block_on(async {
-        rig.store
-            .insert(&record_at(Pipeline::Short, Stage::Land, State::Landed))
-            .await
-            .unwrap();
+        let mut landed = record_at("checks", State::Landed);
+        landed.job.node = None;
+        rig.store.insert(&landed).await.unwrap();
         let commits = bastion_core::escape::commits_artifact("a1b2c3d4e5f6 Add cube").unwrap();
         let kept = Artifact {
-            stage: Stage::Land,
+            stage: Stage::Shell,
+            step: "build".into(),
             body: commits,
             created_at: 1,
         };
@@ -93,7 +71,7 @@ fn a_paused_intake_admits_nothing_until_it_opens() {
             .await
             .unwrap();
         rig.factory.pump();
-        until(&rig, &id, Stage::Plan, State::Running).await;
+        until(&rig, &id, Some("plan"), State::Running).await;
     });
 }
 
@@ -113,7 +91,7 @@ fn a_job_that_names_a_model_runs_its_turns_on_it() {
             .submit_with("w", "x", how("deepseek/deepseek-flash"))
             .await
             .unwrap();
-        until(&rig, &id, Stage::Plan, State::Running).await;
+        until(&rig, &id, Some("plan"), State::Running).await;
         let sent = async || rig.engine.called("harness::send");
         assert!(eventually(sent).await, "no turn started");
         let calls = rig.engine.calls.lock().unwrap();
@@ -132,7 +110,6 @@ fn a_requests_screenshots_are_kept_and_put_in_its_vm() {
     crate::rt::block_on(async {
         let how = Submission {
             screenshots: vec![("broken.png".into(), vec![1, 2, 3])],
-            criteria: Some("2 + 2 is 4".into()),
             ..Submission::default()
         };
         let id = rig
@@ -140,17 +117,14 @@ fn a_requests_screenshots_are_kept_and_put_in_its_vm() {
             .submit_with("w", "Fix the total", how)
             .await
             .unwrap();
-        until(&rig, &id, Stage::Plan, State::Running).await;
+        until(&rig, &id, Some("plan"), State::Running).await;
         let written = rig.machine.calls.lock().unwrap().clone();
         assert!(
             written.contains(&format!("write /s/requests/{id}/broken.png")),
             "{written:?}"
         );
         let job = job_of(&rig, &id).await;
-        assert_eq!(
-            (job.results["screenshots"].as_str(), job.criteria.as_deref()),
-            ("broken.png", Some("2 + 2 is 4"))
-        );
+        assert_eq!(job.results["screenshots"], "broken.png");
         let calls = rig.engine.calls.lock().unwrap();
         let put = |c: &&(String, String, serde_json::Value)| {
             c.1 == "sandbox::fs::write" && c.2["path"] == "/work/request/broken.png"
@@ -165,9 +139,9 @@ fn a_job_that_comes_to_wait_is_a_notice_with_the_count_waiting() {
     let rig = rig();
     crate::rt::block_on(async {
         let id = rig.factory.submit("w", "Add /health").await.unwrap();
-        until(&rig, &id, Stage::Plan, State::Running).await;
+        until(&rig, &id, Some("plan"), State::Running).await;
         finish_turn(&rig, &id).await;
-        until(&rig, &id, Stage::Plan, State::NeedsYou).await;
+        until(&rig, &id, Some("plan"), State::NeedsYou).await;
         let told = rig.told.lock().unwrap().clone();
         let notices: Vec<_> = told
             .iter()
@@ -198,7 +172,7 @@ fn a_turns_screenshot_is_kept_once_with_the_job() {
     engine.channel_bytes = vec![1, 2, 3];
     let rig = rig_on(engine);
     crate::rt::block_on(async {
-        let record = record_at(Pipeline::Short, Stage::Build, State::Running);
+        let record = record_at("build", State::Running);
         rig.store.insert(&record).await.unwrap();
         rig.factory.keep_media(&record).await;
         rig.factory.keep_media(&record).await;
@@ -249,7 +223,7 @@ fn a_shell_step_gets_the_jobs_branch_and_the_vault_names_this_server_only_for_a_
             .answer("secrets::resolve", Ok(json!({ "value": "t0k" }))),
     );
     crate::rt::block_on(async {
-        let mut record = record_at(Pipeline::Short, Stage::Shell, State::Running);
+        let mut record = record_at("checks", State::Running);
         record.job.flow = vec![Step {
             id: "tests".into(),
             stage: Stage::Shell,
@@ -261,7 +235,7 @@ fn a_shell_step_gets_the_jobs_branch_and_the_vault_names_this_server_only_for_a_
             reach: Reach::default(),
         }];
         record.job.node = Some("tests".into());
-        rig.factory.command_step(&record).await;
+        rig.factory.shell_step(&record).await;
         let calls = rig.engine.calls.lock().unwrap().clone();
         let ran = calls.iter().find(|c| c.1 == "sandbox::exec").unwrap();
         let line = ran.2["argv"][2].as_str().unwrap();

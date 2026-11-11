@@ -62,7 +62,7 @@ fn check(diff: &str, name: &str) -> Option<String> {
     let diff = Diff(diff);
     let found = match name {
         DELETED_TESTS => diff.deleted_tests(),
-        SECRETS => crate::publish::secrets(&diff.added()),
+        SECRETS => crate::secrets::secrets(&diff.added()),
         REMOVED_ASSERTIONS => diff.removed_assertions(),
         SKIP_MARKERS => diff.skip_markers(),
         _ => Vec::new(),
@@ -280,7 +280,7 @@ mod tests {
             text: "deleted tests".into(),
         };
         assert_eq!(
-            gate(&call, Stage::Build, &rules, &default_capabilities()).flagged,
+            gate(&call, Stage::Prompt, &rules, &default_capabilities()).flagged,
             Vec::<String>::new()
         );
     }

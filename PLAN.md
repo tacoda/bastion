@@ -107,6 +107,19 @@ per stage move to S4, as they reach only the stage code it deletes.
   Bastion is now.
 - Exit: no `Stage` in the code but the five kinds, and every CI step passes.
 
+Done 2026-11-11. The pipelines, the stage machine, scope splits, discover
+questions, acceptance tests, UAT sign-off, learn, the presets, the forge
+setting and the CI and deploy watches are gone. Escapes stay: a revert of
+a landed commit still counts against its job. Migration 5 deletes the
+nodes of stages Bastion ran itself, with their links and results, and
+makes every other stage a prompt; a stage that only read becomes a prompt
+that only reads. Each artifact now names the step it came from, so the job
+page shows a step's own reports. Live: the dev database moved to version 5
+with only prompt and shell nodes left, and a Short job landed
+`triple(x)` on `demo-local`. The run found that a build's diff took the
+next step's kind, and that resetting a shipped workflow left it gone until
+a restart; both are fixed.
+
 ## Open questions
 
 - **What learn and escapes become.** Both read a landed job's history. They

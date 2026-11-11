@@ -115,9 +115,9 @@ mod tests {
     #[test]
     fn turns_are_tallied_in_all_by_workspace_by_step_and_by_day() {
         let all = vec![
-            (turn("s3", Stage::Build, 300, 1_794_349_646), "b".into()),
-            (turn("s2", Stage::Plan, 200, 1_794_349_000), "a".into()),
-            (turn("s1", Stage::Plan, 100, 1_794_200_000), "a".into()),
+            (turn("s3", Stage::Prompt, 300, 1_794_349_646), "b".into()),
+            (turn("s2", Stage::Agent, 200, 1_794_349_000), "a".into()),
+            (turn("s1", Stage::Agent, 100, 1_794_200_000), "a".into()),
         ];
         let view = tally(&all);
         assert_eq!((view.total.sessions, view.total.cost_micros), (3, 600));
@@ -128,7 +128,7 @@ mod tests {
             .map(|t| (t.key.as_str(), t.cost_micros))
             .collect();
         assert_eq!(ws, [("a", 300), ("b", 300)]);
-        assert_eq!(view.by_stage[1].key, "plan");
+        assert_eq!(view.by_stage[0].key, "agent");
         assert_eq!(view.by_day[0].key, "2026-11-10", "newest day first");
         assert_eq!(view.by_day[0].sessions, 2);
         assert_eq!(view.sessions[0].session, "s3", "newest turn first");

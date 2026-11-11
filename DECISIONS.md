@@ -39,15 +39,15 @@ retired with the old plan.
 | D8 | Records live in the `database` worker as typed columns. Each row carries a `rev`, and a stale write is refused. |
 | D10 | Updates are pushed, never polled: the server observes the engine, and clients follow the server's events (D29). |
 | D13 | The local server starts the stack (`iii compose`) and attaches to one that already runs. The stack goes down when the server stops. A client attaches to the local server or starts it, and quitting a client leaves both running. |
-| D14 | Every agent turn runs in an `iii-sandbox` VM on its job's worktree. No credential enters the VM; pushes and pull requests happen on the host. |
+| D14 | Every agent turn runs in an `iii-sandbox` VM on its job's worktree. No credential enters an agent's VM. A shell step that needs one asks for it (D40). |
 | D16 | A note on a step goes to the agent word for word as its next brief. A fix loop stops after a set count, or sooner when a refusal repeats word for word. |
-| D17 | Every job runs a workflow. A free-form task is a short workflow, not a second mode. |
+| D17 | Every job runs a workflow. A free-form task is the shipped Short workflow, not a second mode. |
 | D18 | The factory's rules live in `bastion-core`: pure functions from an event and a state to a new state and effects, with no I/O and no `async`. |
 | D19 | The seams are Cargo dependencies, and `scripts/check-seams.sh` fails CI when one is crossed. Only the engine adapter imports `iii-sdk`. Clients depend on `bastion-protocol` and the client library only. |
 | D20 | Every constraint and capability is enforced in a hook, and its rung is data, so an eval can name what changed. |
 | D21 | The audit record is a hash chain with one writer. Each entry carries an HMAC-SHA256 of its fields and the entry before it, keyed with a secret outside the record. |
 | D22 | An eval compares two harness configurations on the same requests from the same commit, and reports the difference with the decisions behind it. |
-| D23 | Forge, tracker, CI, model providers and notifications are adapters behind seams, chosen in Settings. |
+| D23 | The tracker, model providers and notifications are adapters behind seams, chosen in Settings. Pull requests, CI and merges are a workflow's shell steps (D39). |
 | D25 | Every rule belongs to one layer: the charter (the repository's own), the harness (an agent's calls), or the factory (the workflow). |
 | D26 | Rules, grants and settings are data in the server's database, versioned, edited on the pages; first-run defaults come from `seed/governance.sql`. |
 | D27 | The server is the source of truth and holds all business logic. A client shows state and sends a person's actions, nothing more. |
@@ -62,6 +62,10 @@ retired with the old plan.
 | D36 | Claude takes an API key only. No Claude subscription sign-in. |
 | D37 | The desktop client is a native Rust app on `iced`. It holds no factory logic and reaches a server only through the client library. |
 | D38 | Every client goes through `crates/bastion-client`: the server list, typed calls, and the event stream. A new interface adds pages, not a second way to talk to a server. |
+| D39 | A workflow is a series of steps, and nothing else runs. A step is a prompt, an agent (`.claude/agents`), a skill (`.claude/skills`), a command (`.claude/commands`) or a shell script, each with one text. Bastion's built-in stages are gone. |
+| D40 | A shell step runs in the job's VM, with no network unless it asks. A step that asks gets a VM of its own with the network and the vault secrets it names as environment variables. |
+| D41 | A job ends with its branch ready. When the last step passes, a workspace set to merge merges the branch into its base on the host; one set to leave keeps the branch. |
+| D42 | Governance is per step. A step may change files or only reads, and the gate refuses a write from a step that only reads. Dials, notices, artifacts and evals name steps. |
 
 ## Open questions
 

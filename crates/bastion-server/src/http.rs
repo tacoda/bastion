@@ -12,7 +12,7 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
-use bastion_core::{Event as JobEvent, Pipeline};
+use bastion_core::Event as JobEvent;
 use bastion_protocol::{
     Change, ConstraintView, EscapeReport, HeldCallRef, HostView, LogRequest, NewEval, NotifySet,
     NotifyView, SettingsView, Workspace,
@@ -159,13 +159,10 @@ fn factory_routes() -> Router<App> {
         .route("/jobs/{id}", get(job))
         .route("/jobs/{id}/approve", post(job_approve))
         .route("/jobs/{id}/comment", post(job_comment))
-        .route("/jobs/{id}/parts", post(job_parts))
         .route(bastion_protocol::api::MEDIA_ROUTE, get(job_media))
         .route("/jobs/{id}/stop", post(job_stop))
         .route("/jobs/{id}/retry", post(job_retry))
         .route("/jobs/{id}/extend", post(job_extend))
-        .route("/dials", get(dials))
-        .route("/dials/{stage}", put(dials_set))
         .route("/evals", get(evals).post(eval_create))
         .route("/evals/{id}", get(eval))
         .route("/evals/{id}/apply", post(eval_apply))
@@ -190,7 +187,6 @@ fn settings_routes() -> Router<App> {
         .route("/settings", get(settings).put(settings_set))
         .route("/notify", get(notify).put(notify_set))
         .route("/notify/test", post(notify_test))
-        .route("/settings/preset", post(settings_preset))
         .route("/settings/history", get(settings_history))
         .route("/settings/restore", post(settings_restore))
         .route("/models", get(models))
@@ -428,8 +424,7 @@ async fn jobs(
 struct Submit {
     workspace: String,
     request: String,
-    pipeline: Option<Pipeline>,
-    /// A workflow's id (D35), which takes the place of `pipeline`.
+    /// A workflow's id (D35); none runs the shipped `short`.
     workflow: Option<String>,
     /// `provider/model` for every turn.
     #[serde(default)]
@@ -459,11 +454,9 @@ async fn job_submit(
         Err(e) => return answer::<String>(Err(e)),
     };
     let how = Submission {
-        pipeline: b.pipeline.unwrap_or_default(),
         workflow: b.workflow,
         model: b.model.filter(|m| !m.trim().is_empty()),
         requester: Some(person.name),
-        criteria: b.criteria.filter(|c| !c.trim().is_empty()),
         screenshots: b
             .screenshots
             .into_iter()
@@ -493,7 +486,7 @@ async fn job_approve(
     Path(id): Path<String>,
 ) -> Response {
     let by = person.name.clone();
-    match access::approve(&app.server, &person, &id).await {
+    match access::on_job(&app.server, &person, &id).await {
         Ok(()) => {
             answer(api::factory::job_decide(&app.server.factory, id, JobEvent::Approved, by).await)
         }
@@ -522,20 +515,6 @@ async fn job_comment(
     let by = person.name.clone();
     let comment = api::factory::job_comment(&app.server.factory, id.clone(), b.text, by);
     on_job(&app, &person, &id, async { answer(comment.await) }).await
-}
-
-#[derive(Deserialize)]
-struct Parts {
-    parts: Vec<String>,
-}
-
-async fn job_parts(
-    State(app): State<App>,
-    Extension(person): Extension<Person>,
-    Path(id): Path<String>,
-    Json(b): Json<Parts>,
-) -> Response {
-    decide_as(&app, &person, id, JobEvent::PartsSet { parts: b.parts }).await
 }
 
 /// A job's kept screenshot or recording, as its bytes.
@@ -581,28 +560,6 @@ async fn job_extend(
     Path(id): Path<String>,
 ) -> Response {
     decide_as(&app, &person, id, JobEvent::Extended).await
-}
-
-async fn dials(State(app): State<App>) -> Response {
-    answer(api::factory::dials(&app.server.factory).await)
-}
-
-#[derive(Deserialize)]
-struct SetDial {
-    dial: bastion_core::Dial,
-}
-
-/// A word that is not a stage, or a dial that is not `lights_on` or
-/// `dark`, is refused here as a bad request.
-async fn dials_set(
-    State(app): State<App>,
-    Path(stage): Path<bastion_core::Stage>,
-    Json(b): Json<SetDial>,
-) -> Response {
-    read_again(
-        &app,
-        api::factory::dials_set(&app.server.factory, stage, b.dial).await,
-    )
 }
 
 async fn evals(State(app): State<App>) -> Response {
@@ -718,16 +675,6 @@ async fn settings(State(app): State<App>) -> Response {
 async fn settings_set(State(app): State<App>, Json(v): Json<SettingsView>) -> Response {
     let s = &app.server;
     answer(api::settings::settings_set(&s.events, &s.factory, v).await)
-}
-
-#[derive(Deserialize)]
-struct Preset {
-    preset: String,
-}
-
-async fn settings_preset(State(app): State<App>, Json(b): Json<Preset>) -> Response {
-    let s = &app.server;
-    answer(api::settings::settings_preset(&s.events, &s.factory, b.preset).await)
 }
 
 async fn settings_history(State(app): State<App>) -> Response {
@@ -1053,7 +1000,6 @@ mod tests {
         reads::<Submit>(api::JobSubmit {
             workspace: s("w"),
             request: s("r"),
-            pipeline: Some(s("full_no_acceptance")),
             workflow: None,
             model: Some(s("deepseek/deepseek-flash")),
             ..Default::default()
@@ -1061,14 +1007,6 @@ mod tests {
         reads::<Text>(api::JobComment {
             id: s("j1"),
             text: s("x"),
-        });
-        reads::<Parts>(api::JobParts {
-            id: s("j1"),
-            parts: vec![s("a")],
-        });
-        reads::<SetDial>(api::DialsSet {
-            stage: s("plan"),
-            dial: s("dark"),
         });
         reads::<Arm>(api::EvalApply {
             id: s("e1"),
@@ -1088,7 +1026,6 @@ mod tests {
             function: s("f"),
             up: false,
         });
-        reads::<Preset>(api::SettingsPreset { preset: s("low") });
         reads::<Version>(api::SettingsRestore { version: 3 });
     }
 
@@ -1221,7 +1158,7 @@ mod tests {
 
             let (status, _) = call(
                 s.clone(),
-                post("/settings/preset", "mia-token", r#"{"preset":"low"}"#),
+                post("/settings/restore", "mia-token", r#"{"version":1}"#),
             )
             .await;
             assert_eq!(

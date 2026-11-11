@@ -1,7 +1,6 @@
 //! The workflows Bastion ships, as steps with their text filled in (D39).
 //! Each is the owner's to change: one is saved only while no workflow has
-//! its id, and a workflow seeded as stages is turned into steps only while
-//! its first version is unchanged.
+//! its id.
 
 use bastion_core::workflow::{Graph, Link, Node, Reach};
 use bastion_core::{Dial, Stage};
@@ -130,21 +129,6 @@ if pr is None:
 merged = call("PUT", f"/pulls/{pr['number']}/merge", {"merge_method": "merge"})
 print("Merged " + pr["html_url"] + " as " + merged["sha"])
 PY"#;
-
-/// The seeded workflows that are made of stages, by id.
-const STAGED: [&str; 11] = [
-    "research",
-    "bug-fix",
-    "dependency-upgrade",
-    "test-coverage",
-    "weekly-status",
-    "decision-record",
-    "onboarding-guide",
-    "incident-response",
-    "incident-postmortem",
-    "runbook",
-    "infrastructure-change",
-];
 
 /// One step, `x` from the left.
 struct Step {
@@ -282,65 +266,25 @@ fn chain(steps: Vec<Step>) -> Graph {
     }
 }
 
-/// A seeded workflow of stages as steps: plan reads and changes nothing,
-/// build is the gate before the finish, and land goes, as the finish
-/// lands (D41).
-fn as_steps(g: &Graph) -> Graph {
-    let nodes = g.nodes.iter().filter(|n| n.stage != Stage::Land).map(|n| {
-        let mut n = n.clone();
-        match n.stage {
-            Stage::Plan => {
-                n.stage = Stage::Prompt;
-                n.note = format!("Do not change any file. {}", n.note);
-                n.reach.reads_only = true;
-            }
-            Stage::Build => {
-                n.stage = Stage::Prompt;
-                n.dial = Dial::LightsOn;
-            }
-            _ => {}
-        }
-        n
-    });
-    let land: Vec<&str> = g
-        .nodes
-        .iter()
-        .filter(|n| n.stage == Stage::Land)
-        .map(|n| n.id.as_str())
-        .collect();
-    let links = g
-        .links
-        .iter()
-        .filter(|l| !land.contains(&l.from.as_str()) && !land.contains(&l.to.as_str()));
-    Graph {
-        nodes: nodes.collect(),
-        links: links.cloned().collect(),
-    }
+/// The graph Bastion ships as workflow `id`, for the tests.
+#[cfg(test)]
+pub fn graph_of(id: &str) -> Option<Graph> {
+    let (.., steps) = shipped().into_iter().find(|(shipped, ..)| *shipped == id)?;
+    Some(chain(steps))
 }
 
-/// Save each shipped workflow no workflow has the id of, and turn each
-/// seeded workflow still as seeded into steps.
+/// Whether Bastion ships workflow `id`.
+pub fn ships(id: &str) -> bool {
+    shipped().iter().any(|(shipped, ..)| *shipped == id)
+}
+
+/// Save each shipped workflow no workflow has the id of.
 pub async fn seed(store: &dyn Store) -> Result<(), String> {
     let kept = store.workflows().await?;
     let has = |id: &str| kept.iter().any(|k| k.0 == id);
     for (id, name, steps) in shipped() {
         if !has(id) {
             save(store, id, name, chain(steps)).await?;
-        }
-    }
-    for (id, name, version) in kept
-        .iter()
-        .filter(|k| STAGED.contains(&k.0.as_str()) && k.2 == 1)
-    {
-        let Some(graph) = store.graph_at(id, *version).await? else {
-            continue;
-        };
-        if graph
-            .nodes
-            .iter()
-            .any(|n| matches!(n.stage, Stage::Plan | Stage::Build | Stage::Land))
-        {
-            save(store, id, name, as_steps(&graph)).await?;
         }
     }
     Ok(())
@@ -361,16 +305,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_shipped_workflow_is_steps_only_and_checks() {
+    fn every_shipped_workflow_checks_and_fills_in_its_scripts() {
         for (id, _, steps) in shipped() {
             let g = chain(steps);
             assert_eq!(g.check(), Ok(()), "{id}");
-            assert!(
-                g.nodes
-                    .iter()
-                    .all(|n| bastion_core::workflow::custom(n.stage)),
-                "{id}"
-            );
             let script = g.nodes.iter().map(|n| n.run.as_str()).collect::<String>();
             assert!(!script.contains("@GITHUB@"), "{id}");
         }
@@ -378,44 +316,5 @@ mod tests {
         let merge = pr.nodes.iter().find(|n| n.id == "merge").unwrap();
         assert!(merge.reach.network && merge.reach.secrets == ["GH_TOKEN"]);
         assert!(merge.run.contains("def pull_request"));
-    }
-
-    #[test]
-    fn a_seeded_workflow_of_stages_turns_into_steps_without_its_land() {
-        let node = |id: &str, stage, note: &str| Node {
-            id: id.into(),
-            stage,
-            run: String::new(),
-            dial: Dial::Dark,
-            note: note.into(),
-            results: Vec::new(),
-            reach: Reach::default(),
-            x: 0,
-            y: 0,
-        };
-        let link = |from: &str, to: &str| Link {
-            from: from.into(),
-            to: to.into(),
-        };
-        let staged = Graph {
-            nodes: vec![
-                node("plan", Stage::Plan, "Find the cause."),
-                node("build", Stage::Build, "Fix it."),
-                node("land", Stage::Land, ""),
-            ],
-            links: vec![link("plan", "build"), link("build", "land")],
-        };
-        let steps = as_steps(&staged);
-        assert_eq!(steps.check(), Ok(()));
-        assert_eq!(steps.nodes.len(), 2);
-        assert_eq!(
-            steps.nodes[0].note,
-            "Do not change any file. Find the cause."
-        );
-        assert_eq!(
-            (steps.nodes[1].stage, steps.nodes[1].dial),
-            (Stage::Prompt, Dial::LightsOn)
-        );
-        assert_eq!(steps.links.len(), 1);
     }
 }

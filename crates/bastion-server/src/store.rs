@@ -99,6 +99,9 @@ pub struct Record {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Artifact {
     pub stage: Stage,
+    /// The id of the step it came from; empty from before steps had ids.
+    #[serde(default)]
+    pub step: String,
     pub body: String,
     pub created_at: u64,
 }

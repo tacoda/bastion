@@ -4,9 +4,9 @@ use std::collections::BTreeMap;
 use std::sync::Mutex;
 
 use super::*;
+use bastion_core::Stage;
 use bastion_core::audit::Entry;
 use bastion_core::govern::{Capability, Constraint};
-use bastion_core::{Dials, Stage, State};
 
 /// The rows `keep` picks, in order.
 pub(crate) fn matching<T: Clone>(rows: &Mutex<Vec<T>>, keep: impl Fn(&T) -> bool) -> Vec<T> {
@@ -24,7 +24,6 @@ pub struct FakeStore {
     pub workspaces: Mutex<Vec<Workspace>>,
     pub jobs: Mutex<BTreeMap<String, Record>>,
     pub artifacts: Mutex<Vec<(String, Artifact)>>,
-    pub dials: Mutex<Dials>,
     pub constraints: Mutex<Vec<Constraint>>,
     pub capabilities: Mutex<Vec<Capability>>,
     pub held: Mutex<Vec<HeldCall>>,
@@ -79,14 +78,9 @@ impl Store for FakeStore {
 
     fn active(&self) -> Answer<'_, Vec<Record>> {
         let all = self.jobs.lock().unwrap();
-        let waited_on: Vec<String> = all
-            .values()
-            .filter(|r| r.job.state == State::Queued)
-            .filter_map(|r| r.job.after.clone())
-            .collect();
         let mut some: Vec<Record> = all
             .values()
-            .filter(|r| !r.job.state.finished() || waited_on.contains(&r.job.id))
+            .filter(|r| !r.job.state.finished())
             .cloned()
             .collect();
         some.sort_by_key(|r| std::cmp::Reverse(r.created_at));

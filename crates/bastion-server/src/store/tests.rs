@@ -67,8 +67,8 @@ fn an_update_that_matches_no_row_is_stale() {
                 .unwrap()
                 .contains("WHERE id = ? AND rev = ?")
         );
-        assert_eq!(update["params"][23], "j1");
-        assert_eq!(update["params"][24], 1);
+        let params = update["params"].as_array().unwrap();
+        assert_eq!(params[params.len() - 2..], [json!("j1"), json!(1)]);
     });
 }
 
@@ -139,7 +139,7 @@ fn transactions_at(version: u64) -> Vec<Vec<String>> {
 #[test]
 fn migration_1_rebuilds_the_staged_tables_once_with_deferred_keys() {
     let fresh = transactions_at(0);
-    assert_eq!(fresh.len(), 5, "the schema, then migrations 1 to 4");
+    assert_eq!(fresh.len(), 6, "the schema, then migrations 1 to 5");
     let m1 = &fresh[1];
     assert_eq!(m1.first().unwrap(), "PRAGMA defer_foreign_keys = ON");
     assert_eq!(m1.last().unwrap(), "PRAGMA user_version = 1");
@@ -171,7 +171,15 @@ fn migration_1_rebuilds_the_staged_tables_once_with_deferred_keys() {
         let renamed = format!("UPDATE {table} SET stage = 'shell' WHERE stage = 'command'");
         assert!(m4.contains(&renamed), "{table}");
     }
-    assert_eq!(transactions_at(4).len(), 1, "nothing left to migrate");
+    let m5 = &fresh[5];
+    assert_eq!(m5.last().unwrap(), "PRAGMA user_version = 5");
+    assert!(
+        m5.iter()
+            .any(|s| s.starts_with("DELETE FROM workflow_nodes WHERE stage IN ('land'")),
+        "{m5:#?}"
+    );
+    assert_eq!(transactions_at(4).len(), 2, "only migration 5 is left");
+    assert_eq!(transactions_at(5).len(), 1, "nothing left to migrate");
 }
 
 #[test]
@@ -223,12 +231,7 @@ fn open_seeds_the_owner_defaults_without_overwriting() {
 fn a_row_reads_back_as_the_record_it_was_written_from() {
     let mut r = record();
     r.job.state = State::NeedsYou;
-    // Kept at a checkpoint before D33.
-    r.job.stage = Stage::Approve;
-    r.job.plan = Some("1. x".into());
-    r.job.pipeline = bastion_core::Pipeline::Full;
-    r.job.back_to = Some(Stage::Checks);
-    r.job.done_tasks = 2;
+    r.job.stage = Stage::Shell;
     r.job.node = Some("lint".into());
     r.runtime.sandbox = Some("vm-1".into());
     r.runtime.workflow = Some("w1".into());
@@ -241,9 +244,7 @@ fn a_row_reads_back_as_the_record_it_was_written_from() {
         .zip(values.as_array().unwrap())
         .map(|(c, v)| (c.to_string(), v.clone()))
         .collect();
-    let mut folded = r;
-    folded.job.stage = Stage::Plan;
-    assert_eq!(sql::record(&Value::Object(row)).unwrap(), folded);
+    assert_eq!(sql::record(&Value::Object(row)).unwrap(), r);
 }
 
 #[test]

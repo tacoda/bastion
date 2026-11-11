@@ -138,7 +138,6 @@ async fn act(command: Command, server: Server) -> Result<(), String> {
             let submit = api::JobSubmit {
                 workspace,
                 request,
-                pipeline: None,
                 workflow: None,
                 model: None,
                 ..Default::default()

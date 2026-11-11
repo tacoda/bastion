@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use bastion_core::{Job, Stage, State};
+use bastion_core::{Job, Stage};
 use serde_json::{Value, json};
 
 use super::schema::*;
@@ -140,20 +140,14 @@ impl SqlStore {
         Ok(parsed.collect())
     }
 
-    /// Fill each job's tasks, results and revision counts from their tables. `filter`
-    /// narrows both reads, with `params` for its marks.
+    /// Fill each job's results and revision counts from their tables.
+    /// `filter` narrows both reads, with `params` for its marks.
     async fn with_lists(
         &self,
         mut records: Vec<Record>,
         filter: &str,
         params: Value,
     ) -> Result<Vec<Record>, String> {
-        let tasks = self
-            .query(
-                &format!("SELECT job, text FROM tasks {filter} ORDER BY job, n"),
-                params.clone(),
-            )
-            .await?;
         let results = self
             .query(
                 &format!("SELECT job, name, body FROM job_results {filter}"),
@@ -169,9 +163,6 @@ impl SqlStore {
         for r in &mut records {
             let id = r.job.id.as_str();
             let mine = |row: &&Value| row["job"].as_str() == Some(id);
-            for row in tasks.iter().filter(mine) {
-                r.job.tasks.push(parse(row, "text")?);
-            }
             for row in results.iter().filter(mine) {
                 r.job
                     .results
@@ -203,45 +194,27 @@ pub(super) fn text(row: &Value, column: &str) -> Option<String> {
     row[column].as_str().map(String::from)
 }
 
-/// A live job kept at a checkpoint before D33 waits on the step it judged.
+/// A job as its row keeps it. The columns of the stages that went (D39),
+/// such as `plan` and `pr`, stay in the table and are no longer read.
 pub(super) fn record(row: &Value) -> Result<Record, String> {
-    let state: State = parse(row, "state")?;
-    let stage: Stage = parse(row, "stage")?;
     Ok(Record {
         job: Job {
             id: parse(row, "id")?,
             workspace: parse(row, "workspace")?,
             request: parse(row, "request")?,
-            stage: if state.finished() {
-                stage
-            } else {
-                bastion_core::folded(stage)
-            },
-            state,
+            stage: parse(row, "stage")?,
+            state: parse(row, "state")?,
             question: text(row, "question"),
             feedback: text(row, "feedback"),
-            plan: text(row, "plan"),
             failures: parse(row, "failures")?,
             error: text(row, "error"),
-            pr: text(row, "pr"),
-            ci_fixes: row["ci_fixes"].as_u64().unwrap_or(0) as u32,
             updated_at: parse(row, "updated_at")?,
-            pipeline: parse(row, "pipeline")?,
-            back_to: parse(row, "back_to")?,
             // Filled from their own tables (`with_lists`).
             revisions: Default::default(),
             last_refusal: text(row, "last_refusal"),
-            tasks: Vec::new(),
             flow: Vec::new(),
             node: text(row, "node"),
             results: Default::default(),
-            parent: text(row, "parent"),
-            after: text(row, "after_job"),
-            part: text(row, "part"),
-            done_tasks: parse(row, "done_tasks")?,
-            criteria: text(row, "criteria"),
-            falsify_tried: row["falsify_tried"].as_i64() == Some(1)
-                || row["falsify_tried"].as_bool() == Some(true),
         },
         runtime: Runtime {
             worktree: text(row, "worktree"),
@@ -277,7 +250,7 @@ pub(super) fn job_params(r: &Record) -> Value {
         name(j.state),
         j.question,
         j.feedback,
-        j.plan,
+        Value::Null,
         j.failures,
         j.error,
         r.runtime.worktree,
@@ -286,46 +259,41 @@ pub(super) fn job_params(r: &Record) -> Value {
         r.rev,
         r.created_at,
         j.updated_at,
-        j.pr,
-        j.ci_fixes,
+        Value::Null,
+        0,
         r.runtime.issue,
-        name(j.pipeline),
-        j.back_to.map(name),
+        "short",
+        Value::Null,
         j.last_refusal,
-        j.done_tasks,
-        j.criteria,
-        j.falsify_tried,
+        0,
+        Value::Null,
+        false,
         r.runtime.requester,
         r.runtime.workflow,
         r.runtime.workflow_version,
         j.node,
-        j.parent,
-        j.after,
-        j.part,
+        Value::Null,
+        Value::Null,
+        Value::Null,
         approved(r),
         r.runtime.model
     ])
 }
 
-/// A job's tasks, results and revision counts, written whole over what was there.
+/// A job's results and revision counts, written whole over what was there.
 pub(super) fn list_statements(j: &Job) -> Vec<Value> {
     let statement = |sql: &str, params: Value| json!({ "sql": sql, "params": params });
-    let tasks = j.tasks.iter().enumerate().map(|(n, text)| {
-        statement(
-            "INSERT INTO tasks (job, n, text) VALUES (?, ?, ?)",
-            json!([j.id, n, text]),
-        )
-    });
     let results = j.results.iter().map(|(name, body)| {
         statement(
             "INSERT INTO job_results (job, name, body) VALUES (?, ?, ?)",
             json!([j.id, name, body]),
         )
     });
-    let revisions = j.revisions.iter().map(|(stage, count)| {
+    // Each step's count, by its id, in the column that held a stage.
+    let revisions = j.revisions.iter().map(|(step, count)| {
         statement(
             "INSERT INTO revisions (job, stage, count) VALUES (?, ?, ?)",
-            json!([j.id, name(stage), count]),
+            json!([j.id, step, count]),
         )
     });
     [
@@ -334,7 +302,6 @@ pub(super) fn list_statements(j: &Job) -> Vec<Value> {
         statement("DELETE FROM revisions WHERE job = ?", json!([j.id])),
     ]
     .into_iter()
-    .chain(tasks)
     .chain(results)
     .chain(revisions)
     .collect()
@@ -448,13 +415,13 @@ impl Store for SqlStore {
             let j = &r.job;
             let rows = self
                 .execute(
-                    "UPDATE jobs SET stage = ?, state = ?, question = ?, feedback = ?, plan = ?, failures = ?, error = ?, worktree = ?, sandbox = ?, session = ?, updated_at = ?, pr = ?, ci_fixes = ?, issue = ?,
-                     pipeline = ?, back_to = ?, last_refusal = ?, done_tasks = ?, criteria = ?, falsify_tried = ?, node = ?, part = ?, approved = ?, rev = rev + 1
+                    "UPDATE jobs SET stage = ?, state = ?, question = ?, feedback = ?, failures = ?, error = ?, worktree = ?, sandbox = ?, session = ?, updated_at = ?, issue = ?,
+                     last_refusal = ?, node = ?, approved = ?, rev = rev + 1
                      WHERE id = ? AND rev = ? RETURNING rev",
                     json!([
-                        name(j.stage), name(j.state), j.question, j.feedback, j.plan, j.failures, j.error,
-                        r.runtime.worktree, r.runtime.sandbox, r.runtime.session, j.updated_at, j.pr, j.ci_fixes, r.runtime.issue,
-                        name(j.pipeline), j.back_to.map(name), j.last_refusal, j.done_tasks, j.criteria, j.falsify_tried, j.node, j.part, approved(r), j.id, r.rev
+                        name(j.stage), name(j.state), j.question, j.feedback, j.failures, j.error,
+                        r.runtime.worktree, r.runtime.sandbox, r.runtime.session, j.updated_at, r.runtime.issue,
+                        j.last_refusal, j.node, approved(r), j.id, r.rev
                     ]),
                 )
                 .await?;
@@ -471,8 +438,8 @@ impl Store for SqlStore {
     fn add_artifact<'a>(&'a self, job: &'a str, a: &'a Artifact) -> Answer<'a, ()> {
         Box::pin(async move {
             self.execute(
-                "INSERT INTO artifacts (job, stage, body, created_at) VALUES (?, ?, ?, ?)",
-                json!([job, name(a.stage), a.body, a.created_at]),
+                "INSERT INTO artifacts (job, stage, step, body, created_at) VALUES (?, ?, ?, ?, ?)",
+                json!([job, name(a.stage), a.step, a.body, a.created_at]),
             )
             .await
             .map(|_| ())
@@ -490,7 +457,7 @@ impl Store for SqlStore {
     fn artifacts<'a>(&'a self, job: &'a str) -> Answer<'a, Vec<Artifact>> {
         Box::pin(async move {
             self.query(
-                "SELECT stage, body, created_at FROM artifacts WHERE job = ? ORDER BY id",
+                "SELECT stage, step, body, created_at FROM artifacts WHERE job = ? ORDER BY id",
                 json!([job]),
             )
             .await?
@@ -498,6 +465,7 @@ impl Store for SqlStore {
             .map(|r| {
                 Ok(Artifact {
                     stage: parse(r, "stage")?,
+                    step: parse(r, "step")?,
                     body: parse(r, "body")?,
                     created_at: parse(r, "created_at")?,
                 })

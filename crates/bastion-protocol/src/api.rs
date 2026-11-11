@@ -184,8 +184,7 @@ at!(JobExtend, "POST", "/jobs/{id}/extend", id, ());
 pub struct JobSubmit {
     pub workspace: String,
     pub request: String,
-    /// `short`, `full` or `full_no_acceptance`; the server's default when none.
-    pub pipeline: Option<String>,
+    /// The workflow to run, by id; the shipped `short` when none.
     pub workflow: Option<String>,
     /// The model every turn runs on, as `provider/model`; the server's
     /// plan and build models when none.
@@ -232,48 +231,7 @@ impl Request for JobComment {
     }
 }
 
-/// Set the parts scope proposed, while it waits. One part, or none,
-/// keeps the request as one job.
-#[derive(Clone, Debug, Serialize)]
-pub struct JobParts {
-    #[serde(skip)]
-    pub id: String,
-    pub parts: Vec<String>,
-}
-
-impl Request for JobParts {
-    const METHOD: &'static str = "POST";
-    const ROUTE: &'static str = "/jobs/{id}/parts";
-    const BODY: bool = true;
-    type Answer = ();
-    fn path(&self) -> String {
-        fill(Self::ROUTE, "id", &self.id)
-    }
-}
-
 // Governance.
-bare!(Dials, "GET", "/dials", DialsView);
-
-/// Set a checkpoint's dial.
-#[derive(Clone, Debug, Serialize)]
-pub struct DialsSet {
-    /// The stage's snake_case name.
-    #[serde(skip)]
-    pub stage: String,
-    /// `lights_on`, `dim` or `dark`.
-    pub dial: String,
-}
-
-impl Request for DialsSet {
-    const METHOD: &'static str = "PUT";
-    const ROUTE: &'static str = "/dials/{stage}";
-    const BODY: bool = true;
-    type Answer = ();
-    fn path(&self) -> String {
-        fill(Self::ROUTE, "stage", &self.stage)
-    }
-}
-
 with!(HeldAllow, "POST", "/held/allow", HeldCallRef, ());
 
 /// Refuse a held call, telling the agent why.
@@ -380,19 +338,6 @@ with!(SettingsSet, "PUT", "/settings", SettingsView, ());
 bare!(Notify, "GET", "/notify", NotifyView);
 with!(NotifySetWebhook, "PUT", "/notify", NotifySet, ());
 bare!(NotifyTest, "POST", "/notify/test", ());
-
-/// Apply a named preset.
-#[derive(Clone, Debug, Serialize)]
-pub struct SettingsPreset {
-    pub preset: String,
-}
-
-impl Request for SettingsPreset {
-    const METHOD: &'static str = "POST";
-    const ROUTE: &'static str = "/settings/preset";
-    const BODY: bool = true;
-    type Answer = ();
-}
 
 bare!(
     SettingsHistory,
@@ -608,12 +553,9 @@ fn factory_requests() -> Vec<(&'static str, &'static str)> {
         JobSubmit,
         JobApprove,
         JobComment,
-        JobParts,
         JobStop,
         JobRetry,
         JobExtend,
-        Dials,
-        DialsSet,
         HeldAllow,
         HeldRefuse,
         Constraints,
@@ -640,7 +582,6 @@ fn admin_requests() -> Vec<(&'static str, &'static str)> {
         Notify,
         NotifySetWebhook,
         NotifyTest,
-        SettingsPreset,
         SettingsHistory,
         SettingsRestore,
         Models,
@@ -687,6 +628,6 @@ mod tests {
         assert_eq!(comment.path(), "/jobs/j1/comment");
         let spaced = WorkflowDelete { id: "a b/c".into() };
         assert_eq!(spaced.path(), "/workflows/a%20b%2Fc");
-        assert_eq!(every().len(), 74);
+        assert_eq!(every().len(), 70);
     }
 }

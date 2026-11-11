@@ -1,5 +1,5 @@
 //! The Settings page: the Bastion servers, people, model providers and
-//! hosts, the factory, oversight, history, workspaces and accounts, each a
+//! hosts, the factory, history, workspaces and accounts, each a
 //! section in its own file.
 
 mod factory;
@@ -75,7 +75,7 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
 pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let (servers, [workspaces, accounts]) = places::view(&state.places, ctx);
     let [providers, hosts] = providers::view(&state.providers);
-    let [factory, oversight, history] = factory::view(&state.factory);
+    let [factory, history] = factory::view(&state.factory);
     let sections = [
         servers,
         people::view(&state.people, ctx),
@@ -83,7 +83,6 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         hosts,
         factory,
         notify::view(&state.notify),
-        oversight,
         history,
         workspaces,
         accounts,

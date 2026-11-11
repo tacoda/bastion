@@ -14,17 +14,17 @@ fn decision(job: &Job, event: &Event, by: &str) -> String {
         (Event::Commented { text }, Some(_)) => format!("answered by {by}: {text}"),
         (Event::Commented { text }, None) => format!("sent back by {by}: {text}"),
         (Event::Retried, _) => format!("retried by {by}"),
-        (Event::PartsSet { parts }, _) => format!("parts set by {by}: {}", parts.join("; ")),
         (Event::Extended, _) => format!("extended by {by}"),
         _ if stuck(job) => format!("shipped anyway by {by}, waiving: {}", waived(job)),
         _ => format!("approved by {by}"),
     };
-    format!("{}: {verdict}", name(job.stage))
+    format!("{}: {verdict}", job.node.as_deref().unwrap_or("the finish"))
 }
 
 /// The job waits at a step that failed, which approve goes on without.
+/// At a failed finish, approve finishes again and waives nothing.
 fn stuck(job: &Job) -> bool {
-    bastion_core::actions(job).contains(&bastion_core::Action::Retry)
+    job.node.is_some() && bastion_core::actions(job).contains(&bastion_core::Action::Retry)
 }
 
 /// The first line of what failed, short enough for one audit line.
@@ -75,7 +75,7 @@ mod tests {
     #[test]
     fn a_persons_decision_names_the_step_and_the_person() {
         let mut job = Job::new("j1".into(), "w".into(), "r".into(), 1);
-        job.stage = Stage::CodeReview;
+        job.node = Some("code_review".into());
         let note = Event::Commented {
             text: "fix 1".into(),
         };
@@ -97,12 +97,12 @@ mod tests {
             decision(&job, &Event::Approved, "ada"),
             "code_review: shipped anyway by ada, waiving: 2 tests failed"
         );
-        job.stage = Stage::Land;
+        job.node = None;
         assert_eq!(
             decision(&job, &Event::Approved, "ada"),
-            "land: approved by ada"
+            "the finish: approved by ada"
         );
-        (job.stage, job.error) = (Stage::CodeReview, None);
+        (job.node, job.error) = (Some("code_review".into()), None);
         job.question = Some("Which port?".into());
         assert_eq!(
             decision(&job, &note, "ada"),

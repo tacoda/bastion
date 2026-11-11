@@ -97,16 +97,16 @@ impl Factory {
 
     async fn send_onboard(&self, id: &str, vm: &str, session: &str) -> Result<(), String> {
         let settings = settings_store::current(&*self.store).await?;
-        let model = settings.model(Stage::Plan);
+        let model = settings.model_for(true, None);
         turn::provider_ready(&*self.engine, &model.provider).await?;
         let mode = json!({ "session_id": session, "mode": "full" });
         self.engine.call(NS, "approval::set-mode", mode).await?;
-        // The gate judges the turn's calls as a read-only step's.
+        // The gate judges the turn's calls as a step's that only reads (D42).
         let send = json!({
             "session_id": session, "provider": model.provider, "model": model.model,
             "message": format!("{TOOL_GUIDE}\n\n{BRIEF}"),
             "options": { "max_turns": MAX_TURN_STEPS, "functions": { "allow": TOOLS },
-                "metadata": { "sandbox_id": vm, "job": id, "stage": Stage::Discover } },
+                "metadata": { "sandbox_id": vm, "job": id, "stage": Stage::Prompt, "reads_only": true } },
         });
         self.engine
             .call_for(NS, "harness::send", send, 60_000)
@@ -191,7 +191,8 @@ mod tests {
             };
             engine.fire("harness::turn-completed", "session_id", sent.clone());
             assert_eq!(draft.await.unwrap().unwrap().checks, "cargo test");
-            assert_eq!(sent["options"]["metadata"]["stage"], "discover");
+            assert_eq!(sent["options"]["metadata"]["stage"], "prompt");
+            assert_eq!(sent["options"]["metadata"]["reads_only"], true);
             let calls = engine.calls.lock().unwrap();
             let vm = calls.iter().find(|c| c.1 == "sandbox::create").unwrap();
             assert_eq!(vm.2["network"], false);

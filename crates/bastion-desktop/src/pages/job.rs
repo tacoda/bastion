@@ -25,9 +25,6 @@ pub struct State {
     id: String,
     detail: Option<JobDetail>,
     note: text_editor::Content,
-    /// Scope's parts, one per line, as the person is setting them.
-    parts: text_editor::Content,
-    parts_edited: bool,
     error: String,
     /// What the owner typed to refuse each held call, by call id.
     feedback: BTreeMap<String, String>,
@@ -48,8 +45,6 @@ impl State {
             id,
             detail: None,
             note: text_editor::Content::new(),
-            parts: text_editor::Content::new(),
-            parts_edited: false,
             error: String::new(),
             feedback: BTreeMap::new(),
             toggled: BTreeSet::new(),
@@ -71,7 +66,6 @@ impl State {
 pub enum Msg {
     Read(Result<Box<JobDetail>, String>),
     Edit(text_editor::Action),
-    EditParts(text_editor::Action),
     /// A click on a diff line: its file and its line.
     CommentAt(String, u32),
     Act(Action),
@@ -90,7 +84,6 @@ pub enum Msg {
 pub enum Action {
     Approve,
     Comment,
-    SetParts,
     Retry,
     Extend,
     Stop,
@@ -179,10 +172,6 @@ fn act(state: &State, ctx: &Ctx, action: Action) -> Task<Message> {
             let text = state.note.text().trim().to_string();
             ask(ctx, api::JobComment { id, text })
         }
-        Action::SetParts => {
-            let parts = lines(&state.parts.text());
-            ask(ctx, api::JobParts { id, parts })
-        }
     }
 }
 
@@ -207,22 +196,13 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
                 .map(|s| (s.id.clone(), s.state.clone()))
                 .collect();
             state.docs = parsed(&d.artifacts);
-            // A read again keeps what the person is typing.
-            if !state.parts_edited {
-                state.parts = text_editor::Content::with_text(&d.job.parts.join("\n"));
-            }
             state.detail = Some(*d);
         }
         Msg::Read(Err(e)) | Msg::Acted(Err(e)) => state.error = e,
         Msg::Edit(action) => state.note.perform(action),
-        Msg::EditParts(action) => {
-            state.parts_edited |= action.is_edit();
-            state.parts.perform(action);
-        }
         Msg::CommentAt(path, n) => comment_at(state, path, n, ctx.shift),
         Msg::Act(action) => return act(state, ctx, action),
         Msg::Acted(Ok(_)) => {
-            state.parts_edited = false;
             state.note = text_editor::Content::new();
             state.pick = None;
             state.error.clear();
@@ -243,60 +223,36 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
     Task::none()
 }
 
-/// What the wait judges: the step's own artifact, with the diff after the
-/// build and the code review, and before a step that lands the change.
+/// Whether an artifact is a change: a diff, or the note that there is none.
+fn is_change(a: &ArtifactView) -> bool {
+    a.body.starts_with("diff --git") || a.body.starts_with("No commits:")
+}
+
+/// What the wait judges: the waiting step's latest report or output, and
+/// the latest change any step made.
 fn judged(d: &JobDetail) -> (Option<String>, Option<String>) {
-    let latest = |stage: &str| {
+    let at = d.job.node.as_deref().unwrap_or_default();
+    let latest = |keep: &dyn Fn(&ArtifactView) -> bool| {
         d.artifacts
             .iter()
             .rev()
-            .find(|a| a.stage == stage)
+            .find(|a| keep(a))
             .map(|a| a.body.clone())
     };
-    match d.job.stage.as_str() {
-        "build" | "code_review" => (latest(&d.job.stage), latest("review")),
-        "land" => (latest("build"), latest("review")),
-        "ship" | "merge" => (latest("comprehend"), latest("review")),
-        stage => (latest(stage), None),
-    }
+    let report = latest(&|a| !at.is_empty() && a.step == at && !is_change(a));
+    (report, latest(&is_change))
 }
 
-/// What Approve does at a step that lands, ships, merges or deploys (D33).
-fn what_a_release_approve_does(stage: &str, failed: bool, has_pr: bool) -> Option<&'static str> {
-    Some(match stage {
-        "land" if has_pr && !failed => {
-            "CI passed on the pull request. Approve merges it, or stop the job."
-        }
-        "land" | "ship" | "merge" | "deploy" if failed => {
-            "Approve tries the step again, or stop the job."
-        }
-        "land" => "Approve lands the change on the workspace's branch.",
-        "ship" => "Approve pushes the change and opens its pull request.",
-        "merge" => "Approve merges the pull request.",
-        "deploy" => "Approve watches the deploy of the merged change.",
-        _ => return None,
-    })
-}
-
-/// What Approve does at the step the job waits on (D33).
+/// What Approve does where the job waits (D41).
 fn what_approve_does(d: &JobDetail) -> &'static str {
     let failed = d.job.error.is_some();
-    if let Some(release) = what_a_release_approve_does(&d.job.stage, failed, d.job.pr.is_some()) {
-        return release;
-    }
-    match d.job.stage.as_str() {
-        _ if failed => "Approve goes on without this step, or send it back with a note.",
-        "discover" => {
-            "Answer discovery's questions in a note, or approve to plan on its assumptions."
+    match (d.job.node.is_some(), failed) {
+        (false, true) => "Approve tries the finish again.",
+        (false, false) => {
+            "Approve finishes the job: its branch is ready, and the workspace merges it or leaves it."
         }
-        "define" => "Approve these criteria to write their tests, or send them back with a note.",
-        "refactor" => "Name the refactorings to make in a note, or approve to make none.",
-        "code_review" => "Name the findings to fix in a note, or approve to fix none.",
-        "prove" => "The proof is partial. Approve to go on, or send it back with a note.",
-        "comprehend" => {
-            "Try the change as the briefing says, then approve, or say what is wrong in a note."
-        }
-        _ => "Approve this step's result to move on, or send it back with a note.",
+        (true, true) => "Approve goes on without this step, or send it back with a note.",
+        (true, false) => "Approve this step's result to move on, or send it back with a note.",
     }
 }
 
@@ -405,12 +361,6 @@ fn header<'a>(d: &JobDetail, server: &str) -> Element<'a, Message> {
         chip(d.job.workspace.clone(), theme::MUTED),
         chip(d.job.id.clone(), theme::MUTED),
     ];
-    badges.extend(
-        d.job
-            .parent
-            .iter()
-            .map(|p| chip(format!("part of {p}"), theme::MUTED)),
-    );
     badges.push(chip(ago(d.job.created_at), theme::MUTED));
     badges.extend(
         d.job
@@ -418,29 +368,20 @@ fn header<'a>(d: &JobDetail, server: &str) -> Element<'a, Message> {
             .iter()
             .map(|u| link_chip(format!("issue {}", last_segment(u)), u.clone())),
     );
-    badges.extend(
-        d.job
-            .pr
-            .iter()
-            .map(|u| link_chip(format!("pull request {}", last_segment(u)), u.clone())),
-    );
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
     badges.extend(still_working(&d.job, now).map(|t| chip(t, theme::WARN)));
-    let mut head = column![text(d.job.request.clone()).size(24).font(theme::BOLD)].spacing(8);
-    if let Some(p) = &d.job.part {
-        head = head.push(text(format!("Part: {p}")));
-    }
+    let head = column![text(d.job.request.clone()).size(24).font(theme::BOLD)].spacing(8);
     head.push(row(badges).spacing(8).wrap()).into()
 }
 
 /// Why the job failed, or why its land did.
 fn failure<'a>(state: &State, d: &JobDetail) -> Option<Element<'a, Message>> {
     let e = d.job.error.clone()?;
-    let title = match (d.job.state.as_str(), d.job.stage.as_str()) {
+    let title = match (d.job.state.as_str(), d.job.node.is_some()) {
         ("failed", _) => "This job failed",
-        (_, "land" | "merge") => "The land failed; the VM and its commits are kept",
+        (_, false) => "The finish failed; the VM and its commits are kept",
         _ => "This step is stuck",
     };
     let mut body = column![
@@ -464,12 +405,13 @@ fn failure<'a>(state: &State, d: &JobDetail) -> Option<Element<'a, Message>> {
     )
 }
 
-/// Approving a stuck step goes on without it.
+/// Approving a stuck step goes on without it; at the finish, it tries again.
 fn approve_label(state: &State) -> &'static str {
-    if state.allows("retry") {
-        "Ship anyway"
-    } else {
-        "Approve"
+    let at_step = state.detail.as_ref().is_some_and(|d| d.job.node.is_some());
+    match (state.allows("retry"), at_step) {
+        (true, true) => "Ship anyway",
+        (true, false) => "Finish again",
+        _ => "Approve",
     }
 }
 
@@ -492,31 +434,6 @@ fn actions(state: &State) -> Element<'_, Message> {
             .push(send.on_press_maybe(ready.then_some(Message::Job(Msg::Act(Action::Comment)))));
     }
     buttons.into()
-}
-
-/// The non-blank lines of `text`, each trimmed.
-fn lines(text: &str) -> Vec<String> {
-    let kept = text.lines().map(str::trim).filter(|l| !l.is_empty());
-    kept.map(String::from).collect()
-}
-
-/// While scope waits: the parts it proposed, one per line, for the person to
-/// set before approving. One line, or none, keeps the request one job.
-fn parts(state: &State) -> Option<Element<'_, Message>> {
-    let job = &state.detail.as_ref()?.job;
-    if (job.stage.as_str(), job.state.as_str()) != ("scope", "needs_you") {
-        return None;
-    }
-    let label = "Parts, one per line, landed in this order (one line keeps it one job)";
-    let editor = text_editor(&state.parts)
-        .on_action(|a| Message::Job(Msg::EditParts(a)))
-        .height(96);
-    let set = button("Set parts")
-        .padding([8, 12])
-        .style(theme::secondary)
-        .on_press(Message::Job(Msg::Act(Action::SetParts)));
-    let body = column![text(label).size(13).color(theme::MUTED), editor, set].spacing(4);
-    Some(body.into())
 }
 
 fn note(state: &State) -> Option<Element<'_, Message>> {
@@ -568,7 +485,6 @@ fn waiting<'a>(state: &'a State, d: &'a JobDetail) -> Element<'a, Message> {
             body = body.push(diff::view(&change, comment, state.pick.as_ref()));
         }
     }
-    body = body.extend(parts(state));
     body = body.extend(note(state));
     container(body.push(actions(state)))
         .padding(16)
@@ -738,10 +654,10 @@ fn step_row<'a>(
         d.artifacts
             .iter()
             .rev()
-            .filter(|a| a.stage == step.stage)
+            .filter(|a| a.step == step.id)
             .map(|a| artifact(state, a)),
     );
-    if turn_step == Some(step.stage.as_str()) && !d.transcript.is_empty() {
+    if turn_step == Some(step.id.as_str()) && !d.transcript.is_empty() {
         body = body.push(turn(&d.transcript, state.turn_open));
     }
     if open {
@@ -753,9 +669,8 @@ fn step_row<'a>(
 
 fn steps<'a>(state: &'a State, d: &'a JobDetail) -> Element<'a, Message> {
     // The latest turn belongs to the last agent step that ran.
-    let agent =
-        |s: &&StepView| matches!(s.stage.as_str(), "plan" | "build") && s.state != "pending";
-    let turn_step = d.steps.iter().rev().find(agent).map(|s| s.stage.as_str());
+    let agent = |s: &&StepView| s.stage != "shell" && s.state != "pending";
+    let turn_step = d.steps.iter().rev().find(agent).map(|s| s.id.as_str());
     let rows = d.steps.iter().map(|s| step_row(state, d, s, turn_step));
     section("Steps".into(), Column::with_children(rows).into(), false)
 }
@@ -870,7 +785,8 @@ mod tests {
     #[test]
     fn an_artifact_reads_as_markdown() {
         let a = ArtifactView {
-            stage: "build".into(),
+            stage: "prompt".into(),
+            step: "build".into(),
             body: "**What I changed**\n- `calc.py`: a docstring\n".into(),
             created_at: 0,
         };
@@ -878,15 +794,6 @@ mod tests {
         let items = docs.values().next().unwrap().items();
         assert!(matches!(items[0], markdown::Item::Paragraph(_)));
         assert!(matches!(items[1], markdown::Item::List { .. }));
-    }
-
-    #[test]
-    fn parts_are_the_lines_typed_without_the_blank_ones() {
-        assert_eq!(
-            lines(" Add the model \n\n  \nAdd the page"),
-            ["Add the model", "Add the page"]
-        );
-        assert!(lines("").is_empty());
     }
 
     #[test]
@@ -916,18 +823,31 @@ mod tests {
     }
 
     #[test]
-    fn approve_says_what_it_does_at_a_release_step() {
-        assert_eq!(what_a_release_approve_does("plan", false, false), None);
-        assert!(
-            what_a_release_approve_does("land", false, true)
-                .unwrap()
-                .starts_with("CI passed")
+    fn a_wait_judges_its_steps_report_and_the_latest_change() {
+        let art = |step: &str, body: &str| ArtifactView {
+            stage: "prompt".into(),
+            step: step.into(),
+            body: body.into(),
+            created_at: 0,
+        };
+        let mut d = JobDetail::default();
+        d.job.node = Some("review".into());
+        d.artifacts = vec![
+            art("build", "Built."),
+            art("build", "diff --git a/x b/x"),
+            art("review", "Looks right."),
+        ];
+        assert_eq!(
+            judged(&d),
+            (
+                Some("Looks right.".into()),
+                Some("diff --git a/x b/x".into())
+            )
         );
-        assert!(
-            what_a_release_approve_does("merge", true, false)
-                .unwrap()
-                .starts_with("Approve tries")
-        );
+        assert!(what_approve_does(&d).starts_with("Approve this step's"));
+        (d.job.node, d.job.error) = (None, Some("conflict".into()));
+        assert_eq!(what_approve_does(&d), "Approve tries the finish again.");
+        assert_eq!(judged(&d).0, None, "the finish has no report of its own");
         let custom = StepView {
             id: "research".into(),
             stage: "skill".into(),

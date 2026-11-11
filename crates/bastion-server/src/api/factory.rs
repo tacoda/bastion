@@ -3,10 +3,10 @@
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
-use bastion_core::{Dial, Dials, Event, Pipeline, Stage, actions, steps};
+use bastion_core::{Event, actions, steps};
 use bastion_protocol::{
-    ArtifactView, CharterView, DialsView, HeldCallView, JobDetail, JobSummary, PipelineDials,
-    StepDial, StepView, TranscriptLine, Workspace,
+    ArtifactView, CharterView, HeldCallView, JobDetail, JobSummary, StepView, TranscriptLine,
+    Workspace,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -41,18 +41,15 @@ fn summary(r: &Record) -> JobSummary {
         workspace: j.workspace.clone(),
         request: j.request.clone(),
         stage: name(j.stage),
+        node: j.node.clone(),
         state: name(j.state),
         question: j.question.clone(),
         error: j.error.clone(),
         created_at: r.created_at,
         updated_at: j.updated_at,
         actions: actions(j).into_iter().map(name).collect(),
-        pr: j.pr.clone(),
         issue: r.runtime.issue.clone(),
         requester: r.runtime.requester.clone(),
-        parent: j.parent.clone(),
-        part: j.part.clone(),
-        parts: bastion_core::proposed(j),
     }
 }
 
@@ -310,17 +307,15 @@ pub async fn job(cell: &FactoryCell, id: String) -> Result<JobDetail, String> {
         .into_iter()
         .map(|a| ArtifactView {
             stage: name(a.stage),
+            step: a.step,
             body: a.body,
             created_at: a.created_at,
         })
         .collect();
     let transcript = transcript(&factory, record.runtime.session.as_deref()).await;
-    let steps = record
-        .job
-        .step_ids()
+    let steps = steps(&record.job)
         .into_iter()
-        .zip(steps(&record.job))
-        .map(|(id, (stage, state))| StepView {
+        .map(|(id, stage, state)| StepView {
             id,
             stage: name(stage),
             state: name(state),
@@ -400,48 +395,6 @@ pub async fn job_comment(
 
 pub async fn job_stop(cell: &FactoryCell, id: String) -> Result<(), String> {
     factory(cell)?.apply(&id, Event::Stopped).await
-}
-
-/// The dials of `pipeline`'s steps, in order, and the level they make.
-fn pipeline_dials(d: &Dials, pipeline: Pipeline) -> PipelineDials {
-    PipelineDials {
-        level: name(d.level(&pipeline.stages())),
-        steps: pipeline
-            .stages()
-            .into_iter()
-            .map(|s| StepDial {
-                stage: name(s),
-                dial: name(d.at(s)),
-            })
-            .collect(),
-    }
-}
-
-pub async fn dials(cell: &FactoryCell) -> Result<DialsView, String> {
-    let d = crate::settings_store::current(&**factory(cell)?.store())
-        .await?
-        .dials;
-    Ok(DialsView {
-        short: pipeline_dials(&d, Pipeline::Short),
-        full: pipeline_dials(&d, Pipeline::Full),
-    })
-}
-
-/// Set one step's dial, as a new settings version.
-/// A stage no pipeline runs, such as an old checkpoint, is not a step.
-pub async fn dials_set(cell: &FactoryCell, stage: Stage, dial: Dial) -> Result<(), String> {
-    if !stage.dialed() {
-        return Err(format!("{} is not a step", name(stage)));
-    }
-    if (stage, dial) == (Stage::Uat, Dial::Dark) {
-        return Err("UAT waits for its requester's sign-off, so it cannot be dark".into());
-    }
-    let factory = factory(cell)?;
-    let mut next = crate::settings_store::current(&**factory.store()).await?;
-    next.dials.set(stage, dial);
-    crate::settings_store::change(&**factory.store(), &next, crate::factory::now())
-        .await
-        .map(|_| ())
 }
 
 #[cfg(test)]

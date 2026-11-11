@@ -14,41 +14,13 @@ INSERT OR IGNORE INTO constraints (id, rule, function, contains, rung, source) V
   ('commit-work', 'Commit every change before you reply.', '', '', 'told', 'owner'),
   ('clean-tree', 'Leave a clean tree: no untracked files.', '', '', 'told', 'owner');
 
--- Capabilities: per stage, rung is denied, ask or allowed. A plan reads and
--- runs commands, and asks before it writes a file. A build may use the whole
--- sandbox. The full pipeline's read-only turns read and run commands, and may
--- not write a file; its turns that write code may use the whole sandbox, as a
--- build does. A workflow's skill and prompt steps may change the tree, so
--- they may too.
+-- Capabilities: per step kind, rung is denied, ask or allowed. An agent's
+-- step may use the whole sandbox; a step marked as reading only may not
+-- write a file (D42), whatever its kind allows.
 INSERT OR IGNORE INTO capabilities (stage, function, rung) VALUES
-  ('plan', 'sandbox::*', 'allowed'),
-  ('plan', 'sandbox::fs::write', 'ask'),
-  ('build', 'sandbox::*', 'allowed'),
-  ('scope', 'sandbox::*', 'allowed'),
-  ('scope', 'sandbox::fs::write', 'denied'),
-  ('discover', 'sandbox::*', 'allowed'),
-  ('discover', 'sandbox::fs::write', 'denied'),
-  ('define', 'sandbox::*', 'allowed'),
-  ('define', 'sandbox::fs::write', 'denied'),
-  ('refactor', 'sandbox::*', 'allowed'),
-  ('refactor', 'sandbox::fs::write', 'denied'),
-  ('code_review', 'sandbox::*', 'allowed'),
-  ('code_review', 'sandbox::fs::write', 'denied'),
-  ('prove', 'sandbox::*', 'allowed'),
-  ('prove', 'sandbox::fs::write', 'denied'),
-  ('comprehend', 'sandbox::*', 'allowed'),
-  ('comprehend', 'sandbox::fs::write', 'denied'),
-  ('uat', 'sandbox::*', 'allowed'),
-  ('uat', 'sandbox::fs::write', 'denied'),
-  ('learn', 'sandbox::*', 'allowed'),
-  ('learn', 'sandbox::fs::write', 'denied'),
-  ('implement', 'sandbox::*', 'allowed'),
-  ('specify', 'sandbox::*', 'allowed'),
-  ('ci_fix', 'sandbox::*', 'allowed'),
-  ('falsify', 'sandbox::*', 'allowed'),
-  ('skill', 'sandbox::*', 'allowed'),
   ('prompt', 'sandbox::*', 'allowed'),
   ('agent', 'sandbox::*', 'allowed'),
+  ('skill', 'sandbox::*', 'allowed'),
   ('command', 'sandbox::*', 'allowed');
 
 -- Workflows (D35): starting points for engineers, managers, and platform

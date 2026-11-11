@@ -263,7 +263,7 @@ mod tests {
                     rung: Enforcement::Enforced,
                 },
                 Override::Capability {
-                    stage: Stage::Plan,
+                    stage: Stage::Agent,
                     function: "sandbox::fs::write".into(),
                     rung: Access::Allowed,
                 },

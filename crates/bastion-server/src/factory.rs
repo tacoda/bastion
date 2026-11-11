@@ -8,9 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use bastion_core::govern::Enforcement;
-use bastion_core::{
-    BASE_TAG, Dials, Effect, Event, Job, Outcome, Pipeline, Stage, admit, outcome, step,
-};
+use bastion_core::{BASE_TAG, Bounds, Effect, Event, Job, Outcome, Stage, admit, outcome, step};
 use bastion_core::{request, review};
 use serde_json::{Value, json};
 
@@ -40,23 +38,31 @@ const TOOLS: [&str; 4] = [
 ];
 const REPO: &str = "/work/repo";
 
-/// Where a request came from, and the pipeline it runs.
+/// Where a request came from, and the workflow it runs.
 #[derive(Default)]
 pub struct Submission {
     /// The tracker issue it came from, as its URL.
     pub issue: Option<String>,
-    pub pipeline: Pipeline,
     /// The person asking (D31).
     pub requester: Option<String>,
-    /// The workflow to run, by id (D35); none runs `pipeline`.
+    /// The workflow to run, by id (D35); none runs the shipped `short`.
     pub workflow: Option<String>,
     /// The model every turn runs on, as `provider/model`.
     pub model: Option<String>,
-    /// What the change must do, in the requester's words.
-    pub criteria: Option<String>,
     /// Images that show the request, as (file name, bytes).
     pub screenshots: Vec<(String, Vec<u8>)>,
 }
+/// What a change with no commits reads as, in place of its diff.
+const NO_COMMITS: &str = "No commits: the build left nothing to land.";
+
+/// Whether an artifact is a step's change: its diff, or that it had none.
+pub fn is_diff(body: &str) -> bool {
+    body.starts_with("diff --git") || body.starts_with(NO_COMMITS)
+}
+
+/// The workflow a request runs when it names none.
+pub const DEFAULT_WORKFLOW: &str = "short";
+
 /// What a turn on the browser image is told it has.
 const BROWSER_GUIDE: &str = "\
 This VM has Node and Playwright's Chromium, Firefox and WebKit under
@@ -88,8 +94,6 @@ Run Python tests with [\"python3\", \"-m\", \"pytest\", \"-q\", \"/work/repo\"].
 Your reply ends your turn. Keep calling tools until the work is done and
 committed, and reply only then. Do not describe a next step; take it.";
 const SAVE_TRIES: usize = 3;
-/// How many times CI is polled, 20 s apart, before the land gives up.
-const CI_POLLS: u32 = 90;
 
 /// Tell the server's clients what changed: a job, or a notice about one.
 pub type OnChange = Arc<dyn Fn(Change) + Send + Sync>;
@@ -226,19 +230,12 @@ impl Factory {
         }
         let id = format!("j{}", short_id());
         let at = now();
-        let mut job = Job::new(id.clone(), workspace.into(), request.into(), at).on(how.pipeline);
-        let mut workflow_version = None;
-        // A request with no workflow runs its pipeline's (D39).
         let workflow = how
             .workflow
             .clone()
-            .or_else(|| workflow_store::id_of(how.pipeline).map(String::from));
-        if let Some(w) = &workflow {
-            let dials = settings_store::current(&*self.store).await?.dials;
-            (job, workflow_version) =
-                workflow_store::start_on(&*self.store, &dials, w, job).await?;
-        }
-        job.criteria = how.criteria;
+            .unwrap_or_else(|| DEFAULT_WORKFLOW.into());
+        let job = Job::new(id.clone(), workspace.into(), request.into(), at);
+        let (mut job, version) = workflow_store::start_on(&*self.store, &workflow, job).await?;
         self.keep_screenshots(&mut job, &how.screenshots)?;
         let record = Record {
             job,
@@ -246,8 +243,8 @@ impl Factory {
                 issue: how.issue,
                 requester: how.requester,
                 model: how.model,
-                workflow,
-                workflow_version,
+                workflow: Some(workflow),
+                workflow_version: Some(version),
                 ..Runtime::default()
             },
             rev: 1,
@@ -268,9 +265,15 @@ impl Factory {
     ) -> Result<String, String> {
         let id = format!("j{}", short_id());
         let at = now();
+        let job = Job::new(id.clone(), e.workspace.clone(), run.request.clone(), at);
+        let (job, version) = workflow_store::start_on(&*self.store, DEFAULT_WORKFLOW, job).await?;
         let record = Record {
-            job: Job::new(id.clone(), e.workspace.clone(), run.request.clone(), at),
-            runtime: Runtime::default(),
+            job,
+            runtime: Runtime {
+                workflow: Some(DEFAULT_WORKFLOW.into()),
+                workflow_version: Some(version),
+                ..Runtime::default()
+            },
             rev: 1,
             created_at: at,
         };
@@ -282,23 +285,17 @@ impl Factory {
         Ok(id)
     }
 
-    /// The dials a job runs under: a trial's own, or the owner's, with its
-    /// workspace's revision budget. A job on a kept workflow takes each
-    /// step's dial from the step.
-    async fn dials_for(&self, record: &Record) -> Result<Dials, String> {
-        let mut dials = match self.store.eval_run_of(&record.job.id).await? {
-            Some(_) => Dials {
-                trial: true,
-                ..Dials::default()
-            },
-            None => settings_store::current(&*self.store).await?.dials,
-        };
-        dials.revision_budget = self
-            .workspace(record)
-            .await
-            .ok()
-            .and_then(|w| w.revision_budget);
-        Ok(dials)
+    /// What bounds a job's run: whether it is an eval's trial, and its
+    /// workspace's revision budget. Each step's dial is its own (D39).
+    async fn bounds_for(&self, record: &Record) -> Result<Bounds, String> {
+        Ok(Bounds {
+            trial: self.store.eval_run_of(&record.job.id).await?.is_some(),
+            revision_budget: self
+                .workspace(record)
+                .await
+                .ok()
+                .and_then(|w| w.revision_budget),
+        })
     }
 
     /// Step one job with one event, save it, and run its effects.
@@ -333,8 +330,8 @@ impl Factory {
                 if !holds(&record) {
                     return Ok(None);
                 }
-                let dials = self.dials_for(&record).await?;
-                let (job, effects) = step(&record.job, &event, now(), &dials);
+                let bounds = self.bounds_for(&record).await?;
+                let (job, effects) = step(&record.job, &event, now(), &bounds);
                 if job == record.job && effects.is_empty() {
                     return Ok(None);
                 }
@@ -363,9 +360,8 @@ impl Factory {
             matches!(
                 e,
                 Effect::RecordArtifact { .. }
-                    | Effect::CaptureDiff
+                    | Effect::CaptureDiff { .. }
                     | Effect::DarkDecided { .. }
-                    | Effect::Split { .. }
             )
         };
         let (first, rest): (Vec<Effect>, Vec<Effect>) = effects.into_iter().partition(in_order);
@@ -389,10 +385,6 @@ impl Factory {
                 return;
             };
             let jobs: Vec<Job> = records.into_iter().map(|r| r.job).collect();
-            for id in bastion_core::orphans(&jobs) {
-                let error = "the part before it ended without landing".into();
-                let _ = factory.apply(&id, Event::Abandoned { error }).await;
-            }
             let settings = settings_store::current(&*factory.store).await;
             if settings.is_ok_and(|s| s.intake_paused) {
                 return;
@@ -474,17 +466,17 @@ impl Factory {
                 };
                 self.report_failure(&id, started, failed).await
             }
-            Effect::RunStep { stage } => self.run_step(&record, stage).await,
-            Effect::Split { parts } => self.add_parts(&record, parts).await.err(),
-            Effect::RecordArtifact { stage, body } => {
+            Effect::RunStep { .. } => self.run_step(&record).await,
+            Effect::RecordArtifact { stage, step, body } => {
                 let artifact = Artifact {
                     stage,
+                    step,
                     body,
                     created_at: now(),
                 };
                 self.store.add_artifact(&id, &artifact).await.err()
             }
-            Effect::CaptureDiff => {
+            Effect::CaptureDiff { stage, step } => {
                 if let Some(sandbox) = &record.runtime.sandbox {
                     self.gate.stop_hooks(&id, sandbox).await;
                 }
@@ -494,26 +486,19 @@ impl Factory {
                     .unwrap_or_else(|e| format!("The diff could not be read: {e}"));
                 self.review(&id, &body);
                 let artifact = Artifact {
-                    stage: Stage::Review,
+                    stage,
+                    step,
                     body,
                     created_at: now(),
                 };
                 self.store.add_artifact(&id, &artifact).await.err()
-            }
-            Effect::Land => {
-                let landed = self.land(&record).await;
-                let failed = |error| Event::LandFailed { error };
-                self.report_failure(&id, landed, failed).await
             }
             Effect::Finish => {
                 let finished = self.finish_job(&record).await;
                 let failed = |error| Event::LandFailed { error };
                 self.report_failure(&id, finished, failed).await
             }
-            Effect::WatchCi | Effect::Merge => self.forge_effect(&record, effect).await,
             Effect::Teardown => {
-                // The contract runs in the trial's VM, so before the teardown.
-                self.check_contract(&record).await;
                 self.grade_trial(&record);
                 self.teardown(&record).await.err()
             }
@@ -621,10 +606,9 @@ impl Factory {
     }
 
     /// Where a request's screenshots are kept on the host: under the job
-    /// that was asked for, which each of its parts shares.
+    /// that was asked for.
     fn screenshots_dir(&self, job: &Job) -> std::path::PathBuf {
-        let root = job.parent.as_deref().unwrap_or(&job.id);
-        self.scratch.join("requests").join(root)
+        self.scratch.join("requests").join(&job.id)
     }
 
     /// Keep a request's screenshots on the host, named on the job.
@@ -690,7 +674,7 @@ impl Factory {
         // turn on it would have no shell and no files. "sandbox not found"
         // here sends the job for a new VM.
         self.vm_exec(&sandbox, &["true"]).await?;
-        let turn = turn::Turn::start(&job.id, stage);
+        let turn = turn::Turn::start(job);
         let session = turn.session.clone();
         self.set_runtime(&job.id, |r| r.session = Some(session.clone()))
             .await?;
@@ -698,9 +682,10 @@ impl Factory {
         // The owner may have edited the rows directly (D26).
         self.gate.reload().await?;
         let mut message = self.read_charter(record).await?;
-        if stage.read_only() || stage == Stage::Falsify {
-            // Where the tree goes back to after the turn, commits included:
-            // by `put_back` for a read-only turn, by the baseline after falsify.
+        let reads_only = job.step().is_some_and(|s| s.reach.reads_only);
+        if reads_only {
+            // Where the tree goes back to after the turn, commits included,
+            // by `put_back` (D42).
             self.vm_exec(&sandbox, &["git", "-C", REPO, "tag", "-f", BEFORE_TURN])
                 .await?;
         }
@@ -716,7 +701,7 @@ impl Factory {
         message.push_str(&self.gate.rules(&job.id));
         message.push_str(brief);
         let settings = settings_store::current(&*self.store).await?;
-        let model = settings.model_for(stage, record.runtime.model.as_deref());
+        let model = settings.model_for(reads_only, record.runtime.model.as_deref());
         turn::provider_ready(&*self.engine, &model.provider).await?;
         self.engine
             .call(
@@ -751,22 +736,22 @@ impl Factory {
         self.apply(id, event).await.err()
     }
 
-    /// After a turn: a read-only stage's tree goes back, and a turn that
-    /// writes code has its commits kept in the worktree, so a lost VM loses
-    /// none. A bring-back error means no new commits, which is not a failure.
+    /// After a turn: a step that only reads has its tree put back, and any
+    /// other has its commits kept in the worktree, so a lost VM loses none.
+    /// A bring-back error means no new commits, which is not a failure.
     async fn tidy_after_turn(&self, record: &Record) {
         self.keep_media(record).await;
-        let stage = record.job.stage;
+        let reads_only = record.job.step().is_some_and(|s| s.reach.reads_only);
         match &record.runtime.sandbox {
-            Some(sandbox) if stage.read_only() => self.put_back(sandbox).await,
-            Some(_) if writes_code(stage) => {
+            Some(sandbox) if reads_only => self.put_back(sandbox).await,
+            Some(_) => {
                 let _ = self.bring_back(record).await;
             }
-            _ => {}
+            None => {}
         }
     }
 
-    /// A read-only stage leaves no change behind, not even a commit: the tree
+    /// A step that only reads leaves no change behind, not even a commit: the tree
     /// goes back to the tag made before the turn, or to `HEAD` without one.
     async fn put_back(&self, sandbox: &str) {
         let to_tag = ["git", "-C", REPO, "reset", "-q", "--hard", BEFORE_TURN];
@@ -778,29 +763,9 @@ impl Factory {
             .await;
     }
 
-    /// Run a step the factory runs itself, and report how it went.
-    // ponytail: a workspace has no setup steps until F2, so prepare passes at
-    // once; any other step fails until it has a runner.
-    async fn run_step(self: &Arc<Self>, record: &Record, stage: Stage) -> Option<String> {
-        let event = match stage {
-            Stage::Prepare => Event::StepPassed,
-            Stage::Baseline | Stage::Verify | Stage::Acceptance => {
-                self.acceptance_step(record, stage).await
-            }
-            Stage::Checks => self.checks_step(record).await,
-            Stage::Shell => self.command_step(record).await,
-            Stage::Ship => self
-                .ship(record)
-                .await
-                .unwrap_or_else(|detail| Event::StepStuck { detail }),
-            Stage::Deploy => {
-                self.watch_deploy(record);
-                return None;
-            }
-            _ => Event::StepFailed {
-                detail: format!("Bastion does not run the {stage:?} step yet."),
-            },
-        };
+    /// Run a shell step (D40), and report how it went.
+    async fn run_step(self: &Arc<Self>, record: &Record) -> Option<String> {
+        let event = self.shell_step(record).await;
         let event = match event {
             Event::StepStuck { detail } if vm_lost(&detail) => Event::VmLost,
             other => other,
@@ -821,7 +786,7 @@ impl Factory {
             .await?;
         let text = out["stdout"].as_str().unwrap_or_default();
         let mut body = if text.trim().is_empty() {
-            "No commits: the build left nothing to land.".to_string()
+            NO_COMMITS.to_string()
         } else {
             text.to_string()
         };
@@ -917,27 +882,9 @@ impl Factory {
         })
     }
 
-    /// Check a trial's contract, whose diff reached review, while its VM is
-    /// still there. A graded run's contract is then already known.
-    async fn check_contract(&self, record: &Record) {
-        let id = &record.job.id;
-        if record.job.stage != Stage::Review
-            || !matches!(self.store.eval_run_of(id).await, Ok(Some(_)))
-        {
-            return;
-        }
-        match self.contract_holds(record).await {
-            Ok(Some(held)) => drop(self.store.set_contract(id, held).await),
-            Ok(None) => {}
-            Err(e) => eprintln!("job {id}: the contract was not checked: {e}"),
-        }
-    }
-
-    /// Grade a trial whose diff reached review, off the effect's path.
+    /// Grade a trial as it ends, off the effect's path; any other job is
+    /// no eval's run and is passed over.
     fn grade_trial(self: &Arc<Self>, record: &Record) {
-        if record.job.stage != Stage::Review {
-            return;
-        }
         let (factory, id) = (self.clone(), record.job.id.clone());
         crate::rt::spawn(async move {
             let Ok(Some(run)) = factory.store.eval_run_of(&id).await else {
@@ -995,9 +942,7 @@ impl Factory {
     }
 }
 
-mod acceptance;
 mod decide;
-mod gates;
 mod land;
 mod media;
 mod onboard;
@@ -1006,22 +951,13 @@ mod reverts;
 pub use reverts::ESCAPE;
 mod setup;
 mod shell;
-mod split;
 mod turn;
-mod verdict;
 
 pub use turn::final_reply;
+
 /// The sandbox worker's answer for a VM that no longer exists (S002).
 fn vm_lost(error: &str) -> bool {
     error.contains("sandbox not found")
-}
-
-/// The turns whose commits are the job's work.
-fn writes_code(stage: Stage) -> bool {
-    matches!(
-        stage,
-        Stage::Build | Stage::Implement | Stage::CiFix | Stage::Specify
-    )
 }
 
 #[cfg(test)]

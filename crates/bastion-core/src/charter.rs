@@ -124,14 +124,14 @@ mod tests {
             "/work/repo/.claude/settings.json",
             "./.claude/hooks/check.sh",
         ] {
-            let verdict = gate(&write(path), Stage::Build, &[], &default_capabilities());
+            let verdict = gate(&write(path), Stage::Prompt, &[], &default_capabilities());
             assert!(
                 matches!(verdict.decision, Decision::Deny { .. }),
                 "{path} must be refused"
             );
         }
         for path in ["/work/repo/src/claude.rs", "/work/repo/docs/CLAUDE.md.txt"] {
-            let verdict = gate(&write(path), Stage::Build, &[], &default_capabilities());
+            let verdict = gate(&write(path), Stage::Prompt, &[], &default_capabilities());
             assert_eq!(verdict.decision, Decision::Continue, "{path}");
         }
     }
@@ -151,7 +151,7 @@ mod tests {
             text: "git -C /work/repo push origin".into(),
         };
         let Decision::Deny { reason } =
-            gate(&push, Stage::Build, &rules, &default_capabilities()).decision
+            gate(&push, Stage::Prompt, &rules, &default_capabilities()).decision
         else {
             panic!("a denied command must be refused");
         };

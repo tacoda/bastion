@@ -729,7 +729,7 @@ mod tests {
 
     fn write() -> Value {
         envelope(
-            "plan",
+            "agent",
             "sandbox::fs::write",
             json!({ "sandbox_id": "job", "path": "/work/repo/a.py" }),
         )
@@ -755,7 +755,7 @@ mod tests {
     fn a_passing_call_is_pinned_to_the_vm_and_recorded() {
         let r = rig();
         let answer = r.gate.judge(&envelope(
-            "build",
+            "prompt",
             "sandbox::exec",
             json!({ "sandbox_id": "job", "argv": ["pytest", "-q"] }),
         ));
@@ -778,7 +778,7 @@ mod tests {
     fn an_enforced_constraint_refuses_with_its_rule() {
         let r = rig();
         let answer = r.gate.judge(&envelope(
-            "build",
+            "prompt",
             "sandbox::exec",
             json!({ "argv": ["bash", "-lc", "pytest"] }),
         ));
@@ -796,7 +796,7 @@ mod tests {
         let r = rig();
         let write = |path: &str| {
             r.gate.judge(&envelope(
-                "build",
+                "prompt",
                 "sandbox::fs::write",
                 json!({ "path": format!("/work/repo/{path}") }),
             ))["decision"]
@@ -836,7 +836,7 @@ mod tests {
         );
         crate::rt::block_on(unkeyed.reload()).unwrap();
         let answer = unkeyed.judge(&envelope(
-            "build",
+            "prompt",
             "sandbox::exec",
             json!({ "argv": ["ls"] }),
         ));
@@ -917,7 +917,7 @@ mod tests {
         let r = rig();
         let rm = || {
             envelope(
-                "build",
+                "prompt",
                 "sandbox::exec",
                 json!({ "argv": ["git", "rm", "test_calc.py"] }),
             )
@@ -965,7 +965,7 @@ mod tests {
     fn a_charter_rule_refuses_and_reads_the_cmd_shape() {
         let r = hooked(0);
         let answer = r.gate.judge(&envelope(
-            "build",
+            "prompt",
             "sandbox::exec",
             json!({ "cmd": "git push origin main" }),
         ));
@@ -983,7 +983,7 @@ mod tests {
     fn a_hook_that_exits_2_refuses_the_call_with_its_output() {
         let r = hooked(2);
         let answer = r.gate.judge(&envelope(
-            "build",
+            "prompt",
             "sandbox::exec",
             json!({ "argv": ["pytest"] }),
         ));
@@ -1016,7 +1016,7 @@ mod tests {
     fn a_hook_that_passes_lets_the_call_run_in_the_vm() {
         let r = hooked(0);
         r.gate.judge(&envelope(
-            "build",
+            "prompt",
             "sandbox::exec",
             json!({ "argv": ["pytest"] }),
         ));
@@ -1064,7 +1064,7 @@ mod tests {
             assert!(r.gate.add_constraint(rule).await.is_err());
         });
         let answer = r.gate.judge(&envelope(
-            "build",
+            "prompt",
             "sandbox::exec",
             json!({ "argv": ["curl", "-s", "x"] }),
         ));
@@ -1076,7 +1076,7 @@ mod tests {
         let r = rig();
         let rm = || {
             envelope(
-                "build",
+                "prompt",
                 "sandbox::exec",
                 json!({ "argv": ["git", "rm", "t.py"] }),
             )
@@ -1090,7 +1090,7 @@ mod tests {
                     rung: govern::Enforcement::Enforced,
                 },
                 Override::Capability {
-                    stage: Stage::Plan,
+                    stage: Stage::Agent,
                     function: "sandbox::fs::write".into(),
                     rung: govern::Access::Allowed,
                 },
@@ -1099,7 +1099,7 @@ mod tests {
         assert_eq!(r.gate.judge(&rm())["decision"], "deny");
         assert_eq!(r.gate.judge(&write())["decision"], "continue");
         let other = json!({ "call": { "id": "fc9", "function_id": "sandbox::exec", "arguments": { "argv": ["git", "rm", "t.py"] } },
-            "metadata": { "job": "j2", "stage": "build", "sandbox_id": "vm2" } });
+            "metadata": { "job": "j2", "stage": "prompt", "sandbox_id": "vm2" } });
         assert_eq!(
             r.gate.judge(&other)["decision"],
             "continue",
@@ -1116,7 +1116,7 @@ mod tests {
         }];
         crate::rt::block_on(r.gate.apply_arm("e1", "b", &b)).unwrap();
         let rm = envelope(
-            "build",
+            "prompt",
             "sandbox::exec",
             json!({ "argv": ["git", "rm", "t.py"] }),
         );
@@ -1148,7 +1148,7 @@ mod tests {
     fn a_step_that_only_reads_may_not_write_and_the_refusal_is_recorded() {
         let r = rig();
         let mut write = envelope(
-            "build",
+            "prompt",
             "sandbox::fs::write",
             json!({ "sandbox_id": "job", "path": "/work/repo/a.py" }),
         );
@@ -1156,7 +1156,7 @@ mod tests {
         let answer = r.gate.judge(&write);
         assert_eq!(answer["decision"], "deny");
         assert!(answer["reason"].as_str().unwrap().contains("only reads"));
-        let mut read = envelope("build", "sandbox::exec", json!({ "argv": ["ls"] }));
+        let mut read = envelope("prompt", "sandbox::exec", json!({ "argv": ["ls"] }));
         read["metadata"]["reads_only"] = json!(true);
         assert_eq!(r.gate.judge(&read)["decision"], "continue");
         settle();

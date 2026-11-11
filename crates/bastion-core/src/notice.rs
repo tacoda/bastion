@@ -6,18 +6,15 @@ use crate::{Job, State};
 /// The state a job just entered, when it is one a person hears about.
 pub fn entered(before: &Job, after: &Job) -> Option<State> {
     let worth = matches!(after.state, State::NeedsYou | State::Failed | State::Landed);
-    (worth && (before.state, before.stage) != (after.state, after.stage)).then_some(after.state)
+    (worth && (before.state, &before.node) != (after.state, &after.node)).then_some(after.state)
 }
 
 /// One line about the job as it now stands, for a notification or a chat.
 pub fn text(job: &Job) -> String {
     let request = job.request.lines().next().unwrap_or_default();
     let what: String = request.chars().take(80).collect();
-    // A workflow's step goes by its name; an old pipeline's by its stage.
-    let stage = job
-        .node
-        .clone()
-        .unwrap_or_else(|| format!("{:?}", job.stage).to_lowercase());
+    // A step goes by its name; past the last step, the job finishes.
+    let stage = job.node.as_deref().unwrap_or("the finish");
     match job.state {
         State::NeedsYou => format!("{} waits for you at {stage}: {what}", job.id),
         State::Failed => {
@@ -36,64 +33,53 @@ pub fn text(job: &Job) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Stage;
 
-    fn at(stage: Stage, state: State) -> Job {
+    fn at(node: Option<&str>, state: State) -> Job {
         let mut j = Job::new(
             "j1".into(),
             "w".into(),
             "Add a health check\nwith a test".into(),
             1,
         );
-        (j.stage, j.state) = (stage, state);
+        (j.node, j.state) = (node.map(String::from), state);
         j
     }
 
     #[test]
     fn a_job_that_comes_to_wait_fails_or_lands_is_a_notice_once() {
-        let running = at(Stage::Plan, State::Running);
-        let waits = at(Stage::Plan, State::NeedsYou);
+        let running = at(Some("plan"), State::Running);
+        let waits = at(Some("plan"), State::NeedsYou);
         assert_eq!(entered(&running, &waits), Some(State::NeedsYou));
         assert_eq!(entered(&waits, &waits), None, "still waiting is not news");
-        let next_wait = at(Stage::Build, State::NeedsYou);
+        let next_wait = at(Some("build"), State::NeedsYou);
         assert_eq!(
             entered(&waits, &next_wait),
             Some(State::NeedsYou),
             "a new step's wait is"
         );
-        assert_eq!(entered(&waits, &at(Stage::Build, State::Running)), None);
+        assert_eq!(entered(&waits, &at(Some("build"), State::Running)), None);
         assert_eq!(
-            entered(&running, &at(Stage::Land, State::Landed)),
+            entered(&running, &at(None, State::Landed)),
             Some(State::Landed)
         );
     }
 
     #[test]
-    fn a_notice_says_what_happened_in_one_line() {
+    fn a_notice_names_the_step_in_one_line() {
         assert_eq!(
-            text(&at(Stage::Plan, State::NeedsYou)),
+            text(&at(Some("plan"), State::NeedsYou)),
             "j1 waits for you at plan: Add a health check"
         );
-        let mut failed = at(Stage::Build, State::Failed);
+        let mut failed = at(Some("build"), State::Failed);
         failed.error = Some("the turn ran past 30 minutes\nmore".into());
         assert_eq!(
             text(&failed),
             "j1 failed at build: the turn ran past 30 minutes"
         );
         assert_eq!(
-            text(&at(Stage::Land, State::Landed)),
+            text(&at(None, State::Landed)),
             "j1 landed: Add a health check"
         );
-    }
-
-    #[test]
-    fn a_workflow_step_is_named_in_its_notice() {
-        let mut j = at(Stage::Prompt, State::NeedsYou);
-        j.node = Some("plan".into());
-        assert!(
-            text(&j).starts_with("j1 waits for you at plan:"),
-            "{}",
-            text(&j)
-        );
+        assert!(text(&at(None, State::NeedsYou)).contains("at the finish"));
     }
 }

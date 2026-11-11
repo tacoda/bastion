@@ -5,7 +5,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use bastion_core::{Effect, Event, Job, Kind, Stage, State, TURN_CAP_SECS, restart};
+use bastion_core::{Event, Job, Kind, State, TURN_CAP_SECS, restart};
 use bastion_protocol::Link;
 use serde_json::json;
 
@@ -88,11 +88,7 @@ impl Factory {
 
     /// Start a running job's step again, as if it had just begun.
     async fn start_again(self: Arc<Self>, record: Record) {
-        let dials = match self.dials_for(&record).await {
-            Ok(dials) => dials,
-            Err(e) => return eprintln!("resume {}: {e}", record.job.id),
-        };
-        for effect in again(&record.job, &dials) {
+        for effect in restart(&record.job) {
             let (factory, record) = (self.clone(), record.clone());
             crate::rt::spawn(async move { factory.run(record, effect).await });
         }
@@ -117,15 +113,6 @@ impl Factory {
     }
 }
 
-/// The effects that start a running job's step again. A land whose pull
-/// request is up waits on its CI instead of landing again.
-fn again(job: &Job, dials: &bastion_core::Dials) -> Vec<Effect> {
-    if job.stage == Stage::Land && job.pr.is_some() {
-        return vec![Effect::WatchCi];
-    }
-    restart(job, dials)
-}
-
 /// The seconds a turn has left of its cap, counted from when the job last
 /// changed, which is when the turn started.
 pub(super) fn cap_left(job: &Job, at: u64) -> u64 {
@@ -142,21 +129,5 @@ mod tests {
         job.updated_at = 1_000;
         assert_eq!(cap_left(&job, 1_000 + 600), TURN_CAP_SECS - 600);
         assert_eq!(cap_left(&job, 1_000 + TURN_CAP_SECS + 5), 0);
-    }
-
-    #[test]
-    fn a_land_with_its_pull_request_up_watches_ci_again() {
-        let mut job = Job::new("j1".into(), "w".into(), "r".into(), 0);
-        (job.stage, job.state, job.pr) =
-            (Stage::Land, State::Running, Some("https://x/pull/1".into()));
-        assert_eq!(
-            again(&job, &bastion_core::Dials::default()),
-            vec![Effect::WatchCi]
-        );
-        job.pr = None;
-        assert_eq!(
-            again(&job, &bastion_core::Dials::default()),
-            vec![Effect::Land]
-        );
     }
 }

@@ -199,9 +199,9 @@ mod tests {
             })
         );
         assert_eq!(
-            override_of("capability:plan:sandbox::fs::write", "allowed"),
+            override_of("capability:agent:sandbox::fs::write", "allowed"),
             Ok(Override::Capability {
-                stage: Stage::Plan,
+                stage: Stage::Agent,
                 function: "sandbox::fs::write".into(),
                 rung: Access::Allowed
             })

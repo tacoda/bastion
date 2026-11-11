@@ -176,58 +176,32 @@ pub async fn charters(
         .collect())
 }
 
-/// What the factory itself may do, as the settings set it.
+/// What the factory itself may do (D39 to D42). Each is the workflow's or
+/// the workspace's to say, so none is a setting here.
 pub async fn factory_capabilities(
     cell: &FactoryCell,
 ) -> Result<Vec<FactoryCapabilityView>, String> {
-    let s = crate::settings_store::current(&**factory(cell)?.store()).await?;
-    let row = |name: &str, rung: String, how: &str| FactoryCapabilityView {
+    factory(cell)?;
+    let row = |name: &str, rung: &str, how: &str| FactoryCapabilityView {
         name: name.into(),
-        rung,
+        rung: rung.into(),
         how: how.into(),
     };
-    let github = s.forge == bastion_core::settings::Forge::Github;
     Ok(vec![
         row(
-            "Approve a plan",
-            name(s.dials.at(bastion_core::Stage::Plan)),
-            "The plan step's dial.",
+            "Merge a finished job's branch",
+            "allowed",
+            "As its workspace says: merge into the base, or leave the branch.",
         ),
         row(
-            "Approve a change",
-            name(s.dials.at(bastion_core::Stage::Build)),
-            "The build step's dial.",
-        ),
-        if github {
-            row(
-                "Push the job's branch and open a pull request",
-                "allowed".into(),
-                "After review, to the workspace's GitHub origin.",
-            )
-        } else {
-            row(
-                "Land on the workspace's branch",
-                "allowed".into(),
-                "After review, merged here.",
-            )
-        },
-        row(
-            "Merge a pull request",
-            if github {
-                "ask".into()
-            } else {
-                "denied".into()
-            },
-            "Approve at land, once CI passes.",
+            "Give a shell step the network",
+            "ask",
+            "Only a step its workflow marks, in a VM of its own, with the secrets it names.",
         ),
         row(
-            "Start a fix turn when CI fails",
-            if github {
-                "allowed".into()
-            } else {
-                "denied".into()
-            },
-            "At most 2 per job, with the failing log.",
+            "Send failing work back to be fixed",
+            "allowed",
+            "At most 2 times a step, within the workspace's revision budget.",
         ),
     ])
 }

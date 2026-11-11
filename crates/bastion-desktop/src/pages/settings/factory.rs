@@ -1,10 +1,10 @@
-//! The factory's settings (D33): the oversight presets, the model per
-//! stage, where a change goes and where requests come from; each step's
-//! dial; and every version of the settings with Restore.
+//! The factory's settings (D33): the models agents run on, where requests
+//! come from and whether intake is open; and every version of the settings
+//! with Restore. A step's dial is its workflow's (D39).
 
 use bastion_protocol::api::{self, Request};
-use bastion_protocol::{DialsView, ModelOption, PipelineDials, SettingsView, VersionView};
-use iced::widget::{Column, button, column, pick_list, row, text};
+use bastion_protocol::{ModelOption, SettingsView, VersionView};
+use iced::widget::{Column, pick_list, row, text};
 use iced::{Element, Fill, Task};
 
 use super::{card, small};
@@ -12,11 +12,6 @@ use crate::app::Message;
 use crate::pages::{Choice, Ctx, ago, labeled};
 use crate::theme;
 
-const PRESETS: [(&str, &str); 3] = [("lights_on", "lights-on"), ("dim", "dim"), ("dark", "dark")];
-const FORGES: [(&str, &str); 2] = [
-    ("local", "Merged here, into the workspace's branch"),
-    ("github", "Pushed and opened as a GitHub pull request"),
-];
 const INTAKE: [(&str, &str); 2] = [
     ("open", "Open: queued requests start as room frees"),
     ("paused", "Paused: requests queue, and nothing new starts"),
@@ -30,7 +25,6 @@ const TRACKERS: [(&str, &str); 2] = [
 pub struct State {
     settings: Option<SettingsView>,
     models: Vec<Choice>,
-    dials: Option<DialsView>,
     versions: Vec<VersionView>,
     note: String,
 }
@@ -40,7 +34,6 @@ pub struct State {
 pub enum Pick {
     PlanModel,
     BuildModel,
-    Forge,
     Tracker,
     Intake,
 }
@@ -49,11 +42,8 @@ pub enum Pick {
 pub enum Msg {
     Settings(Result<SettingsView, String>),
     Models(Result<Vec<ModelOption>, String>),
-    Dials(Result<DialsView, String>),
     Versions(Result<Vec<VersionView>, String>),
     Set(Pick, Choice),
-    Preset(&'static str),
-    Dial(String, String),
     Restore(u64),
     Done(Result<(), String>),
 }
@@ -74,7 +64,6 @@ pub fn load(ctx: &Ctx) -> Task<Message> {
     Task::batch([
         task(ctx, api::Settings, Msg::Settings),
         task(ctx, api::Models, Msg::Models),
-        task(ctx, api::Dials, Msg::Dials),
         task(ctx, api::SettingsHistory, Msg::Versions),
     ])
 }
@@ -101,7 +90,6 @@ fn apply(mut s: SettingsView, pick: Pick, choice: &str) -> SettingsView {
     match pick {
         Pick::PlanModel => (s.plan_provider, s.plan_model) = model(),
         Pick::BuildModel => (s.build_provider, s.build_model) = model(),
-        Pick::Forge => s.forge = choice.into(),
         Pick::Tracker => s.tracker = choice.into(),
         Pick::Intake => s.intake_paused = choice == "paused",
     }
@@ -128,17 +116,12 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
     match msg {
         Msg::Settings(a) => keep(&mut state.settings, note, a.map(Some)),
         Msg::Models(a) => keep(&mut state.models, note, a.map(model_choices)),
-        Msg::Dials(a) => keep(&mut state.dials, note, a.map(Some)),
         Msg::Versions(a) => keep(&mut state.versions, note, a),
         Msg::Set(pick, choice) => {
             let Some(s) = state.settings.clone() else {
                 return Task::none();
             };
             return send(ctx, api::SettingsSet(apply(s, pick, &choice.id)));
-        }
-        Msg::Preset(p) => return send(ctx, api::SettingsPreset { preset: p.into() }),
-        Msg::Dial(stage, dial) => {
-            return send(ctx, api::DialsSet { stage, dial });
         }
         Msg::Restore(version) => {
             return send(ctx, api::SettingsRestore { version });
@@ -170,28 +153,20 @@ fn picker<'a>(
 }
 
 fn factory(state: &State) -> Element<'_, Message> {
-    let presets = PRESETS
-        .iter()
-        .map(|(id, label)| small(label, Some(wrap(Msg::Preset(id)))));
-    let mut body = column![
-        row![text("Oversight:").size(13).color(theme::MUTED)]
-            .extend(presets)
-            .spacing(8)
-            .align_y(iced::Center)
-    ];
+    let mut body = Column::new().spacing(12);
     if let Some(s) = &state.settings {
         let models = &state.models;
         body = body
             .push(
                 row![
                     picker(
-                        "Plan model",
+                        "Model for steps that only read",
                         models.clone(),
                         format!("{}/{}", s.plan_provider, s.plan_model),
                         Pick::PlanModel
                     ),
                     picker(
-                        "Build model",
+                        "Model for every other step",
                         models.clone(),
                         format!("{}/{}", s.build_provider, s.build_model),
                         Pick::BuildModel
@@ -202,69 +177,25 @@ fn factory(state: &State) -> Element<'_, Message> {
             .push(
                 row![
                     picker(
-                        "Where a reviewed change goes",
-                        choices(&FORGES),
-                        s.forge.clone(),
-                        Pick::Forge
-                    ),
-                    picker(
                         "Where requests can come from",
                         choices(&TRACKERS),
                         s.tracker.clone(),
                         Pick::Tracker
                     ),
+                    picker(
+                        "Intake",
+                        choices(&INTAKE),
+                        INTAKE[usize::from(s.intake_paused)].0.into(),
+                        Pick::Intake,
+                    ),
                 ]
                 .spacing(16),
-            )
-            .push(picker(
-                "Intake",
-                choices(&INTAKE),
-                INTAKE[usize::from(s.intake_paused)].0.into(),
-                Pick::Intake,
-            ));
+            );
     }
     card(
         "Factory",
         body.push(text(&state.note).size(13).color(theme::MUTED)),
     )
-}
-
-fn pipeline<'a>(title: &str, p: &PipelineDials) -> Element<'a, Message> {
-    let steps = p.steps.iter().map(|s| {
-        let on = s.dial == "lights_on";
-        let label = format!(
-            "{} · {}",
-            s.stage.replace('_', " "),
-            if on { "lights-on" } else { "dark" }
-        );
-        let flip = wrap(Msg::Dial(
-            s.stage.clone(),
-            if on { "dark" } else { "lights_on" }.into(),
-        ));
-        let look = if on { theme::secondary } else { theme::quiet };
-        button(text(label).size(13))
-            .padding([4, 10])
-            .style(look)
-            .on_press(flip)
-            .into()
-    });
-    column![
-        text(format!("{title}: {}", p.level.replace('_', "-"))).size(13),
-        row(steps).spacing(8).wrap()
-    ]
-    .spacing(8)
-    .into()
-}
-
-fn oversight(state: &State) -> Element<'_, Message> {
-    let lede = "A lights-on step waits for you to approve its result or send it back. A dark step goes on at once. A pipeline is lights-on when every step is, dim when a step up to the merge is, and dark when none is.";
-    let mut body = column![text(lede).size(13).color(theme::MUTED)];
-    if let Some(d) = &state.dials {
-        body = body
-            .push(pipeline("Short pipeline", &d.short))
-            .push(pipeline("Full pipeline", &d.full));
-    }
-    card("Oversight", body)
 }
 
 fn history(state: &State) -> Element<'_, Message> {
@@ -287,8 +218,8 @@ fn history(state: &State) -> Element<'_, Message> {
     card("History", Column::with_children(rows))
 }
 
-pub fn view(state: &State) -> [Element<'_, Message>; 3] {
-    [factory(state), oversight(state), history(state)]
+pub fn view(state: &State) -> [Element<'_, Message>; 2] {
+    [factory(state), history(state)]
 }
 
 #[cfg(test)]
@@ -300,7 +231,7 @@ mod tests {
         let s = SettingsView {
             plan_provider: "openai".into(),
             plan_model: "gpt-5-mini".into(),
-            forge: "github".into(),
+            tracker: "github_issues".into(),
             ..SettingsView::default()
         };
         let picked = apply(s.clone(), Pick::PlanModel, "localfake/echo-1");
@@ -308,14 +239,11 @@ mod tests {
             (
                 picked.plan_provider.as_str(),
                 picked.plan_model.as_str(),
-                picked.forge.as_str()
+                picked.tracker.as_str()
             ),
-            ("localfake", "echo-1", "github")
+            ("localfake", "echo-1", "github_issues")
         );
-        assert_eq!(
-            apply(s.clone(), Pick::Tracker, "github_issues").tracker,
-            "github_issues"
-        );
+        assert_eq!(apply(s.clone(), Pick::Tracker, "none").tracker, "none");
         assert!(apply(s, Pick::Intake, "paused").intake_paused);
     }
 }

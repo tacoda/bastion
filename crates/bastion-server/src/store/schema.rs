@@ -23,12 +23,13 @@ pub(super) fn staged_tables() -> [(&'static str, &'static str, String); 4] {
         jobs_table(&stage),
         (
             "artifacts",
-            "id, job, stage, body, created_at",
+            "id, job, stage, step, body, created_at",
             format!(
                 "CREATE TABLE IF NOT EXISTS artifacts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         job TEXT NOT NULL REFERENCES jobs(id),
         stage TEXT NOT NULL {stage},
+        step TEXT NOT NULL DEFAULT '',
         body TEXT NOT NULL,
         created_at INTEGER NOT NULL)"
             ),
@@ -209,14 +210,14 @@ pub(super) const JOB_COLUMNS: &str = "id, workspace, request, stage, state, ques
 /// The jobs the admission pump and resume need: every unfinished one, and
 /// every job a queued part waits on, so a part whose earlier part failed
 /// is seen as abandoned rather than admitted.
-pub(super) const ACTIVE: &str = "state NOT IN ('landed','failed','stopped') OR id IN (SELECT after_job FROM jobs WHERE state = 'queued')";
+pub(super) const ACTIVE: &str = "state NOT IN ('landed','failed','stopped')";
 /// The job columns before migration 1, which its rebuild copies.
 pub(super) const LEGACY_JOB_COLUMNS: &str = "id, workspace, request, stage, state, question, feedback, plan, failures, error, worktree, sandbox, session, rev, created_at, updated_at, pr, ci_fixes, issue";
 
 /// Columns added after a table was first made. Each runs once; on a table
 /// that already has the column it fails, and that failure is expected.
 // They run before the numbered migrations, which need these columns to exist.
-pub(super) const ALTERS: [&str; 27] = [
+pub(super) const ALTERS: [&str; 28] = [
     "ALTER TABLE jobs ADD COLUMN pr TEXT",
     "ALTER TABLE jobs ADD COLUMN ci_fixes INTEGER NOT NULL DEFAULT 0 CHECK (ci_fixes >= 0)",
     "ALTER TABLE jobs ADD COLUMN issue TEXT",
@@ -244,6 +245,7 @@ pub(super) const ALTERS: [&str; 27] = [
     "ALTER TABLE workflow_nodes ADD COLUMN network INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE workflow_nodes ADD COLUMN secrets TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE workflow_nodes ADD COLUMN reads_only INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE artifacts ADD COLUMN step TEXT NOT NULL DEFAULT ''",
 ];
 
 /// Numbered migrations, each run once in order; `PRAGMA user_version` is the
@@ -288,6 +290,35 @@ pub(super) fn migrations() -> Vec<Vec<String>> {
                     }),
             )
             .collect(),
+        // A workflow is its steps (D39): a stage an agent ran becomes a
+        // prompt, one that only read it reading only, and a stage the
+        // factory ran goes with its links, as the finish lands the job.
+        current
+            .iter()
+            .flat_map(rebuild)
+            .chain(nodes_as_steps())
+            .collect(),
+    ]
+}
+
+/// The kept workflows' steps of before D39 as steps.
+fn nodes_as_steps() -> Vec<String> {
+    let reading = "'plan','scope','discover','define','refactor','code_review','prove','comprehend','uat','learn'";
+    let factory = format!(
+        "{FACTORY_STAGES},'approve','review','clarify','your_checks','pick_refactors','pick_findings'"
+    );
+    let gone =
+        format!("SELECT workflow, version, id FROM workflow_nodes WHERE stage IN ({factory})");
+    vec![
+        format!(
+            "DELETE FROM workflow_links WHERE (workflow, version, source) IN ({gone}) OR (workflow, version, target) IN ({gone})"
+        ),
+        format!("DELETE FROM workflow_results WHERE (workflow, version, node) IN ({gone})"),
+        format!("DELETE FROM workflow_nodes WHERE stage IN ({factory})"),
+        format!(
+            "UPDATE workflow_nodes SET stage = 'prompt', reads_only = 1, note = 'Do not change any file. ' || note WHERE stage IN ({reading})"
+        ),
+        format!("UPDATE workflow_nodes SET stage = 'prompt' WHERE stage IN ({AGENT_STAGES})"),
     ]
 }
 
@@ -296,11 +327,40 @@ pub(super) fn migrations() -> Vec<Vec<String>> {
 /// it still resolve at commit. Renaming a new table into place does not:
 /// both were tried on a copy of `data/bastion.db` with foreign keys on.
 pub(super) fn rebuild((table, columns, create): &(&str, &str, String)) -> Vec<String> {
-    vec![
-        format!("CREATE TEMP TABLE {table}_copy AS SELECT * FROM {table}"),
-        format!("DROP TABLE {table}"),
-        create.clone(),
-        format!("INSERT INTO {table} ({columns}) SELECT {columns} FROM {table}_copy"),
-        format!("DROP TABLE {table}_copy"),
-    ]
+    let copy = format!("{table}_copy");
+    std::iter::once(format!("CREATE TEMP TABLE {copy} AS SELECT * FROM {table}"))
+        .chain(as_steps(table, &copy))
+        .chain([
+            format!("DROP TABLE {table}"),
+            create.clone(),
+            format!("INSERT INTO {table} ({columns}) SELECT {columns} FROM {copy}"),
+            format!("DROP TABLE {copy}"),
+        ])
+        .collect()
+}
+
+/// The stages an agent ran, before a workflow was its steps (D39).
+const AGENT_STAGES: &str = "'plan','approve','build','review','scope','discover','clarify','define',\
+    'your_checks','specify','implement','refactor','pick_refactors','code_review','pick_findings',\
+    'ci_fix','prove','comprehend','uat','learn','falsify'";
+/// The stages the factory ran itself, before D39.
+const FACTORY_STAGES: &str = "'land','prepare','baseline','checks','verify','acceptance','ship',\
+    'ci','merge','deploy'";
+
+/// A copy's rows with the stages of before D39 as the step kinds that
+/// stand for them: an agent's stage as a prompt, the factory's as a shell
+/// step. A grant at an old stage has no kind to move to, so it goes.
+fn as_steps(table: &str, copy: &str) -> Vec<String> {
+    if table == "capabilities" {
+        let old = format!("{AGENT_STAGES},{FACTORY_STAGES}");
+        return vec![format!("DELETE FROM {copy} WHERE stage IN ({old})")];
+    }
+    let mut mapped = vec![format!(
+        "UPDATE {copy} SET stage = CASE WHEN stage IN ({AGENT_STAGES}) THEN 'prompt' \
+         WHEN stage IN ({FACTORY_STAGES}) THEN 'shell' ELSE stage END"
+    )];
+    if table == "jobs" {
+        mapped.push(format!("UPDATE {copy} SET back_to = NULL"));
+    }
+    mapped
 }

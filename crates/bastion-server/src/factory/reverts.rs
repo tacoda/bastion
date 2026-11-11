@@ -11,12 +11,13 @@ use super::Factory;
 pub const ESCAPE: &str = "escape";
 
 impl Factory {
-    /// Every land's commits as (job, workspace, artifact body): what a land
-    /// or a ship brought back, and the commit a merge made.
+    /// Every finish's commits as (job, workspace, artifact body): what each
+    /// job brought back as it finished (D41), whatever step it ended on.
     pub async fn lands(&self) -> Result<Vec<(String, String, String)>, String> {
         let mut all = Vec::new();
-        for stage in [Stage::Land, Stage::Ship, Stage::Merge] {
-            all.extend(self.store.artifacts_at(stage).await?);
+        for stage in Stage::ALL {
+            let kept = self.store.artifacts_at(stage).await?.into_iter();
+            all.extend(kept.filter(|(.., body)| body.starts_with(escape::COMMITS)));
         }
         Ok(all)
     }

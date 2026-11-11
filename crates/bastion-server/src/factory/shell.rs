@@ -3,13 +3,40 @@
 //! that asks for the network runs in a VM of its own, with the network, the
 //! job's commits and the vault's secrets it names.
 
+use bastion_core::Event;
 use bastion_core::workflow::Reach;
 use serde_json::{Value, json};
 
-use super::{Factory, setup};
-use crate::engine::NS;
+use super::{Factory, REPO, setup};
+use crate::engine::{DEFAULT_NAMESPACE, NS};
 use crate::forge;
 use crate::store::Record;
+
+/// The longest a script may run: the sandbox stops a command at five
+/// minutes, whatever it is asked for.
+const SCRIPT_SECS: u64 = 300;
+/// How much of a script's output a step keeps.
+const TAIL: usize = 3000;
+
+/// The end of `text`, at most `TAIL` bytes, cut on a character.
+pub(super) fn tail(text: &str) -> String {
+    let start = text.len().saturating_sub(TAIL);
+    let start = (start..=text.len())
+        .find(|i| text.is_char_boundary(*i))
+        .unwrap_or(text.len());
+    text[start..].to_string()
+}
+
+/// A script's exit as an event: 0 passes with its output; anything else
+/// fails with it.
+fn exited(code: i64, output: String) -> Event {
+    match code {
+        0 => Event::Ran { output },
+        code => Event::StepFailed {
+            detail: format!("The command failed (exit {code}):\n{output}"),
+        },
+    }
+}
 
 /// `text` as one shell word.
 fn quoted(text: &str) -> String {
@@ -17,6 +44,47 @@ fn quoted(text: &str) -> String {
 }
 
 impl Factory {
+    /// A shell step (D40): its script runs in the job's VM, or in a VM of
+    /// its own with the network and its secrets, stopped after.
+    pub(super) async fn shell_step(&self, record: &Record) -> Event {
+        let ran = async {
+            let step = record.job.step().ok_or("no script to run")?;
+            let script = format!("{}\n{}", self.shell_env(record).await?, step.run);
+            let own = match step.reach.network {
+                true => Some(self.networked_vm(record, &step.reach).await?),
+                false => None,
+            };
+            let sandbox = own.as_deref().or(record.runtime.sandbox.as_deref());
+            let ran = self.script(sandbox.ok_or("no VM")?, &script).await;
+            if let Some(own) = &own {
+                self.stop_vm(own).await;
+            }
+            ran
+        };
+        ran.await
+            .unwrap_or_else(|detail: String| Event::StepStuck { detail })
+    }
+
+    /// Run `script` by sh in the VM's repository.
+    async fn script(&self, sandbox: &str, script: &str) -> Result<Event, String> {
+        let argv = ["sh", "-c", &format!("cd {REPO} && {script}")];
+        let exec = json!({ "sandbox_id": sandbox, "argv": argv, "timeout_ms": SCRIPT_SECS * 1000 });
+        let wait = SCRIPT_SECS * 1000 + 60_000;
+        let out = self
+            .engine
+            .call_for(DEFAULT_NAMESPACE, "sandbox::exec", exec, wait)
+            .await?;
+        let printed = format!(
+            "{}{}",
+            out["stdout"].as_str().unwrap_or_default(),
+            out["stderr"].as_str().unwrap_or_default()
+        );
+        Ok(exited(
+            out["exit_code"].as_i64().unwrap_or(-1),
+            tail(&printed),
+        ))
+    }
+
     /// The line a script starts with: `BASTION_BRANCH`, the job's branch;
     /// `BASTION_BASE`, the workspace's; `BASTION_REPO`, its GitHub
     /// `owner/name`, empty without an `origin`; `BASTION_CHECKS`, the

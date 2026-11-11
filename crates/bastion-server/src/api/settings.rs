@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use bastion_core::settings::{Forge, Model, Oversight, Settings, Tracker};
+use bastion_core::settings::{Model, Settings, Tracker};
 use bastion_protocol::{AccountView, IssueView, ModelOption, SettingsView, VersionView};
 use serde_json::json;
 
@@ -30,23 +30,20 @@ fn view_of(s: &Settings) -> SettingsView {
         plan_model: s.plan_model.model.clone(),
         build_provider: s.build_model.provider.clone(),
         build_model: s.build_model.model.clone(),
-        forge: name(s.forge),
         tracker: name(s.tracker),
         intake_paused: s.intake_paused,
     }
 }
 
-/// The settings a client sent, with `was`'s dials, which it sets apart.
-fn settings_of(v: &SettingsView, was: Settings) -> Result<Settings, String> {
+/// The settings a client sent.
+fn settings_of(v: &SettingsView) -> Result<Settings, String> {
     let model = |provider: &str, model: &str| Model {
         provider: provider.trim().into(),
         model: model.trim().into(),
     };
     Ok(Settings {
-        dials: was.dials,
         plan_model: model(&v.plan_provider, &v.plan_model),
         build_model: model(&v.build_provider, &v.build_model),
-        forge: word::<Forge>(&v.forge, "forge")?,
         tracker: word::<Tracker>(&v.tracker, "tracker")?,
         intake_paused: v.intake_paused,
     })
@@ -65,24 +62,10 @@ pub async fn settings_set(
 ) -> Result<(), String> {
     let factory = factory(cell)?;
     let store = factory.store().clone();
-    let next = settings_of(&settings, settings_store::current(&*store).await?)?;
+    let next = settings_of(&settings)?;
     settings_store::change(&*store, &next, now()).await?;
     // Intake opened again admits what queued meanwhile.
     factory.pump();
-    changed(events);
-    Ok(())
-}
-
-/// Set both dials from one oversight preset.
-pub async fn settings_preset(
-    events: &Bus,
-    cell: &FactoryCell,
-    preset: String,
-) -> Result<(), String> {
-    let factory = factory(cell)?;
-    let mut next = settings_store::current(&**factory.store()).await?;
-    next.dials = word::<Oversight>(&preset, "preset")?.dials();
-    settings_store::change(&**factory.store(), &next, now()).await?;
     changed(events);
     Ok(())
 }
@@ -241,26 +224,18 @@ pub async fn job_from_issue(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bastion_core::{Dial, Stage};
 
     #[test]
-    fn a_settings_view_reads_back_keeps_the_dials_it_hides_and_refuses_a_bad_word() {
-        let mut s = Settings {
-            forge: Forge::Github,
+    fn a_settings_view_reads_back_and_a_bad_word_is_refused() {
+        let s = Settings {
             tracker: Tracker::GithubIssues,
             ..Settings::default()
         };
-        s.dials.set(Stage::Plan, Dial::Dark);
-        s.dials.set(Stage::Discover, Dial::Dark);
-        assert_eq!(settings_of(&view_of(&s), s.clone()), Ok(s));
+        assert_eq!(settings_of(&view_of(&s)), Ok(s));
         let bad = SettingsView {
-            forge: "gitlab".into(),
+            tracker: "jira".into(),
             ..view_of(&Settings::default())
         };
-        assert!(
-            settings_of(&bad, Settings::default())
-                .unwrap_err()
-                .contains("gitlab")
-        );
+        assert!(settings_of(&bad).unwrap_err().contains("jira"));
     }
 }

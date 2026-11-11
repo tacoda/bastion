@@ -7,7 +7,6 @@ use serde_json::json;
 
 use super::factory::{FactoryCell, factory, name};
 use crate::factory::now;
-use crate::settings_store;
 use crate::store::{Record, Store};
 use crate::workflow_store::{self, Workflow};
 
@@ -15,7 +14,6 @@ fn view_of(w: &Workflow) -> WorkflowView {
     WorkflowView {
         id: w.id.clone(),
         name: w.name.clone(),
-        built_in: w.built_in(),
         ships: workflow_store::ships(&w.id),
         version: w.version,
         level: w.graph.level().map_or_else(|_| "dim".into(), name),
@@ -29,9 +27,6 @@ fn view_of(w: &Workflow) -> WorkflowView {
                 run: n.run.clone(),
                 dial: name(n.dial),
                 note: n.note.clone(),
-                builtin: bastion_core::instructions(n.stage)
-                    .unwrap_or_default()
-                    .into(),
                 results: n.results.clone(),
                 reach: bastion_protocol::ReachView {
                     network: n.reach.network,
@@ -60,8 +55,8 @@ fn graph_of(v: &WorkflowView) -> Result<Graph, String> {
     serde_json::from_value(value).map_err(|e| format!("the workflow does not read: {e}"))
 }
 
-/// The workflow job `r` runs: the version it started on, or its
-/// pipeline's stages as a chain under the settings' dials.
+/// The workflow job `r` runs, at the version it started on. A job from
+/// before workflows were its steps has none to draw.
 pub(super) async fn of_job(store: &dyn Store, r: &Record) -> Result<WorkflowView, String> {
     let id = r.runtime.workflow.clone().unwrap_or_default();
     if let Some(version) = r.runtime.workflow_version
@@ -75,20 +70,17 @@ pub(super) async fn of_job(store: &dyn Store, r: &Record) -> Result<WorkflowView
             graph,
         }));
     }
-    let dials = settings_store::current(store).await?.dials;
-    let graph = Graph::chain(&r.job.stages(), |s| dials.at(s));
     let name = id.clone();
     Ok(view_of(&Workflow {
         id,
         name,
         version: 0,
-        graph,
+        graph: Graph::default(),
     }))
 }
 
 async fn every(store: &dyn Store) -> Result<Vec<Workflow>, String> {
-    let dials = settings_store::current(store).await?.dials;
-    workflow_store::all(store, &dials).await
+    workflow_store::all(store).await
 }
 
 pub async fn workflows(cell: &FactoryCell) -> Result<Vec<WorkflowView>, String> {
@@ -129,23 +121,20 @@ pub async fn workflow_save(cell: &FactoryCell, id: String, v: WorkflowView) -> R
     workflow_store::save(&**factory(cell)?.store(), &w, now()).await
 }
 
+/// Delete workflow `id`. A shipped one comes back at once as Bastion ships it.
 pub async fn workflow_delete(cell: &FactoryCell, id: String) -> Result<(), String> {
     let factory = factory(cell)?;
-    let kept = factory.store().workflows().await?;
-    // Deleting a changed built-in brings the original back; the original
-    // itself stays.
-    if workflow_store::ships(&id) && !kept.iter().any(|(k, ..)| *k == id) {
-        return Err(format!(
-            "{id} is as Bastion ships it; there is nothing to reset"
-        ));
+    let store = factory.store();
+    store.delete_workflow(&id).await?;
+    if workflow_store::ships(&id) {
+        crate::seed_flows::seed(&**store).await?;
     }
-    factory.store().delete_workflow(&id).await
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bastion_core::{Dial, Stage};
 
     #[test]
     fn a_view_reads_back_as_its_graph_and_a_bad_word_is_refused() {
@@ -153,12 +142,10 @@ mod tests {
             id: "short".into(),
             name: "Short".into(),
             version: 0,
-            graph: Graph::chain(&[Stage::Plan, Stage::Build, Stage::Land], |_| {
-                Dial::LightsOn
-            }),
+            graph: crate::seed_flows::graph_of("short").unwrap(),
         };
         let v = view_of(&w);
-        assert_eq!((v.built_in, v.level.as_str()), (true, "lights_on"));
+        assert_eq!((v.ships, v.level.as_str()), (true, "dim"));
         assert_eq!(graph_of(&v), Ok(w.graph));
         let mut bad = v;
         bad.nodes[0].stage = "nap".into();

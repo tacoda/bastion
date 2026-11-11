@@ -135,7 +135,6 @@ impl State {
         let submit = api::JobSubmit {
             workspace: self.chosen().unwrap_or_default(),
             request: self.request.text().trim().into(),
-            pipeline: None,
             workflow: (!self.workflow.id.is_empty()).then(|| self.workflow.id.clone()),
             model: (!self.model.id.is_empty()).then(|| self.model.id.clone()),
             criteria: Some(self.criteria.text().trim().to_string()).filter(|c| !c.is_empty()),

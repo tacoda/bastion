@@ -2,7 +2,6 @@
 //! these; the role rules themselves are `bastion_core::people`.
 
 use axum::http::Method;
-use bastion_core::Stage;
 use bastion_core::people::{Act, Person, Role};
 
 use crate::factory::now;
@@ -128,40 +127,9 @@ pub async fn on_job(server: &Server, person: &Person, id: &str) -> Result<(), Re
     .map_err(|_| Refusal::Forbidden(format!("only {requester} or an admin may act on job {id}")))
 }
 
-/// Run `on_job`, and at a UAT step also require the job's requester: the
-/// sign-off is theirs, so not even an admin gives it for them.
-pub async fn approve(server: &Server, person: &Person, id: &str) -> Result<(), Refusal> {
-    on_job(server, person, id).await?;
-    let factory = server.factory.get().ok_or(Refusal::NotReady)?;
-    let record = factory.store().load(id).await.map_err(Refusal::NoJob)?;
-    let requester = record.runtime.requester.unwrap_or_default();
-    signs_off(record.job.stage, &requester, &person.name).map_err(Refusal::Forbidden)
-}
-
-/// Whether `person` may approve a job at `stage` that `requester` asked for.
-/// A job from before people had names has no requester to wait on.
-fn signs_off(stage: Stage, requester: &str, person: &str) -> Result<(), String> {
-    let awaited = (stage == Stage::Uat)
-        .then_some(requester)
-        .filter(|r| !r.is_empty());
-    match awaited {
-        Some(r) if r != person => Err(format!("only {r}, who asked for it, signs off its UAT")),
-        _ => Ok(()),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn only_the_requester_signs_off_a_uat_script() {
-        assert!(signs_off(Stage::Uat, "ada", "ada").is_ok());
-        let refused = signs_off(Stage::Uat, "ada", "root").unwrap_err();
-        assert!(refused.contains("only ada"), "{refused}");
-        assert!(signs_off(Stage::Plan, "ada", "root").is_ok());
-        assert!(signs_off(Stage::Uat, "", "root").is_ok());
-    }
 
     #[test]
     fn tokens_match_only_when_every_byte_does() {

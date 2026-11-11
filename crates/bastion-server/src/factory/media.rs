@@ -79,6 +79,7 @@ impl Factory {
         self.machine.write_bytes(&dir.join(name), &bytes)?;
         let kept = Artifact {
             stage: record.job.stage,
+            step: record.job.node.clone().unwrap_or_default(),
             body: media::artifact(name),
             created_at: now(),
         };

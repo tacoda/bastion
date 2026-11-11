@@ -1,13 +1,11 @@
-//! Workflows (DECISIONS.md D35): graphs of steps, kept as versions. The
-//! built-in workflows are the pipelines as chains, under the settings'
-//! dials. A person may change one: their version is kept under its id and
-//! takes its place, and deleting it brings the original back.
+//! Workflows (DECISIONS.md D35, D39): graphs of steps, kept as versions.
+//! Bastion seeds the common ones (`seed_flows`); each is the owner's to
+//! change, and deleting a shipped one saves its original again.
 //! `Store` extends this trait.
 
 use std::collections::BTreeMap;
 
 use bastion_core::workflow::{Graph, Link, Node, Reach, Step};
-use bastion_core::{Dials, Pipeline};
 use serde_json::{Value, json};
 
 use crate::store::{Answer, Record, SqlStore, Store, name, parse};
@@ -21,16 +19,9 @@ pub struct Workflow {
     pub graph: Graph,
 }
 
-impl Workflow {
-    /// A built-in workflow as Bastion ships it, not changed.
-    pub fn built_in(&self) -> bool {
-        self.version == 0
-    }
-}
-
 /// Whether workflow `id` comes with Bastion, changed or not.
 pub fn ships(id: &str) -> bool {
-    pipeline_of(id).is_some()
+    crate::seed_flows::ships(id)
 }
 
 pub trait WorkflowStore {
@@ -43,65 +34,30 @@ pub trait WorkflowStore {
     fn delete_workflow<'a>(&'a self, id: &'a str) -> Answer<'a, ()>;
 }
 
-/// The built-in workflows: id, name and pipeline.
-const BUILT_IN: [(&str, &str, Pipeline); 3] = [
-    ("short", "Short", Pipeline::Short),
-    ("full", "Full", Pipeline::Full),
-    (
-        "full_no_acceptance",
-        "Full, without acceptance tests",
-        Pipeline::FullNoAcceptance,
-    ),
-];
-
-/// The built-in workflow that runs `pipeline`.
-pub fn id_of(pipeline: Pipeline) -> Option<&'static str> {
-    BUILT_IN.iter().find(|b| b.2 == pipeline).map(|b| b.0)
-}
-
-/// The pipeline a built-in workflow runs, if `id` is one.
-pub fn pipeline_of(id: &str) -> Option<Pipeline> {
-    BUILT_IN.iter().find(|b| b.0 == id).map(|b| b.2)
-}
-
-/// Every workflow: the built-ins under the settings' `dials`, then the kept ones.
-pub async fn all(store: &dyn Store, dials: &Dials) -> Result<Vec<Workflow>, String> {
-    let mut all: Vec<Workflow> = BUILT_IN
-        .iter()
-        .map(|(id, name, pipeline)| Workflow {
-            id: id.to_string(),
-            name: name.to_string(),
-            version: 0,
-            graph: Graph::chain(&pipeline.stages(), |s| dials.at(s)),
-        })
-        .collect();
+/// Every kept workflow, at its newest version.
+pub async fn all(store: &dyn Store) -> Result<Vec<Workflow>, String> {
+    let mut all = Vec::new();
     for (id, name, version) in store.workflows().await? {
         let graph = store.graph_at(&id, version).await?.unwrap_or_default();
-        let kept = Workflow {
+        all.push(Workflow {
             id,
             name,
             version,
             graph,
-        };
-        // A changed built-in takes the original's place.
-        match all.iter_mut().find(|w| w.id == kept.id) {
-            Some(original) => *original = kept,
-            None => all.push(kept),
-        }
+        });
     }
     Ok(all)
 }
 
-pub async fn find(store: &dyn Store, dials: &Dials, id: &str) -> Result<Workflow, String> {
-    all(store, dials)
+pub async fn find(store: &dyn Store, id: &str) -> Result<Workflow, String> {
+    all(store)
         .await?
         .into_iter()
         .find(|w| w.id == id)
         .ok_or(format!("no workflow {id}"))
 }
 
-/// Keep `w` as its workflow's next version; a built-in's is the first
-/// that takes its place.
+/// Keep `w` as its workflow's next version.
 pub async fn save(store: &dyn Store, w: &Workflow, at: u64) -> Result<u64, String> {
     if w.name.trim().is_empty() {
         return Err("a workflow needs a name".into());
@@ -110,19 +66,19 @@ pub async fn save(store: &dyn Store, w: &Workflow, at: u64) -> Result<u64, Strin
     store.save_workflow(w, at).await
 }
 
-/// `job` on workflow `id`: a built-in's pipeline, or a kept workflow's
-/// steps. Returns the job and the version it runs, none for a built-in.
+/// `job` on workflow `id`, at its first step. Returns the job and the
+/// version it runs.
 pub async fn start_on(
     store: &dyn Store,
-    dials: &Dials,
     id: &str,
     job: bastion_core::Job,
-) -> Result<(bastion_core::Job, Option<u64>), String> {
-    let w = find(store, dials, id).await?;
-    if let Some(pipeline) = pipeline_of(id).filter(|_| w.built_in()) {
-        return Ok((job.on(pipeline), None));
+) -> Result<(bastion_core::Job, u64), String> {
+    let w = find(store, id).await?;
+    let steps = w.graph.steps()?;
+    if steps.is_empty() {
+        return Err(format!("the workflow {id} has no steps"));
     }
-    Ok((job.running(w.graph.steps()?), Some(w.version)))
+    Ok((job.running(steps), w.version))
 }
 
 /// Fill each job's steps from the workflow version it runs.
@@ -390,12 +346,10 @@ pub mod fake {
 mod tests {
     use super::*;
     use crate::store::fake::FakeStore;
-    use bastion_core::{Dial, Stage};
+    use bastion_core::Dial;
 
     fn copy() -> Workflow {
-        let mut graph = Graph::chain(&[Stage::Plan, Stage::Build, Stage::Land], |_| {
-            Dial::LightsOn
-        });
+        let mut graph = crate::seed_flows::graph_of("short").unwrap();
         graph.nodes[0].results = vec!["design-notes".into()];
         Workflow {
             id: "w1".into(),
@@ -406,32 +360,21 @@ mod tests {
     }
 
     #[test]
-    fn a_built_in_follows_the_dials_until_changed_and_comes_back_when_deleted() {
+    fn a_shipped_workflow_is_the_owners_to_change_and_comes_back_when_deleted() {
         let store = FakeStore::default();
-        let mut dials = Dials::default();
-        dials.set(Stage::Build, Dial::Dark);
         crate::rt::block_on(async {
-            let mut short = find(&store, &dials, "short").await.unwrap();
-            assert_eq!(short.graph.nodes[1].dial, Dial::Dark);
-            assert!(short.built_in() && ships("short"));
+            crate::seed_flows::seed(&store).await.unwrap();
+            let mut short = find(&store, "short").await.unwrap();
+            assert!(ships("short") && !ships("w1"));
             short.name = "Short, mine".into();
-            assert_eq!(save(&store, &short, 1).await, Ok(1));
-            let mine = find(&store, &dials, "short").await.unwrap();
-            assert_eq!(
-                (mine.name.as_str(), mine.built_in()),
-                ("Short, mine", false)
-            );
-            let listed = all(&store, &dials).await.unwrap();
+            let changed = save(&store, &short, 1).await.unwrap();
+            let mine = find(&store, "short").await.unwrap();
+            assert_eq!((mine.name.as_str(), mine.version), ("Short, mine", changed));
+            let listed = all(&store).await.unwrap();
             assert_eq!(listed.iter().filter(|w| w.id == "short").count(), 1);
-            let job = bastion_core::Job::new("j1".into(), "w".into(), "r".into(), 1);
-            let (job, version) = start_on(&store, &dials, "short", job).await.unwrap();
-            assert_eq!(
-                (job.flow.len(), version),
-                (3, Some(1)),
-                "a changed built-in runs as kept"
-            );
             store.delete_workflow("short").await.unwrap();
-            assert!(find(&store, &dials, "short").await.unwrap().built_in());
+            crate::seed_flows::seed(&store).await.unwrap();
+            assert_eq!(find(&store, "short").await.unwrap().name, "Short");
         });
     }
 
@@ -442,18 +385,16 @@ mod tests {
             assert_eq!(save(&store, &copy(), 1).await, Ok(1));
             assert_eq!(save(&store, &copy(), 2).await, Ok(2));
             let mut bad = copy();
-            bad.graph.nodes.pop();
-            bad.graph.links.pop();
+            bad.graph.links[0].to = "nowhere".into();
             assert!(
                 save(&store, &bad, 3)
                     .await
                     .unwrap_err()
-                    .contains("nothing lands")
+                    .contains("not a step here")
             );
-            let kept = find(&store, &Dials::default(), "w1").await.unwrap();
-            assert_eq!(kept.version, 2);
+            assert_eq!(find(&store, "w1").await.unwrap().version, 2);
             store.delete_workflow("w1").await.unwrap();
-            assert!(find(&store, &Dials::default(), "w1").await.is_err());
+            assert!(find(&store, "w1").await.is_err());
             assert!(
                 store.graph_at("w1", 1).await.unwrap().is_some(),
                 "its versions stay"
@@ -462,27 +403,19 @@ mod tests {
     }
 
     #[test]
-    fn a_job_on_a_kept_workflow_runs_that_versions_steps_with_their_dials() {
+    fn a_job_runs_its_workflows_version_with_each_steps_own_dial() {
         let store = FakeStore::default();
         let job = bastion_core::Job::new("j1".into(), "w".into(), "r".into(), 1);
         crate::rt::block_on(async {
-            let (short, version) = start_on(&store, &Dials::default(), "short", job.clone())
-                .await
-                .unwrap();
-            assert_eq!(
-                (short.flow.len(), version),
-                (0, None),
-                "a built-in runs its pipeline"
-            );
+            assert!(start_on(&store, "w1", job.clone()).await.is_err());
             let mut w = copy();
             w.graph.nodes[1].dial = Dial::Dark;
             save(&store, &w, 1).await.unwrap();
-            let (j, version) = start_on(&store, &Dials::default(), "w1", job)
-                .await
-                .unwrap();
-            assert_eq!(version, Some(1));
-            assert_eq!(j.stages(), [Stage::Plan, Stage::Build, Stage::Land]);
-            assert_eq!(j.flow[1].needs, ["design-notes"]);
+            let (j, version) = start_on(&store, "w1", job).await.unwrap();
+            let ids: Vec<&str> = j.flow.iter().map(|s| s.id.as_str()).collect();
+            assert_eq!((version, ids), (1, vec!["plan", "build", "checks"]));
+            assert_eq!(j.node.as_deref(), Some("plan"));
+            assert!(j.flow[1].needs.contains(&"design-notes".to_string()));
             assert_eq!(j.flow[1].dial, Dial::Dark, "each step keeps its own dial");
         });
     }

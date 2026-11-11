@@ -1,16 +1,13 @@
-//! The governance rows: the checkpoint dials, constraints, capabilities,
+//! The governance rows: constraints, capabilities,
 //! held calls and the audit chain. `Store` extends this trait.
 
 use bastion_core::audit::{self, Entry};
 use bastion_core::govern::{Call, Capability, Constraint};
-use bastion_core::{Dial, Dials, Stage};
 use serde_json::{Value, json};
 
 use crate::store::{Answer, HeldCall, SqlStore, name, parse};
 
 pub trait GovernStore {
-    /// The checkpoint dials. A checkpoint with no row asks.
-    fn dials(&self) -> Answer<'_, Dials>;
     fn constraints(&self) -> Answer<'_, Vec<Constraint>>;
     /// Add a constraint, or replace the one with its id.
     fn set_constraint<'a>(&'a self, constraint: &'a Constraint) -> Answer<'a, ()>;
@@ -108,27 +105,6 @@ pub(crate) fn entry(row: &Value) -> Result<Entry, String> {
 }
 
 impl GovernStore for SqlStore {
-    fn dials(&self) -> Answer<'_, Dials> {
-        Box::pin(async move {
-            let mut dials = Dials::default();
-            for row in self
-                .query("SELECT checkpoint, dial FROM dials", json!([]))
-                .await?
-            {
-                let dial: Dial = parse(&row, "dial")?;
-                let judged: &[Stage] = match row["checkpoint"].as_str() {
-                    Some("approve") => &[Stage::Plan],
-                    Some("review") => &[Stage::Build, Stage::CodeReview],
-                    _ => &[],
-                };
-                for stage in judged {
-                    dials.set(*stage, dial);
-                }
-            }
-            Ok(dials)
-        })
-    }
-
     fn constraints(&self) -> Answer<'_, Vec<Constraint>> {
         Box::pin(async move {
             let sql =
@@ -232,11 +208,6 @@ pub mod fake {
     use crate::store::fake::{FakeStore, matching};
 
     impl GovernStore for FakeStore {
-        fn dials(&self) -> Answer<'_, Dials> {
-            let dials = self.dials.lock().unwrap().clone();
-            Box::pin(async move { Ok(dials) })
-        }
-
         fn constraints(&self) -> Answer<'_, Vec<Constraint>> {
             let all = self.constraints.lock().unwrap().clone();
             Box::pin(async move { Ok(all) })

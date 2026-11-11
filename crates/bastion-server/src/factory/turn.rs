@@ -7,15 +7,19 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use bastion_core::{Event, Outcome, Stage, State};
+use bastion_core::{Event, Job, Outcome, State};
 use serde_json::json;
 
 use super::resume::cap_left;
 use super::{Factory, NS, now, outcome, short_id};
 use crate::engine::Engine;
 use crate::evals;
-use crate::spec;
-use crate::store::{Record, name};
+use crate::store::Record;
+
+/// The step a job is at, as a session names it.
+fn step_of(job: &Job) -> &str {
+    job.node.as_deref().unwrap_or("finish")
+}
 
 /// One turn: the job it runs for and its session.
 #[derive(Clone, Debug)]
@@ -25,11 +29,11 @@ pub struct Turn {
 }
 
 impl Turn {
-    /// A new turn at `stage`: its session is `<job>-<step>-<random>`.
-    pub fn start(job: &str, stage: Stage) -> Self {
-        let session = format!("{job}-{}-{}", name(stage), short_id());
+    /// A new turn at the job's step: its session is `<job>-<step>-<random>`.
+    pub fn start(job: &Job) -> Self {
+        let session = format!("{}-{}-{}", job.id, step_of(job), short_id());
         Turn {
-            job: job.into(),
+            job: job.id.clone(),
             session,
         }
     }
@@ -43,7 +47,7 @@ impl Turn {
         let step = named
             .and_then(|rest| rest.rsplit_once('-'))
             .map(|(step, _)| step);
-        let at_step = step.is_none_or(|s| s == name(job.stage));
+        let at_step = step.is_none_or(|s| s == step_of(job));
         let current = record.runtime.session.as_ref() == Some(&self.session);
         current && at_step && job.state == State::Running
     }
@@ -154,7 +158,7 @@ impl Factory {
         if !turn.owns(&record) {
             return;
         }
-        let Some(result) = self.result(&record, turn, timed_out).await else {
+        let Some(result) = self.result(turn, timed_out).await else {
             return;
         };
         self.release(&turn.job);
@@ -167,7 +171,7 @@ impl Factory {
     }
 
     /// What the turn came to, or none while it still runs.
-    async fn result(&self, record: &Record, turn: &Turn, timed_out: bool) -> Option<Outcome> {
+    async fn result(&self, turn: &Turn, timed_out: bool) -> Option<Outcome> {
         if timed_out {
             stop(&*self.engine, &turn.session).await;
             let minutes = bastion_core::TURN_CAP_SECS / 60;
@@ -188,22 +192,9 @@ impl Factory {
             });
         }
         Some(match final_reply(&*self.engine, &turn.session).await {
-            Ok(reply) => usable(record.job.stage, outcome(&reply)),
+            Ok(reply) => outcome(&reply),
             Err(error) => Outcome::Failed { error },
         })
-    }
-}
-
-/// A specify reply the server cannot read goes back to the core as
-/// unusable, so the turn gets one more try with the reason.
-pub(super) fn usable(stage: Stage, outcome: Outcome) -> Outcome {
-    let read = match (stage, &outcome) {
-        (Stage::Specify, Outcome::Done { report }) => spec::read(report).err(),
-        _ => None,
-    };
-    match (read, outcome) {
-        (Some(problem), Outcome::Done { report }) => Outcome::Unusable { report, problem },
-        (_, other) => other,
     }
 }
 
@@ -211,11 +202,10 @@ pub(super) fn usable(stage: Stage, outcome: Outcome) -> Outcome {
 mod tests {
     use super::*;
     use crate::store::Runtime;
-    use bastion_core::Job;
 
-    fn record(stage: Stage, session: &str) -> Record {
+    fn record(node: &str, session: &str) -> Record {
         let mut job = Job::new("j1-2".into(), "w".into(), "r".into(), 0);
-        (job.stage, job.state) = (stage, State::Running);
+        (job.node, job.state) = (Some(node.into()), State::Running);
         let runtime = Runtime {
             session: Some(session.into()),
             ..Runtime::default()
@@ -237,16 +227,16 @@ mod tests {
 
     #[test]
     fn a_turn_counts_only_at_the_step_it_was_started_for() {
-        let build = Turn::start("j1-2", Stage::Build);
+        let build = Turn::start(&record("build", "").job);
         assert!(build.session.starts_with("j1-2-build-"));
-        assert!(build.owns(&record(Stage::Build, &build.session)));
+        assert!(build.owns(&record("build", &build.session)));
         assert!(
-            !build.owns(&record(Stage::Verify, &build.session)),
-            "a build's reply at verify"
+            !build.owns(&record("review", &build.session)),
+            "a build's reply at review, a prompt step too"
         );
-        assert!(!turn("j1-2-build-other").owns(&record(Stage::Build, &build.session)));
-        let review = Turn::start("j1-2", Stage::CodeReview);
-        assert!(review.owns(&record(Stage::CodeReview, &review.session)));
+        assert!(!turn("j1-2-build-other").owns(&record("build", &build.session)));
+        let tests = Turn::start(&record("acceptance-tests", "").job);
+        assert!(tests.owns(&record("acceptance-tests", &tests.session)));
     }
 
     #[test]
@@ -269,6 +259,6 @@ mod tests {
 
     #[test]
     fn a_session_from_before_steps_were_named_counts_at_any_step() {
-        assert!(turn("j1-2-a1b2c3d4").owns(&record(Stage::Verify, "j1-2-a1b2c3d4")));
+        assert!(turn("j1-2-a1b2c3d4").owns(&record("review", "j1-2-a1b2c3d4")));
     }
 }

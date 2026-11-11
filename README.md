@@ -2,9 +2,11 @@
 
 Bastion is a software factory you can govern. A request goes in, agents work
 it through a workflow, and a reviewed change comes out. A workflow is a graph
-of steps (Bastion's own stages, skills, prompts and commands) that you see on
-a canvas, and each step waits for your approval or runs on its own, as you set
-it. Bastion is a server and its clients: `bastion-server` runs the factory on
+of steps that you see on a canvas. Each step is a prompt, an agent, a skill, a
+command or a shell script, each with one text you edit, and each waits for
+your approval or runs on its own, as you set it. Bastion ships the common
+workflows with their text filled in, and every word of them is yours to
+change. Bastion is a server and its clients: `bastion-server` runs the factory on
 the [iii](https://iii.dev) engine, and the desktop app (on
 [iced](https://iced.rs)) and the `bastion` command line talk to it over HTTP.
 It's early. [VISION.md](VISION.md) says where it is going, and
@@ -49,8 +51,9 @@ server issued them.
 - `iii` 0.25.0 on your `PATH`.
 - A model provider key, set in **Settings**, which keeps it in the stack's
   vault. A key in the environment works too.
-- `gh`, signed in, for pushes and pull requests. Landing locally works
-  without it.
+- A `GH_TOKEN` in the stack's vault for the workflows that open pull
+  requests: their shell steps ask for the network and that secret. A workflow
+  that merges on this machine works without it.
 
 If something is missing, Doctor on the Engine page names it and says how to
 fix it. A failed required check stops the start.

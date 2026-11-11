@@ -94,22 +94,6 @@ pub fn update(state: &mut State, msg: Msg) {
     }
 }
 
-/// Each job followed by its parts, so a split shows under its job.
-fn families(mut jobs: Vec<ServerJob>) -> Vec<ServerJob> {
-    let head = |j: &ServerJob| j.job.parent.clone().unwrap_or_else(|| j.job.id.clone());
-    let mut order: Vec<String> = Vec::new();
-    for j in &jobs {
-        if !order.contains(&head(j)) {
-            order.push(head(j));
-        }
-    }
-    jobs.sort_by_key(|j| {
-        let family = order.iter().position(|h| *h == head(j));
-        (family, j.job.parent.is_some(), j.job.id.clone())
-    });
-    jobs
-}
-
 /// What the page says about servers it cannot read: unreachable ones first,
 /// then why a reachable one's jobs did not read.
 fn page_note(down: &[String], errors: &[String]) -> String {
@@ -212,16 +196,14 @@ fn title(request: &str) -> String {
 }
 
 fn job_row<'a>(sj: ServerJob, down: bool) -> Element<'a, Message> {
-    let mut about = column![text(title(&sj.job.request)).size(15).font(theme::MEDIUM)].spacing(3);
-    if let Some(p) = &sj.job.part {
-        about = about.push(text(format!("Part: {p}")).size(13));
-    }
-    about = about.push(
+    let about = column![text(title(&sj.job.request)).size(15).font(theme::MEDIUM)].spacing(3);
+    let about = about.push(
         text(line(&sj.job, &sj.server, down))
             .size(12)
             .color(theme::MUTED),
     );
-    let stage = container(text(sj.job.stage.clone()).size(12))
+    let at = sj.job.node.as_deref().unwrap_or("finish").replace('_', " ");
+    let stage = container(text(at).size(12))
         .padding([2, 8])
         .style(theme::chip);
     let body = row![
@@ -230,7 +212,6 @@ fn job_row<'a>(sj: ServerJob, down: bool) -> Element<'a, Message> {
         stage
     ]
     .spacing(12);
-    let indent = if sj.job.parent.is_some() { 24 } else { 0 };
     let open = Message::OpenJob {
         server: sj.server,
         id: sj.job.id,
@@ -242,7 +223,6 @@ fn job_row<'a>(sj: ServerJob, down: bool) -> Element<'a, Message> {
         .on_press(open);
     let faded = if down { 0.6 } else { 1.0 };
     container(row_button)
-        .padding(iced::Padding::ZERO.left(indent))
         .style(move |_| container::Style {
             text_color: Some(iced::Color {
                 a: faded,
@@ -259,7 +239,7 @@ fn group<'a>(title: String, jobs: Vec<ServerJob>, ctx: &Ctx, accent: bool) -> El
             .padding([10, 12])
             .into()
     } else {
-        let rows = families(jobs).into_iter().map(|j| {
+        let rows = jobs.into_iter().map(|j| {
             let down = ctx.down.contains(&j.server);
             job_row(j, down)
         });
@@ -372,51 +352,28 @@ mod tests {
         assert!(!note.contains("Two: cannot"), "{note}");
     }
 
-    fn job(id: &str, parent: Option<&str>, workspace: &str) -> ServerJob {
+    fn job(id: &str, workspace: &str) -> ServerJob {
         ServerJob {
             server: "local".into(),
             job: JobSummary {
                 id: id.into(),
                 workspace: workspace.into(),
                 request: format!("request {id}"),
-                stage: "plan".into(),
                 state: "queued".into(),
-                question: None,
-                error: None,
-                created_at: 0,
-                updated_at: 0,
-                actions: Vec::new(),
-                pr: None,
-                issue: None,
-                requester: None,
-                parent: parent.map(String::from),
-                part: None,
-                parts: Vec::new(),
+                ..JobSummary::default()
             },
         }
     }
 
     #[test]
-    fn a_split_job_lists_its_parts_under_it() {
-        let listed = vec![
-            job("j1-3", Some("j1"), "w"),
-            job("j2", None, "w"),
-            job("j1", None, "w"),
-            job("j1-2", Some("j1"), "w"),
-        ];
-        let ids: Vec<String> = families(listed).into_iter().map(|j| j.job.id).collect();
-        assert_eq!(ids, ["j1", "j1-2", "j1-3", "j2"]);
-    }
-
-    #[test]
     fn the_filter_and_the_search_narrow_the_list() {
         let mut state = State {
-            jobs: vec![job("j1", None, "a"), job("j2", None, "b")],
+            jobs: vec![job("j1", "a"), job("j2", "b")],
             ..State::default()
         };
         state.jobs.push(ServerJob {
             server: "team".into(),
-            ..job("j3", None, "c")
+            ..job("j3", "c")
         });
         assert_eq!(state.places(), [EVERY, "a", "b", "c"]);
         assert_eq!(state.servers(), [EVERY_SERVER, "local", "team"]);

@@ -23,7 +23,6 @@ pub mod rt;
 pub mod seed_flows;
 pub mod server;
 pub mod settings_store;
-pub mod spec;
 pub mod stack;
 pub mod store;
 pub mod tls;

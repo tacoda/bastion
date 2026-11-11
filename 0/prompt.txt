@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b26hph442</task-id>
+<tool-use-id>toolu_019z2r17H3Pmn8TfpQHCzRnV</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/b26hph442.output</output-file>
+<status>completed</status>
+<summary>Background command "Boot a sandbox from the browser image" completed (exit code 0)</summary>
+</task-notification>

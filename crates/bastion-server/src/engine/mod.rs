@@ -16,6 +16,9 @@ pub use iii::IiiEngine;
 
 /// The namespace the engine registers its own functions in, such as `engine::*`.
 pub const DEFAULT_NAMESPACE: &str = "default";
+/// The namespace of the stack's workers: the database, the harness, the
+/// router, worktrees, and Bastion's own functions.
+pub const NS: &str = "bastion";
 
 pub type Call<'a> = Pin<Box<dyn Future<Output = Result<Value, String>> + Send + 'a>>;
 

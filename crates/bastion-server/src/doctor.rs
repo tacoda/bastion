@@ -8,6 +8,7 @@ use bastion_protocol::{Check, CheckState, DoctorReport, Link};
 use serde_json::{Value, json};
 
 use crate::engine::Engine;
+use crate::engine::NS;
 use crate::machine::Machine;
 
 /// The `iii` this stack is pinned to.
@@ -190,10 +191,7 @@ async fn providers(engine: &dyn Engine) -> Check {
             None,
         );
     }
-    match engine
-        .call("bastion", "router::provider::list", json!({}))
-        .await
-    {
+    match engine.call(NS, "router::provider::list", json!({})).await {
         Ok(out) => provider_check(&out),
         Err(e) => check(
             "Model providers",

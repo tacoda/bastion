@@ -11,9 +11,9 @@ use serde_json::{Value, json};
 use bastion_core::Job;
 
 use crate::engine::Engine;
+use crate::engine::NS;
 use crate::machine::Machine;
 
-const NS: &str = "bastion";
 /// The most of a failing run's log a fix turn reads.
 const LOG_CHARS: usize = 4000;
 

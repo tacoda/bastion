@@ -8,6 +8,7 @@ use serde_json::{Map, Value, json};
 
 use super::sign_in::with_sign_in;
 use crate::engine::Engine;
+use crate::engine::NS;
 
 /// The router's configuration entry, named for the stack's project.
 // ponytail: the project is always `bastion`, like the namespace; read it from the stack if a second project needs keys.
@@ -18,9 +19,7 @@ const READER: &str = "llm-router";
 /// Every provider the router knows, and where its key comes from. A
 /// removed OpenAI-compatible host is left out: the router cannot drop it.
 pub async fn providers(engine: &dyn Engine) -> Result<Vec<ProviderView>, String> {
-    let out = engine
-        .call("bastion", "router::provider::list", json!({}))
-        .await?;
+    let out = engine.call(NS, "router::provider::list", json!({})).await?;
     let retired = super::hosts::retired(engine).await;
     let listed = out["providers"]
         .as_array()
@@ -50,7 +49,7 @@ pub async fn key_set(engine: &dyn Engine, id: String, key: String) -> Result<(),
         return Err("a key cannot be empty".into());
     }
     let stored = json!({ "name": name, "value": key, "store": "vault", "consumers": [READER] });
-    engine.call("bastion", "secrets::set", stored).await?;
+    engine.call(NS, "secrets::set", stored).await?;
     point(engine, &id, Some(format!("secret://{name}"))).await?;
     refresh(engine, &id).await;
     Ok(())
@@ -62,7 +61,7 @@ pub async fn key_remove(engine: &dyn Engine, id: String) -> Result<(), String> {
     let name = known(engine, &id).await?;
     point(engine, &id, None).await?;
     engine
-        .call("bastion", "secrets::delete", json!({ "name": name }))
+        .call(NS, "secrets::delete", json!({ "name": name }))
         .await?;
     refresh(engine, &id).await;
     Ok(())
@@ -72,7 +71,7 @@ pub async fn key_remove(engine: &dyn Engine, id: String) -> Result<(), String> {
 /// start. Best effort: the key is already in place either way.
 async fn refresh(engine: &dyn Engine, id: &str) {
     let function = format!("provider::{id}::refresh_models");
-    if let Err(e) = engine.call("bastion", &function, json!({})).await {
+    if let Err(e) = engine.call(NS, &function, json!({})).await {
         eprintln!("{function}: {e}");
     }
 }

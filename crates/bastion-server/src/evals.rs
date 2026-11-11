@@ -14,12 +14,12 @@ use bastion_core::{Job, Stage};
 use serde_json::json;
 
 use crate::engine::Engine;
+use crate::engine::NS;
 use crate::eval_store::{Eval, EvalRun, Turn};
 use crate::factory::{Factory, final_reply, now, short_id};
 use crate::machine::Machine;
 use crate::store::Store;
 
-const NS: &str = "bastion";
 /// How long a grading turn may take.
 const GRADE_SECS: u64 = 180;
 

@@ -9,6 +9,7 @@ use bastion_protocol::{AccountView, IssueView, ModelOption, SettingsView, Versio
 use serde_json::json;
 
 use super::factory::{FactoryCell, factory, name};
+use crate::engine::NS;
 use crate::events::Bus;
 use crate::factory::{Submission, now};
 use crate::{forge, settings_store};
@@ -115,7 +116,7 @@ pub async fn models(cell: &FactoryCell) -> Result<Vec<ModelOption>, String> {
         .collect();
     let models = factory
         .engine()
-        .call("bastion", "router::models::list", json!({}))
+        .call(NS, "router::models::list", json!({}))
         .await?;
     Ok(models["models"]
         .as_array()

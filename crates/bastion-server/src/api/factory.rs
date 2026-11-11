@@ -11,6 +11,7 @@ use bastion_protocol::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use crate::engine::NS;
 use crate::factory::{Factory, Submission};
 use crate::machine::Machine;
 use crate::store::{self, Record};
@@ -240,11 +241,7 @@ async fn transcript(factory: &Factory, session: Option<&str>) -> Vec<TranscriptL
     };
     let Ok(out) = factory
         .engine()
-        .call(
-            "bastion",
-            "session::messages",
-            json!({ "session_id": session }),
-        )
+        .call(NS, "session::messages", json!({ "session_id": session }))
         .await
     else {
         return Vec::new();

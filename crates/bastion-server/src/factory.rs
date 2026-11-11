@@ -16,6 +16,7 @@ use serde_json::{Value, json};
 
 use crate::audit_log::{self, AuditLog};
 use crate::charter;
+use crate::engine::NS;
 use crate::engine::{DEFAULT_NAMESPACE, Engine};
 use crate::eval_store::{Eval, EvalRun};
 use crate::evals;
@@ -25,7 +26,6 @@ use crate::settings_store;
 use crate::store::{Artifact, Record, Runtime, STALE, Store};
 use crate::workflow_store;
 
-const NS: &str = "bastion";
 /// At most this many jobs hold a VM (iii-sandbox's `max_concurrent_sandboxes`).
 const MAX_VMS: usize = 8;
 const MAX_TURN_STEPS: u64 = 40;

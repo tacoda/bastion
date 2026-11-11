@@ -5,8 +5,6 @@ use serde_json::{Value, json};
 
 use super::*;
 
-pub(super) const NAMESPACE: &str = "bastion";
-
 /// `CHECK (column IN (...))` over every stage the core has.
 pub(super) fn stage_check(column: &str) -> String {
     let names: Vec<String> = Stage::ALL

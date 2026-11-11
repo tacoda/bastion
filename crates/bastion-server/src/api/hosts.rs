@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 
 use super::providers;
 use crate::engine::Engine;
+use crate::engine::NS;
 
 const LIST: &str = "bastion::openai_compat::hosts::list";
 const SET: &str = "bastion::openai_compat::hosts::set";
@@ -24,7 +25,7 @@ fn view(h: &Value) -> HostView {
 
 /// The hosts the admin listed.
 pub async fn hosts(engine: &dyn Engine) -> Result<Vec<HostView>, String> {
-    let out = engine.call("bastion", LIST, json!({})).await?;
+    let out = engine.call(NS, LIST, json!({})).await?;
     let listed = out["hosts"].as_array().into_iter().flatten();
     Ok(listed.map(view).collect())
 }
@@ -38,7 +39,7 @@ fn ids(listed: &Value, field: &str) -> BTreeSet<String> {
 
 /// The ids of removed hosts, or none when the worker does not answer.
 pub(super) async fn retired(engine: &dyn Engine) -> BTreeSet<String> {
-    let listed = engine.call("bastion", LIST, json!({})).await;
+    let listed = engine.call(NS, LIST, json!({})).await;
     listed.map(|l| ids(&l, "retired")).unwrap_or_default()
 }
 
@@ -46,7 +47,7 @@ pub(super) async fn retired(engine: &dyn Engine) -> BTreeSet<String> {
 /// provider the router already has, unless it was a host here, and a
 /// removed host's key goes with it.
 pub async fn hosts_set(engine: &dyn Engine, wanted: Vec<HostView>) -> Result<(), String> {
-    let listed = engine.call("bastion", LIST, json!({})).await?;
+    let listed = engine.call(NS, LIST, json!({})).await?;
     let current = ids(&listed, "hosts");
     let ours: BTreeSet<String> = current.union(&ids(&listed, "retired")).cloned().collect();
     let taken = providers::providers(engine).await?;
@@ -67,7 +68,7 @@ pub async fn hosts_set(engine: &dyn Engine, wanted: Vec<HostView>) -> Result<(),
     let set = json!({ "hosts": wanted.iter().map(|h| json!({
         "id": h.id, "name": h.name, "api_url": h.api_url,
     })).collect::<Vec<_>>() });
-    engine.call("bastion", SET, set).await.map(|_| ())
+    engine.call(NS, SET, set).await.map(|_| ())
 }
 
 #[cfg(test)]

@@ -7,6 +7,7 @@ use serde_json::{Value, json};
 
 use super::schema::*;
 use super::*;
+use crate::engine::NS;
 
 pub struct SqlStore {
     engine: Arc<dyn Engine>,
@@ -28,18 +29,14 @@ impl SqlStore {
             .collect();
         engine
             .call(
-                NAMESPACE,
+                NS,
                 "database::transaction",
                 json!({ "statements": statements }),
             )
             .await?;
         for sql in ALTERS {
             let applied = engine
-                .call(
-                    NAMESPACE,
-                    "database::execute",
-                    json!({ "sql": sql, "params": [] }),
-                )
+                .call(NS, "database::execute", json!({ "sql": sql, "params": [] }))
                 .await;
             if let Some(e) = applied
                 .as_ref()
@@ -79,7 +76,7 @@ impl SqlStore {
     pub(crate) async fn transaction(&self, statements: Vec<Value>) -> Result<(), String> {
         self.engine
             .call(
-                NAMESPACE,
+                NS,
                 "database::transaction",
                 json!({ "statements": statements }),
             )
@@ -91,7 +88,7 @@ impl SqlStore {
         let out = self
             .engine
             .call(
-                NAMESPACE,
+                NS,
                 "database::query",
                 json!({ "sql": sql, "params": params }),
             )
@@ -177,7 +174,7 @@ impl SqlStore {
         let out = self
             .engine
             .call(
-                NAMESPACE,
+                NS,
                 "database::execute",
                 json!({ "sql": sql, "params": params }),
             )

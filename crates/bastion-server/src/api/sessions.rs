@@ -5,6 +5,7 @@ use bastion_protocol::{SessionDetail, TurnStep};
 use serde_json::{Value, json};
 
 use super::factory::{FactoryCell, factory};
+use crate::engine::NS;
 use crate::gate::call_of;
 
 /// How much of a call's result a step keeps.
@@ -17,7 +18,7 @@ pub async fn session(cell: &FactoryCell, id: String) -> Result<SessionDetail, St
     let asked = json!({ "session_id": id });
     let out = factory
         .engine()
-        .call("bastion", "session::messages", asked)
+        .call(NS, "session::messages", asked)
         .await?;
     let gate = factory.store().gate_entries(&job).await?;
     let verdicts = gate.into_iter().map(|e| e.record.detail).collect();

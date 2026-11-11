@@ -7,18 +7,16 @@ use bastion_protocol::{
 };
 use serde_json::{Value, json};
 
+use crate::engine::NS;
 use crate::engine::{DEFAULT_NAMESPACE, Engine};
 
 /// The namespace the compose daemon and the queue worker answer in.
-const STACK_NAMESPACE: &str = "bastion";
 /// How long a log read waits for new lines. compose allows 5000.
 const LOG_WAIT_MS: u64 = 5_000;
 const LOG_TAIL: u64 = 200;
 
 pub async fn read(engine: &dyn Engine) -> Result<Console, String> {
-    let status = engine
-        .call(STACK_NAMESPACE, "compose::status", json!({}))
-        .await?;
+    let status = engine.call(NS, "compose::status", json!({})).await?;
     let functions = engine
         .call(DEFAULT_NAMESPACE, "engine::functions::list", json!({}))
         .await?;
@@ -26,7 +24,7 @@ pub async fn read(engine: &dyn Engine) -> Result<Console, String> {
         .call(DEFAULT_NAMESPACE, "engine::triggers::list", json!({}))
         .await?;
     let topics = engine
-        .call(STACK_NAMESPACE, "engine::queue::list_topics", json!({}))
+        .call(NS, "engine::queue::list_topics", json!({}))
         .await?;
     let mut queues = Vec::new();
     for name in topics
@@ -36,11 +34,7 @@ pub async fn read(engine: &dyn Engine) -> Result<Console, String> {
         .filter_map(|t| t["name"].as_str())
     {
         let stats = engine
-            .call(
-                STACK_NAMESPACE,
-                "engine::queue::topic_stats",
-                json!({ "topic": name }),
-            )
+            .call(NS, "engine::queue::topic_stats", json!({ "topic": name }))
             .await?;
         queues.push(queue(name, &stats));
     }
@@ -106,9 +100,7 @@ pub async fn logs(engine: &dyn Engine, request: &LogRequest) -> Result<LogPage, 
         }
         None => payload["tail"] = json!(LOG_TAIL),
     }
-    let out = engine
-        .call(STACK_NAMESPACE, "compose::logs", payload)
-        .await?;
+    let out = engine.call(NS, "compose::logs", payload).await?;
     let ours = out["containers"]
         .as_array()
         .into_iter()
@@ -141,7 +133,7 @@ pub async fn set_running(engine: &dyn Engine, name: &str, running: bool) -> Resu
         "compose::down"
     };
     engine
-        .call(STACK_NAMESPACE, function, json!({ "container": name }))
+        .call(NS, function, json!({ "container": name }))
         .await
         .map(|_| ())
 }

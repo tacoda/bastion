@@ -57,7 +57,7 @@ impl IiiEngine {
                 name: format!("bastion-app-{}", std::process::id()),
                 ..WorkerMetadata::default()
             }),
-            namespace: Some("bastion".into()),
+            namespace: Some(super::NS.into()),
             ..InitOptions::default()
         };
         Self {

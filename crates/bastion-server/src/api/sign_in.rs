@@ -6,6 +6,7 @@ use bastion_protocol::{ProviderView, SignIn};
 use serde_json::json;
 
 use crate::engine::Engine;
+use crate::engine::NS;
 
 /// Whether OpenAI Codex is signed in. `llm-router` reports it as having no
 /// credential, so its worker is asked. A provider that takes a key is left
@@ -14,7 +15,7 @@ pub async fn with_sign_in(engine: &dyn Engine, mut p: ProviderView) -> ProviderV
     if p.id != "openai-codex" {
         return p;
     }
-    let status = engine.call("bastion", "provider::openai-codex::auth::status", json!({}));
+    let status = engine.call(NS, "provider::openai-codex::auth::status", json!({}));
     let signed_in = status.await.is_ok_and(|v| v["status"] == "authenticated");
     p.source = if signed_in { "signed_in" } else { "none" }.into();
     p.ready = signed_in;
@@ -24,7 +25,7 @@ pub async fn with_sign_in(engine: &dyn Engine, mut p: ProviderView) -> ProviderV
 /// Start a ChatGPT sign-in for OpenAI Codex.
 pub async fn codex_sign_in(engine: &dyn Engine) -> Result<SignIn, String> {
     let started = engine
-        .call("bastion", "provider::openai-codex::login::start", json!({}))
+        .call(NS, "provider::openai-codex::login::start", json!({}))
         .await?;
     serde_json::from_value(started).map_err(|e| format!("the Codex sign-in answered oddly: {e}"))
 }
@@ -34,7 +35,7 @@ pub async fn codex_sign_in(engine: &dyn Engine) -> Result<SignIn, String> {
 pub async fn codex_sign_in_poll(engine: &dyn Engine, login_id: String) -> Result<String, String> {
     let polled = engine
         .call(
-            "bastion",
+            NS,
             "provider::openai-codex::login::poll",
             json!({ "login_id": login_id }),
         )
@@ -42,11 +43,7 @@ pub async fn codex_sign_in_poll(engine: &dyn Engine, login_id: String) -> Result
     let status = polled["status"].as_str().unwrap_or("error").to_string();
     if status == "ok" {
         engine
-            .call(
-                "bastion",
-                "provider::openai-codex::refresh_models",
-                json!({}),
-            )
+            .call(NS, "provider::openai-codex::refresh_models", json!({}))
             .await?;
     }
     Ok(status)
@@ -54,7 +51,7 @@ pub async fn codex_sign_in_poll(engine: &dyn Engine, login_id: String) -> Result
 
 pub async fn codex_sign_out(engine: &dyn Engine) -> Result<(), String> {
     engine
-        .call("bastion", "provider::openai-codex::auth::logout", json!({}))
+        .call(NS, "provider::openai-codex::auth::logout", json!({}))
         .await
         .map(|_| ())
 }

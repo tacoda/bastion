@@ -15,11 +15,11 @@ use serde_json::{Value, json};
 
 use crate::audit_log::AuditLog;
 use crate::charter::{self, Charter};
+use crate::engine::NS;
 use crate::engine::{DEFAULT_NAMESPACE, Engine};
 use crate::factory::{OnChange, now};
 use crate::store::{HeldCall, Store};
 
-const NS: &str = "bastion";
 const RUN_MS: u64 = 120_000;
 
 /// The rules the gate judges by, as the store last gave them.

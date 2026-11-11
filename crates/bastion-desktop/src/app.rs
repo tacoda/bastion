@@ -41,6 +41,7 @@ pub enum Message {
     Engine(engine::Msg),
     Evals(evals::Msg),
     Costs(pages::costs::Msg),
+    Learn(pages::learn::Msg),
     Session(pages::session::Msg),
     Settings(pages::settings::Msg),
     Workflows(pages::workflows::Msg),
@@ -150,6 +151,7 @@ impl App {
             | Message::Engine(_)
             | Message::Evals(_)
             | Message::Costs(_)
+            | Message::Learn(_)
             | Message::Session(_)
             | Message::Settings(_)
             | Message::Workflows(_)) => {

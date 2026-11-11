@@ -10,6 +10,7 @@ pub mod evals;
 pub mod govern;
 pub mod job;
 pub mod jobs;
+pub mod learn;
 pub mod new_request;
 pub mod session;
 pub mod settings;
@@ -189,6 +190,7 @@ pub enum Page {
     Engine(Box<engine::State>),
     Evals(Box<evals::List>),
     Costs(Box<costs::State>),
+    Learn(Box<learn::State>),
     Session(Box<session::State>),
     Eval(Box<evals::One>),
     Settings(Box<settings::State>),
@@ -219,6 +221,7 @@ impl Page {
             Route::Engine => Page::Engine(Box::default()),
             Route::Evals => Page::Evals(Box::default()),
             Route::Costs => Page::Costs(Box::default()),
+            Route::Learn => Page::Learn(Box::default()),
             Route::Session(id) => Page::Session(Box::new(session::State::new(id.clone()))),
             Route::Eval(id) => Page::Eval(Box::new(evals::One::new(id.clone()))),
             Route::Settings => Page::Settings(Box::default()),
@@ -249,6 +252,7 @@ impl Page {
             Page::Engine(_) => engine::load(ctx),
             Page::Evals(_) => evals::load_list(ctx),
             Page::Costs(_) => costs::load(ctx),
+            Page::Learn(_) => learn::load(ctx),
             Page::Session(s) => session::load(s, ctx),
             Page::Eval(s) => evals::load_one(s, ctx),
             Page::Settings(_) => settings::load(ctx),
@@ -277,6 +281,7 @@ impl Page {
             (Page::Engine(s), Message::Engine(m)) => return engine::update(s, m, ctx),
             (Page::Evals(s), Message::Evals(m)) => return evals::update_list(s, m, ctx),
             (Page::Costs(s), Message::Costs(m)) => costs::update(s, m),
+            (Page::Learn(s), Message::Learn(m)) => return learn::update(s, m, ctx),
             (Page::Session(s), Message::Session(m)) => session::update(s, m),
             (Page::Eval(s), Message::Evals(m)) => return evals::update_one(s, m, ctx),
             (Page::Settings(s), Message::Settings(m)) => return settings::update(s, m, ctx),
@@ -295,6 +300,7 @@ impl Page {
             Page::Engine(s) => engine::view(s),
             Page::Evals(s) => evals::view_list(s),
             Page::Costs(s) => costs::view(s, ctx),
+            Page::Learn(s) => learn::view(s, ctx),
             Page::Session(s) => session::view(s, ctx),
             Page::Eval(s) => evals::view_one(s, ctx),
             Page::Settings(s) => settings::view(s, ctx),

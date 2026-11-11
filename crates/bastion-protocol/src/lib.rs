@@ -366,6 +366,33 @@ pub struct SessionDetail {
     pub steps: Vec<TurnStep>,
 }
 
+/// One change a learn turn proposed (F6), and what a person decided.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProposalView {
+    pub job: String,
+    pub workspace: String,
+    /// Its place in the job's reply, from 1.
+    pub n: u32,
+    /// `constraint` or `gate`.
+    pub kind: String,
+    /// A constraint's rule, or a gate's `name: command`.
+    pub change: String,
+    /// The calls a constraint binds: `function` and the words, if any.
+    pub binds: String,
+    pub why: String,
+    pub evidence: String,
+    /// Empty while open, else `accepted` or `declined`.
+    pub decision: String,
+}
+
+/// A person's decision on one proposal.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProposalDecision {
+    pub job: String,
+    pub n: u32,
+    pub accept: bool,
+}
+
 /// What some turns used in all, under one key such as a workspace or a day.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Tally {

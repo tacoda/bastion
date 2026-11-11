@@ -113,8 +113,18 @@ short enough to read in two minutes.";
 const LEARN: &str = "\
 The job below is done. Do not change any file. Say what surprised you in this
 repository: a rule the factory should have told you, a check that was missing,
-or a step that took longer than it should. Propose each as one change to the
-repository's rules, with why. Say NOTHING TO LEARN if there is nothing.";
+or a step that took longer than it should. Propose each as one change, with
+why, and quote the evidence from the job: the call, the error or the output.
+Reply with one JSON object and nothing else:
+{\"proposals\": [
+  {\"kind\": \"constraint\", \"rule\": \"what every turn must do or not do\",
+   \"function\": \"the calls it binds, such as sandbox::exec\",
+   \"contains\": \"words such a call holds\", \"why\": \"...\", \"evidence\": \"...\"},
+  {\"kind\": \"gate\", \"name\": \"a short name\",
+   \"command\": \"a check over the changed files, {files} for them\",
+   \"why\": \"...\", \"evidence\": \"...\"}
+]}
+Reply with only NOTHING TO LEARN if there is nothing.";
 
 const BUILD: &str = "\
 You are carrying out the approved plan below in the repository in /work/repo.

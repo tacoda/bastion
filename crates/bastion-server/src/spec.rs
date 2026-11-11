@@ -53,7 +53,7 @@ pub fn read(report: &str) -> Result<Spec, String> {
 }
 
 /// The text of the first fenced block, if the reply has one.
-fn fenced(report: &str) -> Option<&str> {
+pub(crate) fn fenced(report: &str) -> Option<&str> {
     let start = report.find("```")?;
     let after = &report[start + 3..];
     let body = &after[after.find('\n')? + 1..];

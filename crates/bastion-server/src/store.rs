@@ -124,6 +124,8 @@ pub trait Store: EvalStore + PeopleStore + SettingsStore + WorkflowStore + Send 
     fn save<'a>(&'a self, record: &'a Record) -> Answer<'a, i64>;
     fn add_artifact<'a>(&'a self, job: &'a str, artifact: &'a Artifact) -> Answer<'a, ()>;
     fn artifacts<'a>(&'a self, job: &'a str) -> Answer<'a, Vec<Artifact>>;
+    /// Every learn reply as (job, workspace, body), newest first.
+    fn learned(&self) -> Answer<'_, Vec<(String, String, String)>>;
     /// The checkpoint dials. A checkpoint with no row asks.
     fn dials(&self) -> Answer<'_, Dials>;
     fn constraints(&self) -> Answer<'_, Vec<Constraint>>;
@@ -142,6 +144,8 @@ pub trait Store: EvalStore + PeopleStore + SettingsStore + WorkflowStore + Send 
     fn audit(&self) -> Answer<'_, Vec<Entry>>;
     /// The gate's entries for one job, oldest first.
     fn gate_entries<'a>(&'a self, job: &'a str) -> Answer<'a, Vec<Entry>>;
+    /// Every entry of one kind, oldest first.
+    fn entries_of<'a>(&'a self, kind: &'a str) -> Answer<'a, Vec<Entry>>;
     /// The newest entry, the one the next appends after.
     fn audit_tail(&self) -> Answer<'_, Option<Entry>>;
     /// Add the next entry. A second entry with the same `seq` is refused, so
@@ -963,6 +967,14 @@ impl Store for SqlStore {
         })
     }
 
+    fn learned(&self) -> Answer<'_, Vec<(String, String, String)>> {
+        Box::pin(async move {
+            let sql = "SELECT a.job, j.workspace, a.body FROM artifacts a JOIN jobs j ON j.id = a.job WHERE a.stage = 'learn' ORDER BY a.id DESC";
+            let row = |r: &Value| Ok((parse(r, "job")?, parse(r, "workspace")?, parse(r, "body")?));
+            self.rows(sql, json!([]), row).await
+        })
+    }
+
     fn artifacts<'a>(&'a self, job: &'a str) -> Answer<'a, Vec<Artifact>> {
         Box::pin(async move {
             self.query(
@@ -1071,6 +1083,13 @@ impl Store for SqlStore {
         Box::pin(async move {
             let sql = "SELECT seq, at, kind, subject, detail, prev, hash FROM audit_log WHERE kind = 'gate' AND subject = ? ORDER BY seq";
             self.rows(sql, json!([job]), entry).await
+        })
+    }
+
+    fn entries_of<'a>(&'a self, kind: &'a str) -> Answer<'a, Vec<Entry>> {
+        Box::pin(async move {
+            let sql = "SELECT seq, at, kind, subject, detail, prev, hash FROM audit_log WHERE kind = ? ORDER BY seq";
+            self.rows(sql, json!([kind]), entry).await
         })
     }
 
@@ -1212,6 +1231,16 @@ pub mod fake {
             Box::pin(async move { Ok(found) })
         }
 
+        fn learned(&self) -> Answer<'_, Vec<(String, String, String)>> {
+            let jobs = self.jobs.lock().unwrap();
+            let mut all: Vec<_> = matching(&self.artifacts, |(_, a)| a.stage == Stage::Learn)
+                .into_iter()
+                .filter_map(|(j, a)| Some((j.clone(), jobs.get(&j)?.job.workspace.clone(), a.body)))
+                .collect();
+            all.reverse();
+            Box::pin(async move { Ok(all) })
+        }
+
         fn dials(&self) -> Answer<'_, Dials> {
             let dials = self.dials.lock().unwrap().clone();
             Box::pin(async move { Ok(dials) })
@@ -1271,6 +1300,12 @@ pub mod fake {
                 .filter(|e| e.record.kind == "gate" && e.record.subject == job)
                 .collect();
             Box::pin(async move { Ok(of_job) })
+        }
+
+        fn entries_of<'a>(&'a self, kind: &'a str) -> Answer<'a, Vec<Entry>> {
+            let all = self.audit.lock().unwrap().clone();
+            let of_kind = all.into_iter().filter(|e| e.record.kind == kind).collect();
+            Box::pin(async move { Ok(of_kind) })
         }
 
         fn audit_tail(&self) -> Answer<'_, Option<Entry>> {

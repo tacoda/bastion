@@ -290,10 +290,12 @@ async fn transcript(factory: &Factory, session: Option<&str>) -> Vec<TranscriptL
 pub async fn job(cell: &FactoryCell, id: String) -> Result<JobDetail, String> {
     let factory = factory(cell)?;
     let record = factory.store().load(&id).await?;
-    let artifacts = factory
-        .store()
-        .artifacts(&id)
-        .await?
+    let held_artifacts = factory.store().artifacts(&id).await?;
+    let media = held_artifacts
+        .iter()
+        .filter_map(|a| bastion_core::media::named(&a.body).map(String::from))
+        .collect();
+    let artifacts = held_artifacts
         .into_iter()
         .map(|a| ArtifactView {
             stage: name(a.stage),
@@ -339,6 +341,7 @@ pub async fn job(cell: &FactoryCell, id: String) -> Result<JobDetail, String> {
         }),
         workflow: super::workflows::of_job(&**factory.store(), &record).await?,
         results: record.job.results.clone(),
+        media,
     })
 }
 

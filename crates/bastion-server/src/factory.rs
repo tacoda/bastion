@@ -739,6 +739,7 @@ impl Factory {
     /// writes code has its commits kept in the worktree, so a lost VM loses
     /// none. A bring-back error means no new commits, which is not a failure.
     async fn tidy_after_turn(&self, record: &Record) {
+        self.keep_media(record).await;
         let stage = record.job.stage;
         match &record.runtime.sandbox {
             Some(sandbox) if stage.read_only() => self.put_back(sandbox).await,
@@ -982,6 +983,7 @@ mod acceptance;
 mod decide;
 mod gates;
 mod land;
+mod media;
 mod onboard;
 mod resume;
 mod reverts;
@@ -1005,5 +1007,7 @@ fn writes_code(stage: Stage) -> bool {
     )
 }
 
+#[cfg(test)]
+mod later_tests;
 #[cfg(test)]
 mod tests;

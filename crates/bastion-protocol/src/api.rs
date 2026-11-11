@@ -32,6 +32,15 @@ fn fill(route: &str, name: &str, value: &str) -> String {
     route.replace(&format!("{{{name}}}"), &encode(value))
 }
 
+/// The route a job's kept screenshot or recording is read from (F11). It
+/// answers with the file's bytes, not JSON, so it is no `Request`.
+pub const MEDIA_ROUTE: &str = "/jobs/{id}/media/{name}";
+
+/// The path of `job`'s kept file `name`.
+pub fn media_path(job: &str, name: &str) -> String {
+    fill(&fill(MEDIA_ROUTE, "id", job), "name", name)
+}
+
 /// A path segment, percent-encoded.
 fn encode(segment: &str) -> String {
     let kept = |b: u8| b.is_ascii_alphanumeric() || b"-._~".contains(&b);

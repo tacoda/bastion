@@ -42,7 +42,7 @@ pub struct Ctx {
 }
 
 impl Ctx {
-    fn server(&self, name: &str) -> Result<Server, String> {
+    pub fn server(&self, name: &str) -> Result<Server, String> {
         let found = self.servers.iter().find(|s| s.name == name);
         found
             .cloned()

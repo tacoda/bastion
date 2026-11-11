@@ -536,6 +536,9 @@ pub struct JobDetail {
     pub workflow: WorkflowView,
     /// Each result its steps gave, by name.
     pub results: std::collections::BTreeMap<String, String>,
+    /// The screenshots and recordings its turns kept, by file name (F11).
+    #[serde(default)]
+    pub media: Vec<String>,
 }
 
 /// A workspace's charter for one job. No files means the job

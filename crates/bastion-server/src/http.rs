@@ -162,6 +162,7 @@ fn factory_routes() -> Router<App> {
         .route("/jobs/{id}/approve", post(job_approve))
         .route("/jobs/{id}/comment", post(job_comment))
         .route("/jobs/{id}/parts", post(job_parts))
+        .route(bastion_protocol::api::MEDIA_ROUTE, get(job_media))
         .route("/jobs/{id}/stop", post(job_stop))
         .route("/jobs/{id}/retry", post(job_retry))
         .route("/jobs/{id}/extend", post(job_extend))
@@ -548,6 +549,26 @@ async fn job_parts(
     Json(b): Json<Parts>,
 ) -> Response {
     decide_as(&app, &person, id, JobEvent::PartsSet { parts: b.parts }).await
+}
+
+/// A job's kept screenshot or recording, as its bytes (F11).
+async fn job_media(State(app): State<App>, Path((id, name)): Path<(String, String)>) -> Response {
+    let found = app
+        .server
+        .factory
+        .get()
+        .and_then(|f| f.media_path(&id, &name));
+    let bytes = found.and_then(|p| app.server.machine.read_bytes(&p).ok());
+    match bytes {
+        Some(b) => {
+            let kind = bastion_core::media::content_type(&name);
+            ([(axum::http::header::CONTENT_TYPE, kind)], b).into_response()
+        }
+        None => {
+            let error = format!("job {id} kept no {name}");
+            (StatusCode::NOT_FOUND, Json(json!({ "error": error }))).into_response()
+        }
+    }
 }
 
 async fn job_stop(

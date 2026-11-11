@@ -36,6 +36,23 @@ pub fn stream_http() -> reqwest::Client {
 
 /// Send `request` to `server`, and read its answer, or the server's
 /// refusal as text.
+/// The bytes of `job`'s kept screenshot or recording `name` (F11).
+pub async fn media(
+    http: &reqwest::Client,
+    server: &Server,
+    job: &str,
+    name: &str,
+) -> Result<Vec<u8>, String> {
+    let path = bastion_protocol::api::media_path(job, name);
+    let url = format!("{}{path}", server.url.trim_end_matches('/'));
+    let sent = http.get(url).bearer_auth(&server.token).send();
+    let response = sent.await.map_err(|e| e.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("{name}: {}", response.status()));
+    }
+    Ok(response.bytes().await.map_err(|e| e.to_string())?.to_vec())
+}
+
 pub async fn send<R: Request>(
     http: &reqwest::Client,
     server: &Server,

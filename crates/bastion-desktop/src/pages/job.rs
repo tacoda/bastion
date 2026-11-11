@@ -77,6 +77,8 @@ pub enum Msg {
     Refuse(String),
     ToggleStep(String),
     ToggleTurn,
+    /// Open a kept screenshot or recording with the system's viewer (F11).
+    OpenMedia(String),
 }
 
 /// What the owner does to a job from its page.
@@ -197,6 +199,7 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
             }
         }
         Msg::ToggleTurn => state.turn_open = !state.turn_open,
+        Msg::OpenMedia(name) => return open_media(ctx, &state.id, name),
     }
     Task::none()
 }
@@ -728,6 +731,46 @@ fn top(state: &State) -> Element<'_, Message> {
     bar.into()
 }
 
+/// Fetch a kept file, put it in a temporary folder, and open it there.
+fn open_media(ctx: &Ctx, job: &str, name: String) -> Task<Message> {
+    let (ctx, job) = (ctx.clone(), job.to_string());
+    let saved = async move {
+        let server = ctx.server(&ctx.current)?;
+        let bytes = bastion_client::client::media(&ctx.http, &server, &job, &name).await?;
+        let dir = std::env::temp_dir().join("bastion-media").join(&job);
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let path = dir.join(&name);
+        std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+        Ok::<_, String>(path.display().to_string())
+    };
+    Task::perform(saved, |done| match done {
+        Ok(path) => Message::OpenUrl(path),
+        Err(e) => Message::Job(Msg::Acted(Err(e))),
+    })
+}
+
+/// The screenshots and recordings the job's turns kept, each to open.
+fn kept_files(d: &JobDetail) -> Option<Element<'_, Message>> {
+    if d.media.is_empty() {
+        return None;
+    }
+    let rows = d.media.iter().map(|name| {
+        let open = button(text("Open").size(12))
+            .style(theme::link)
+            .on_press(Message::Job(Msg::OpenMedia(name.clone())));
+        row![
+            text(name.clone()).size(13).font(theme::MONO).width(Fill),
+            open
+        ]
+        .spacing(8)
+        .into()
+    });
+    let body = iced::widget::Column::with_children(rows)
+        .spacing(4)
+        .padding([8, 12]);
+    Some(section("Kept files".into(), body.into(), false))
+}
+
 pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let mut page = column![top(state)].spacing(16);
     if let Some(d) = &state.detail {
@@ -737,6 +780,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         }
         page = page
             .extend(holds(state, d))
+            .extend(kept_files(d))
             .extend(d.charter.as_ref().map(charter));
     }
     page = page.push(text(&state.error).color(theme::BAD));

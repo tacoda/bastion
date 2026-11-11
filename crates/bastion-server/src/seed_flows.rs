@@ -260,6 +260,7 @@ fn chain(steps: Vec<Step>) -> Graph {
     let links = ids.windows(2).map(|w| Link {
         from: w[0].into(),
         to: w[1].into(),
+        failure: false,
     });
     Graph {
         nodes: nodes.collect(),

@@ -125,6 +125,9 @@ pub struct ReachView {
 pub struct LinkView {
     pub from: String,
     pub to: String,
+    /// A failure link: the job goes along it when `from` fails (D47).
+    #[serde(default)]
+    pub failure: bool,
 }
 
 /// set in Settings), `env`, `signed_in` (a subscription), or `none`. Never

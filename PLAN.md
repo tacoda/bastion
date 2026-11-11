@@ -180,12 +180,24 @@ committed to `demo-local`, the server read both as its charter and its
 rule that denies `git push`. A workspace with only `.claude/` files, such
 as `bastion-gh`, shows no charter until it has `.agents/`.
 
-## After this plan
+### U11. Workflows that branch (D47)
 
-- Workflows that branch: a step can name a step to go to on failure, so a
-  workflow draws as a flowchart. Today a failure waits for you or goes back
-  to the step that writes. This changes the core, so it needs a decision
-  first.
+- A link may be a failure link. When its step fails, the job goes along
+  it instead of back to the step that writes.
+- A failure link orders nothing, so it may go back; a step only failure
+  links reach is skipped otherwise.
+- The failing step's revisions bound a loop; past them a person decides.
+- The canvas draws a failure link red and dashed; a picked link has an
+  "On failure" box.
+
+Done 2026-11-11. Live, on a copy of Short whose checks exit 1 and whose
+failure link goes to a lights-on `report` step: plan and build ran, the
+checks failed, the job went to `report` instead of back to build,
+`report` ran, and the job waited there; it was stopped so nothing
+landed. The canvas drew the link red and dashed.
+
+Known gap: the job's steps show a step that failed and branched as done,
+as the job keeps no outcome per step.
 
 ## Open questions
 

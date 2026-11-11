@@ -70,6 +70,7 @@ retired with the old plan.
 | D44 | A step is known as `workflow/step`. A grant may be for one workflow step, and it wins over the grant for its kind; a constraint may apply at some steps only, and with none named it applies at every step. The gate reads the step from the turn. |
 | D45 | A step is a prompt, an agent, a skill or a shell script. A repository's command is not a kind of its own: a prompt that reads its file does what it did, and that is what migration 7 makes of each command step. This narrows D39. |
 | D46 | A repository's charter is `AGENTS.md` and `.agents/`: `.agents/settings.json` holds its permissions and hooks, and `.agents/agents` and `.agents/skills` hold the agents and skills its steps run. Bastion assumes no one vendor's files. The harness, the rules on an agent's calls, is Bastion's own. |
+| D47 | A link may be a failure link: when its step fails, the job goes along it instead of back to the step that writes. A failure link orders nothing, so it may go back to an earlier step; a step reached only by failure links is skipped otherwise. The failing step's revisions bound any loop, and past them a person decides. A step has at most one failure link. |
 
 ## Open questions
 

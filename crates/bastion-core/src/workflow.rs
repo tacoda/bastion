@@ -85,6 +85,10 @@ impl Reach {
 pub struct Link {
     pub from: String,
     pub to: String,
+    /// A failure link: the job goes along it when `from` fails, and it does
+    /// not order the steps, so it may go back to an earlier one (D47).
+    #[serde(default)]
+    pub failure: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -108,6 +112,13 @@ pub struct Step {
     pub reach: Reach,
     #[serde(default)]
     pub options: Options,
+    /// The step a failure of this one goes to, along its failure link (D47).
+    #[serde(default)]
+    pub on_failure: Option<String>,
+    /// Reached only by failure links, so the job skips it unless one leads
+    /// to it.
+    #[serde(default)]
+    pub failure_only: bool,
 }
 
 /// The level of a workflow's steps by their dials (D33): lights-on when
@@ -229,7 +240,9 @@ impl Graph {
             self.nodes.iter().map(|n| (n.id.as_str(), 0)).collect();
         for l in &self.links {
             let to = waiting.get_mut(l.to.as_str());
-            *to.ok_or(format!("a link goes to {}, which is not a step here", l.to))? += 1;
+            let to = to.ok_or(format!("a link goes to {}, which is not a step here", l.to))?;
+            // A failure link orders nothing (D47).
+            *to += usize::from(!l.failure);
         }
         let mut order: Vec<&Node> = Vec::new();
         while let Some(next) = by_place
@@ -237,7 +250,11 @@ impl Graph {
             .find(|n| waiting[n.id.as_str()] == 0 && !order.iter().any(|o| o.id == n.id))
         {
             order.push(next);
-            for l in self.links.iter().filter(|l| l.from == next.id) {
+            for l in self
+                .links
+                .iter()
+                .filter(|l| l.from == next.id && !l.failure)
+            {
                 *waiting.get_mut(l.to.as_str()).expect("checked above") -= 1;
             }
         }
@@ -271,7 +288,22 @@ impl Graph {
                 l.from
             ));
         }
+        self.failure_links_fit()?;
         self.order().map(|_| ())
+    }
+
+    /// A step has at most one failure link, and it goes to another step.
+    fn failure_links_fit(&self) -> Result<(), String> {
+        let failing: Vec<&Link> = self.links.iter().filter(|l| l.failure).collect();
+        for (i, l) in failing.iter().enumerate() {
+            if l.from == l.to {
+                return Err(format!("{}'s failure link goes back to itself", l.from));
+            }
+            if failing[..i].iter().any(|m| m.from == l.from) {
+                return Err(format!("{} has two failure links", l.from));
+            }
+        }
+        Ok(())
     }
 
     /// The `i`th node: its id new, with what it runs and what it reaches.
@@ -281,6 +313,12 @@ impl Graph {
             return Err(format!("the step id {:?} is empty or taken", n.id));
         }
         what_runs(n)
+    }
+
+    /// Whether every link into `id` is a failure link, and one is.
+    fn failure_only(&self, id: &str) -> bool {
+        let mut into = self.links.iter().filter(|l| l.to == id).peekable();
+        into.peek().is_some() && into.all(|l| l.failure)
     }
 
     /// The steps a job runs, in link order.
@@ -298,12 +336,18 @@ impl Graph {
                 needs: self
                     .links
                     .iter()
-                    .filter(|l| l.to == n.id)
+                    .filter(|l| l.to == n.id && !l.failure)
                     .flat_map(|l| gives(&l.from))
                     .collect(),
                 gives: n.results.clone(),
                 reach: n.reach.clone(),
                 options: n.options.clone(),
+                on_failure: self
+                    .links
+                    .iter()
+                    .find(|l| l.from == n.id && l.failure)
+                    .map(|l| l.to.clone()),
+                failure_only: self.failure_only(&n.id),
             })
             .collect())
     }
@@ -333,6 +377,7 @@ mod tests {
         Link {
             from: from.into(),
             to: to.into(),
+            failure: false,
         }
     }
 
@@ -512,5 +557,50 @@ mod tests {
         g.nodes[0].options.spend_micros = Some(5);
         let steps = g.steps().unwrap();
         assert_eq!(steps[0].options.spend_micros, Some(5), "a job keeps it");
+    }
+
+    #[test]
+    fn a_failure_link_orders_nothing_and_a_step_has_at_most_one() {
+        let fail = |from: &str, to: &str| Link {
+            failure: true,
+            ..link(from, to)
+        };
+        let mut tests = node("tests", Shell, 200, &[]);
+        tests.run = "make test".into();
+        let mut g = Graph {
+            nodes: vec![
+                prompt("plan", 0, &["plan"]),
+                prompt("build", 100, &[]),
+                tests,
+            ],
+            links: vec![
+                link("plan", "build"),
+                link("build", "tests"),
+                fail("tests", "plan"),
+            ],
+        };
+        assert_eq!(g.check(), Ok(()), "a failure link back is no circle");
+        let steps = g.steps().unwrap();
+        assert_eq!(steps[2].on_failure.as_deref(), Some("plan"));
+        assert!(
+            steps[0].needs.is_empty(),
+            "results go only along success links"
+        );
+        g.links.push(fail("tests", "build"));
+        assert!(g.check().unwrap_err().contains("two failure links"));
+        g.links.pop();
+        g.links.push(fail("build", "build"));
+        assert!(g.check().unwrap_err().contains("back to itself"));
+        g.links.pop();
+        let mut notify = node("notify", Shell, 300, &[]);
+        notify.run = "echo failed".into();
+        g.nodes.push(notify);
+        g.links = vec![
+            link("plan", "build"),
+            link("build", "tests"),
+            fail("tests", "notify"),
+        ];
+        let steps = g.steps().unwrap();
+        assert!(steps[3].failure_only && !steps[2].failure_only);
     }
 }

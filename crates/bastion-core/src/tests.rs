@@ -16,6 +16,8 @@ fn prompt(id: &str, dial: Dial) -> Step {
         gives: Vec::new(),
         reach: Reach::default(),
         options: Options::default(),
+        on_failure: None,
+        failure_only: false,
     }
 }
 
@@ -330,4 +332,69 @@ fn a_spent_step_starts_no_more_turns_by_itself_but_a_person_may_send_it_back() {
     };
     let (fixing, _) = step(&j, &failed, AT, &under);
     assert_eq!(fixing.state, State::Running, "under its budget, it runs");
+}
+
+#[test]
+fn a_failure_goes_along_its_link_and_a_step_only_a_failure_reaches_is_skipped() {
+    let mut j = job([Dial::Dark; 3]);
+    // plan, build, tests, then notify, which only a failure of tests reaches.
+    j.flow.push(shell("notify", Dial::Dark));
+    j.flow[2].on_failure = Some("notify".into());
+    j.flow[3].failure_only = true;
+    (j.node, j.stage) = (Some("tests".into()), Stage::Shell);
+    j.results.insert("plan".into(), "1. Add x.".into());
+    let (branched, effects) = go(
+        &j,
+        Event::StepFailed {
+            detail: "1 failed".into(),
+        },
+    );
+    assert_eq!(
+        (branched.node.as_deref(), kinds(&effects)),
+        (Some("notify"), vec!["artifact", "run"]),
+        "past build, which would otherwise fix it"
+    );
+    assert!(
+        branched
+            .feedback
+            .unwrap()
+            .starts_with("The step tests failed, and its workflow sends the failure here.")
+    );
+    let (passed, _) = go(
+        &j,
+        Event::Ran {
+            output: "3 passed".into(),
+        },
+    );
+    assert_eq!(
+        (passed.node.clone(), passed.finishing()),
+        (None, true),
+        "a pass skips notify and finishes"
+    );
+}
+
+#[test]
+fn a_failure_link_back_loops_until_the_step_runs_out_of_revisions() {
+    let mut j = job([Dial::Dark; 3]);
+    j.flow[2].on_failure = Some("plan".into());
+    j.flow[2].options.revisions = Some(1);
+    (j.node, j.stage) = (Some("tests".into()), Stage::Shell);
+    j.results.insert("plan".into(), "1. Add x.".into());
+    let failed = |detail: &str| Event::StepFailed {
+        detail: detail.into(),
+    };
+    let (back, _) = go(&j, failed("1 failed"));
+    assert_eq!(
+        back.node.as_deref(),
+        Some("plan"),
+        "back to plan, not build"
+    );
+    let mut again = back.clone();
+    (again.node, again.stage, again.state) = (Some("tests".into()), Stage::Shell, State::Running);
+    let (waits, _) = go(&again, failed("2 failed"));
+    assert_eq!(
+        (waits.state, waits.node.as_deref()),
+        (State::NeedsYou, Some("tests")),
+        "one revision, then a person decides"
+    );
 }

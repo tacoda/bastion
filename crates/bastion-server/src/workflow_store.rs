@@ -181,8 +181,8 @@ fn graph_statements(id: &str, version: u64, g: &Graph) -> Vec<Value> {
     });
     let links = g.links.iter().map(|l| {
         statement(
-            "INSERT INTO workflow_links (workflow, version, source, target) VALUES (?, ?, ?, ?)",
-            json!([id, version, l.from, l.to]),
+            "INSERT INTO workflow_links (workflow, version, source, target, failure) VALUES (?, ?, ?, ?, ?)",
+            json!([id, version, l.from, l.to, l.failure as i64]),
         )
     });
     nodes.chain(results).chain(links).collect()
@@ -229,12 +229,13 @@ impl WorkflowStore for SqlStore {
             }
             let links = self
                 .rows(
-                    &format!("SELECT source, target FROM workflow_links {where_}"),
+                    &format!("SELECT source, target, failure FROM workflow_links {where_}"),
                     at,
                     |r| {
                         Ok(Link {
                             from: parse(r, "source")?,
                             to: parse(r, "target")?,
+                            failure: r["failure"].as_i64() == Some(1),
                         })
                     },
                 )

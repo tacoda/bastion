@@ -61,14 +61,27 @@ fn corner(n: &NodeView) -> Point {
 }
 
 /// The curve from `from`'s right edge to `to`'s left, with its arrowhead.
-fn link(frame: &mut Frame, from: &NodeView, to: &NodeView, picked: bool) {
+/// One link as a curve with its head: a failure link red and dashed (D47).
+fn link(frame: &mut Frame, from: &NodeView, to: &NodeView, look: (bool, bool)) {
+    let (picked, failure) = look;
     let [start, c1, c2, end] = curve(from, to);
-    let color = if picked { theme::PRIMARY } else { theme::MUTED };
+    let color = match (picked, failure) {
+        (true, _) => theme::PRIMARY,
+        (false, true) => theme::BAD,
+        (false, false) => theme::MUTED,
+    };
     let line = Path::new(|p| {
         p.move_to(start);
         p.bezier_curve_to(c1, c2, end);
     });
-    frame.stroke(&line, Stroke::default().with_width(2.0).with_color(color));
+    let mut stroke = Stroke::default().with_width(2.0).with_color(color);
+    if failure {
+        stroke.line_dash = LineDash {
+            segments: &[6.0, 4.0],
+            offset: 0,
+        };
+    }
+    frame.stroke(&line, stroke);
     let head = Path::new(|p| {
         p.move_to(end);
         p.line_to(Point::new(end.x - 8.0, end.y - 4.0));
@@ -225,12 +238,8 @@ impl<M> canvas::Program<M> for Drawing<'_, M> {
         let w = self.workflow;
         for l in &w.links {
             if let (Some(from), Some(to)) = (node(w, &l.from), node(w, &l.to)) {
-                link(
-                    &mut frame,
-                    from,
-                    to,
-                    *self.picked == Pick::Link(l.from.clone(), l.to.clone()),
-                );
+                let picked = *self.picked == Pick::Link(l.from.clone(), l.to.clone());
+                link(&mut frame, from, to, (picked, l.failure));
             }
         }
         for n in &w.nodes {

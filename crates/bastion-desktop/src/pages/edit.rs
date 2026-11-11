@@ -208,6 +208,7 @@ pub fn add_link(w: &mut WorkflowView, from: &str, to: &str) {
         w.links.push(LinkView {
             from: from.into(),
             to: to.into(),
+            failure: false,
         });
     }
 }
@@ -288,7 +289,8 @@ mod tests {
             w.links,
             [LinkView {
                 from: "plan".into(),
-                to: "step".into()
+                to: "step".into(),
+                failure: false,
             }]
         );
         let mid = Point::new(PAD + W + 26.0, PAD + H / 2.0);

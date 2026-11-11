@@ -515,7 +515,13 @@ fn shell_ran(job: &mut Job, event: &Event, bounds: &Bounds) -> Vec<Effect> {
 /// them, or when the same failure comes back word for word, the job waits
 /// on a person.
 fn step_failed(job: &mut Job, detail: &str, bounds: &Bounds) -> Vec<Effect> {
-    let (Some(fixer), Some(at)) = (job.fixer(), job.node.clone()) else {
+    // A failure link wins over sending the work back to be fixed (D47).
+    let branch = job.step().and_then(|s| s.on_failure.clone());
+    let to = match &branch {
+        Some(target) => job.flow.iter().position(|s| &s.id == target),
+        None => job.fixer(),
+    };
+    let (Some(to), Some(at)) = (to, job.node.clone()) else {
         return stuck(job, detail);
     };
     if budget_spent(job, bounds) {
@@ -527,16 +533,21 @@ fn step_failed(job: &mut Job, detail: &str, bounds: &Bounds) -> Vec<Effect> {
         .step()
         .and_then(|s| s.options.revisions)
         .unwrap_or(MAX_REVISIONS);
-    let tries = job.revisions.entry(at).or_default();
+    let tries = job.revisions.entry(at.clone()).or_default();
     if *tries >= limit || job.last_refusal.as_deref() == Some(detail) {
         return stuck(job, detail);
     }
     *tries += 1;
     job.last_refusal = Some(detail.into());
-    job.feedback = Some(format!(
-        "A later step failed. Read its output, fix the cause, and commit.\n<output>\n{detail}\n</output>"
-    ));
-    job.go_to(fixer);
+    job.feedback = Some(match branch {
+        Some(_) => format!(
+            "The step {at} failed, and its workflow sends the failure here. Its output:\n<output>\n{detail}\n</output>"
+        ),
+        None => format!(
+            "A later step failed. Read its output, fix the cause, and commit.\n<output>\n{detail}\n</output>"
+        ),
+    });
+    job.go_to(to);
     start_within(job, bounds)
 }
 
@@ -578,7 +589,11 @@ fn finished(job: &mut Job, event: &Event) -> Vec<Effect> {
 /// trial stops instead, so nothing lands.
 fn advance(job: &mut Job, bounds: &Bounds) -> Vec<Effect> {
     job.last_refusal = None;
-    let next = job.position().map_or(job.flow.len(), |i| i + 1);
+    // A step only a failure leads to is skipped on the way (D47).
+    let mut next = job.position().map_or(job.flow.len(), |i| i + 1);
+    while next < job.flow.len() && job.flow[next].failure_only {
+        next += 1;
+    }
     if next < job.flow.len() {
         job.go_to(next);
         return start_within(job, bounds);

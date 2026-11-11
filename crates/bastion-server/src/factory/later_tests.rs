@@ -267,6 +267,8 @@ fn a_shell_step_gets_the_jobs_branch_and_the_vault_names_this_server_only_for_a_
             gives: Vec::new(),
             reach: Reach::default(),
             options: Default::default(),
+            on_failure: None,
+            failure_only: false,
         }];
         record.job.node = Some("tests".into());
         rig.factory.shell_step(&record).await;

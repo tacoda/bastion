@@ -87,6 +87,8 @@ pub enum Msg {
     Dial(Choice),
     RemoveStep,
     RemoveLink,
+    /// Make the picked link a failure link, or a success link again.
+    FailureLink(bool),
     CopyName(String),
     Copy,
     New,
@@ -391,6 +393,12 @@ fn change(state: &mut State, msg: Msg) {
             }
             state.pick(Pick::Nothing);
         }
+        Msg::FailureLink(on) => {
+            if let (Pick::Link(from, to), Some(w)) = (&state.picked, state.draft.as_mut()) {
+                let picked = w.links.iter_mut().find(|l| &l.from == from && &l.to == to);
+                picked.into_iter().for_each(|l| l.failure = on);
+            }
+        }
         Msg::RemoveLink => {
             if let (Pick::Link(from, to), Some(w)) = (&state.picked, state.draft.as_mut()) {
                 w.links.retain(|l| !(&l.from == from && &l.to == to));
@@ -662,8 +670,19 @@ fn picked(state: &State) -> Option<Element<'_, Message>> {
     match &state.picked {
         Pick::Step(id) => step_detail(state, id, editable),
         Pick::Link(from, to) if editable => {
+            let failure = state
+                .draft
+                .as_ref()
+                .and_then(|w| w.links.iter().find(|l| &l.from == from && &l.to == to))
+                .is_some_and(|l| l.failure);
+            let toggle = iced::widget::checkbox(failure)
+                .label(format!(
+                    "On failure: {from} goes to {to} only when it fails"
+                ))
+                .on_toggle(|on| wrap(Msg::FailureLink(on)));
             let body = column![
                 text(format!("The link from {from} to {to}")),
+                toggle,
                 small("Remove link", Some(wrap(Msg::RemoveLink)))
             ]
             .spacing(8);
@@ -876,5 +895,25 @@ mod tests {
             Msg::Model(Choice::new("deepseek/deepseek-flash", "Flash")),
         );
         assert_eq!(options(&state).model, "deepseek/deepseek-flash");
+    }
+
+    #[test]
+    fn a_picked_link_becomes_a_failure_link_and_back() {
+        let mut w = workflow("mine", 1, false);
+        edit::add_step(&mut w, "prompt");
+        edit::add_step(&mut w, "shell");
+        let (a, b) = (w.nodes[0].id.clone(), w.nodes[1].id.clone());
+        edit::add_link(&mut w, &b, &a);
+        let mut state = State {
+            draft: Some(w),
+            admin: true,
+            ..State::default()
+        };
+        state.pick(Pick::Link(b.clone(), a.clone()));
+        let failure = |state: &State| state.draft.as_ref().unwrap().links[0].failure;
+        change(&mut state, Msg::FailureLink(true));
+        assert!(failure(&state));
+        change(&mut state, Msg::FailureLink(false));
+        assert!(!failure(&state));
     }
 }

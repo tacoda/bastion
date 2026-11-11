@@ -49,6 +49,7 @@ fn view_of(w: &Workflow) -> WorkflowView {
             .map(|l| LinkView {
                 from: l.from.clone(),
                 to: l.to.clone(),
+                failure: l.failure,
             })
             .collect(),
     }

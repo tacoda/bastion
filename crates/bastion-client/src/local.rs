@@ -59,6 +59,31 @@ fn pointer() -> std::path::PathBuf {
     crate::start::config_dir().join("local-server")
 }
 
+/// The folders a server looks in for `iii` and `git`: `path`, then where
+/// they are usually installed. An app opened from Finder or the Dock gets
+/// only the system's folders, so `~/.local/bin` and Homebrew's are added.
+fn search_path(path: String) -> String {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let usual = [
+        format!("{home}/.local/bin"),
+        "/opt/homebrew/bin".into(),
+        "/usr/local/bin".into(),
+    ];
+    let mut all: Vec<String> = path
+        .split(':')
+        .filter(|p| !p.is_empty())
+        .map(String::from)
+        .collect();
+    for dir in usual {
+        if !all.contains(&dir) {
+            all.push(dir);
+        }
+    }
+    all.join(":")
+}
+
+// ponytail: a pointer left by a server since stopped, and a server started
+// another way, mislead an attach; try its token and fall back if refused.
 fn started_with() -> Option<std::path::PathBuf> {
     let kept = std::fs::read_to_string(pointer()).ok()?;
     Some(std::path::PathBuf::from(kept.trim())).filter(|p| p.join("token").exists())
@@ -71,6 +96,10 @@ fn spawn(at: &Layout) -> Result<(), String> {
     let log = File::create(data.join("server.log")).map_err(|e| e.to_string())?;
     let mut command = Command::new(&at.server);
     command
+        .env(
+            "PATH",
+            search_path(std::env::var("PATH").unwrap_or_default()),
+        )
         .args(["--checkout", &checkout.display().to_string()])
         .args(["--data", &data.display().to_string()])
         .args(["--port", &PORT.to_string()])
@@ -87,4 +116,18 @@ fn spawn(at: &Layout) -> Result<(), String> {
         .spawn()
         .map(|_| ())
         .map_err(|e| format!("{}: {e}", at.server.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_server_started_from_finder_still_finds_iii() {
+        let finder = search_path("/usr/bin:/bin:/usr/sbin:/sbin".into());
+        assert!(finder.starts_with("/usr/bin:/bin:/usr/sbin:/sbin:"));
+        assert!(finder.contains("/.local/bin") && finder.contains("/opt/homebrew/bin"));
+        let shell = search_path("/opt/homebrew/bin:/usr/bin".into());
+        assert_eq!(shell.matches("/opt/homebrew/bin").count(), 1, "{shell}");
+    }
 }

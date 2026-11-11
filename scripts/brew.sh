@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Write the Homebrew tap's formula and cask for a release (PLAN.md F10):
 #   Formula/bastion.rb  the server and the CLI, with their stack
-#   Casks/bastion.rb    Bastion.app, which holds them too
+#   Casks/bastion.rb    Bastion.app, on the formula, with bastion-desktop on the path
 # Usage: scripts/brew.sh <version> <SHA256SUMS> <tap checkout>
 set -euo pipefail
 
@@ -75,10 +75,11 @@ cask "bastion" do
 
   depends_on arch: :arm64
   depends_on macos: :ventura
+  # The CLI and the server come from the formula, so they are on the path once.
+  depends_on formula: "tacoda/bastion/bastion"
 
   app "Bastion.app"
-  binary "#{appdir}/Bastion.app/Contents/MacOS/bastion"
-  binary "#{appdir}/Bastion.app/Contents/MacOS/bastion-server"
+  binary "#{appdir}/Bastion.app/Contents/MacOS/bastion-desktop"
 
   caveats <<~TEXT
     Bastion.app is not signed with a Developer ID yet. Install it with

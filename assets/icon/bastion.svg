@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Bastion">
+  <defs>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1d2130"/>
+      <stop offset="1" stop-color="#0f1117"/>
+    </linearGradient>
+    <radialGradient id="lit" cx="512" cy="760" r="210" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fb923c" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#fb923c" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="32" y="32" width="960" height="960" rx="216" fill="url(#panel)"/>
+  <rect x="32.5" y="32.5" width="959" height="959" rx="215.5" fill="none" stroke="#262b38" stroke-width="3"/>
+  <circle cx="512" cy="760" r="210" fill="url(#lit)"/>
+  <g transform="translate(64 64) scale(14)" fill="none" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke="#a78bfa" d="M27.5 52H12V13h4v4h4v-4h4v15h5v-5h6v5h5V13h4v4h4v-4h4v39H36.5"/>
+    <path stroke="#a78bfa" d="M18 30v6M46 30v6"/>
+    <path stroke="#fb923c" fill="#fb923c" fill-opacity="0.18" d="M27.5 52v-7.5a4.5 4.5 0 0 1 9 0V52"/>
+  </g>
+</svg>

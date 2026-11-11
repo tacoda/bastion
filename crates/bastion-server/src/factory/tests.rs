@@ -643,6 +643,9 @@ fn with_github_as_the_forge_a_reviewed_change_goes_up_as_a_pull_request_and_merg
         until(&rig, &id, Stage::Land, State::NeedsYou).await;
         rig.factory.apply(&id, Event::Approved).await.unwrap();
         until(&rig, &id, Stage::Land, State::Landed).await;
+        let kept = rig.store.artifacts(&id).await.unwrap();
+        let merge = |a: &&Artifact| a.stage == Stage::Merge && a.body.contains("pull/1");
+        assert!(kept.iter().any(|a| merge(&a)), "the merge commit is kept");
         let calls = rig.engine.calls.lock().unwrap();
         let gh: Vec<_> = calls.iter().filter(|c| c.1 == "github::exec").collect();
         let at = |verb: &str| gh.iter().position(|c| c.2["args"][1] == verb);

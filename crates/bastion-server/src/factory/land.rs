@@ -325,8 +325,6 @@ impl Factory {
 
     /// Keep the commits the job lands as an artifact, so an escape found in
     /// one later traces to the job.
-    // ponytail: a pull request merged by squash or rebase lands new ids; trace
-    // by the merge commit when that matters.
     async fn keep_commits(&self, record: &Record, path: &Path, target: &str) {
         let range = format!("{target}..HEAD");
         let Ok(log) = self.git(path, &["log", "--format=%H %s", &range]) else {
@@ -397,6 +395,24 @@ impl Factory {
         })
     }
 
+    /// Keep the commit the merge made, as a land keeps its own: GitHub's
+    /// Revert button reverts that commit, and a squash or a rebase lands
+    /// none of the job's own ids.
+    async fn keep_merge_commit(&self, record: &Record, hub: &forge::GitHub<'_>, url: &str) {
+        let Ok(sha) = hub.merge_commit(url).await else {
+            return;
+        };
+        let Some(body) = escape::commits_artifact(&format!("{sha} Merge {url}")) else {
+            return;
+        };
+        let artifact = Artifact {
+            stage: Stage::Merge,
+            body,
+            created_at: super::now(),
+        };
+        let _ = self.store.add_artifact(&record.job.id, &artifact).await;
+    }
+
     /// Say the pull request's text again with the proof and the briefing
     /// that came after it opened, merge it, then bring the workspace's branch
     /// up to date.
@@ -410,6 +426,7 @@ impl Factory {
         };
         hub.edit(&url, &pr.body).await?;
         hub.merge(&url).await?;
+        self.keep_merge_commit(record, &hub, &url).await;
         // Best effort: a workspace with local changes keeps them and stays behind.
         let pull = ["pull", "-q", "--ff-only", "origin", &ws.branch];
         let _ = self.machine.run("git", &pull, Some(Path::new(&ws.path)));

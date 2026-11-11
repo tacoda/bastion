@@ -9,6 +9,7 @@ use bastion_protocol::{CostsView, SessionView, Tally};
 use iced::widget::{Column, button, column, container, row, text};
 use iced::{Element, Fill, Task};
 
+use super::chart::{self, Bars};
 use super::{Ctx, Each, ago, scrolled, section};
 use crate::app::Message;
 use crate::route::Route;
@@ -52,6 +53,8 @@ struct Combined {
     by_day: Vec<Tally>,
     /// Newest turn first.
     sessions: Vec<(String, SessionView)>,
+    /// Each server's cost by day, for the chart.
+    daily: Vec<(String, BTreeMap<String, u64>)>,
 }
 
 fn add(into: &mut Tally, t: &Tally) {
@@ -103,7 +106,15 @@ fn combine(read: &[(String, CostsView)]) -> Combined {
         .flat_map(|(server, v)| v.sessions.iter().map(move |s| (server.clone(), s.clone())))
         .collect();
     sessions.sort_by_key(|(_, s)| std::cmp::Reverse(s.ended_at));
+    let daily = read
+        .iter()
+        .map(|(server, v)| {
+            let days = v.by_day.iter().map(|t| (t.key.clone(), t.cost_micros));
+            (server.clone(), days.collect())
+        })
+        .collect();
     Combined {
+        daily,
         total,
         by_server: merge(by_server),
         by_workspace: merge(workspaces),
@@ -198,6 +209,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         v.total.sessions
     );
     body = body.push(container(text(total).size(18).font(theme::BOLD)));
+    body = body.push(chart::view("Spend by day, last 30 days", spend(v)));
     if many {
         body = body.push(tallies("By server", &v.by_server));
     }
@@ -216,6 +228,28 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         ),
     ]);
     scrolled(body.spacing(12))
+}
+
+/// Each day's spend over the last 30 days, split by server.
+fn spend(v: &Combined) -> Bars {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let columns = chart::last_days(now, 30);
+    let values = columns
+        .iter()
+        .map(|day| {
+            let on = |(_, days): &(String, BTreeMap<String, u64>)| days.get(day).copied();
+            v.daily.iter().map(|d| on(d).unwrap_or(0) as f64).collect()
+        })
+        .collect();
+    let series = v.daily.iter().zip(chart::PALETTE.iter().cycle());
+    Bars {
+        columns,
+        series: series.map(|((s, _), c)| (s.clone(), *c)).collect(),
+        values,
+        unit: |micros| format!("${:.4}", micros / 1e6),
+    }
 }
 
 #[cfg(test)]

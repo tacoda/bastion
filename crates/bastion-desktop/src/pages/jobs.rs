@@ -6,6 +6,7 @@ use bastion_protocol::{JobSummary, api};
 use iced::widget::{Column, button, column, container, pick_list, row, text, text_input};
 use iced::{Element, Fill, Task};
 
+use super::chart::{self, Bars};
 use super::{Ctx, ago, labeled, section};
 use crate::app::Message;
 use crate::route::Route;
@@ -238,6 +239,72 @@ fn group<'a>(title: String, jobs: Vec<ServerJob>, ctx: &Ctx, accent: bool) -> El
     section(title, body, accent)
 }
 
+/// How a job ended, or that it has not, for the chart.
+const ENDS: [(&str, iced::Color); 4] = [
+    ("landed", theme::OK),
+    ("failed", theme::BAD),
+    ("stopped", theme::MUTED),
+    ("open", theme::PRIMARY),
+];
+
+fn end_of(state: &str) -> &'static str {
+    match state {
+        "landed" => "landed",
+        "failed" => "failed",
+        "stopped" => "stopped",
+        _ => "open",
+    }
+}
+
+/// The jobs started each day over the last 30 days, split by how they ended.
+fn started(jobs: &[ServerJob], now: u64) -> Bars {
+    let columns = chart::last_days(now, 30);
+    let values = columns
+        .iter()
+        .map(|day| {
+            let on_day: Vec<&ServerJob> = jobs
+                .iter()
+                .filter(|j| chart::day(j.job.created_at) == *day)
+                .collect();
+            let ended = |end: &str| {
+                on_day
+                    .iter()
+                    .filter(|j| end_of(&j.job.state) == end)
+                    .count()
+            };
+            ENDS.iter().map(|(end, _)| ended(end) as f64).collect()
+        })
+        .collect();
+    Bars {
+        columns,
+        series: ENDS.iter().map(|(e, c)| (e.to_string(), *c)).collect(),
+        values,
+        unit: |n| format!("{n}"),
+    }
+}
+
+/// The counts that matter at a glance, and the jobs started by day.
+fn overview<'a>(jobs: &[ServerJob]) -> Element<'a, Message> {
+    let count = |states: &[&str]| {
+        let n = jobs
+            .iter()
+            .filter(|j| states.contains(&j.job.state.as_str()));
+        n.count().to_string()
+    };
+    let tiles = row![
+        chart::tile(count(&["needs_you"]), "waiting for you", theme::WARN),
+        chart::tile(count(&super::IN_PROGRESS), "in progress", theme::LINK),
+        chart::tile(count(&["landed"]), "landed", theme::OK),
+        chart::tile(count(&["failed"]), "failed", theme::BAD),
+    ]
+    .spacing(12);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let chart = chart::view("Jobs started by day, last 30 days", started(jobs, now));
+    column![tiles, chart].spacing(12).into()
+}
+
 fn filters<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let scope = scope(ctx);
     let shown = Some(state.place(scope).cloned().unwrap_or_else(|| EVERY.into()));
@@ -304,7 +371,15 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let head = row![text("Jobs").size(24).font(theme::BOLD).width(Fill), new].align_y(iced::Center);
     let down: Vec<String> = ctx.down.iter().cloned().collect();
     let note = text(page_note(&down, &state.errors)).color(theme::BAD);
-    let body = column![head, note, filters(state, ctx), groups(state, ctx)].spacing(16);
+    let shown = state.shown(scope(ctx));
+    let body = column![
+        head,
+        note,
+        filters(state, ctx),
+        overview(&shown),
+        groups(state, ctx)
+    ]
+    .spacing(16);
     super::scrolled(body)
 }
 
@@ -370,6 +445,33 @@ mod tests {
         update(&mut state, Msg::Place(EVERY.into()));
         update(&mut state, Msg::Search("REQUEST J1".into()));
         assert_eq!(state.shown(None)[0].job.id, "j1");
+    }
+
+    #[test]
+    fn the_chart_counts_each_days_jobs_by_how_they_ended() {
+        let at = |id: &str, state: &str, created_at| ServerJob {
+            server: "local".into(),
+            job: JobSummary {
+                id: id.into(),
+                state: state.into(),
+                created_at,
+                ..JobSummary::default()
+            },
+        };
+        let today = 951_782_400;
+        let jobs = [
+            at("a", "landed", today),
+            at("b", "needs_you", today + 60),
+            at("c", "failed", today - 86_400),
+        ];
+        let bars = started(&jobs, today);
+        assert_eq!(bars.columns.last().unwrap(), "2000-02-29");
+        assert_eq!(
+            bars.values[29],
+            [1.0, 0.0, 0.0, 1.0],
+            "landed, failed, stopped, open"
+        );
+        assert_eq!(bars.values[28], [0.0, 1.0, 0.0, 0.0]);
     }
 
     #[test]

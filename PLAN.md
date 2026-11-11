@@ -61,6 +61,14 @@ the page read under the route it left; that is fixed.
 - Graphs are drawn on iced's canvas, with no new dependency.
 - Exit, live: each graph matches the numbers in its page's table.
 
+Done 2026-11-11. One stacked bar chart over the last 30 days, with a
+legend and a hover line that names the day and each part, serves all three
+pages; Jobs and the Audit Log also get number tiles. Live: on Costs, the
+tallest day reads $0.1937 as its table does, and hovering 11-06 reads
+$0.0658, local $0.0628 and two $0.0029. The Audit Log's tiles read 206
+entries, 1 denial and 21 decisions, as its tallies do. Its chart covers
+only the entries the page read, the newest 200 per server, and says so.
+
 ### U4. Clean pages
 
 - One header on every page: the title, one line that says what the page

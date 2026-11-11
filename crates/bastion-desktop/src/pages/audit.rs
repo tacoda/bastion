@@ -8,6 +8,7 @@ use bastion_protocol::{AuditEntryView, AuditView};
 use iced::widget::{Column, button, column, container, row, text};
 use iced::{Color, Element, Fill, Task};
 
+use super::chart::{self, Bars};
 use super::{Ctx, Each, ago, scrolled};
 use crate::app::Message;
 use crate::theme;
@@ -97,6 +98,79 @@ fn merged(read: &[(String, AuditView)]) -> Vec<(&str, &AuditEntryView)> {
     all
 }
 
+/// The parts an audit day splits into, by what an entry records.
+const PARTS: [(&str, Color); 5] = [
+    ("gate continue", theme::PRIMARY),
+    ("gate deny", theme::BAD),
+    ("decide", theme::WARN),
+    ("act", theme::LINK),
+    ("other", theme::MUTED),
+];
+
+/// Which part of [`PARTS`] an entry counts in.
+fn part_of(e: &AuditEntryView) -> &'static str {
+    let decision = e.detail.split(' ').next().unwrap_or_default();
+    match (e.kind.as_str(), decision) {
+        ("gate", "deny") => "gate deny",
+        ("gate", _) => "gate continue",
+        ("decide", _) => "decide",
+        ("act", _) => "act",
+        _ => "other",
+    }
+}
+
+/// The entries read each day over the last 30 days, split by part.
+fn daily(entries: &[(&str, &AuditEntryView)], now: u64) -> Bars {
+    let columns = chart::last_days(now, 30);
+    let values = columns
+        .iter()
+        .map(|day| {
+            let on_day: Vec<&AuditEntryView> = entries
+                .iter()
+                .map(|(_, e)| *e)
+                .filter(|e| chart::day(e.at) == *day)
+                .collect();
+            let n = |part: &str| on_day.iter().filter(|e| part_of(e) == part).count();
+            PARTS.iter().map(|(part, _)| n(part) as f64).collect()
+        })
+        .collect();
+    Bars {
+        columns,
+        series: PARTS.iter().map(|(p, c)| (p.to_string(), *c)).collect(),
+        values,
+        unit: |n| format!("{n}"),
+    }
+}
+
+/// The counts at a glance, and the entries by day.
+fn overview<'a>(state: &State, entries: &[(&str, &AuditEntryView)]) -> Element<'a, Message> {
+    let count = |part: &str| entries.iter().filter(|(_, e)| part_of(e) == part).count();
+    let verified = state
+        .read
+        .iter()
+        .filter(|(_, a)| a.broken_at.is_none())
+        .count();
+    let chains = format!("{verified} of {}", state.read.len());
+    let tiles = row![
+        chart::tile(entries.len().to_string(), "entries read", theme::INK),
+        chart::tile(
+            count("gate deny").to_string(),
+            "calls the gate denied",
+            theme::BAD
+        ),
+        chart::tile(count("decide").to_string(), "decisions", theme::WARN),
+        chart::tile(chains, "chains that verify", theme::OK),
+    ]
+    .spacing(12);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let title = "Entries by day, of those read, last 30 days";
+    column![tiles, chart::view(title, daily(entries, now))]
+        .spacing(12)
+        .into()
+}
+
 /// Each server's check: its name when several show, then its status.
 fn checks<'a>(state: &State, many: bool) -> Element<'a, Message> {
     let lines = state.read.iter().map(|(server, a)| {
@@ -165,6 +239,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
             head,
             text(&state.exported).size(12).color(theme::MUTED),
             checks(state, many),
+            overview(state, &entries),
             text(counts.join(" · ")).size(13).color(theme::MUTED),
             list
         ]
@@ -225,6 +300,21 @@ mod tests {
         let (status, _, writer) = audit_status(&broken);
         assert!(status.starts_with("Broken: entry 7"));
         assert!(writer.unwrap().0.ends_with("disk"));
+    }
+
+    #[test]
+    fn the_chart_splits_each_day_by_what_its_entries_record() {
+        let today = 951_782_400;
+        let all = [
+            entry("gate", "continue sandbox::exec ls", today),
+            entry("gate", "deny (no) sandbox::exec rm", today),
+            entry("decide", "plan: approved", today - 86_400),
+            entry("charter", "read", today),
+        ];
+        let entries: Vec<(&str, &AuditEntryView)> = all.iter().map(|e| ("local", e)).collect();
+        let bars = daily(&entries, today);
+        assert_eq!(bars.values[29], [1.0, 1.0, 0.0, 0.0, 1.0]);
+        assert_eq!(bars.values[28], [0.0, 0.0, 1.0, 0.0, 0.0]);
     }
 
     #[test]

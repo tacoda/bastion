@@ -13,7 +13,11 @@ pub fn entered(before: &Job, after: &Job) -> Option<State> {
 pub fn text(job: &Job) -> String {
     let request = job.request.lines().next().unwrap_or_default();
     let what: String = request.chars().take(80).collect();
-    let stage = format!("{:?}", job.stage).to_lowercase();
+    // A workflow's step goes by its name; an old pipeline's by its stage.
+    let stage = job
+        .node
+        .clone()
+        .unwrap_or_else(|| format!("{:?}", job.stage).to_lowercase());
     match job.state {
         State::NeedsYou => format!("{} waits for you at {stage}: {what}", job.id),
         State::Failed => {
@@ -79,6 +83,17 @@ mod tests {
         assert_eq!(
             text(&at(Stage::Land, State::Landed)),
             "j1 landed: Add a health check"
+        );
+    }
+
+    #[test]
+    fn a_workflow_step_is_named_in_its_notice() {
+        let mut j = at(Stage::Prompt, State::NeedsYou);
+        j.node = Some("plan".into());
+        assert!(
+            text(&j).starts_with("j1 waits for you at plan:"),
+            "{}",
+            text(&j)
         );
     }
 }

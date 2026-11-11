@@ -194,6 +194,7 @@ fn node_of(r: &Value) -> Result<Node, String> {
                 .split_whitespace()
                 .map(String::from)
                 .collect(),
+            reads_only: r["reads_only"].as_i64() == Some(1),
         },
         x: parse(r, "x")?,
         y: parse(r, "y")?,
@@ -205,8 +206,8 @@ fn graph_statements(id: &str, version: u64, g: &Graph) -> Vec<Value> {
     let statement = |sql: &str, params: Value| json!({ "sql": sql, "params": params });
     let nodes = g.nodes.iter().map(|n| {
         statement(
-            "INSERT INTO workflow_nodes (workflow, version, id, stage, run, dial, note, x, y, network, secrets) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            json!([id, version, n.id, name(n.stage), n.run.trim(), name(n.dial), n.note, n.x, n.y, n.reach.network as i64, n.reach.secrets.join(" ")]),
+            "INSERT INTO workflow_nodes (workflow, version, id, stage, run, dial, note, x, y, network, secrets, reads_only) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            json!([id, version, n.id, name(n.stage), n.run.trim(), name(n.dial), n.note, n.x, n.y, n.reach.network as i64, n.reach.secrets.join(" "), n.reach.reads_only as i64]),
         )
     });
     let results = g.nodes.iter().flat_map(|n| {
@@ -244,7 +245,7 @@ impl WorkflowStore for SqlStore {
             let mut nodes = self
                 .rows(
                     &format!(
-                        "SELECT id, stage, run, dial, note, x, y, network, secrets FROM workflow_nodes {where_}"
+                        "SELECT id, stage, run, dial, note, x, y, network, secrets, reads_only FROM workflow_nodes {where_}"
                     ),
                     at.clone(),
                     node_of,

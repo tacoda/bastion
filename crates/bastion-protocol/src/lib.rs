@@ -105,6 +105,9 @@ pub struct ReachView {
     pub network: bool,
     /// Environment variable names, such as `GH_TOKEN`.
     pub secrets: Vec<String>,
+    /// An agent's step that may not write a file (D42).
+    #[serde(default)]
+    pub reads_only: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

@@ -728,7 +728,7 @@ impl Factory {
         self.engine
             .call_for(NS, "harness::send", json!({
                 "session_id": session, "provider": model.provider, "model": model.model, "message": message,
-                "options": { "max_turns": MAX_TURN_STEPS, "functions": { "allow": TOOLS }, "metadata": { "sandbox_id": sandbox, "job": job.id, "stage": stage } },
+                "options": { "max_turns": MAX_TURN_STEPS, "functions": { "allow": TOOLS }, "metadata": { "sandbox_id": sandbox, "job": job.id, "stage": stage, "reads_only": job.step().is_some_and(|s| s.reach.reads_only) } },
             }), 60_000)
             .await?;
         self.arm_cap(&turn, bastion_core::TURN_CAP_SECS);

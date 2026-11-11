@@ -35,12 +35,16 @@ pub struct Node {
     pub y: i32,
 }
 
-/// What a shell step may reach beyond its VM (D40): the network, and the
-/// vault's secrets it gets as environment variables, by name.
+/// What a step may reach and change. A shell step may reach the network,
+/// with the vault's secrets it gets as environment variables, by name
+/// (D40); an agent's step may be narrowed to reading only (D42).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Reach {
     pub network: bool,
     pub secrets: Vec<String>,
+    /// The step's agent may not write a file.
+    #[serde(default)]
+    pub reads_only: bool,
 }
 
 impl Reach {
@@ -148,14 +152,21 @@ fn what_runs(n: &Node) -> Result<(), String> {
     if !gives && !n.results.is_empty() {
         return Err(format!("{}: {:?} gives no results", n.id, n.stage));
     }
-    if n.stage != Stage::Shell && n.reach != Reach::default() {
-        return Err(format!("{}: only a shell step reaches past its VM", n.id));
+    reach_fits(n).map_err(|why| format!("{}: {why}", n.id))
+}
+
+/// A step reaches only what its kind may: the network and secrets for a
+/// shell step (D40), reading only for an agent's step (D42).
+fn reach_fits(n: &Node) -> Result<(), String> {
+    let past_vm = n.reach.network || !n.reach.secrets.is_empty();
+    if n.stage != Stage::Shell && past_vm {
+        return Err("only a shell step reaches past its VM".into());
+    }
+    if n.stage.kind() != Kind::Turn && n.reach.reads_only {
+        return Err("only an agent's step reads only".into());
     }
     match n.reach.bad_secret() {
-        Some(s) => Err(format!(
-            "{}: {s:?} is not a secret's name, such as GH_TOKEN",
-            n.id
-        )),
+        Some(s) => Err(format!("{s:?} is not a secret's name, such as GH_TOKEN")),
         None => Ok(()),
     }
 }
@@ -504,9 +515,19 @@ mod tests {
         let mut bad = g.clone();
         bad.nodes[0].reach.network = true;
         assert!(bad.check().unwrap_err().contains("only a shell step"));
-        let mut bad = g;
+        let mut bad = g.clone();
         bad.nodes[1].reach.secrets = vec!["gh token".into()];
         assert!(bad.check().unwrap_err().contains("not a secret's name"));
+        let mut reads = g.clone();
+        reads.nodes[0].reach.reads_only = true;
+        assert_eq!(reads.check(), Ok(()), "a prompt may only read");
+        let mut bad = g;
+        bad.nodes[1].reach.reads_only = true;
+        assert!(
+            bad.check()
+                .unwrap_err()
+                .contains("only an agent's step reads only")
+        );
     }
 
     #[test]

@@ -73,6 +73,8 @@ pub enum Msg {
     Text(text_editor::Action),
     /// Whether a shell step runs with the network (D40).
     Network(bool),
+    /// Whether an agent's step may only read (D42).
+    ReadsOnly(bool),
     Dial(Choice),
     RemoveStep,
     RemoveLink,
@@ -352,6 +354,7 @@ fn change(state: &mut State, msg: Msg) {
             state.pick(state.picked.clone());
         }
         Msg::Network(on) => state.step(|n| n.reach.network = on),
+        Msg::ReadsOnly(on) => state.step(|n| n.reach.reads_only = on),
         Msg::Text(a) => {
             state.text.perform(a);
             let typed = state.text.text();
@@ -580,6 +583,11 @@ fn step_detail<'a>(state: &'a State, id: &str, editable: bool) -> Option<Element
     }
     if n.stage == "shell" {
         body = body.push(reach_fields(state, &n, editable));
+    } else if text_of(&n) != Text::Nothing {
+        let reads = iced::widget::checkbox(n.reach.reads_only)
+            .label("Only reads: the agent may not write a file")
+            .on_toggle_maybe(editable.then_some(|on| wrap(Msg::ReadsOnly(on))));
+        body = body.push(reads);
     }
     let results = text_input("", &state.results)
         .on_input_maybe(editable.then_some(|v| wrap(Msg::Field(StepField::Results, v))))

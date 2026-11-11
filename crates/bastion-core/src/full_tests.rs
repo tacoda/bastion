@@ -968,6 +968,7 @@ fn a_workflow_of_steps_only_finishes_as_its_workspace_says_after_its_last_step()
     pr.reach = Reach {
         network: true,
         secrets: vec!["GH_TOKEN".into()],
+        reads_only: false,
     };
     let g = Graph {
         nodes: vec![

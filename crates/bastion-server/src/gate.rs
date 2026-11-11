@@ -104,6 +104,21 @@ fn text_result(text: &str, details: Value, is_error: bool) -> Value {
     json!({ "content": [{ "type": "text", "text": text }], "details": details, "is_error": is_error })
 }
 
+/// A step that only reads (D42) may not write a file, whatever its kind's
+/// grants allow.
+fn reads_only(envelope: &Value, call: &Call, verdict: Verdict) -> Verdict {
+    let narrowed = envelope["metadata"]["reads_only"] == true;
+    match narrowed && call.function == "sandbox::fs::write" {
+        true => Verdict {
+            decision: Decision::Deny {
+                reason: "This step only reads: it may not write a file.".into(),
+            },
+            ..verdict
+        },
+        false => verdict,
+    }
+}
+
 impl Gate {
     /// Tell the server's clients the job changed.
     fn changed(&self, id: &str) {
@@ -345,6 +360,7 @@ impl Gate {
                 flagged: vec![],
             },
         };
+        let verdict = reads_only(envelope, &call, verdict);
         self.note("gate", &job, bastion_core::eval::describe(&call, &verdict));
         let hooks: Vec<String> = self
             .charter(&job)
@@ -1126,5 +1142,32 @@ mod tests {
         for c in govern::default_constraints() {
             assert!(rules.contains(&c.rule), "{rules}");
         }
+    }
+
+    #[test]
+    fn a_step_that_only_reads_may_not_write_and_the_refusal_is_recorded() {
+        let r = rig();
+        let mut write = envelope(
+            "build",
+            "sandbox::fs::write",
+            json!({ "sandbox_id": "job", "path": "/work/repo/a.py" }),
+        );
+        write["metadata"]["reads_only"] = json!(true);
+        let answer = r.gate.judge(&write);
+        assert_eq!(answer["decision"], "deny");
+        assert!(answer["reason"].as_str().unwrap().contains("only reads"));
+        let mut read = envelope("build", "sandbox::exec", json!({ "argv": ["ls"] }));
+        read["metadata"]["reads_only"] = json!(true);
+        assert_eq!(r.gate.judge(&read)["decision"], "continue");
+        settle();
+        let chain = r.store.audit.lock().unwrap().clone();
+        assert!(
+            chain[0]
+                .record
+                .detail
+                .starts_with("deny (This step only reads"),
+            "{:?}",
+            chain[0]
+        );
     }
 }

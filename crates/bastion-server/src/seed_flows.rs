@@ -154,6 +154,8 @@ struct Step {
     text: &'static str,
     results: &'static [&'static str],
     network: bool,
+    /// The step's agent may not write a file (D42).
+    reads_only: bool,
 }
 
 const fn prompt(id: &'static str, dial: Dial, text: &'static str) -> Step {
@@ -164,6 +166,7 @@ const fn prompt(id: &'static str, dial: Dial, text: &'static str) -> Step {
         text,
         results: &[],
         network: false,
+        reads_only: false,
     }
 }
 
@@ -184,6 +187,7 @@ const fn github(id: &'static str, dial: Dial, script: &'static str) -> Step {
 
 const PLAN_STEP: Step = Step {
     results: &["plan"],
+    reads_only: true,
     ..prompt("plan", Dial::LightsOn, PLAN)
 };
 const BUILD_STEP: Step = prompt("build", Dial::Dark, BUILD);
@@ -200,6 +204,7 @@ fn shipped() -> Vec<(&'static str, &'static str, Vec<Step>)> {
     let review = prompt("review", Dial::Dark, REVIEW);
     let criteria = Step {
         results: &["criteria"],
+        reads_only: true,
         ..prompt("criteria", Dial::LightsOn, CRITERIA)
     };
     let checks = |dial| shell("checks", dial, CHECKS);
@@ -261,6 +266,7 @@ fn chain(steps: Vec<Step>) -> Graph {
                 } else {
                     Vec::new()
                 },
+                reads_only: s.reads_only,
             },
             x: 220 * i as i32,
             y: 0,
@@ -286,6 +292,7 @@ fn as_steps(g: &Graph) -> Graph {
             Stage::Plan => {
                 n.stage = Stage::Prompt;
                 n.note = format!("Do not change any file. {}", n.note);
+                n.reach.reads_only = true;
             }
             Stage::Build => {
                 n.stage = Stage::Prompt;

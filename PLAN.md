@@ -88,6 +88,14 @@ all three are fixed.
   page by step id, evals by step.
 - Exit, live: a read-only step's write is refused and noted in the audit.
 
+Done 2026-11-11, in part. An agent's step can only read: the gate refuses
+its file writes, and the seeded planning and criteria steps read only. A
+notice names a workflow's step. Live: a read-only prompt told to write
+`NOTES.md` on `demo-local` was refused, and the audit log reads "deny
+(This step only reads: it may not write a file.) sandbox::fs::write
+/work/repo/NOTES.md". The settings' dials per stage and the evals' arms
+per stage move to S4, as they reach only the stage code it deletes.
+
 ### S4. The stage code goes
 
 - Delete the built-in stages and the pipelines.

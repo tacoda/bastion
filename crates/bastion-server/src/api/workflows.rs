@@ -36,6 +36,7 @@ fn view_of(w: &Workflow) -> WorkflowView {
                 reach: bastion_protocol::ReachView {
                     network: n.reach.network,
                     secrets: n.reach.secrets.clone(),
+                    reads_only: n.reach.reads_only,
                 },
                 x: n.x,
                 y: n.y,

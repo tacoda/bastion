@@ -2,7 +2,7 @@
 //! accepted constraint joins the gate's rules as told; an accepted gate
 //! joins its workspace's gates. Each decision is an audit entry.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use bastion_core::Stage;
 use bastion_core::audit::Record;
@@ -22,11 +22,7 @@ pub async fn proposals(cell: &FactoryCell) -> Result<Vec<ProposalView>, String> 
     let factory = factory(cell)?;
     let decided = decisions(&factory).await?;
     let mut all = Vec::new();
-    for (job, workspace, body) in factory.store().artifacts_at(Stage::Learn).await? {
-        // A reply the turn could not read was sent back, so skip it here.
-        let Ok(proposals) = learn::read(&body) else {
-            continue;
-        };
+    for (job, workspace, proposals) in replies(&factory).await? {
         for (i, p) in proposals.into_iter().enumerate() {
             let n = i as u32 + 1;
             all.push(ProposalView {
@@ -39,6 +35,19 @@ pub async fn proposals(cell: &FactoryCell) -> Result<Vec<ProposalView>, String> 
         }
     }
     Ok(all)
+}
+
+/// Each job's newest learn reply that reads, as (job, workspace,
+/// proposals), newest job first. An older try, or one the turn could not
+/// read and sent back, is not a job's proposals.
+async fn replies(factory: &Factory) -> Result<Vec<(String, String, Vec<Proposal>)>, String> {
+    let mut seen = HashSet::new();
+    let all = factory.store().artifacts_at(Stage::Learn).await?;
+    Ok(all
+        .into_iter()
+        .filter_map(|(job, ws, body)| Some((job, ws, learn::read(&body).ok()?)))
+        .filter(|(job, ..)| seen.insert(job.clone()))
+        .collect())
 }
 
 /// The decision on each `(job, n)`: the newest audit entry for it.
@@ -77,12 +86,12 @@ fn view(p: Proposal) -> ProposalView {
 /// the constraint's id is the proposal's, and a gate already listed stays once.
 pub async fn decide(cell: &FactoryCell, d: ProposalDecision) -> Result<(), String> {
     let factory = factory(cell)?;
-    let found = factory.store().artifacts_at(Stage::Learn).await?;
-    let (_, workspace, body) = found
+    let (_, workspace, proposals) = replies(&factory)
+        .await?
         .into_iter()
         .find(|(job, ..)| *job == d.job)
         .ok_or_else(|| format!("job {} proposed nothing", d.job))?;
-    let proposal = learn::read(&body)?
+    let proposal = proposals
         .into_iter()
         .nth((d.n as usize).wrapping_sub(1))
         .ok_or_else(|| format!("job {} has no proposal {}", d.job, d.n))?;

@@ -1,5 +1,5 @@
 //! A workspace's charter as its base commit has it: the files
-//! the brief carries, and the repository's own `.claude/settings.json`, whose
+//! the brief carries, and the repository's own `.agents/settings.json`, whose
 //! permissions become constraints and whose hooks run in the job's VM.
 
 use bastion_core::charter;
@@ -11,7 +11,7 @@ use crate::engine::{DEFAULT_NAMESPACE, Engine};
 const HOOK_MS: u64 = 60_000;
 
 pub use bastion_core::charter::BRIEF_FILES;
-pub const SETTINGS: &str = ".claude/settings.json";
+pub const SETTINGS: &str = ".agents/settings.json";
 
 /// A repository hook: a command, and the sandbox functions its matcher covers.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -102,7 +102,7 @@ pub struct Ran {
 }
 
 impl Ran {
-    /// Exit 2 refuses, as in Claude Code. Any other failure is recorded and
+    /// Exit 2 refuses the call. Any other failure is recorded and
     /// stood aside from, never fatal.
     pub fn refuses(&self) -> bool {
         self.code == Some(2)
@@ -171,10 +171,10 @@ mod tests {
     #[test]
     fn settings_give_constraints_and_hooks() {
         let charter = read(&repo(&[
-            ("CLAUDE.md", "# rules"),
+            ("AGENTS.md", "# rules"),
             (SETTINGS, SETTINGS_JSON),
         ]));
-        assert_eq!(charter.files, ["CLAUDE.md", ".claude/settings.json"]);
+        assert_eq!(charter.files, ["AGENTS.md", ".agents/settings.json"]);
         assert_eq!(charter.constraints.len(), 2);
         assert_eq!(charter.constraints[0].contains, "git push");
         assert_eq!(

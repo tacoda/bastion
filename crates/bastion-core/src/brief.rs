@@ -21,10 +21,10 @@ fn intro(job: &Job) -> String {
     let run = job.step().map_or("", |s| s.run.as_str());
     let how = match job.stage {
         Stage::Agent => format!(
-            "Read /work/repo/.claude/agents/{run}.md and act as that agent for the request below."
+            "Read /work/repo/.agents/agents/{run}.md and act as that agent for the request below."
         ),
         Stage::Skill => format!(
-            "Read /work/repo/.claude/skills/{run}/SKILL.md and follow it for the request below."
+            "Read /work/repo/.agents/skills/{run}/SKILL.md and follow it for the request below."
         ),
         _ => "Do what the workflow says about this step, for the request below.".into(),
     };

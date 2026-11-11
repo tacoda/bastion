@@ -42,7 +42,7 @@ pub const MAX_REVISIONS: u32 = 2;
 pub enum Stage {
     /// An agent follows the workflow's instructions for the step.
     Prompt,
-    /// An agent acts as one of the repository's agents, in `.claude/agents`.
+    /// An agent acts as one of the repository's agents, in `.agents/agents`.
     Agent,
     /// An agent follows a skill in the repository.
     Skill,

@@ -521,7 +521,7 @@ fn a_turn_reads_the_charter_from_the_base_commit_not_the_worktree() {
         let id = rig.factory.submit("w", "x").await.unwrap();
         until(&rig, &id, Some("plan"), State::Running).await;
         // The merge base is empty in the fake, so the base is HEAD.
-        for name in ["CLAUDE.md", "AGENTS.md", ".claude/settings.json"] {
+        for name in ["AGENTS.md", ".agents/settings.json"] {
             assert!(
                 rig.machine.called(&format!("git show HEAD:{name}")),
                 "{name}"

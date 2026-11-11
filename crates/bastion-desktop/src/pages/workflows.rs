@@ -19,8 +19,8 @@ use crate::theme;
 /// The ways a workflow's own step runs, each with its one text.
 const CUSTOM: [(&str, &str); 4] = [
     ("prompt", "Prompt"),
-    ("agent", "Agent, in .claude/agents"),
-    ("skill", "Skill, in .claude/skills"),
+    ("agent", "Agent, in .agents/agents"),
+    ("skill", "Skill, in .agents/skills"),
     ("shell", "Shell script"),
 ];
 const DIALS: [(&str, &str); 2] = [
@@ -502,8 +502,8 @@ fn kinds() -> Vec<Choice> {
 /// The name an agent, skill or command step runs, and where it lives.
 fn name_label(stage: &str) -> Option<&'static str> {
     match stage {
-        "agent" => Some("Agent: a file in .claude/agents, without .md"),
-        "skill" => Some("Skill: a folder in .claude/skills"),
+        "agent" => Some("Agent: a file in .agents/agents, without .md"),
+        "skill" => Some("Skill: a folder in .agents/skills"),
         _ => None,
     }
 }

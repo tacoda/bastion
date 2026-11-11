@@ -62,13 +62,14 @@ retired with the old plan.
 | D36 | Claude takes an API key only. No Claude subscription sign-in. |
 | D37 | The desktop client is a native Rust app on `iced`. It holds no factory logic and reaches a server only through the client library. |
 | D38 | Every client goes through `crates/bastion-client`: the server list, typed calls, and the event stream. A new interface adds pages, not a second way to talk to a server. |
-| D39 | A workflow is a series of steps, and nothing else runs. A step is a prompt, an agent (`.claude/agents`), a skill (`.claude/skills`), a command (`.claude/commands`) or a shell script, each with one text. Bastion's built-in stages are gone. |
+| D39 | A workflow is a series of steps, and nothing else runs. A step is a prompt, an agent (`.agents/agents`), a skill (`.agents/skills`) or a shell script (D45), each with one text. Bastion's built-in stages are gone. |
 | D40 | A shell step runs in the job's VM, with no network unless it asks. A step that asks gets a VM of its own with the network and the vault secrets it names as environment variables. |
 | D41 | A job ends with its branch ready. When the last step passes, a workspace set to merge merges the branch into its base on the host; one set to leave keeps the branch. |
 | D42 | Governance is per step. A step may change files or only reads, and the gate refuses a write from a step that only reads. Dials, notices, artifacts and evals name steps. |
 | D43 | A step may name its own model and budget. The model wins over the job's and the server's. The budget is how often its failure may send work back (two by default) and the most its turns may cost; past the cost, the factory starts no more turns there by itself, but a person's retry, note or answer still runs. |
 | D44 | A step is known as `workflow/step`. A grant may be for one workflow step, and it wins over the grant for its kind; a constraint may apply at some steps only, and with none named it applies at every step. The gate reads the step from the turn. |
 | D45 | A step is a prompt, an agent, a skill or a shell script. A repository's command is not a kind of its own: a prompt that reads its file does what it did, and that is what migration 7 makes of each command step. This narrows D39. |
+| D46 | A repository's charter is `AGENTS.md` and `.agents/`: `.agents/settings.json` holds its permissions and hooks, and `.agents/agents` and `.agents/skills` hold the agents and skills its steps run. Bastion assumes no one vendor's files. The harness, the rules on an agent's calls, is Bastion's own. |
 
 ## Open questions
 

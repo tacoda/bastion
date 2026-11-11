@@ -122,7 +122,7 @@ pub fn level_of(dials: &[Dial]) -> Level {
 }
 
 /// An agent's, skill's or command's name is a file or folder under
-/// `.claude`: letters, digits, `-` and `_` only, so it cannot leave it.
+/// `.agents`: letters, digits, `-` and `_` only, so it cannot leave it.
 pub fn skill_name_ok(name: &str) -> bool {
     !name.is_empty()
         && name
@@ -134,7 +134,7 @@ pub fn skill_name_ok(name: &str) -> bool {
 /// script, a prompt its instructions.
 fn missing_run(n: &Node) -> Option<&'static str> {
     match n.stage {
-        Stage::Agent if !skill_name_ok(&n.run) => Some("an agent needs its name in .claude/agents"),
+        Stage::Agent if !skill_name_ok(&n.run) => Some("an agent needs its name in .agents/agents"),
         Stage::Skill if !skill_name_ok(&n.run) => Some("a skill needs its folder's name"),
         Stage::Shell if n.run.trim().is_empty() => Some("a shell step needs its script"),
         Stage::Prompt if n.note.trim().is_empty() => Some("a prompt needs its instructions"),
@@ -418,7 +418,7 @@ mod tests {
         bad.nodes.pop();
         assert_eq!(bad.check(), Ok(()));
         bad.nodes[4].run = "../x".into();
-        assert!(bad.check().unwrap_err().contains(".claude/agents"));
+        assert!(bad.check().unwrap_err().contains(".agents/agents"));
     }
 
     #[test]

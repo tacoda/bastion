@@ -93,7 +93,7 @@ pub(crate) fn call_of(call: &Value) -> Call {
     }
 }
 
-/// A call's arguments as a Claude Code hook reads `tool_input`.
+/// A call's arguments as a hook reads `tool_input`.
 fn tool_input(held: &HeldCall) -> Value {
     match held.call.function.as_str() {
         "sandbox::exec" => json!({ "command": held.call.text }),
@@ -987,7 +987,7 @@ mod tests {
 
     fn charter() -> Charter {
         Charter {
-            files: vec![".claude/settings.json".into()],
+            files: vec![".agents/settings.json".into()],
             constraints: bastion_core::charter::constraints(&["Bash(git push:*)".into()], &[]),
             before: vec![crate::charter::Hook {
                 functions: vec!["sandbox::exec"],

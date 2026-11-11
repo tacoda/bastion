@@ -166,6 +166,20 @@ back after migration 7 as a prompt that reads
 `.claude/commands/release-notes.md`, its own words after; no command row
 was left.
 
+### U10. The charter is AGENTS.md and .agents/ (D46)
+
+- The charter is `AGENTS.md` and `.agents/settings.json`; `CLAUDE.md` and
+  `.claude/` are no longer read, and a turn may not write `AGENTS.md` or
+  anything under `.agents/`.
+- An agent step reads `.agents/agents/<name>.md`, a skill step
+  `.agents/skills/<name>/SKILL.md`.
+- The harness, the rules on an agent's calls, stays Bastion's own.
+
+Done 2026-11-11. Live: with `AGENTS.md` and `.agents/settings.json`
+committed to `demo-local`, the server read both as its charter and its
+rule that denies `git push`. A workspace with only `.claude/` files, such
+as `bastion-gh`, shows no charter until it has `.agents/`.
+
 ## After this plan
 
 - Workflows that branch: a step can name a step to go to on failure, so a

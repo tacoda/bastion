@@ -460,7 +460,7 @@ fn charter_rules(state: &State) -> Element<'_, Message> {
         container(body.spacing(4)).padding([8, 12]).into()
     });
     section(
-        "Charter: each repository's own rules, from .claude/settings.json".into(),
+        "Charter: each repository's own rules, from AGENTS.md and .agents/settings.json".into(),
         Column::with_children(rows).into(),
         false,
     )

@@ -1,10 +1,10 @@
-//! What a repository's own `.claude/settings.json` asks of a turn: its
+//! What a repository's own `.agents/settings.json` asks of a turn: its
 //! `permissions` become constraints from the charter, and its hook matchers
 //! map onto the sandbox functions a turn calls here.
 
 use crate::govern::{Constraint, Enforcement, Source};
 
-/// The sandbox function each Claude Code tool name stands for.
+/// The sandbox function each tool name in a charter stands for.
 const TOOLS: [(&str, &str); 7] = [
     ("Bash", "sandbox::exec"),
     ("Write", "sandbox::fs::write"),
@@ -16,12 +16,13 @@ const TOOLS: [(&str, &str); 7] = [
 ];
 
 /// The charter files put before every brief, when present.
-pub const BRIEF_FILES: [&str; 2] = ["CLAUDE.md", "AGENTS.md"];
-/// The directory that holds the repository's settings and hooks.
-pub const SETTINGS_DIR: &str = ".claude";
+pub const BRIEF_FILES: [&str; 1] = ["AGENTS.md"];
+/// The directory that holds the repository's settings, hooks, agents and
+/// skills (D46).
+pub const SETTINGS_DIR: &str = ".agents";
 
 /// Why a write to `path` is refused, when it would change the charter: a
-/// brief file at any depth, or anything under a `.claude` directory. The
+/// brief file at any depth, or anything under an `.agents` directory. The
 /// factory reads the charter from the base commit, so this only stops the
 /// agent from proposing its own rules in the change it hands back.
 pub fn guards(path: &str) -> Option<String> {
@@ -33,7 +34,7 @@ pub fn guards(path: &str) -> Option<String> {
     })
 }
 
-/// The Claude Code tool name for a sandbox function, as a hook expects it.
+/// The tool name for a sandbox function, as a hook expects it.
 pub fn tool_name(function: &str) -> &'static str {
     TOOLS
         .iter()
@@ -120,11 +121,11 @@ mod tests {
             text: path.into(),
         };
         for path in [
-            "/work/repo/CLAUDE.md",
+            "/work/repo/AGENTS.md",
             "AGENTS.md",
-            "/work/repo/sub/CLAUDE.md",
-            "/work/repo/.claude/settings.json",
-            "./.claude/hooks/check.sh",
+            "/work/repo/sub/AGENTS.md",
+            "/work/repo/.agents/settings.json",
+            "./.agents/hooks/check.sh",
         ] {
             let verdict = gate(&write(path), Stage::Prompt, &[], &default_capabilities());
             assert!(
@@ -132,7 +133,11 @@ mod tests {
                 "{path} must be refused"
             );
         }
-        for path in ["/work/repo/src/claude.rs", "/work/repo/docs/CLAUDE.md.txt"] {
+        for path in [
+            "/work/repo/src/agents.rs",
+            "/work/repo/docs/AGENTS.md.txt",
+            "/work/repo/CLAUDE.md",
+        ] {
             let verdict = gate(&write(path), Stage::Prompt, &[], &default_capabilities());
             assert_eq!(verdict.decision, Decision::Continue, "{path}");
         }

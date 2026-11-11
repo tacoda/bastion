@@ -2,6 +2,8 @@
 //! only through the client library (D38): the local one, which it starts
 //! if nothing runs, or one added in the desktop's Settings.
 
+mod update;
+
 use bastion_client::client::{self, send};
 use bastion_client::events::{self, Feed};
 use bastion_client::start;
@@ -20,7 +22,8 @@ commands:
   retry JOB                    run the failed job, or its stuck step, again
   extend JOB                   give the running turn its full time again
   stop JOB                     stop the job
-  follow                       print each change the server pushes";
+  follow                       print each change the server pushes
+  update                       install the newest release, once its signature checks";
 
 /// One parsed command line: the server to use and what to do there.
 #[derive(Debug, PartialEq)]
@@ -103,6 +106,10 @@ async fn main() {
 }
 
 async fn run(args: &[String]) -> Result<(), String> {
+    // An update needs no server.
+    if args == ["update"] {
+        return update::run().await;
+    }
     let line = parse(args)?;
     let local = tokio::task::spawn_blocking(start::start)
         .await

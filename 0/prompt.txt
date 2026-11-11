@@ -1,0 +1,21 @@
+continue
+
+---
+
+<task-notification>
+<task-id>b1doopz72</task-id>
+<tool-use-id>toolu_01Nn2oFZGX12T5icW7sKzgGA</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/b1doopz72.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the recording job" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b6vyhyqw6</task-id>
+<tool-use-id>toolu_014ktPrKXvYaV2U7MxpmGPqw</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/b6vyhyqw6.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the recording job's build" completed (exit code 0)</summary>
+</task-notification>

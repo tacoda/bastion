@@ -61,6 +61,7 @@ pub async fn workspaces(cell: &FactoryCell) -> Result<Vec<Workspace>, String> {
     Ok(all
         .into_iter()
         .map(|w| Workspace {
+            image: w.vm_image().into(),
             name: w.name,
             path: w.path,
             branch: w.branch,
@@ -103,6 +104,7 @@ pub async fn workspace_add(
         env: w.env,
         gates: w.gates,
         autofix: w.autofix,
+        image: w.image,
     };
     settle(machine, &mut row, settings)?;
     factory(cell)?.store().add_workspace(&row).await
@@ -121,7 +123,14 @@ pub struct WorkspaceSettings {
     pub env: String,
     pub gates: String,
     pub autofix: String,
+    /// `python`, `node` or `browser`; empty keeps `python`.
+    #[serde(default)]
+    pub image: String,
 }
+
+/// The images a workspace's VMs may boot: the sandbox's presets, and the
+/// browser image the stack registers (F11).
+const IMAGES: [&str; 3] = ["python", "node", "browser"];
 
 /// Change a workspace's settings. Its name and its path stay.
 pub async fn workspace_edit(
@@ -165,7 +174,20 @@ fn settle(
     row.revision_budget = s.revision_budget.filter(|n| *n > 0);
     (row.setup, row.cleanup) = (s.setup.trim().into(), s.cleanup.trim().into());
     (row.gates, row.autofix) = (s.gates.trim().into(), s.autofix.trim().into());
+    row.image = image_of(&s.image)?;
     Ok(())
+}
+
+/// The image a workspace boots, as typed; empty is `python`.
+fn image_of(typed: &str) -> Result<String, String> {
+    let image = match typed.trim() {
+        "" => "python",
+        named => named,
+    };
+    match IMAGES.contains(&image) {
+        true => Ok(image.into()),
+        false => Err(format!("{image:?} is not an image: {}", IMAGES.join(", "))),
+    }
 }
 
 /// A branch prefix, trimmed, or why git would refuse a branch named with it.
@@ -208,6 +230,7 @@ pub async fn workspace_draft(
         env: draft.env,
         gates: String::new(),
         autofix: String::new(),
+        image: "python".into(),
     })
 }
 
@@ -410,6 +433,17 @@ pub async fn dials_set(cell: &FactoryCell, stage: Stage, dial: Dial) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_workspace_boots_python_node_or_the_browser_image() {
+        assert_eq!(image_of(" browser ").unwrap(), "browser");
+        assert_eq!(image_of("").unwrap(), "python");
+        assert!(
+            image_of("ubuntu:24.04")
+                .unwrap_err()
+                .contains("python, node, browser")
+        );
+    }
     use crate::machine::ThisMachine;
 
     #[test]

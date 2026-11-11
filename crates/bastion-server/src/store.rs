@@ -45,6 +45,19 @@ pub struct Workspace {
     pub gates: String,
     /// A command run once when a gate fails, before the gates run again.
     pub autofix: String,
+    /// The VM image jobs boot: `python`, `node` or `browser` (F11); empty
+    /// is `python`.
+    pub image: String,
+}
+
+impl Workspace {
+    /// The image this workspace's VMs boot.
+    pub fn vm_image(&self) -> &str {
+        match self.image.as_str() {
+            "" => "python",
+            other => other,
+        }
+    }
 }
 
 /// What the adapter holds for a job besides the core's state: where it runs.

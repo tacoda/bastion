@@ -338,6 +338,9 @@ pub struct Workspace {
     /// A command run once when a gate fails, before the gates run again.
     #[serde(default)]
     pub autofix: String,
+    /// The VM image jobs boot: `python`, `node` or `browser` (F11).
+    #[serde(default)]
+    pub image: String,
 }
 
 /// The branch prefix a workspace starts with.

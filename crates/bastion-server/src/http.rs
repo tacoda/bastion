@@ -1118,6 +1118,7 @@ mod tests {
             env: s("CI=1"),
             gates: s("lint: ruff check {files}"),
             autofix: s(""),
+            image: s("browser"),
         });
         reads::<crate::api::factory::DraftRequest>(api::WorkspaceDraft {
             path: s("/repo"),

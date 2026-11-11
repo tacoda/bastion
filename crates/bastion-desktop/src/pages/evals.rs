@@ -551,6 +551,7 @@ mod tests {
                 env: String::new(),
                 gates: String::new(),
                 autofix: String::new(),
+                image: "python".into(),
             }],
             targets: vec![Choice::new("constraint:no-curl", "no-curl (told)")],
             requests: text_editor::Content::with_text("Add add.\n\n  Add sub.  "),

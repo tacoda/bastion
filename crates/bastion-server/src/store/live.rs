@@ -33,6 +33,7 @@ async fn open_with_job(tag: &str) -> (SqlStore, Record) {
         env: String::new(),
         gates: String::new(),
         autofix: String::new(),
+        image: "python".into(),
     };
     store.add_workspace(&w).await.unwrap();
     let r = Record {

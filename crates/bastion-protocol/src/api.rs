@@ -127,6 +127,8 @@ pub struct WorkspaceEdit {
     pub env: String,
     pub gates: String,
     pub autofix: String,
+    #[serde(default)]
+    pub image: String,
 }
 
 impl Request for WorkspaceEdit {

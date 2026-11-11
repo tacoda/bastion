@@ -29,7 +29,11 @@ engine:
       middleware_function_id: gantry::middleware
     iii-sandbox:
       auto_install: true
-      image_allowlist: [python, node]
+      image_allowlist: [python, node, browser]
+      # A workspace set to `browser` boots this (F11): Playwright with
+      # Chromium, Firefox and WebKit, git, Node and ffmpeg, on Ubuntu 24.04.
+      custom_images:
+        browser: mcr.microsoft.com/playwright:v1.65.0-noble
       default_idle_timeout_secs: 300
       max_concurrent_sandboxes: 8
       default_cpus: 1

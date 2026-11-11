@@ -35,7 +35,7 @@ impl Factory {
     /// A VM with the workspace's environment, and the network only when
     /// `network`. Returns its id.
     pub(super) async fn create_vm(&self, network: bool, ws: &Workspace) -> Result<String, String> {
-        self.create_vm_from("python", network, ws).await
+        self.create_vm_from(ws.vm_image(), network, ws).await
     }
 
     /// A VM from `image`, as [`Factory::create_vm`] makes one.

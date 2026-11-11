@@ -419,6 +419,7 @@ mod tests {
             env: String::new(),
             gates: String::new(),
             autofix: String::new(),
+            image: "python".into(),
         }];
         assert_eq!(state.chosen().as_deref(), Some("calc"));
         state.request = text_editor::Content::with_text("  ");

@@ -49,6 +49,7 @@ impl Default for State {
             env: String::new(),
             gates: String::new(),
             autofix: String::new(),
+            image: "python".into(),
         };
         State {
             server,
@@ -82,6 +83,7 @@ pub enum Field {
     Cleanup,
     Env,
     Autofix,
+    Image,
 }
 
 #[derive(Clone, Debug)]
@@ -152,6 +154,7 @@ fn edit(state: &mut State, field: Field, value: String) {
         Field::Cleanup => state.workspace.cleanup = value,
         Field::Env => state.workspace.env = value,
         Field::Autofix => state.workspace.autofix = value,
+        Field::Image => state.workspace.image = value,
     }
 }
 
@@ -213,6 +216,7 @@ fn save(state: &mut State, ctx: &Ctx) -> Task<Message> {
         env: w.env,
         gates: w.gates,
         autofix: w.autofix,
+        image: w.image,
     };
     task(ctx, edit, Msg::Done)
 }
@@ -409,10 +413,20 @@ fn gates_row(state: &State) -> Element<'_, Message> {
         &state.workspace.autofix,
         Field::Autofix,
     );
-    row![labeled("Gates, one name: command per line", gates), autofix]
-        .spacing(8)
-        .align_y(iced::Top)
-        .into()
+    let image = field(
+        "VM image",
+        "python, node or browser",
+        &state.workspace.image,
+        Field::Image,
+    );
+    row![
+        labeled("Gates, one name: command per line", gates),
+        autofix,
+        image
+    ]
+    .spacing(8)
+    .align_y(iced::Top)
+    .into()
 }
 
 fn accounts(state: &State) -> Element<'_, Message> {
@@ -462,6 +476,7 @@ mod tests {
                 env: "CI=1".into(),
                 gates: "lint: ruff check {files}".into(),
                 autofix: "ruff check --fix {files}".into(),
+                image: "python".into(),
             }],
             ..State::default()
         };

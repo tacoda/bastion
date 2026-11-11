@@ -57,6 +57,13 @@ pub struct Submission {
     /// Images that show the request, as (file name, bytes) (F8).
     pub screenshots: Vec<(String, Vec<u8>)>,
 }
+/// What a turn on the browser image is told it has (F11).
+const BROWSER_GUIDE: &str = "\
+This VM has Playwright with Chromium, Firefox and WebKit, and Node. It has no
+network, so serve the app inside the VM (for example on 127.0.0.1) and point the
+browser there. Keep each screenshot (.png) and recording (.webm) you make under
+/work/artifacts; they are kept with the job for the person to see.\n\n";
+
 /// The VM tag a read-only turn's tree is put back to.
 const BEFORE_TURN: &str = "bastion-before-turn";
 const SLOW_MS: u64 = 180_000;
@@ -683,6 +690,13 @@ impl Factory {
         }
         message.push_str(TOOL_GUIDE);
         message.push_str("\n\n");
+        if self
+            .workspace(record)
+            .await
+            .is_ok_and(|w| w.vm_image() == "browser")
+        {
+            message.push_str(BROWSER_GUIDE);
+        }
         message.push_str(&self.gate.rules(&job.id));
         message.push_str(brief);
         let settings = settings_store::current(&*self.store).await?;

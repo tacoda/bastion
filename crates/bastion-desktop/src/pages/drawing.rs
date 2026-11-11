@@ -43,12 +43,16 @@ pub fn subtitle(n: &NodeView) -> String {
 
 /// The canvas size that holds every step.
 pub fn extent(w: &WorkflowView) -> Size {
+    let fit = fit(w);
+    Size::new(fit.width.max(800.0), fit.height.max(240.0))
+}
+
+/// The room the workflow's steps take, and no more: a drawing nobody edits
+/// needs no space to drag a step into.
+fn fit(w: &WorkflowView) -> Size {
     let x = w.nodes.iter().map(|n| n.x).max().unwrap_or(0) as f32;
     let y = w.nodes.iter().map(|n| n.y).max().unwrap_or(0) as f32;
-    Size::new(
-        (x + W + 2.0 * PAD).max(800.0),
-        (y + H + 2.0 * PAD).max(240.0),
-    )
+    Size::new(x + W + 2.0 * PAD, y + H + 2.0 * PAD)
 }
 
 fn corner(n: &NodeView) -> Point {
@@ -249,7 +253,10 @@ impl<M> canvas::Program<M> for Drawing<'_, M> {
 }
 
 pub fn view<'a, M: 'a>(drawing: Drawing<'a, M>) -> Element<'a, M> {
-    let size = extent(drawing.workflow);
+    let size = match drawing.on {
+        Some(_) => extent(drawing.workflow),
+        None => fit(drawing.workflow),
+    };
     let canvas = Canvas::new(drawing).width(size.width).height(size.height);
     let both = iced::widget::scrollable::Direction::Both {
         vertical: Default::default(),
@@ -291,6 +298,7 @@ mod tests {
     fn the_canvas_holds_every_step_and_never_shrinks_below_its_minimum() {
         let mut w = WorkflowView::default();
         assert_eq!(extent(&w), Size::new(800.0, 240.0));
+        assert_eq!(fit(&w), Size::new(W + 2.0 * PAD, H + 2.0 * PAD));
         w.nodes = vec![
             node("plan", "", &[]),
             NodeView {

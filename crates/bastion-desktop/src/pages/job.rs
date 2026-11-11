@@ -838,7 +838,9 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
             .extend(kept_files(d))
             .extend(d.charter.as_ref().map(charter));
     }
-    page = page.push(text(&state.error).color(theme::BAD));
+    if !state.error.is_empty() {
+        page = page.push(text(&state.error).color(theme::BAD));
+    }
     if let Some(d) = &state.detail {
         page = page.push(flow(d, &state.marks)).push(steps(state, d));
     }

@@ -104,6 +104,23 @@ async fn job_of(rig: &Rig, id: &str) -> Job {
     rig.store.load(id).await.unwrap().job
 }
 
+/// Job `j1` on `pipeline` at `stage` and `state`, on worktree `wt1` and VM `vm1`.
+fn record_at(pipeline: Pipeline, stage: Stage, state: State) -> Record {
+    let mut job = Job::new("j1".into(), "w".into(), "r".into(), 1).on(pipeline);
+    (job.stage, job.state) = (stage, state);
+    let runtime = Runtime {
+        worktree: Some("wt1".into()),
+        sandbox: Some("vm1".into()),
+        ..Runtime::default()
+    };
+    Record {
+        job,
+        runtime,
+        rev: 1,
+        created_at: 1,
+    }
+}
+
 /// Wait until the job reaches `stage` and `state`, or fail after two seconds.
 async fn until(rig: &Rig, id: &str, stage: Stage, state: State) {
     let at = async || {
@@ -212,19 +229,8 @@ fn a_full_request_prepares_and_its_read_only_turns_put_the_tree_back_to_a_tag() 
 fn checks_that_pass_before_the_build_go_to_falsify_and_one_that_stays_green_goes_back_to_specify() {
     let rig = rig();
     crate::rt::block_on(async {
-        let mut job =
-            Job::new("j1".into(), "w".into(), "Add a health check".into(), 1).on(Pipeline::Full);
-        (job.stage, job.state) = (Stage::Baseline, State::Running);
-        let record = Record {
-            job,
-            runtime: Runtime {
-                worktree: Some("wt1".into()),
-                sandbox: Some("vm1".into()),
-                ..Runtime::default()
-            },
-            rev: 1,
-            created_at: 1,
-        };
+        let mut record = record_at(Pipeline::Full, Stage::Baseline, State::Running);
+        record.job.request = "Add a health check".into();
         rig.store.insert(&record).await.unwrap();
         let spec = r#"{"checks": [{"criterion": "C1", "run": "pytest -k c1", "files": ["tests/test_c1.py"]}]}"#;
         let artifact = Artifact {
@@ -258,17 +264,7 @@ fn the_checks_step_runs_the_workspaces_command_and_passes_on_exit_0() {
     let rig = rig();
     rig.store.workspaces.lock().unwrap()[0].checks = "pytest -q".into();
     crate::rt::block_on(async {
-        let mut job = Job::new("j1".into(), "w".into(), "r".into(), 1).on(Pipeline::Full);
-        (job.stage, job.state) = (Stage::Checks, State::Running);
-        let record = Record {
-            job,
-            runtime: Runtime {
-                sandbox: Some("vm1".into()),
-                ..Runtime::default()
-            },
-            rev: 1,
-            created_at: 1,
-        };
+        let record = record_at(Pipeline::Full, Stage::Checks, State::Running);
         rig.store.insert(&record).await.unwrap();
         rig.factory.run_step(&record, Stage::Checks).await;
         let job = job_of(&rig, "j1").await;
@@ -281,18 +277,7 @@ fn the_checks_step_runs_the_workspaces_command_and_passes_on_exit_0() {
 fn with_the_local_forge_ship_brings_the_commits_back_and_prove_starts() {
     let rig = rig();
     crate::rt::block_on(async {
-        let mut job = Job::new("j1".into(), "w".into(), "r".into(), 1).on(Pipeline::Full);
-        (job.stage, job.state) = (Stage::Ship, State::Running);
-        let record = Record {
-            job,
-            runtime: Runtime {
-                worktree: Some("wt1".into()),
-                sandbox: Some("vm1".into()),
-                ..Runtime::default()
-            },
-            rev: 1,
-            created_at: 1,
-        };
+        let record = record_at(Pipeline::Full, Stage::Ship, State::Running);
         rig.store.insert(&record).await.unwrap();
         rig.factory.run_step(&record, Stage::Ship).await;
         until(&rig, "j1", Stage::Prove, State::Running).await;
@@ -326,18 +311,8 @@ async fn failed_after(rig: &Rig, vms: usize) -> Record {
 
 /// Start the job on a VM that dies, and wait until it fails.
 async fn lose_vms(rig: &Rig) -> Record {
-    let mut job = Job::new("j1".into(), "w".into(), "r".into(), 1).on(Pipeline::Full);
-    (job.stage, job.state) = (Stage::Implement, State::Provisioning);
-    let record = Record {
-        job,
-        runtime: Runtime {
-            worktree: Some("wt-kept".into()),
-            sandbox: Some("vm1".into()),
-            ..Runtime::default()
-        },
-        rev: 1,
-        created_at: 1,
-    };
+    let mut record = record_at(Pipeline::Full, Stage::Implement, State::Provisioning);
+    record.runtime.worktree = Some("wt-kept".into());
     rig.store.insert(&record).await.unwrap();
     rig.factory.apply("j1", Event::Provisioned).await.unwrap();
     failed_after(rig, 0).await
@@ -861,18 +836,8 @@ fn a_turn_on_a_job_whose_vm_went_while_it_waited_gets_a_new_vm_first() {
     let lost = Err("sandbox not found: vm-gone".into());
     let rig = rig_on(engine().answer("sandbox::exec", lost));
     crate::rt::block_on(async {
-        let mut job = Job::new("j1".into(), "w".into(), "r".into(), 1);
-        (job.stage, job.state) = (Stage::Build, State::NeedsYou);
-        let record = Record {
-            job,
-            runtime: Runtime {
-                worktree: Some("wt1".into()),
-                sandbox: Some("vm-gone".into()),
-                ..Runtime::default()
-            },
-            rev: 1,
-            created_at: 1,
-        };
+        let mut record = record_at(Pipeline::Short, Stage::Build, State::NeedsYou);
+        record.runtime.sandbox = Some("vm-gone".into());
         rig.store.insert(&record).await.unwrap();
         let sent_back = Event::Commented {
             text: "again".into(),

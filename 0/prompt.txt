@@ -1,0 +1,1 @@
+I also want to relax the default workflows - I want a good amount of starting workflows, but I want the user to be able to change them and also to easily create a new one

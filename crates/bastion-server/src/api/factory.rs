@@ -62,6 +62,7 @@ pub async fn workspaces(cell: &FactoryCell) -> Result<Vec<Workspace>, String> {
         .into_iter()
         .map(|w| Workspace {
             image: w.vm_image().into(),
+            finish: if w.merges() { "merge" } else { "leave" }.into(),
             name: w.name,
             path: w.path,
             branch: w.branch,
@@ -105,6 +106,7 @@ pub async fn workspace_add(
         gates: w.gates,
         autofix: w.autofix,
         image: w.image,
+        finish: w.finish,
     };
     settle(machine, &mut row, settings)?;
     factory(cell)?.store().add_workspace(&row).await
@@ -126,6 +128,9 @@ pub struct WorkspaceSettings {
     /// `python`, `node` or `browser`; empty keeps `python`.
     #[serde(default)]
     pub image: String,
+    /// `merge` or `leave` (D41); empty keeps `merge`.
+    #[serde(default)]
+    pub finish: String,
 }
 
 /// The images a workspace's VMs may boot: the sandbox's presets, and the
@@ -175,6 +180,11 @@ fn settle(
     (row.setup, row.cleanup) = (s.setup.trim().into(), s.cleanup.trim().into());
     (row.gates, row.autofix) = (s.gates.trim().into(), s.autofix.trim().into());
     row.image = image_of(&s.image)?;
+    row.finish = match s.finish.trim() {
+        "" | "merge" => "merge".into(),
+        "leave" => "leave".into(),
+        other => return Err(format!("{other:?} is not a finish: merge or leave")),
+    };
     Ok(())
 }
 
@@ -231,6 +241,7 @@ pub async fn workspace_draft(
         gates: String::new(),
         autofix: String::new(),
         image: "python".into(),
+        finish: "merge".into(),
     })
 }
 

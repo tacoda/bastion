@@ -20,6 +20,13 @@ pub const DEFAULT_NAMESPACE: &str = "default";
 /// router, worktrees, and Bastion's own functions.
 pub const NS: &str = "bastion";
 
+/// The name this process links to the engine under. The engine refuses a
+/// second worker with one name, so it carries the process id; the vault
+/// knows a reader by it.
+pub fn worker_name() -> String {
+    format!("bastion-app-{}", std::process::id())
+}
+
 pub type Call<'a> = Pin<Box<dyn Future<Output = Result<Value, String>> + Send + 'a>>;
 
 /// Run on each push from the engine. It must return quickly.

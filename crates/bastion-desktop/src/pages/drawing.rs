@@ -292,6 +292,7 @@ mod tests {
             dial: "lights_on".into(),
             note: String::new(),
             builtin: String::new(),
+            reach: Default::default(),
             results: results.iter().map(|r| r.to_string()).collect(),
             x: 200,
             y: 100,

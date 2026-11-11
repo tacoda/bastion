@@ -28,8 +28,32 @@ pub struct Node {
     pub note: String,
     /// The results it declares, by name, such as `design-notes`.
     pub results: Vec<String>,
+    /// What a shell step may reach beyond its VM (D40).
+    #[serde(default)]
+    pub reach: Reach,
     pub x: i32,
     pub y: i32,
+}
+
+/// What a shell step may reach beyond its VM (D40): the network, and the
+/// vault's secrets it gets as environment variables, by name.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Reach {
+    pub network: bool,
+    pub secrets: Vec<String>,
+}
+
+impl Reach {
+    /// A secret's name: an environment variable's, as `GH_TOKEN`.
+    fn bad_secret(&self) -> Option<&String> {
+        let ok = |s: &String| {
+            !s.is_empty()
+                && !s.starts_with(|c: char| c.is_ascii_digit())
+                && s.chars()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+        };
+        self.secrets.iter().find(|s| !ok(s))
+    }
 }
 
 /// The later node gets the earlier node's results.
@@ -56,6 +80,8 @@ pub struct Step {
     pub note: String,
     pub needs: Vec<String>,
     pub gives: Vec<String>,
+    #[serde(default)]
+    pub reach: Reach,
 }
 
 /// The id a chained stage's node has.
@@ -122,7 +148,16 @@ fn what_runs(n: &Node) -> Result<(), String> {
     if !gives && !n.results.is_empty() {
         return Err(format!("{}: {:?} gives no results", n.id, n.stage));
     }
-    Ok(())
+    if n.stage != Stage::Shell && n.reach != Reach::default() {
+        return Err(format!("{}: only a shell step reaches past its VM", n.id));
+    }
+    match n.reach.bad_secret() {
+        Some(s) => Err(format!(
+            "{}: {s:?} is not a secret's name, such as GH_TOKEN",
+            n.id
+        )),
+        None => Ok(()),
+    }
 }
 
 /// The results a report gives: the text under each `RESULT <name>:` line,
@@ -163,6 +198,7 @@ impl Graph {
             dial: dial(*s),
             note: String::new(),
             results: Vec::new(),
+            reach: Reach::default(),
             x: 220 * i as i32,
             y: 0,
         });
@@ -233,7 +269,11 @@ impl Graph {
             ));
         }
         let stages: Vec<Stage> = self.order()?.iter().map(|n| n.stage).collect();
-        crate::pipeline::check_landing(&stages)
+        // A workflow of steps only lands by finishing (D41).
+        match stages.iter().all(|s| custom(*s)) {
+            true => Ok(()),
+            false => crate::pipeline::check_landing(&stages),
+        }
     }
 
     /// The `i`th node: its id new, a step a person can oversee, a Bastion
@@ -274,6 +314,7 @@ impl Graph {
                     .flat_map(|l| gives(&l.from))
                     .collect(),
                 gives: n.results.clone(),
+                reach: n.reach.clone(),
             })
             .collect())
     }
@@ -292,6 +333,7 @@ mod tests {
             dial: Dial::LightsOn,
             note: String::new(),
             results: results.iter().map(|r| r.to_string()).collect(),
+            reach: Reach::default(),
             x,
             y: 0,
         }

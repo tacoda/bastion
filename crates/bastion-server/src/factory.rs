@@ -500,6 +500,11 @@ impl Factory {
                 let failed = |error| Event::LandFailed { error };
                 self.report_failure(&id, landed, failed).await
             }
+            Effect::Finish => {
+                let finished = self.finish_job(&record).await;
+                let failed = |error| Event::LandFailed { error };
+                self.report_failure(&id, finished, failed).await
+            }
             Effect::WatchCi | Effect::Merge => self.forge_effect(&record, effect).await,
             Effect::Teardown => {
                 // The contract runs in the trial's VM, so before the teardown.
@@ -995,6 +1000,7 @@ mod resume;
 mod reverts;
 pub use reverts::ESCAPE;
 mod setup;
+mod shell;
 mod split;
 mod turn;
 mod verdict;

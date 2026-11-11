@@ -413,6 +413,7 @@ fn a_workflow_step_after_a_local_land_runs_before_the_job_is_landed() {
         note: String::new(),
         needs: Vec::new(),
         gives: Vec::new(),
+        reach: Default::default(),
     };
     let mut j = job().running(vec![node(Stage::Land), node(Stage::Learn)]);
     j.state = State::Running;

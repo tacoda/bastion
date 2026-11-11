@@ -139,7 +139,8 @@ pub(super) const SCHEMA: [&str; 8] = [
         env TEXT NOT NULL DEFAULT '',
         gates TEXT NOT NULL DEFAULT '',
         autofix TEXT NOT NULL DEFAULT '',
-        image TEXT NOT NULL DEFAULT 'python')",
+        image TEXT NOT NULL DEFAULT 'python',
+        finish TEXT NOT NULL DEFAULT 'merge' CHECK (finish IN ('merge','leave')))",
     // Discovery's tasks for implement, in order.
     "CREATE TABLE IF NOT EXISTS tasks (
         job TEXT NOT NULL REFERENCES jobs(id),
@@ -215,7 +216,7 @@ pub(super) const LEGACY_JOB_COLUMNS: &str = "id, workspace, request, stage, stat
 /// Columns added after a table was first made. Each runs once; on a table
 /// that already has the column it fails, and that failure is expected.
 // They run before the numbered migrations, which need these columns to exist.
-pub(super) const ALTERS: [&str; 23] = [
+pub(super) const ALTERS: [&str; 26] = [
     "ALTER TABLE jobs ADD COLUMN pr TEXT",
     "ALTER TABLE jobs ADD COLUMN ci_fixes INTEGER NOT NULL DEFAULT 0 CHECK (ci_fixes >= 0)",
     "ALTER TABLE jobs ADD COLUMN issue TEXT",
@@ -239,6 +240,9 @@ pub(super) const ALTERS: [&str; 23] = [
     "ALTER TABLE eval_runs ADD COLUMN contract INTEGER CHECK (contract IN (0, 1))",
     "ALTER TABLE jobs ADD COLUMN model TEXT",
     "ALTER TABLE workspaces ADD COLUMN image TEXT NOT NULL DEFAULT 'python'",
+    "ALTER TABLE workspaces ADD COLUMN finish TEXT NOT NULL DEFAULT 'merge' CHECK (finish IN ('merge','leave'))",
+    "ALTER TABLE workflow_nodes ADD COLUMN network INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE workflow_nodes ADD COLUMN secrets TEXT NOT NULL DEFAULT ''",
 ];
 
 /// Numbered migrations, each run once in order; `PRAGMA user_version` is the

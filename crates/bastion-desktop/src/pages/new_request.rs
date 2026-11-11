@@ -413,6 +413,7 @@ mod tests {
             gates: String::new(),
             autofix: String::new(),
             image: "python".into(),
+            finish: "merge".into(),
         }];
         assert_eq!(state.chosen().as_deref(), Some("calc"));
         state.request = text_editor::Content::with_text("  ");

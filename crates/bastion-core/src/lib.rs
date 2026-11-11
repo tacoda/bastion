@@ -469,6 +469,9 @@ pub enum Effect {
     CaptureDiff,
     /// Bring the VM's commits back to the worktree, then land them.
     Land,
+    /// The workflow's last step passed: bring the VM's commits back, then
+    /// merge them or leave the branch, as the workspace says (D41).
+    Finish,
     /// Stop the VM and release the worktree.
     Teardown,
     /// Wait for CI on the job's pull request, then send `CiPassed` or `CiFailed`.
@@ -543,6 +546,13 @@ impl Job {
 
     /// The workflow step the job is at. None while a fix loop runs another
     /// stage for it, or on a pipeline.
+    /// A workflow of steps only, at its last step: nothing in it lands, so
+    /// the job finishes as its workspace says (D41).
+    pub fn finishes(&self) -> bool {
+        let steps_only = self.flow.iter().all(|s| workflow::custom(s.stage));
+        !self.flow.is_empty() && steps_only && self.next().is_none()
+    }
+
     pub fn step(&self) -> Option<&workflow::Step> {
         let at = self.node.as_deref()?;
         self.flow
@@ -627,7 +637,10 @@ pub fn step(job: &Job, event: &Event, at: u64, dials: &Dials) -> (Job, Vec<Effec
 /// A step the factory runs reported: its land, CI or own result. `None`
 /// means the event does not fit, and nothing changes.
 fn after_step(job: &mut Job, event: &Event, dials: &Dials) -> Option<Vec<Effect>> {
-    if job.stage == Stage::Land {
+    let finish = matches!(event, Event::Landed | Event::LandFailed { .. });
+    if finish && job.finishes() {
+        Some(finished(job, event))
+    } else if job.stage == Stage::Land {
         land(job, event, dials)
     } else {
         factory(job, event, dials)
@@ -947,7 +960,25 @@ fn approved(job: &mut Job, dials: &Dials) -> Vec<Effect> {
     }
 }
 
-/// Move to the job's next step. Past the last one, the job has landed.
+/// The end of a workflow of steps only (D41): landed once its branch is
+/// merged or left, or waiting on a person when that failed, as a failed
+/// land does; approving finishes again.
+fn finished(job: &mut Job, event: &Event) -> Vec<Effect> {
+    match event {
+        Event::LandFailed { error } => {
+            job.state = State::NeedsYou;
+            job.error = Some(error.clone());
+            Vec::new()
+        }
+        _ => {
+            job.state = State::Landed;
+            vec![Effect::Teardown]
+        }
+    }
+}
+
+/// Move to the job's next step. Past the last one, a workflow of steps only
+/// finishes (D41), and any other job has landed already.
 fn advance(job: &mut Job, dials: &Dials) -> Vec<Effect> {
     job.last_refusal = None;
     match job.next() {
@@ -957,6 +988,7 @@ fn advance(job: &mut Job, dials: &Dials) -> Vec<Effect> {
             job.failures = 0;
             enter(job, dials)
         }
+        None if job.finishes() => vec![Effect::Finish],
         None => {
             job.state = State::Landed;
             vec![Effect::Teardown]

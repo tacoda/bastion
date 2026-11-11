@@ -41,6 +41,8 @@ pub struct State {
     /// and its results, as typed.
     text: text_editor::Content,
     results: String,
+    /// A shell step's secrets, as typed.
+    secrets: String,
     copy_name: String,
     said: String,
     no_marks: BTreeMap<String, String>,
@@ -51,6 +53,7 @@ pub struct State {
 pub enum StepField {
     Run,
     Results,
+    Secrets,
 }
 
 #[derive(Clone, Debug)]
@@ -64,6 +67,8 @@ pub enum Msg {
     Kind(Choice),
     Field(StepField, String),
     Text(text_editor::Action),
+    /// Whether a shell step runs with the network (D40).
+    Network(bool),
     Dial(Choice),
     RemoveStep,
     RemoveLink,
@@ -137,6 +142,10 @@ impl State {
             _ => None,
         };
         self.text = text_editor::Content::with_text(&step.as_ref().map(shown).unwrap_or_default());
+        self.secrets = step
+            .as_ref()
+            .map(|n| n.reach.secrets.join(", "))
+            .unwrap_or_default();
         self.results = step.map(|n| n.results.join(", ")).unwrap_or_default();
         self.picked = pick;
     }
@@ -231,18 +240,24 @@ fn on_pointer(state: &mut State, p: Pointer) {
     }
 }
 
+/// A comma-separated list as typed, as its names.
+fn listed(typed: &str) -> Vec<String> {
+    let names = typed.split(',').map(str::trim).filter(|r| !r.is_empty());
+    names.map(String::from).collect()
+}
+
 fn on_field(state: &mut State, field: StepField, value: String) {
     match field {
         StepField::Run => state.step(|n| n.run = value),
         StepField::Results => {
-            let results = value
-                .split(',')
-                .map(str::trim)
-                .filter(|r| !r.is_empty())
-                .map(String::from)
-                .collect();
+            let results = listed(&value);
             state.step(|n| n.results = results);
             state.results = value;
+        }
+        StepField::Secrets => {
+            let secrets = listed(&value);
+            state.step(|n| n.reach.secrets = secrets);
+            state.secrets = value;
         }
     }
 }
@@ -320,6 +335,7 @@ fn change(state: &mut State, msg: Msg) {
             state.step(|n| (n.stage, n.builtin) = (c.id, builtin));
             state.pick(state.picked.clone());
         }
+        Msg::Network(on) => state.step(|n| n.reach.network = on),
         Msg::Text(a) => {
             state.text.perform(a);
             let typed = state.text.text();
@@ -473,18 +489,13 @@ fn text_label(n: &bastion_protocol::NodeView) -> &'static str {
     }
 }
 
-fn step_detail<'a>(state: &'a State, id: &str, editable: bool) -> Option<Element<'a, Message>> {
-    let n = state
-        .draft
-        .as_ref()
-        .and_then(|w| edit::node(w, id))?
-        .clone();
-    let on = |m: Msg| editable.then_some(wrap(m));
-    let head = row![
-        text(title(&n)).font(theme::BOLD),
-        text(n.id.clone()).size(13).color(theme::MUTED)
-    ]
-    .spacing(8);
+/// How a step runs: its kind, its dial, and an agent's, skill's or
+/// command's name.
+fn how_row<'a>(
+    state: &'a State,
+    n: &bastion_protocol::NodeView,
+    editable: bool,
+) -> Element<'a, Message> {
     let all = kinds(state, &n.stage);
     let kind = all.iter().find(|c| c.id == n.stage).cloned();
     let kind = pick_list(all, kind, |c| wrap(Msg::Kind(c)))
@@ -513,6 +524,41 @@ fn step_detail<'a>(state: &'a State, id: &str, editable: bool) -> Option<Element
             .style(theme::field);
         how = how.push(container(labeled(label, input)).width(Fill));
     }
+    how.into()
+}
+
+/// A shell step's network and the vault's secrets it gets (D40).
+fn reach_fields<'a>(
+    state: &'a State,
+    n: &bastion_protocol::NodeView,
+    editable: bool,
+) -> Element<'a, Message> {
+    let network = iced::widget::checkbox(n.reach.network)
+        .label("Needs the network: runs in a VM of its own with these secrets")
+        .on_toggle_maybe(editable.then_some(|on| wrap(Msg::Network(on))));
+    let secrets = text_input("GH_TOKEN", &state.secrets)
+        .on_input_maybe(editable.then_some(|v| wrap(Msg::Field(StepField::Secrets, v))))
+        .style(theme::field);
+    let secrets = labeled(
+        "Secrets from the vault, as environment variables, comma-separated",
+        secrets,
+    );
+    column![network, secrets].spacing(12).into()
+}
+
+fn step_detail<'a>(state: &'a State, id: &str, editable: bool) -> Option<Element<'a, Message>> {
+    let n = state
+        .draft
+        .as_ref()
+        .and_then(|w| edit::node(w, id))?
+        .clone();
+    let on = |m: Msg| editable.then_some(wrap(m));
+    let head = row![
+        text(title(&n)).font(theme::BOLD),
+        text(n.id.clone()).size(13).color(theme::MUTED)
+    ]
+    .spacing(8);
+    let how = how_row(state, &n, editable);
     let mut body = column![head, how];
     if text_of(&n) == Text::Nothing {
         body = body.push(text(text_label(&n)).size(13).color(theme::MUTED));
@@ -525,6 +571,9 @@ fn step_detail<'a>(state: &'a State, id: &str, editable: bool) -> Option<Element
             words = words.on_action(|a| wrap(Msg::Text(a)));
         }
         body = body.push(labeled(text_label(&n), words));
+    }
+    if n.stage == "shell" {
+        body = body.push(reach_fields(state, &n, editable));
     }
     let results = text_input("", &state.results)
         .on_input_maybe(editable.then_some(|v| wrap(Msg::Field(StepField::Results, v))))

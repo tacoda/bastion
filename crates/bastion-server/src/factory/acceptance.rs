@@ -72,19 +72,27 @@ impl Factory {
     }
 
     /// A workflow's command step (D35): its line in the repository.
+    /// A shell step (D40): its script runs in the job's VM, or in a VM of
+    /// its own with the network and its secrets, stopped after.
     pub(super) async fn command_step(&self, record: &Record) -> Event {
         let ran = async {
-            let line = record
-                .job
-                .step()
-                .map(|s| s.run.clone())
-                .ok_or("no command to run")?;
+            let step = record.job.step().ok_or("no script to run")?;
+            let script = format!("{}\n{}", self.shell_env(record).await?, step.run);
+            let own = match step.reach.network {
+                true => Some(self.networked_vm(record, &step.reach).await?),
+                false => None,
+            };
+            let sandbox = own.as_deref().or(record.runtime.sandbox.as_deref());
             let vm = Vm {
                 engine: &*self.engine,
-                sandbox: record.runtime.sandbox.as_deref().ok_or("no VM")?,
+                sandbox: sandbox.ok_or("no VM")?,
                 spec: Spec { checks: Vec::new() },
             };
-            Ok(acceptance::command(&vm.run(&line, &line).await?))
+            let ran = vm.run(&step.run, &script).await;
+            if let Some(own) = &own {
+                self.stop_vm(own).await;
+            }
+            Ok(acceptance::command(&ran?))
         };
         ran.await
             .unwrap_or_else(|detail: String| Event::StepStuck { detail })

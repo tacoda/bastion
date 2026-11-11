@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use bastion_core::gates::parse;
 use bastion_core::{BASE_TAG, eval};
 
-use super::setup::TREE;
+use super::setup::{self, TREE};
 use super::{Factory, REPO};
 use crate::store::Record;
 
@@ -57,7 +57,9 @@ impl Factory {
         let tree = self.tree(vm).await?;
         let kit = self.verify_kit()?;
         let ws = self.workspace(record).await?;
-        let judge = self.create_vm_from("node", false, &ws).await?;
+        let judge = self
+            .create_vm_from("node", &ws, setup::Access::network(false))
+            .await?;
         let judged = self.judge_in(&judge, tree, kit).await;
         self.stop_vm(&judge).await;
         judged.map_err(|e| format!("opengantry refused the change ({CONTRACT}):\n{e}"))

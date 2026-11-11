@@ -34,6 +34,24 @@ impl Factory {
         }
     }
 
+    /// The workflow's last step passed (D41): its commits come back to the
+    /// job's branch, then merge into the workspace's base, or stay on the
+    /// branch when the workspace leaves it.
+    pub(super) async fn finish_job(self: &Arc<Self>, record: &Record) -> Result<(), String> {
+        let (path, target) = self.bring_back(record).await?;
+        self.keep_commits(record, &path, &target).await;
+        let workspaces = self.store.workspaces().await?;
+        let ws = workspaces
+            .iter()
+            .find(|w| w.name == record.job.workspace)
+            .ok_or("no such workspace")?;
+        if !ws.merges() {
+            return self.apply(&record.job.id, Event::Landed).await;
+        }
+        let worktree = record.runtime.worktree.clone().ok_or("no worktree")?;
+        self.land_here(record, &worktree, &target).await
+    }
+
     /// Ship: bring the commits back, then push them and open the
     /// pull request, or, with the local forge, go on with them in the worktree.
     pub(super) async fn ship(&self, record: &Record) -> Result<Event, String> {

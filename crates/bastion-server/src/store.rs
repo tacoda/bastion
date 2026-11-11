@@ -48,9 +48,17 @@ pub struct Workspace {
     /// The VM image jobs boot: `python`, `node` or `browser`; empty
     /// is `python`.
     pub image: String,
+    /// What a job's branch does when its workflow's last step passes
+    /// (D41): `merge` into the base branch, or `leave` it.
+    pub finish: String,
 }
 
 impl Workspace {
+    /// Whether a finished job's branch merges into the base (D41).
+    pub fn merges(&self) -> bool {
+        self.finish != "leave"
+    }
+
     /// The image this workspace's VMs boot.
     pub fn vm_image(&self) -> &str {
         match self.image.as_str() {

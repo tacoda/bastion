@@ -50,6 +50,7 @@ impl Default for State {
             gates: String::new(),
             autofix: String::new(),
             image: "python".into(),
+            finish: "merge".into(),
         };
         State {
             server,
@@ -84,6 +85,7 @@ pub enum Field {
     Env,
     Autofix,
     Image,
+    Finish,
 }
 
 #[derive(Clone, Debug)]
@@ -155,6 +157,7 @@ fn edit(state: &mut State, field: Field, value: String) {
         Field::Env => state.workspace.env = value,
         Field::Autofix => state.workspace.autofix = value,
         Field::Image => state.workspace.image = value,
+        Field::Finish => state.workspace.finish = value,
     }
 }
 
@@ -217,6 +220,7 @@ fn save(state: &mut State, ctx: &Ctx) -> Task<Message> {
         gates: w.gates,
         autofix: w.autofix,
         image: w.image,
+        finish: w.finish,
     };
     task(ctx, edit, Msg::Done)
 }
@@ -419,10 +423,17 @@ fn gates_row(state: &State) -> Element<'_, Message> {
         &state.workspace.image,
         Field::Image,
     );
+    let finish = field(
+        "When the last step passes",
+        "merge or leave the branch",
+        &state.workspace.finish,
+        Field::Finish,
+    );
     row![
         labeled("Gates, one name: command per line", gates),
         autofix,
-        image
+        image,
+        finish
     ]
     .spacing(8)
     .align_y(iced::Top)
@@ -477,6 +488,7 @@ mod tests {
                 gates: "lint: ruff check {files}".into(),
                 autofix: "ruff check --fix {files}".into(),
                 image: "python".into(),
+                finish: "merge".into(),
             }],
             ..State::default()
         };

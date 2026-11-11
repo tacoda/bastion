@@ -328,8 +328,8 @@ impl Store for SqlStore {
     fn add_workspace<'a>(&'a self, w: &'a Workspace) -> Answer<'a, ()> {
         Box::pin(async move {
             self.execute(
-                "INSERT INTO workspaces (name, path, branch, checks, max_jobs, revision_budget, branch_prefix, setup, cleanup, env, gates, autofix, image, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())",
-                json!([w.name, w.path, w.branch, w.checks, w.max_jobs, w.revision_budget, w.branch_prefix, w.setup, w.cleanup, w.env, w.gates, w.autofix, w.image]),
+                "INSERT INTO workspaces (name, path, branch, checks, max_jobs, revision_budget, branch_prefix, setup, cleanup, env, gates, autofix, image, finish, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())",
+                json!([w.name, w.path, w.branch, w.checks, w.max_jobs, w.revision_budget, w.branch_prefix, w.setup, w.cleanup, w.env, w.gates, w.autofix, w.image, w.finish]),
             )
             .await
             .map(|_| ())
@@ -339,7 +339,7 @@ impl Store for SqlStore {
     fn workspaces(&self) -> Answer<'_, Vec<Workspace>> {
         Box::pin(async move {
             self.query(
-                "SELECT name, path, branch, checks, max_jobs, revision_budget, branch_prefix, setup, cleanup, env, gates, autofix, image FROM workspaces ORDER BY name",
+                "SELECT name, path, branch, checks, max_jobs, revision_budget, branch_prefix, setup, cleanup, env, gates, autofix, image, finish FROM workspaces ORDER BY name",
                 json!([]),
             )
             .await?
@@ -359,6 +359,7 @@ impl Store for SqlStore {
                     gates: parse(r, "gates")?,
                     autofix: parse(r, "autofix")?,
                     image: parse(r, "image")?,
+                    finish: parse(r, "finish")?,
                 })
             })
             .collect()
@@ -369,8 +370,8 @@ impl Store for SqlStore {
         Box::pin(async move {
             let found = self
                 .execute(
-                    "UPDATE workspaces SET branch = ?, checks = ?, max_jobs = ?, revision_budget = ?, branch_prefix = ?, setup = ?, cleanup = ?, env = ?, gates = ?, autofix = ?, image = ? WHERE name = ? RETURNING name",
-                    json!([w.branch, w.checks, w.max_jobs, w.revision_budget, w.branch_prefix, w.setup, w.cleanup, w.env, w.gates, w.autofix, w.image, w.name]),
+                    "UPDATE workspaces SET branch = ?, checks = ?, max_jobs = ?, revision_budget = ?, branch_prefix = ?, setup = ?, cleanup = ?, env = ?, gates = ?, autofix = ?, image = ?, finish = ? WHERE name = ? RETURNING name",
+                    json!([w.branch, w.checks, w.max_jobs, w.revision_budget, w.branch_prefix, w.setup, w.cleanup, w.env, w.gates, w.autofix, w.image, w.finish, w.name]),
                 )
                 .await?;
             match found.is_empty() {

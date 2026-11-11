@@ -93,8 +93,18 @@ pub struct NodeView {
     #[serde(default)]
     pub builtin: String,
     pub results: Vec<String>,
+    /// A shell step's network and the vault's secrets it gets (D40).
+    #[serde(default)]
+    pub reach: ReachView,
     pub x: i32,
     pub y: i32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReachView {
+    pub network: bool,
+    /// Environment variable names, such as `GH_TOKEN`.
+    pub secrets: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -346,6 +356,10 @@ pub struct Workspace {
     /// The VM image jobs boot: `python`, `node` or `browser`.
     #[serde(default)]
     pub image: String,
+    /// What a job's branch does when its workflow's last step passes
+    /// (D41): `merge` into the base branch, or `leave` it.
+    #[serde(default)]
+    pub finish: String,
 }
 
 /// The branch prefix a workspace starts with.

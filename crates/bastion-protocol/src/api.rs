@@ -138,6 +138,8 @@ pub struct WorkspaceEdit {
     pub autofix: String,
     #[serde(default)]
     pub image: String,
+    #[serde(default)]
+    pub finish: String,
 }
 
 impl Request for WorkspaceEdit {

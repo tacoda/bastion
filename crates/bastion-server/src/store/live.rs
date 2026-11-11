@@ -34,6 +34,7 @@ async fn open_with_job(tag: &str) -> (SqlStore, Record) {
         gates: String::new(),
         autofix: String::new(),
         image: "python".into(),
+        finish: "merge".into(),
     };
     store.add_workspace(&w).await.unwrap();
     let r = Record {

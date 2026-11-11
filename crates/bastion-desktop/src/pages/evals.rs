@@ -552,6 +552,7 @@ mod tests {
                 gates: String::new(),
                 autofix: String::new(),
                 image: "python".into(),
+                finish: "merge".into(),
             }],
             targets: vec![Choice::new("constraint:no-curl", "no-curl (told)")],
             requests: text_editor::Content::with_text("Add add.\n\n  Add sub.  "),

@@ -33,6 +33,10 @@ fn view_of(w: &Workflow) -> WorkflowView {
                     .unwrap_or_default()
                     .into(),
                 results: n.results.clone(),
+                reach: bastion_protocol::ReachView {
+                    network: n.reach.network,
+                    secrets: n.reach.secrets.clone(),
+                },
                 x: n.x,
                 y: n.y,
             })

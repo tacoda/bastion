@@ -40,21 +40,37 @@ impl Workspace {
     }
 }
 
+/// What a VM reaches: the network or not, and more environment, such as a
+/// shell step's secrets (D40).
+pub(super) struct Access<'a> {
+    pub network: bool,
+    pub env: &'a [String],
+}
+
+impl Access<'_> {
+    pub fn network(network: bool) -> Self {
+        Access { network, env: &[] }
+    }
+}
+
 impl Factory {
     /// A VM with the workspace's environment, and the network only when
     /// `network`. Returns its id.
     pub(super) async fn create_vm(&self, network: bool, ws: &Workspace) -> Result<String, String> {
-        self.create_vm_from(ws.vm_image(), network, ws).await
+        self.create_vm_from(ws.vm_image(), ws, Access::network(network))
+            .await
     }
 
     /// A VM from `image`, as [`Factory::create_vm`] makes one.
     pub(super) async fn create_vm_from(
         &self,
         image: &str,
-        network: bool,
         ws: &Workspace,
+        access: Access<'_>,
     ) -> Result<String, String> {
+        let Access { network, env: more } = access;
         let mut env = ws.env_vars()?;
+        env.extend_from_slice(more);
         if image == "browser" {
             // The image's own environment does not reach the VM.
             env.push(format!("PLAYWRIGHT_BROWSERS_PATH={BROWSERS}"));

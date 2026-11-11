@@ -1137,6 +1137,7 @@ mod tests {
             gates: s("lint: ruff check {files}"),
             autofix: s(""),
             image: s("browser"),
+            finish: s("leave"),
         });
         reads::<crate::api::factory::DraftRequest>(api::WorkspaceDraft {
             path: s("/repo"),

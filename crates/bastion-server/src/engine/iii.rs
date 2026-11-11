@@ -54,7 +54,7 @@ impl IiiEngine {
     pub fn connect(url: &str) -> Self {
         let options = InitOptions {
             metadata: Some(WorkerMetadata {
-                name: format!("bastion-app-{}", std::process::id()),
+                name: super::worker_name(),
                 ..WorkerMetadata::default()
             }),
             namespace: Some(super::NS.into()),

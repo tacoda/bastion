@@ -221,7 +221,10 @@ fn a_new_vm_brings_loopback_up_and_a_browser_vm_finds_its_browsers() {
     let rig = rig();
     crate::rt::block_on(async {
         let ws = workspace();
-        let vm = rig.factory.create_vm_from("browser", false, &ws).await;
+        let vm = rig
+            .factory
+            .create_vm_from("browser", &ws, super::setup::Access::network(false))
+            .await;
         assert_eq!(vm.as_deref(), Ok("vm1"));
         let calls = rig.engine.calls.lock().unwrap().clone();
         let made = calls.iter().find(|c| c.1 == "sandbox::create").unwrap();
@@ -230,5 +233,58 @@ fn a_new_vm_brings_loopback_up_and_a_browser_vm_finds_its_browsers() {
         let exec = calls.iter().find(|c| c.1 == "sandbox::exec").unwrap();
         assert_eq!(exec.2["argv"][0], "perl", "loopback comes up first");
         assert!(exec.2["argv"][2].as_str().unwrap().contains("0x8914"));
+    });
+}
+
+#[test]
+fn a_shell_step_gets_the_jobs_branch_and_the_vault_names_this_server_only_for_a_read() {
+    use bastion_core::workflow::{Reach, Step};
+    let rig = rig_on(
+        engine()
+            .answer(
+                "secrets::get",
+                Ok(json!({ "name": "GH_TOKEN", "consumers": ["llm-router"] })),
+            )
+            .answer("secrets::access", Ok(json!({})))
+            .answer("secrets::resolve", Ok(json!({ "value": "t0k" }))),
+    );
+    crate::rt::block_on(async {
+        let mut record = record_at(Pipeline::Short, Stage::Shell, State::Running);
+        record.job.flow = vec![Step {
+            id: "tests".into(),
+            stage: Stage::Shell,
+            run: "make test".into(),
+            dial: bastion_core::Dial::Dark,
+            note: String::new(),
+            needs: Vec::new(),
+            gives: Vec::new(),
+            reach: Reach::default(),
+        }];
+        record.job.node = Some("tests".into());
+        rig.factory.command_step(&record).await;
+        let calls = rig.engine.calls.lock().unwrap().clone();
+        let ran = calls.iter().find(|c| c.1 == "sandbox::exec").unwrap();
+        let line = ran.2["argv"][2].as_str().unwrap();
+        assert!(
+            line.contains("BASTION_BRANCH='iii/wt1' BASTION_BASE='main'"),
+            "{line}"
+        );
+        assert!(line.ends_with("make test"));
+        assert!(
+            !calls.iter().any(|c| c.1 == "sandbox::create"),
+            "the job's own VM"
+        );
+
+        let value = rig.factory.vault_value("GH_TOKEN").await;
+        assert_eq!(value.as_deref(), Ok("t0k"));
+        let calls = rig.engine.calls.lock().unwrap().clone();
+        let access: Vec<&serde_json::Value> = calls
+            .iter()
+            .filter(|c| c.1 == "secrets::access")
+            .map(|c| &c.2["consumers"])
+            .collect();
+        let me = crate::engine::worker_name();
+        assert_eq!(access[0], &json!(["llm-router", me]));
+        assert_eq!(access[1], &json!(["llm-router"]), "put back as it was");
     });
 }

@@ -660,6 +660,7 @@ fn custom_flow() -> Job {
         dial: Dial::Dark,
         note: String::new(),
         results: results.iter().map(|r| r.to_string()).collect(),
+        reach: Default::default(),
         x,
         y: 0,
     };
@@ -712,6 +713,7 @@ fn a_stage_step_runs_on_its_rewritten_instructions_and_an_agent_on_its_file() {
         dial: Dial::Dark,
         note: note.into(),
         results: Vec::new(),
+        reach: Default::default(),
         x,
         y: 0,
     };
@@ -761,6 +763,7 @@ fn a_workflow_job_is_at_its_node_when_a_stage_is_there_twice() {
         dial: Dial::Dark,
         note: String::new(),
         results: Vec::new(),
+        reach: Default::default(),
         x,
         y: 0,
     };
@@ -945,4 +948,71 @@ fn a_lights_on_scope_keeps_its_parts_until_a_person_approves_them_as_set() {
     let (j, _) = step(&j, &one, AT, &lights_on);
     let (j, effects) = step(&j, &Event::Approved, AT, &lights_on);
     assert!(j.part.is_none() && !effects.iter().any(|e| matches!(e, Effect::Split { .. })));
+}
+
+#[test]
+fn a_workflow_of_steps_only_finishes_as_its_workspace_says_after_its_last_step() {
+    use crate::workflow::{Graph, Node, Reach};
+    let node = |id: &str, stage, run: &str, note: &str, x| Node {
+        id: id.into(),
+        stage,
+        run: run.into(),
+        dial: Dial::Dark,
+        note: note.into(),
+        results: Vec::new(),
+        reach: Reach::default(),
+        x,
+        y: 0,
+    };
+    let mut pr = node("pr", Stage::Shell, "gh pr create --fill", "", 200);
+    pr.reach = Reach {
+        network: true,
+        secrets: vec!["GH_TOKEN".into()],
+    };
+    let g = Graph {
+        nodes: vec![
+            node("build", Stage::Prompt, "", "Make the change.", 0),
+            node("tests", Stage::Shell, "make test", "", 100),
+            pr,
+        ],
+        links: Vec::new(),
+    };
+    assert_eq!(g.check(), Ok(()), "no land step is needed");
+    let mut j = job(Pipeline::Short).running(g.steps().unwrap());
+    j.state = State::Running;
+    let (j, _) = go(&j, &done());
+    assert_eq!(j.node.as_deref(), Some("tests"));
+    let (j, _) = go(
+        &j,
+        &Event::Ran {
+            output: "ok".into(),
+        },
+    );
+    assert_eq!(j.node.as_deref(), Some("pr"));
+    assert!(j.step().unwrap().reach.network);
+    let (j, effects) = go(
+        &j,
+        &Event::Ran {
+            output: "opened".into(),
+        },
+    );
+    assert_eq!((j.state, effects), (State::Running, vec![Effect::Finish]));
+    let (stuck, _) = go(
+        &j,
+        &Event::LandFailed {
+            error: "conflict".into(),
+        },
+    );
+    assert_eq!(stuck.state, State::NeedsYou);
+    let (landed, effects) = go(&j, &Event::Landed);
+    assert_eq!(
+        (landed.state, effects),
+        (State::Landed, vec![Effect::Teardown])
+    );
+    let mut bad = g.clone();
+    bad.nodes[0].reach.network = true;
+    assert!(bad.check().unwrap_err().contains("only a shell step"));
+    let mut bad = g;
+    bad.nodes[2].reach.secrets = vec!["gh token".into()];
+    assert!(bad.check().unwrap_err().contains("not a secret's name"));
 }

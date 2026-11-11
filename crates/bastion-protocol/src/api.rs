@@ -175,7 +175,7 @@ at!(JobRetry, "POST", "/jobs/{id}/retry", id, ());
 at!(JobExtend, "POST", "/jobs/{id}/extend", id, ());
 
 /// Submit a request: a new job. Answers with its id.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Default, Clone, Debug, Serialize)]
 pub struct JobSubmit {
     pub workspace: String,
     pub request: String,
@@ -186,6 +186,23 @@ pub struct JobSubmit {
     /// plan and build models when none (F8).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// `feature`, `bug`, `chore` or `docs` (F8).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// What the change must do, in the requester's words.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub criteria: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub screenshots: Vec<Screenshot>,
+}
+
+/// An image that shows what the request means, by its file name.
+#[derive(Clone, Debug, Default, Serialize, serde::Deserialize)]
+pub struct Screenshot {
+    pub name: String,
+    pub bytes: Vec<u8>,
 }
 
 impl Request for JobSubmit {

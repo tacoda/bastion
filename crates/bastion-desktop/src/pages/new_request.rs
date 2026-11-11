@@ -2,9 +2,11 @@
 //! Bastion server, run by the workflow picked, or started from a GitHub
 //! issue.
 
-use bastion_protocol::api::{self, Request};
+use bastion_protocol::api::{self, Request, Screenshot};
 use bastion_protocol::{IssueView, LOCAL, ModelOption, WorkflowView, Workspace};
-use iced::widget::{Column, button, column, container, pick_list, row, text, text_editor};
+use iced::widget::{
+    Column, button, column, container, pick_list, row, text, text_editor, text_input,
+};
 use iced::{Element, Fill, Task};
 
 use super::{Choice, Ctx, labeled};
@@ -14,6 +16,22 @@ use crate::theme;
 
 fn default_workflow() -> Choice {
     Choice::new("", "The server's default")
+}
+
+/// A request's kinds, with "none" first (F8).
+const KINDS: [(&str, &str); 5] = [
+    ("", "No kind"),
+    ("feature", "Feature"),
+    ("bug", "Bug"),
+    ("chore", "Chore"),
+    ("docs", "Docs"),
+];
+
+fn kinds() -> Vec<Choice> {
+    KINDS
+        .iter()
+        .map(|(id, name)| Choice::new(id, name))
+        .collect()
 }
 
 fn default_model() -> Choice {
@@ -31,6 +49,13 @@ pub struct State {
     models: Vec<Choice>,
     model: Choice,
     request: text_editor::Content,
+    kind: Choice,
+    criteria: text_editor::Content,
+    /// One web address per line.
+    links: text_editor::Content,
+    /// The path typed for the next screenshot, and those added.
+    shot_path: String,
+    shots: Vec<Screenshot>,
     issues: Vec<IssueView>,
     issue_note: String,
     error: String,
@@ -47,6 +72,11 @@ impl Default for State {
             models: vec![default_model()],
             model: default_model(),
             request: text_editor::Content::new(),
+            kind: kinds()[0].clone(),
+            criteria: text_editor::Content::new(),
+            links: text_editor::Content::new(),
+            shot_path: String::new(),
+            shots: vec![],
             issues: vec![],
             issue_note: String::new(),
             error: String::new(),
@@ -64,6 +94,12 @@ pub enum Msg {
     Models(Result<Vec<ModelOption>, String>),
     Model(Choice),
     Edit(text_editor::Action),
+    Kind(Choice),
+    EditCriteria(text_editor::Action),
+    EditLinks(text_editor::Action),
+    ShotPath(String),
+    AddShot,
+    DropShot(usize),
     Submit,
     LoadIssues,
     Issues(Result<Vec<IssueView>, String>),
@@ -121,6 +157,10 @@ impl State {
             pipeline: None,
             workflow: (!self.workflow.id.is_empty()).then(|| self.workflow.id.clone()),
             model: (!self.model.id.is_empty()).then(|| self.model.id.clone()),
+            kind: (!self.kind.id.is_empty()).then(|| self.kind.id.clone()),
+            criteria: Some(self.criteria.text().trim().to_string()).filter(|c| !c.is_empty()),
+            links: lines(&self.links.text()),
+            screenshots: self.shots.clone(),
         };
         self.ask(ctx, submit, Msg::Started)
     }
@@ -164,6 +204,18 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         Msg::Workspace(name) => state.workspace = Some(name),
         Msg::Workflow(choice) => state.workflow = choice,
         Msg::Edit(action) => state.request.perform(action),
+        Msg::Kind(choice) => state.kind = choice,
+        Msg::EditCriteria(action) => state.criteria.perform(action),
+        Msg::EditLinks(action) => state.links.perform(action),
+        Msg::ShotPath(path) => state.shot_path = path,
+        Msg::AddShot => match screenshot(&state.shot_path) {
+            Ok(shot) => {
+                state.shots.push(shot);
+                (state.shot_path, state.error) = Default::default();
+            }
+            Err(e) => state.error = e,
+        },
+        Msg::DropShot(i) => drop(state.shots.remove(i)),
         Msg::Submit => return state.submit(ctx),
         Msg::LoadIssues => return state.issues(ctx, None),
         Msg::Issues(Ok(all)) => {
@@ -185,6 +237,66 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         Msg::Started(Err(e)) => state.error = e,
     }
     Task::none()
+}
+
+/// The non-blank lines of `text`, each trimmed.
+fn lines(text: &str) -> Vec<String> {
+    let kept = text.lines().map(str::trim).filter(|l| !l.is_empty());
+    kept.map(String::from).collect()
+}
+
+/// The image at `path` on this machine, sent by its file name: the server
+/// may be another machine.
+fn screenshot(path: &str) -> Result<Screenshot, String> {
+    let path = std::path::Path::new(path.trim());
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default();
+    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(Screenshot {
+        name: name.into(),
+        bytes,
+    })
+}
+
+/// The kind, criteria, links and screenshots a request may carry (F8).
+fn details(state: &State) -> Element<'_, Message> {
+    let msg = Message::NewRequest;
+    let kind = pick_list(kinds(), Some(state.kind.clone()), move |c| {
+        msg(Msg::Kind(c))
+    })
+    .style(theme::select);
+    let criteria = text_editor(&state.criteria)
+        .on_action(move |a| msg(Msg::EditCriteria(a)))
+        .height(64);
+    let links = text_editor(&state.links)
+        .on_action(move |a| msg(Msg::EditLinks(a)))
+        .height(48);
+    let path = text_input("/path/to/screenshot.png", &state.shot_path)
+        .on_input(move |p| msg(Msg::ShotPath(p)))
+        .on_submit(msg(Msg::AddShot));
+    let add = button(text("Add").size(13))
+        .padding([4, 12])
+        .style(theme::secondary)
+        .on_press(msg(Msg::AddShot));
+    let added = state.shots.iter().enumerate().map(|(i, s)| {
+        let drop = button(text("Remove").size(12)).style(theme::link);
+        row![
+            text(s.name.clone()).size(13).width(Fill),
+            drop.on_press(msg(Msg::DropShot(i)))
+        ]
+        .into()
+    });
+    column![
+        labeled("Kind", kind),
+        labeled("Acceptance criteria (optional)", criteria),
+        labeled("Links, one per line (optional)", links),
+        labeled("Screenshots (optional)", row![path, add].spacing(8)),
+        Column::with_children(added).spacing(2),
+    ]
+    .spacing(12)
+    .into()
 }
 
 fn form<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
@@ -227,6 +339,7 @@ fn form<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         labeled("Workflow", flow),
         labeled("Model", model),
         labeled("What should change?", editor),
+        details(state),
         text(empty).size(13).color(theme::MUTED),
         text(&state.error).color(theme::BAD),
         submit,
@@ -312,5 +425,24 @@ mod tests {
         assert!(!state.ready());
         state.request = text_editor::Content::with_text("Add subtract.");
         assert!(state.ready());
+    }
+
+    #[test]
+    fn a_screenshot_is_read_from_its_path_and_sent_by_its_name() {
+        let dir = std::env::temp_dir().join(format!("bastion-shot-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("broken.png");
+        std::fs::write(&path, [1, 2, 3]).unwrap();
+        let shot = screenshot(&format!(" {} ", path.display())).unwrap();
+        assert_eq!(
+            (shot.name.as_str(), shot.bytes.as_slice()),
+            ("broken.png", &[1, 2, 3][..])
+        );
+        assert!(screenshot("/no/such/file.png").is_err());
+        assert_eq!(
+            lines("https://a\n\n https://b "),
+            ["https://a", "https://b"]
+        );
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

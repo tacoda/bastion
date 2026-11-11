@@ -13,6 +13,7 @@ pub mod govern;
 pub mod people;
 mod pipeline;
 pub mod publish;
+pub mod request;
 pub mod review;
 pub mod settings;
 pub mod workflow;
@@ -1155,6 +1156,11 @@ fn split(job: &mut Job, parts: &[String]) -> Vec<Effect> {
         .on(job.pipeline)
         .running(job.flow.clone());
         next.parent = Some(job.id.clone());
+        // Each part sees the request's screenshots, kept under the first job.
+        if let Some(shots) = job.results.get(request::SCREENSHOTS) {
+            next.results
+                .insert(request::SCREENSHOTS.into(), shots.clone());
+        }
         next.after = Some(std::mem::replace(&mut before, next.id.clone()));
         next.part = Some(part.clone());
         next

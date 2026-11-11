@@ -8,10 +8,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use bastion_core::govern::Enforcement;
-use bastion_core::review;
 use bastion_core::{
     BASE_TAG, Dials, Effect, Event, Job, Outcome, Pipeline, Stage, admit, outcome, step,
 };
+use bastion_core::{request, review};
 use serde_json::{Value, json};
 
 use crate::audit_log::{self, AuditLog};
@@ -50,10 +50,16 @@ pub struct Submission {
     pub workflow: Option<String>,
     /// The model every turn runs on, as `provider/model` (F8).
     pub model: Option<String>,
+    /// What the change must do, in the requester's words (F8).
+    pub criteria: Option<String>,
+    /// Images that show the request, as (file name, bytes) (F8).
+    pub screenshots: Vec<(String, Vec<u8>)>,
 }
 /// The VM tag a read-only turn's tree is put back to.
 const BEFORE_TURN: &str = "bastion-before-turn";
 const SLOW_MS: u64 = 180_000;
+/// The most a request's screenshots may come to, in all.
+const SCREENSHOT_BYTES: usize = 10 * 1024 * 1024;
 /// How a turn reaches its VM. The pre-trigger hook replaces `sandbox_id`, so
 /// the turn passes any value; without one some calls fail their schema.
 const TOOL_GUIDE: &str = "\
@@ -211,6 +217,8 @@ impl Factory {
             (job, workflow_version) =
                 workflow_store::start_on(&*self.store, &dials, w, job).await?;
         }
+        job.criteria = how.criteria;
+        self.keep_screenshots(&mut job, &how.screenshots)?;
         let record = Record {
             job,
             runtime: Runtime {
@@ -555,8 +563,55 @@ impl Factory {
             base: &base,
         };
         self.fill(&ws, &sandbox, repo).await?;
+        self.put_screenshots(job, &sandbox).await?;
         self.vm_exec(&sandbox, &["git", "-C", REPO, "tag", "-f", BASE_TAG, &base])
             .await?;
+        Ok(())
+    }
+
+    /// Where a request's screenshots are kept on the host: under the job
+    /// that was asked for, which each of its parts shares.
+    fn screenshots_dir(&self, job: &Job) -> std::path::PathBuf {
+        let root = job.parent.as_deref().unwrap_or(&job.id);
+        self.scratch.join("requests").join(root)
+    }
+
+    /// Keep a request's screenshots on the host, named on the job.
+    fn keep_screenshots(&self, job: &mut Job, shots: &[(String, Vec<u8>)]) -> Result<(), String> {
+        let total: usize = shots.iter().map(|(_, b)| b.len()).sum();
+        if total > SCREENSHOT_BYTES {
+            return Err(format!(
+                "the screenshots come to {total} bytes, past {SCREENSHOT_BYTES}"
+            ));
+        }
+        if shots.is_empty() {
+            return Ok(());
+        }
+        let dir = self.screenshots_dir(job);
+        self.machine.make_dir(&dir)?;
+        for (name, bytes) in shots {
+            self.machine.write_bytes(&dir.join(name), bytes)?;
+        }
+        let names: Vec<&str> = shots.iter().map(|(n, _)| n.as_str()).collect();
+        job.results
+            .insert(request::SCREENSHOTS.into(), names.join("\n"));
+        Ok(())
+    }
+
+    /// Put the request's screenshots in the job's VM, where its brief says.
+    async fn put_screenshots(&self, job: &Job, vm: &str) -> Result<(), String> {
+        let named = job
+            .results
+            .get(request::SCREENSHOTS)
+            .cloned()
+            .unwrap_or_default();
+        for name in named.lines() {
+            let bytes = self
+                .machine
+                .read_bytes(&self.screenshots_dir(job).join(name))?;
+            let at = format!("{}/{name}", request::SCREENSHOTS_DIR);
+            self.put(vm, &at, bytes).await?;
+        }
         Ok(())
     }
 

@@ -1057,3 +1057,37 @@ fn a_job_that_names_a_model_runs_its_turns_on_it() {
         );
     });
 }
+
+#[test]
+fn a_requests_screenshots_are_kept_and_put_in_its_vm() {
+    use super::Submission;
+    let rig = rig();
+    crate::rt::block_on(async {
+        let how = Submission {
+            screenshots: vec![("broken.png".into(), vec![1, 2, 3])],
+            criteria: Some("2 + 2 is 4".into()),
+            ..Submission::default()
+        };
+        let id = rig
+            .factory
+            .submit_with("w", "Fix the total", how)
+            .await
+            .unwrap();
+        until(&rig, &id, Stage::Plan, State::Running).await;
+        let written = rig.machine.calls.lock().unwrap().clone();
+        assert!(
+            written.contains(&format!("write /s/requests/{id}/broken.png")),
+            "{written:?}"
+        );
+        let job = job_of(&rig, &id).await;
+        assert_eq!(
+            (job.results["screenshots"].as_str(), job.criteria.as_deref()),
+            ("broken.png", Some("2 + 2 is 4"))
+        );
+        let calls = rig.engine.calls.lock().unwrap();
+        let put = |c: &&(String, String, serde_json::Value)| {
+            c.1 == "sandbox::fs::write" && c.2["path"] == "/work/request/broken.png"
+        };
+        assert!(calls.iter().any(|c| put(&c)), "the screenshot is in the VM");
+    });
+}

@@ -134,6 +134,7 @@ async fn act(command: Command, server: Server) -> Result<(), String> {
                 pipeline: None,
                 workflow: None,
                 model: None,
+                ..Default::default()
             };
             println!("{}", send(&http, &server, &submit).await?);
             Ok(())

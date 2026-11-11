@@ -441,6 +441,14 @@ struct Submit {
     /// `provider/model` for every turn (F8).
     #[serde(default)]
     model: Option<String>,
+    #[serde(default)]
+    kind: Option<String>,
+    #[serde(default)]
+    criteria: Option<String>,
+    #[serde(default)]
+    links: Vec<String>,
+    #[serde(default)]
+    screenshots: Vec<bastion_protocol::api::Screenshot>,
 }
 
 async fn job_submit(
@@ -448,15 +456,33 @@ async fn job_submit(
     Extension(person): Extension<Person>,
     Json(b): Json<Submit>,
 ) -> Response {
+    let names: Vec<String> = b.screenshots.iter().map(|s| s.name.clone()).collect();
+    let asked = bastion_core::request::Request {
+        text: &b.request,
+        kind: b.kind.as_deref(),
+        criteria: b.criteria.as_deref(),
+        links: &b.links,
+        screenshots: &names,
+    };
+    let request = match bastion_core::request::compose(&asked) {
+        Ok(text) => text,
+        Err(e) => return answer::<String>(Err(e)),
+    };
     let how = Submission {
         pipeline: b.pipeline.unwrap_or_default(),
         workflow: b.workflow,
         model: b.model.filter(|m| !m.trim().is_empty()),
         requester: Some(person.name),
+        criteria: b.criteria.filter(|c| !c.trim().is_empty()),
+        screenshots: b
+            .screenshots
+            .into_iter()
+            .map(|s| (s.name, s.bytes))
+            .collect(),
         ..Submission::default()
     };
     let f = &app.server.factory;
-    answer(api::factory::job_submit(f, b.workspace, b.request, how).await)
+    answer(api::factory::job_submit(f, b.workspace, request, how).await)
 }
 
 async fn job(
@@ -1006,6 +1032,7 @@ mod tests {
             pipeline: Some(s("full_no_acceptance")),
             workflow: None,
             model: Some(s("deepseek/deepseek-flash")),
+            ..Default::default()
         });
         reads::<Text>(api::JobComment {
             id: s("j1"),

@@ -693,9 +693,8 @@ fn step_detail<'a>(state: &'a State, id: &str, editable: bool) -> Option<Element
             step: &step,
             stage: &stage,
         };
-        let rules =
-            super::step_rules::view(&state.rules, &at, editable).map(|m| wrap(Msg::Rules(m)));
-        body = body.push(labeled("Rules at this step", rules));
+        let sections = super::step_rules::view(&state.rules, &at, editable);
+        body = body.extend(sections.into_iter().map(|e| e.map(|m| wrap(Msg::Rules(m)))));
     }
     body = body.push(small("Remove step", on(Msg::RemoveStep)));
     Some(

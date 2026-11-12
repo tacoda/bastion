@@ -194,7 +194,7 @@ fn constraints<'a>(rules: &Rules, at: &At, editable: bool) -> Element<'a, Msg> {
             .style(theme::select);
         body = body.push(add);
     }
-    labeled("Constraints at this step", body)
+    body.into()
 }
 
 /// One grant: its rung and its function, with its ladder when the step's
@@ -244,8 +244,8 @@ fn grants<'a>(rules: &'a Rules, at: &At, editable: bool) -> Element<'a, Msg> {
     let shown = if mine { own } else { rules.kind(at.stage) };
     let rows = shown.into_iter().map(|g| grant_line(g, mine && editable));
     let title = match mine {
-        true => "This step's own grants; a call none covers is refused",
-        false => "Its kind's grants; a call none covers is refused",
+        true => "This step's own grants. A call none covers is refused.",
+        false => "Its kind's grants. A call none covers is refused.",
     };
     let body = Column::with_children(rows).spacing(6);
     let body = match (editable, mine) {
@@ -253,23 +253,29 @@ fn grants<'a>(rules: &'a Rules, at: &At, editable: bool) -> Element<'a, Msg> {
         (true, false) => body.push(small("Give this step its own grants", Some(Msg::Own))),
         _ => body,
     };
-    labeled(title, body)
+    column![text(title).size(12).color(theme::MUTED), body]
+        .spacing(6)
+        .into()
 }
 
-pub fn view<'a>(rules: &'a Rules, at: &At, editable: bool) -> Element<'a, Msg> {
-    let mut body = column![
-        constraints(rules, at, editable),
-        grants(rules, at, editable)
-    ]
-    .spacing(12);
+fn panel<'a>(title: &'a str, body: Element<'a, Msg>) -> Element<'a, Msg> {
+    labeled(
+        title,
+        container(body).padding(12).width(Fill).style(theme::panel),
+    )
+}
+
+/// The step's constraints and its capabilities, each in its own section,
+/// then why the last change failed, when one did.
+pub fn view<'a>(rules: &'a Rules, at: &At, editable: bool) -> Vec<Element<'a, Msg>> {
+    let mut all = vec![
+        panel("Constraints", constraints(rules, at, editable)),
+        panel("Capabilities", grants(rules, at, editable)),
+    ];
     if !rules.said.is_empty() {
-        body = body.push(text(&rules.said).size(13).color(theme::BAD));
+        all.push(text(&rules.said).size(13).color(theme::BAD).into());
     }
-    container(body)
-        .padding(12)
-        .width(Fill)
-        .style(theme::panel)
-        .into()
+    all
 }
 
 #[cfg(test)]

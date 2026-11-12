@@ -490,9 +490,64 @@ fn shelf<'a>(title: &'a str, notes: Vec<&'a FieldNoteView>) -> Option<Element<'a
     Some(Column::new().spacing(8).push(head).extend(rows).into())
 }
 
-/// A workspace's atlas: its field notes, about the workspace and about
-/// Bastion (D59).
-fn atlas_card<'a>(atlas: &'a [FieldNoteView], ws: &'a str, name: String) -> Element<'a, Message> {
+/// A charter file's first line of text, and its name with the paths a
+/// corpus entry is given on.
+fn charter_words(path: &str, body: &str) -> (String, String) {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    let name = name.trim_end_matches(".md");
+    let (head, rest) = match body.trim_start().strip_prefix("---") {
+        Some(rest) => rest.split_once("\n---").unwrap_or(("", rest)),
+        None => ("", body),
+    };
+    let paths = head.lines().find_map(|l| l.trim().strip_prefix("paths:"));
+    let rest = rest.trim_start_matches('-').trim();
+    let first = rest.lines().next().unwrap_or("").to_string();
+    let whence = match paths {
+        Some(p) => format!("{name} · given on {}", p.trim()),
+        None => name.to_string(),
+    };
+    (first, whence)
+}
+
+/// A charter file under `dir` as a line: its name, and for a corpus entry
+/// the paths it is given on.
+fn charter_line(path: &str, body: &str) -> Element<'static, Message> {
+    let (first, whence) = charter_words(path, body);
+    column![
+        text(first).size(13),
+        text(whence).size(12).color(theme::muted())
+    ]
+    .spacing(2)
+    .into()
+}
+
+/// What the region's charter holds now, read from its base branch: its
+/// rules and its corpus (D61).
+fn charter_shelf<'a>(texts: &'a [(String, String)]) -> Option<Element<'a, Message>> {
+    let under = |dir: &str| {
+        let mine = texts.iter().filter(move |(p, _)| p.starts_with(dir));
+        mine.map(|(p, b)| charter_line(p, b)).collect::<Vec<_>>()
+    };
+    let shelves = [
+        ("Its rules", under(".agents/rules/")),
+        ("Its corpus", under(".agents/corpus/")),
+    ];
+    let shelves = shelves.into_iter().filter(|(_, rows)| !rows.is_empty());
+    let shelves: Vec<Element<'a, Message>> = shelves
+        .map(|(title, rows)| {
+            let head = text(title).size(12).font(theme::BOLD).color(theme::muted());
+            Column::new().spacing(8).push(head).extend(rows).into()
+        })
+        .collect();
+    (!shelves.is_empty()).then(|| Column::new().spacing(14).extend(shelves).into())
+}
+
+/// A workspace's atlas: what its charter holds, and its field notes, about
+/// the workspace and about Bastion (D59, D61).
+fn atlas_card<'a>(s: &'a Server, ws: &'a str, name: String) -> Element<'a, Message> {
+    let atlas = &s.atlas;
+    let texts = s.rules.charters().iter().find(|c| c.workspace == ws);
+    let charter = texts.and_then(|c| charter_shelf(&c.texts));
     let title = text(format!("What {ws} has learned"))
         .size(15)
         .font(theme::BOLD);
@@ -505,20 +560,20 @@ fn atlas_card<'a>(atlas: &'a [FieldNoteView], ws: &'a str, name: String) -> Elem
         all.filter(|n| n.about == about).collect()
     };
     let shelves = [
-        shelf("Lessons, in its charter", mine("lesson")),
+        charter,
+        shelf("Lessons signed on journeys", mine("lesson")),
         shelf(
-            "Facts, in its corpus",
+            "Facts signed on journeys",
             [mine("fact"), mine("workspace")].concat(),
         ),
         shelf("About Bastion", mine("bastion")),
     ];
-    let mut body = Column::new()
-        .spacing(14)
-        .extend(shelves.into_iter().flatten());
-    if !atlas.iter().any(|n| n.workspace == ws) {
-        let none = "Nothing learned yet. Notes are signed when a journey comes home.";
-        body = body.push(text(none).size(13).color(theme::muted()));
-    }
+    let shelves: Vec<_> = shelves.into_iter().flatten().collect();
+    let none = "Nothing learned yet. Sign a note on a journey to teach it.";
+    let none = shelves
+        .is_empty()
+        .then(|| text(none).size(13).color(theme::muted()).into());
+    let body = Column::new().spacing(14).extend(shelves).extend(none);
     let body = scrollable(body).height(iced::Length::Shrink);
     container(column![head, container(body).max_height(CARD_MAX)].spacing(8))
         .padding(12)
@@ -603,7 +658,7 @@ pub(super) fn does(n: &NodeView) -> Element<'_, Message> {
 /// what applies there.
 fn card<'a>(s: &'a Server, p: &'a Picked, name: String) -> Element<'a, Message> {
     if let Some(ws) = p.key.strip_prefix(TOWN) {
-        return atlas_card(&s.atlas, ws, name);
+        return atlas_card(s, ws, name);
     }
     let at = At {
         scope: &p.key,
@@ -648,6 +703,22 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_charter_file_reads_as_its_first_line_and_where_it_is_given() {
+        let fact = "---\npaths: src/**, calc.py\n---\nCalc stays small.\nMore.";
+        assert_eq!(
+            charter_words(".agents/corpus/calc.md", fact),
+            (
+                "Calc stays small.".into(),
+                "calc · given on src/**, calc.py".into()
+            )
+        );
+        assert_eq!(
+            charter_words(".agents/rules/small.md", "Keep it small.\n"),
+            ("Keep it small.".into(), "small".into())
+        );
+    }
 
     #[test]
     fn a_press_finds_the_landmark_and_nothing_else() {

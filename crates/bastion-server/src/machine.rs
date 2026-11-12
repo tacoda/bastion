@@ -344,6 +344,14 @@ pub mod fake {
             self.files.contains_key(path)
         }
 
+        fn list(&self, path: &Path) -> Vec<String> {
+            let here = self.files.keys().filter(|f| f.parent() == Some(path));
+            let names = here.filter_map(|f| f.file_name()?.to_str().map(String::from));
+            let mut names: Vec<String> = names.collect();
+            names.sort();
+            names
+        }
+
         fn platform(&self) -> (&'static str, &'static str) {
             self.platform
         }

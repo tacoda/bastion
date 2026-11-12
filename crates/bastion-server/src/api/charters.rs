@@ -25,11 +25,16 @@ fn one_down(machine: &dyn Machine, root: &Path, dir: &str, file: &str) -> Vec<St
 /// Each charter file a person may edit, with its text, as the checkout at
 /// `root` has it.
 pub fn texts(machine: &dyn Machine, root: &Path) -> Vec<(String, String)> {
-    let agents = machine.list(&root.join(".agents/agents"));
+    let in_dir = |dir: &str| -> Vec<String> {
+        let names = machine.list(&root.join(dir));
+        names.into_iter().map(|n| format!("{dir}/{n}")).collect()
+    };
     let paths = ["AGENTS.md".to_string(), ".agents/settings.json".to_string()]
         .into_iter()
-        .chain(agents.into_iter().map(|a| format!(".agents/agents/{a}")))
-        .chain(one_down(machine, root, ".agents/skills", "SKILL.md"));
+        .chain(in_dir(".agents/agents"))
+        .chain(one_down(machine, root, ".agents/skills", "SKILL.md"))
+        .chain(in_dir(".agents/rules"))
+        .chain(in_dir(bastion_core::corpus::DIR));
     paths
         .filter(|p| editable(p))
         .filter_map(|p| machine.read(&root.join(&p)).ok().map(|text| (p, text)))
@@ -139,6 +144,27 @@ mod tests {
                 "git add -- AGENTS.md",
                 "git commit -m Edit AGENTS.md from Bastion",
                 "git worktree remove --force /tmp/w",
+            ]
+        );
+    }
+
+    #[test]
+    fn the_texts_hold_the_regions_rules_and_corpus_but_only_markdown() {
+        let machine = FakeMachine::new()
+            .file("/r/AGENTS.md", "Be brief.")
+            .file("/r/.agents/rules/small.md", "Keep calc small.")
+            .file("/r/.agents/rules/notes.txt", "not a rule")
+            .file("/r/.agents/corpus/why.md", "---\npaths: **\n---\nWhy.");
+        let paths: Vec<String> = texts(&machine, Path::new("/r"))
+            .into_iter()
+            .map(|(p, _)| p)
+            .collect();
+        assert_eq!(
+            paths,
+            [
+                "AGENTS.md",
+                ".agents/rules/small.md",
+                ".agents/corpus/why.md"
             ]
         );
     }

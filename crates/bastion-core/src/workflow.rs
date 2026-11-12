@@ -278,8 +278,15 @@ impl Graph {
         }
         let names: Vec<&String> = self.nodes.iter().flat_map(|n| &n.results).collect();
         for (i, r) in names.iter().enumerate() {
-            if r.trim().is_empty() || names[..i].contains(r) {
-                return Err(format!("the result name {r:?} is empty or taken"));
+            // A reply gives a result as the line `RESULT name:`, so a name
+            // is one word, as an agent's name is.
+            if !skill_name_ok(r) {
+                return Err(format!(
+                    "the result name {r:?} must be one word: letters, digits, - and _"
+                ));
+            }
+            if names[..i].contains(r) {
+                return Err(format!("the result name {r:?} is taken"));
             }
         }
         if let Some(l) = self.links.iter().find(|l| self.node(&l.from).is_none()) {
@@ -428,6 +435,23 @@ mod tests {
         let steps = g.steps().unwrap();
         assert_eq!(steps[0].gives, ["design-notes"]);
         assert_eq!(steps[1].needs, ["design-notes"]);
+    }
+
+    #[test]
+    fn a_result_name_is_one_word_and_given_by_one_step() {
+        let with = |results: &[&str]| Graph {
+            nodes: vec![
+                prompt("plan", 0, results),
+                prompt("build", 100, &["root_cause"]),
+            ],
+            links: vec![],
+        };
+        assert_eq!(with(&["design-notes"]).check(), Ok(()));
+        for bad in ["design notes", "plan:", "", "notes/2"] {
+            let refused = with(&[bad]).check().unwrap_err();
+            assert!(refused.contains("one word"), "{bad:?}: {refused}");
+        }
+        assert!(with(&["root_cause"]).check().unwrap_err().contains("taken"));
     }
 
     #[test]

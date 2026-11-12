@@ -272,6 +272,16 @@ fn rename(state: &mut State, typed: String) {
 }
 
 /// A comma-separated list as typed, as its names.
+/// The typed result names that are not one word of letters, digits, - and
+/// _, as the server refuses them: a reply gives each as `RESULT name:`.
+fn bad_results(typed: &str) -> Vec<String> {
+    let one_word = |r: &String| {
+        r.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    };
+    listed(typed).into_iter().filter(|r| !one_word(r)).collect()
+}
+
 fn listed(typed: &str) -> Vec<String> {
     let names = typed.split(',').map(str::trim).filter(|r| !r.is_empty());
     names.map(String::from).collect()
@@ -708,13 +718,20 @@ fn options_tab<'a>(
     let results = text_input("plan, notes", &state.results)
         .on_input_maybe(editable.then_some(|v| wrap(Msg::Field(StepField::Results, v))))
         .style(theme::field);
-    column![
-        reach,
-        options_row(state, n, editable),
-        labeled("Results it gives, comma-separated", results)
-    ]
-    .spacing(12)
-    .into()
+    let bad = bad_results(&state.results);
+    let warning = (!bad.is_empty()).then(|| {
+        let said = format!(
+            "Each result is one word of letters, digits, - and _, such as root-cause. Not: {}.",
+            bad.join(", ")
+        );
+        text(said).size(12).color(theme::BAD)
+    });
+    let results = column![labeled("Results it gives, comma-separated", results)]
+        .extend(warning.map(Element::from))
+        .spacing(4);
+    column![reach, options_row(state, n, editable), results]
+        .spacing(12)
+        .into()
 }
 
 /// The tabs of the picked step's panel. A shell step runs no agent, so no
@@ -940,6 +957,10 @@ mod tests {
         on_field(&mut state, StepField::Results, "design-notes, ".into());
         assert_eq!(state.results, "design-notes, ");
         assert_eq!(state.draft.unwrap().nodes[0].results, ["design-notes"]);
+        assert_eq!(
+            bad_results("plan, design notes, a:b, root_cause"),
+            ["design notes", "a:b"]
+        );
     }
 
     #[test]

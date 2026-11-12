@@ -274,9 +274,13 @@ before the next one starts.
 - Progress first, one action line, the tabs, and "change it from here".
 - Attempts listed, and a request's parts shown together.
 
-### L5. The Map
+### L5. The Map, first pass done
 
-- The picture per server, with the side panel editor.
+- Done: a chart per server. Workspaces are harbor towns on the coast,
+  workflows are routes through their steps to a summit, a red seal counts
+  the rules on at each step, and pressing a landmark lists what applies.
+- Next: edit in place from the list, and draw the harness items and
+  plugins on the chart.
 
 ### L6. Landing per workspace
 

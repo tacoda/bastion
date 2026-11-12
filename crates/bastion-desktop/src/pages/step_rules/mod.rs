@@ -215,6 +215,16 @@ where
 }
 
 impl Rules {
+    /// The server's workflows, as the rules read them.
+    pub fn workflows(&self) -> &[WorkflowView] {
+        &self.workflows
+    }
+
+    /// Each workspace's charter.
+    pub fn charters(&self) -> &[WorkspaceCharterView] {
+        &self.charters
+    }
+
     /// A kind's grants: one item per function.
     fn kind(&self, stage: &str) -> Vec<&CapabilityView> {
         let kind = self.grants.iter();

@@ -17,6 +17,7 @@ pub enum Route {
     Workflows,
     Workspaces,
     Harness,
+    Map,
     Settings,
 }
 
@@ -24,8 +25,9 @@ pub enum Route {
 /// The top bar's pages (L2), in the order a person uses them. Insights
 /// opens on the Audit Log and holds the other records as tabs; Settings
 /// holds the server's health.
-pub const PAGES: [(Route, &str, &str); 6] = [
+pub const PAGES: [(Route, &str, &str); 7] = [
     (Route::Jobs, "Jobs", icons::JOBS),
+    (Route::Map, "Map", icons::MAP),
     (Route::Workflows, "Workflows", icons::WORKFLOWS),
     (Route::Workspaces, "Workspaces", icons::FOLDER),
     (Route::Harness, "Harness", icons::HARNESS),
@@ -75,6 +77,7 @@ impl Route {
                 | Route::Verification
                 | Route::Workspaces
                 | Route::Harness
+                | Route::Map
         )
     }
 

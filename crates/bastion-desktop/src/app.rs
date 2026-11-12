@@ -56,6 +56,7 @@ pub enum Message {
     /// A message from a server's section of the Workspaces page.
     Workspaces(String, pages::workspaces::Msg),
     Rules(pages::harness::Msg),
+    Map(pages::map::Msg),
     /// Read the servers again, after Settings added or removed one.
     ReadServers,
     /// Open a link, such as a pull request, in the browser.
@@ -203,6 +204,7 @@ impl App {
             | Message::Settings(_)
             | Message::Workflows(_)
             | Message::Workspaces(..)
+            | Message::Map(_)
             | Message::Rules(_)) => {
                 let ctx = self.ctx();
                 return self.page.update(page, &ctx);

@@ -13,6 +13,7 @@ pub mod evals;
 pub mod harness;
 pub mod job;
 pub mod jobs;
+pub mod map;
 pub mod new_request;
 pub mod session;
 pub mod settings;
@@ -301,6 +302,7 @@ pub enum Page {
     Settings(Box<settings::State>),
     Workflows(Box<workflows::State>),
     Workspaces(Box<workspaces::Servers>),
+    Map(Box<map::State>),
     Rules(Box<harness::State>),
     /// Nothing yet: the window has not reached its first server.
     Pending,
@@ -332,6 +334,7 @@ impl Page {
             Route::Settings => Page::Settings(Box::default()),
             Route::Workflows => Page::Workflows(Box::default()),
             Route::Workspaces => Page::Workspaces(Box::default()),
+            Route::Map => Page::Map(Box::default()),
             Route::Harness => Page::Rules(Box::default()),
         };
         let first = page.reload(ctx, Push::All);
@@ -365,6 +368,7 @@ impl Page {
             Page::Settings(_) => settings::load(ctx),
             Page::Workflows(_) => workflows::load(ctx),
             Page::Workspaces(_) => workspaces::load_all(ctx),
+            Page::Map(_) => map::load(ctx),
             Page::Rules(_) => harness::load(ctx),
             Page::Pending => Task::none(),
         }
@@ -397,6 +401,7 @@ impl Page {
             (Page::Eval(s), Message::Evals(m)) => return evals::update_one(s, m, ctx),
             (Page::Settings(s), Message::Settings(m)) => return settings::update(s, m, ctx),
             (Page::Workflows(s), Message::Workflows(m)) => return workflows::update(s, m, ctx),
+            (Page::Map(s), Message::Map(m)) => return map::update(s, m, ctx),
             (Page::Workspaces(s), Message::Workspaces(server, m)) => {
                 return workspaces::update_all(s, server, m, ctx);
             }
@@ -421,6 +426,7 @@ impl Page {
             Page::Settings(s) => settings::view(s, ctx),
             Page::Workflows(s) => workflows::view(s, ctx),
             Page::Workspaces(s) => workspaces::view(s, ctx),
+            Page::Map(s) => map::view(s, ctx),
             Page::Rules(s) => harness::view(s, ctx),
             Page::Pending => {
                 let title = text(route.title()).size(24).font(theme::BOLD);

@@ -1,16 +1,24 @@
-//! The step's Constraints tab: what applies at the step, each marked as a
-//! rule, a hook or a reviewer, and one form at a time to add one.
+//! A step's constraints: each a rule, a hook or a reviewer, with its rung as
+//! a switch, and the forms that add one.
 
 use bastion_protocol::ConstraintView;
-use iced::widget::{Column, column, container, pick_list, row, text, text_input};
+use iced::widget::{column, container, pick_list, row, text, text_input};
 use iced::{Element, Fill};
 
-use super::{Adding, At, Msg, RuleField, Rules, chip, choice, help, small};
+use super::{At, Msg, RuleField, Rules, chip, choice, help, small};
 use crate::pages::Choice;
 use crate::theme;
 
-/// The list narrows to a filter once it is longer than this.
-const FILTER_FROM: usize = 5;
+/// The layer a constraint belongs to (D25): the charter's, the harness's
+/// on the agent's calls, or the factory's on the work, as a review check or
+/// a reviewer is.
+pub(super) fn layer(c: &ConstraintView) -> &'static str {
+    match (c.layer.as_str(), c.reviewer.is_empty()) {
+        ("charter", _) => "charter",
+        ("factory", _) | (_, false) => "factory",
+        _ => "harness",
+    }
+}
 
 /// What kind of constraint `c` is: a rule on calls, a hook or a reviewer.
 pub(super) fn kind(c: &ConstraintView) -> &'static str {
@@ -74,13 +82,31 @@ fn badge<'a>(label: &str, color: iced::Color) -> Element<'a, Msg> {
         .into()
 }
 
+/// A constraint's rung: a switch to move it, or its badge when it may not
+/// be changed here.
+fn rung_switch<'a>(c: &ConstraintView, editable: bool) -> Element<'a, Msg> {
+    if !editable || c.source == "charter" {
+        return badge(&c.rung, rung(c).1);
+    }
+    let set = |label: &str, to: &str| {
+        let msg = (c.rung != to).then(|| Msg::SetRung(c.id.clone(), to.into()));
+        choice(label.to_string(), c.rung == to, msg)
+    };
+    row![
+        set("Told", "told"),
+        set("Checked", "checked"),
+        set("Enforced", "enforced")
+    ]
+    .spacing(2)
+    .into()
+}
+
 fn line<'a>(c: &ConstraintView, at: &At, editable: bool) -> Element<'a, Msg> {
     let rule = text(c.rule.clone()).size(13).width(Fill);
-    let rung_badge = badge(&c.rung, rung(c).1);
     row![
         badge(kind(c), theme::MUTED),
-        rung_badge,
         rule,
+        rung_switch(c, editable),
         scope(c, at, editable)
     ]
     .spacing(8)
@@ -90,7 +116,7 @@ fn line<'a>(c: &ConstraintView, at: &At, editable: bool) -> Element<'a, Msg> {
 
 /// The form for a rule at the step: what the agent is told, its rung, and
 /// the calls it binds once it is more than told.
-fn rule_form<'a>(rules: &Rules) -> Element<'a, Msg> {
+pub(super) fn rule_form<'a>(rules: &Rules) -> Element<'a, Msg> {
     let d = &rules.rule;
     let named = !d.text.trim().is_empty();
     let field = |hint: &'static str, value: &str, f: RuleField| {
@@ -134,7 +160,7 @@ fn rule_form<'a>(rules: &Rules) -> Element<'a, Msg> {
 
 /// The form for a hook at the step: the calls it runs before, and its
 /// command, which runs in the job's VM.
-fn hook_form<'a>(rules: &Rules) -> Element<'a, Msg> {
+pub(super) fn hook_form<'a>(rules: &Rules) -> Element<'a, Msg> {
     let named = !rules.hook.trim().is_empty();
     let fields = row![
         text_input("sandbox::exec", &rules.hook_function)
@@ -154,7 +180,7 @@ fn hook_form<'a>(rules: &Rules) -> Element<'a, Msg> {
 }
 
 /// The form for a reviewer at the step: an agent in `.agents/agents/`.
-fn reviewer_form<'a>(rules: &Rules) -> Element<'a, Msg> {
+pub(super) fn reviewer_form<'a>(rules: &Rules) -> Element<'a, Msg> {
     let named = !rules.reviewer.trim().is_empty();
     let fields = row![
         text_input("security", &rules.reviewer)
@@ -170,7 +196,7 @@ fn reviewer_form<'a>(rules: &Rules) -> Element<'a, Msg> {
 }
 
 /// A picker for a constraint scoped to other steps, to apply here too.
-fn elsewhere_form<'a>(rules: &Rules, at: &At) -> Element<'a, Msg> {
+pub(super) fn elsewhere_form<'a>(rules: &Rules, at: &At) -> Element<'a, Msg> {
     let elsewhere: Vec<Choice> = rules
         .constraints
         .iter()
@@ -193,53 +219,19 @@ fn elsewhere_form<'a>(rules: &Rules, at: &At) -> Element<'a, Msg> {
     .into()
 }
 
-/// One form at a time to add a constraint, behind a switch.
-fn adding<'a>(rules: &Rules, at: &At) -> Element<'a, Msg> {
-    let pick =
-        |label: &str, a: Adding| choice(label.to_string(), rules.adding == a, Some(Msg::Adding(a)));
-    let switch = row![
-        text("Add").size(13).color(theme::MUTED),
-        pick("A rule", Adding::Rule),
-        pick("A hook", Adding::Hook),
-        pick("A reviewer", Adding::Reviewer),
-        pick("One from another step", Adding::Elsewhere),
-    ]
-    .spacing(6)
-    .align_y(iced::Center);
-    let form = match rules.adding {
-        Adding::Rule => rule_form(rules),
-        Adding::Hook => hook_form(rules),
-        Adding::Reviewer => reviewer_form(rules),
-        Adding::Elsewhere => elsewhere_form(rules, at),
-    };
-    container(column![switch, form].spacing(10))
-        .padding(12)
-        .width(Fill)
-        .style(theme::panel)
-        .into()
-}
-
-pub fn view<'a>(rules: &'a Rules, at: &At, editable: bool) -> Element<'a, Msg> {
-    let here = rules.here(at.step);
-    let mut body = Column::new().spacing(8).push(help(
-        "What this step's agent works under. Enforced refuses a call, checked notes it, and told is only said to the agent.",
-    ));
-    if here.len() > FILTER_FROM {
-        let filter = text_input("Filter by words, kind or rung", &rules.filter)
-            .on_input(Msg::Filter)
-            .style(theme::field);
-        body = body.push(filter);
-    }
-    let mut shown: Vec<&ConstraintView> = here
+/// The rows of `list`, enforced first, narrowed to the filter.
+pub(super) fn rows<'a>(
+    rules: &Rules,
+    list: Vec<&ConstraintView>,
+    at: &At,
+    editable: bool,
+) -> Vec<Element<'a, Msg>> {
+    let mut shown: Vec<&ConstraintView> = list
         .into_iter()
         .filter(|c| fits(c, &rules.filter))
         .collect();
     shown.sort_by_key(|c| rung(c).0);
-    body = body.extend(shown.into_iter().map(|c| line(c, at, editable)));
-    if editable {
-        body = body.push(adding(rules, at));
-    }
-    body.into()
+    shown.into_iter().map(|c| line(c, at, editable)).collect()
 }
 
 #[cfg(test)]
@@ -259,5 +251,11 @@ mod tests {
         assert!(fits(&hook, ""));
         assert!(!fits(&hook, "reviewer"));
         assert_eq!(kind(&ConstraintView::default()), "Rule");
+        assert_eq!(layer(&hook), "harness", "a hook binds calls");
+        let reviewer = ConstraintView {
+            reviewer: "security".into(),
+            ..ConstraintView::default()
+        };
+        assert_eq!(layer(&reviewer), "factory", "a reviewer reads the work");
     }
 }

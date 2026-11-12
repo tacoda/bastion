@@ -65,8 +65,7 @@ pub enum StepTab {
     #[default]
     Step,
     Options,
-    Constraints,
-    Capabilities,
+    Rules,
 }
 
 /// A field of the picked step.
@@ -753,15 +752,8 @@ fn tabs<'a>(state: &State, n: &bastion_protocol::NodeView) -> Element<'a, Messag
             step: &step,
             stage: &stage,
         };
-        let (constraints, grants) = super::step_rules::counts(&state.rules, &at);
-        all.push(tab(
-            format!("Constraints · {constraints}"),
-            StepTab::Constraints,
-        ));
-        all.push(tab(
-            format!("Capabilities · {grants}"),
-            StepTab::Capabilities,
-        ));
+        let count = super::step_rules::count(&state.rules, &at);
+        all.push(tab(format!("Rules · {count}"), StepTab::Rules));
     }
     iced::widget::Row::with_children(all).spacing(6).into()
 }
@@ -782,17 +774,14 @@ fn step_head<'a>(n: &bastion_protocol::NodeView, editable: bool) -> Element<'a, 
     .into()
 }
 
-/// The picked step's constraints or capabilities.
+/// The picked step's rules, by layer.
 fn rules_tab<'a>(state: &'a State, editable: bool) -> Option<Element<'a, Message>> {
     let (step, stage) = state.picked_step()?;
     let at = super::step_rules::At {
         step: &step,
         stage: &stage,
     };
-    let view = match state.tab {
-        StepTab::Constraints => super::step_rules::constraints(&state.rules, &at, editable),
-        _ => super::step_rules::capabilities(&state.rules, &at, editable),
-    };
+    let view = super::step_rules::view(&state.rules, &at, editable);
     let said = super::step_rules::said(&state.rules);
     let body = column![view].extend(said).spacing(8);
     Some(Element::from(body).map(|m| wrap(Msg::Rules(m))))
@@ -804,7 +793,7 @@ fn step_detail<'a>(state: &'a State, id: &str, editable: bool) -> Option<Element
         .as_ref()
         .and_then(|w| edit::node(w, id))?
         .clone();
-    let rules = matches!(state.tab, StepTab::Constraints | StepTab::Capabilities);
+    let rules = state.tab == StepTab::Rules;
     let shown = match state.tab {
         StepTab::Options => options_tab(state, &n, editable),
         _ if rules && !is_script(&n) => rules_tab(state, editable)?,

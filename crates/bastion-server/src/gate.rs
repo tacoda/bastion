@@ -653,6 +653,29 @@ impl Gate {
         Ok(())
     }
 
+    /// Move a constraint to `rung`, one rung at a time, so the audit keeps
+    /// each promotion or demotion.
+    pub async fn set_constraint_rung(
+        &self,
+        id: &str,
+        rung: govern::Enforcement,
+    ) -> Result<(), String> {
+        let order = |r: govern::Enforcement| r as u8;
+        for _ in 0..2 {
+            let now = self.store.constraints().await?;
+            let c = now
+                .iter()
+                .find(|c| c.id == id)
+                .ok_or(format!("no constraint {id}"))?;
+            if c.rung == rung {
+                return Ok(());
+            }
+            self.move_constraint(id, order(rung) > order(c.rung))
+                .await?;
+        }
+        Ok(())
+    }
+
     /// Move a grant one rung up or down its ladder, and record it.
     pub async fn move_capability(
         &self,
@@ -1185,6 +1208,28 @@ mod tests {
             assert!(refused.unwrap_err().contains("charter"));
             let left = r.store.constraints.lock().unwrap().clone();
             assert!(left.iter().all(|c| c.id != "hook-short-build-1"));
+        });
+    }
+
+    #[test]
+    fn a_constraint_moves_to_any_rung_one_step_at_a_time() {
+        use govern::Enforcement::{Enforced, Told};
+        let r = rig();
+        let rung = || {
+            let all = r.store.constraints.lock().unwrap().clone();
+            all.into_iter().find(|c| c.id == "keep-tests").unwrap().rung
+        };
+        crate::rt::block_on(async {
+            r.gate
+                .set_constraint_rung("keep-tests", Told)
+                .await
+                .unwrap();
+            assert_eq!(rung(), Told);
+            r.gate
+                .set_constraint_rung("keep-tests", Enforced)
+                .await
+                .unwrap();
+            assert_eq!(rung(), Enforced);
         });
     }
 

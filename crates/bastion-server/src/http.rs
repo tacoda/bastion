@@ -175,6 +175,7 @@ fn govern_routes() -> Router<App> {
         .route("/held/refuse", post(held_refuse))
         .route("/constraints", get(constraints).post(constraint_add))
         .route("/constraints/{id}/move", post(constraint_move))
+        .route("/constraints/{id}/rung", put(constraint_rung))
         .route("/constraints/{id}/steps", post(constraint_steps))
         .route("/constraints/{id}/remove", post(constraint_remove))
         .route("/capabilities", get(capabilities).post(capability_add))
@@ -633,6 +634,19 @@ struct Up {
 
 async fn constraint_remove(State(app): State<App>, Path(id): Path<String>) -> Response {
     answer(api::govern::constraint_remove(&app.server.factory, id).await)
+}
+
+#[derive(Deserialize)]
+struct Rung {
+    rung: String,
+}
+
+async fn constraint_rung(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    Json(b): Json<Rung>,
+) -> Response {
+    answer(api::govern::constraint_rung(&app.server.factory, id, b.rung).await)
 }
 
 async fn constraint_move(

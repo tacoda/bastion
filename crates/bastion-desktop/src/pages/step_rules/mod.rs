@@ -5,22 +5,25 @@
 
 mod capabilities;
 mod constraints;
+mod layers;
 
 use bastion_protocol::api::{self, Request};
-use bastion_protocol::{CapabilityView, Console, ConstraintView, McpServerView, Registered};
+use bastion_protocol::{
+    CapabilityView, Console, ConstraintView, McpServerView, Registered, WorkspaceCharterView,
+};
 use iced::widget::{button, text};
 use iced::{Element, Task};
 
 use super::Ctx;
 use crate::theme;
 
-pub use capabilities::view as capabilities;
-pub use constraints::view as constraints;
+pub use layers::view;
 
 /// The form shown to add a constraint: one at a time.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Adding {
     #[default]
+    Grant,
     Rule,
     Hook,
     Reviewer,
@@ -60,6 +63,8 @@ pub enum Granting {
 pub struct Rules {
     constraints: Vec<ConstraintView>,
     grants: Vec<CapabilityView>,
+    /// Each workspace's charter, read from its repository.
+    charters: Vec<WorkspaceCharterView>,
     /// The engine's functions, for the search, and the server's MCP servers.
     catalog: Vec<Registered>,
     mcp: Vec<McpServerView>,
@@ -84,6 +89,9 @@ pub enum Msg {
     Grants(Result<Vec<CapabilityView>, String>),
     Catalog(Result<Console, String>),
     Mcp(Result<Vec<McpServerView>, String>),
+    Charters(Result<Vec<WorkspaceCharterView>, String>),
+    /// Set a constraint's rung: told, checked or enforced.
+    SetRung(String, String),
     /// Apply a constraint at the step too, or take it off the step.
     Scope(String, bool),
     /// Give the step its own grants, starting from its kind's.
@@ -124,6 +132,7 @@ pub fn load(ctx: &Ctx) -> Task<Msg> {
         ctx.task(&ctx.current, api::Capabilities, Msg::Grants),
         ctx.task(&ctx.current, api::Console, Msg::Catalog),
         ctx.task(&ctx.current, api::McpServers, Msg::Mcp),
+        ctx.task(&ctx.current, api::Charters, Msg::Charters),
     ])
 }
 
@@ -161,10 +170,10 @@ impl Rules {
     }
 }
 
-/// How many constraints apply at the step and how many grants decide its
-/// calls, for its tabs.
-pub fn counts(rules: &Rules, at: &At) -> (usize, usize) {
-    (rules.here(at.step).len(), rules.deciding(at).len())
+/// How many constraints apply at the step and grants decide its calls, for
+/// its Rules tab.
+pub fn count(rules: &Rules, at: &At) -> usize {
+    rules.here(at.step).len() + rules.deciding(at).len()
 }
 
 /// An enforced constraint made for `step` alone, with an id no constraint
@@ -331,6 +340,7 @@ fn read(rules: &mut Rules, msg: Msg) {
         Msg::Grants(Ok(all)) => rules.grants = all,
         Msg::Catalog(Ok(console)) => rules.catalog = console.functions,
         Msg::Mcp(Ok(all)) => rules.mcp = all,
+        Msg::Charters(Ok(all)) => rules.charters = all,
         Msg::Constraints(Err(e)) | Msg::Grants(Err(e)) | Msg::Done(Err(e)) => rules.said = e,
         // The search and the MCP shortcut are a help, not a need.
         _ => {}
@@ -358,6 +368,7 @@ pub fn update(rules: &mut Rules, msg: Msg, at: &At, ctx: &Ctx) -> Task<Msg> {
         Msg::Kind => own_or_kind(rules, false, at, ctx),
         Msg::Rung(g, rung) => set_rung(g, rung, ctx),
         Msg::Ungrant(g) => send(ctx, api::CapabilityRemove(g)),
+        Msg::SetRung(id, rung) => send(ctx, api::ConstraintRung { id, rung }),
         Msg::Grant(function, rung) => {
             (rules.search, rules.command) = Default::default();
             send(ctx, api::CapabilityAdd(grant(&function, rung, at)))
@@ -366,6 +377,7 @@ pub fn update(rules: &mut Rules, msg: Msg, at: &At, ctx: &Ctx) -> Task<Msg> {
         | Msg::Grants(_)
         | Msg::Catalog(_)
         | Msg::Mcp(_)
+        | Msg::Charters(_)
         | Msg::Done(_)) => {
             read(rules, m);
             Task::none()
@@ -491,9 +503,9 @@ mod tests {
             step: "short/review",
             stage: "prompt",
         };
-        assert_eq!(counts(&rules, &at), (1, 1), "its kind's");
+        assert_eq!(count(&rules, &at), 2, "its kind's grant and the rule");
         rules.grants.push(grant("prompt", "short/review"));
         rules.grants.push(grant("prompt", "short/review"));
-        assert_eq!(counts(&rules, &at).1, 2, "its own");
+        assert_eq!(count(&rules, &at), 3, "its own two and the rule");
     }
 }

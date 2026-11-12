@@ -278,6 +278,24 @@ at!(
     ()
 );
 
+/// Set a constraint's rung: told, checked or enforced.
+#[derive(Clone, Debug, Serialize)]
+pub struct ConstraintRung {
+    #[serde(skip)]
+    pub id: String,
+    pub rung: String,
+}
+
+impl Request for ConstraintRung {
+    const METHOD: &'static str = "PUT";
+    const ROUTE: &'static str = "/constraints/{id}/rung";
+    const BODY: bool = true;
+    type Answer = ();
+    fn path(&self) -> String {
+        fill(Self::ROUTE, "id", &self.id)
+    }
+}
+
 bare!(Capabilities, "GET", "/capabilities", Vec<CapabilityView>);
 
 /// Move a step's grant of a function up or down its ladder.
@@ -604,6 +622,7 @@ fn factory_requests() -> Vec<(&'static str, &'static str)> {
         ConstraintMove,
         ConstraintSteps,
         ConstraintRemove,
+        ConstraintRung,
         Capabilities,
         CapabilityMove,
         CapabilityAdd,
@@ -675,6 +694,6 @@ mod tests {
         assert_eq!(comment.path(), "/jobs/j1/comment");
         let spaced = WorkflowDelete { id: "a b/c".into() };
         assert_eq!(spaced.path(), "/workflows/a%20b%2Fc");
-        assert_eq!(every().len(), 76);
+        assert_eq!(every().len(), 77);
     }
 }

@@ -1,9 +1,9 @@
-//! The step's Capabilities tab: the grants that decide its agent's calls,
-//! each with a switch between ask and allowed, and one form at a time to
-//! add one: a function found by search, a named command, or an MCP server.
+//! A step's grants: what its agent may call, each with a switch between ask
+//! and allowed, and the form that adds one: a function found by search, a
+//! named command, or an MCP server.
 
 use bastion_protocol::{CapabilityView, Registered};
-use iced::widget::{Column, column, container, row, text, text_input};
+use iced::widget::{Column, column, row, text, text_input};
 use iced::{Element, Fill};
 
 use super::{At, Granting, Msg, Rules, chip, choice, help, small};
@@ -174,7 +174,7 @@ fn mcp_form<'a>(rules: &'a Rules) -> Element<'a, Msg> {
 }
 
 /// One form at a time to add a grant, behind a switch.
-fn granting<'a>(rules: &'a Rules) -> Element<'a, Msg> {
+pub(super) fn granting<'a>(rules: &'a Rules) -> Element<'a, Msg> {
     let pick = |label: &str, g: Granting| {
         choice(
             label.to_string(),
@@ -183,7 +183,6 @@ fn granting<'a>(rules: &'a Rules) -> Element<'a, Msg> {
         )
     };
     let switch = row![
-        text("Add").size(13).color(theme::MUTED),
         pick("A function", Granting::Function),
         pick("A command", Granting::Command),
         pick("An MCP server", Granting::Mcp),
@@ -195,11 +194,7 @@ fn granting<'a>(rules: &'a Rules) -> Element<'a, Msg> {
         Granting::Command => command_form(rules),
         Granting::Mcp => mcp_form(rules),
     };
-    container(column![switch, form].spacing(10))
-        .padding(12)
-        .width(Fill)
-        .style(theme::panel)
-        .into()
+    column![switch, form].spacing(10).into()
 }
 
 /// Whose grants decide the step's calls, and the way to the other.
@@ -226,20 +221,18 @@ fn whose<'a>(mine: bool, at: &At, editable: bool) -> Element<'a, Msg> {
     .into()
 }
 
-pub fn view<'a>(rules: &'a Rules, at: &At, editable: bool) -> Element<'a, Msg> {
+/// The grants that decide the step's calls, and whose they are.
+pub(super) fn grants<'a>(rules: &'a Rules, at: &At, editable: bool) -> Element<'a, Msg> {
     let mine = !rules.own(at.step).is_empty();
     let rows = rules
         .deciding(at)
         .into_iter()
         .map(|g| line(g, &rules.catalog, mine && editable));
-    let mut body = Column::new()
+    Column::new()
         .spacing(8)
         .push(whose(mine, at, editable))
-        .extend(rows);
-    if mine && editable {
-        body = body.push(granting(rules));
-    }
-    body.into()
+        .extend(rows)
+        .into()
 }
 
 #[cfg(test)]

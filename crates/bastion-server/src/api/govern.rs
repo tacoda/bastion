@@ -93,6 +93,13 @@ pub async fn constraint_remove(cell: &FactoryCell, id: String) -> Result<(), Str
     factory(cell)?.gate().remove_constraint(&id).await
 }
 
+/// Set a constraint's rung: told, checked or enforced.
+pub async fn constraint_rung(cell: &FactoryCell, id: String, rung: String) -> Result<(), String> {
+    let rung = serde_json::from_value(json!(rung))
+        .map_err(|_| format!("{rung:?} is not told, checked or enforced"))?;
+    factory(cell)?.gate().set_constraint_rung(&id, rung).await
+}
+
 pub async fn constraint_move(cell: &FactoryCell, id: String, up: bool) -> Result<(), String> {
     factory(cell)?.gate().move_constraint(&id, up).await
 }

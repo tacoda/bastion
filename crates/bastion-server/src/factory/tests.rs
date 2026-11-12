@@ -695,3 +695,45 @@ fn a_turn_the_harness_lost_starts_again_on_resume() {
         assert!(eventually(again).await, "the lost turn did not start again");
     });
 }
+
+#[test]
+fn a_lesson_signed_under_way_is_written_onto_the_journey_branch_as_it_lands() {
+    use crate::govern_store::GovernStore;
+    use crate::lessons::{NOTE, ON_LANDING, Written};
+    let rig = rig();
+    let note = |about: &str, branch: &str| {
+        Written {
+            about: about.into(),
+            text: "Keep calc small.".into(),
+            by: "Ian".into(),
+            ..Written::default()
+        }
+        .detail_on(branch)
+    };
+    let record = |detail: String| bastion_core::audit::Record {
+        kind: NOTE.into(),
+        subject: "j1".into(),
+        detail,
+    };
+    crate::rt::block_on(async {
+        let first = bastion_core::audit::append(None, 1, record(note("lesson", ON_LANDING)), b"k");
+        rig.store.append_audit(&first).await.unwrap();
+        let mine = bastion_core::audit::append(Some(&first), 2, record(note("bastion", "")), b"k");
+        rig.store.append_audit(&mine).await.unwrap();
+        let journey = record_at("build", State::Running);
+        let path = std::path::Path::new("/wt");
+        rig.factory.write_lessons(&journey, path).await.unwrap();
+    });
+    assert!(
+        rig.machine
+            .called("write /wt/.agents/rules/keep-calc-small.md")
+    );
+    assert!(
+        rig.machine
+            .called("git add -- .agents/rules/keep-calc-small.md")
+    );
+    assert!(
+        rig.machine
+            .called("git commit -q -m What journey j1 taught")
+    );
+}

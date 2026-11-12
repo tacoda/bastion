@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 
 use super::{Factory, NS, REPO, SLOW_MS};
 use crate::engine::DEFAULT_NAMESPACE;
+use crate::lessons;
 use crate::store::{Artifact, Record, Workspace};
 
 impl Factory {
@@ -17,6 +18,12 @@ impl Factory {
     /// branch when the workspace leaves it.
     pub(super) async fn finish_job(self: &Arc<Self>, record: &Record) -> Result<(), String> {
         let (path, target) = self.bring_back(record).await?;
+        if let Err(e) = self.write_lessons(record, &path).await {
+            eprintln!(
+                "job {}: its lessons and facts were not written: {e}",
+                record.job.id
+            );
+        }
         self.keep_commits(record, &path, &target).await;
         let workspaces = self.store.workspaces().await?;
         let ws = workspaces
@@ -28,6 +35,43 @@ impl Factory {
         }
         let worktree = record.runtime.worktree.clone().ok_or("no worktree")?;
         self.land_here(record, &worktree, &target).await
+    }
+
+    /// Write the lessons and facts signed while the journey was under way
+    /// onto its own branch, so they land with its change (D61). Paths are
+    /// inferred from the journey's change as it lands.
+    pub(super) async fn write_lessons(&self, record: &Record, path: &Path) -> Result<(), String> {
+        let id = &record.job.id;
+        let entries = self.store.entries_of(lessons::NOTE).await?;
+        let queued: Vec<lessons::Written> = entries
+            .iter()
+            .map(lessons::signed)
+            .filter(|s| &s.job == id && s.branch == lessons::ON_LANDING)
+            .map(|s| s.written)
+            .collect();
+        if queued.is_empty() {
+            return Ok(());
+        }
+        let base = self.fork_point(record, path).await;
+        let diff = self.git(path, &["diff", &base, "HEAD"])?;
+        let settings = self.machine.read(&path.join(crate::charter::SETTINGS)).ok();
+        let landing = lessons::Landing {
+            job: id,
+            diff: &diff,
+            settings,
+        };
+        let files = lessons::files(&queued, landing)?;
+        for (name, text) in &files {
+            let file = path.join(name);
+            if let Some(dir) = file.parent() {
+                self.machine.make_dir(dir)?;
+            }
+            self.machine.write_bytes(&file, text.as_bytes())?;
+            self.git(path, &["add", "--", name])?;
+        }
+        let message = format!("What journey {id} taught: lessons and facts");
+        self.git(path, &["commit", "-q", "-m", &message])?;
+        Ok(())
     }
 
     /// Bring the VM's commits back to the job's worktree. Returns the

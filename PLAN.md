@@ -308,7 +308,8 @@ Next, notes become charter changes (D61, replacing D59's atlas):
   its own for a person to merge.
 - Done: a lesson can be a hook or a permission (allow, ask, deny),
   merged into `.agents/settings.json` with all it already holds.
-- Next: write onto the journey's own branch while it is still open.
+- Done: a note signed while the journey is under way is written onto its
+  own branch when it lands; after it came home, on a branch of its own.
 - Done: the corpus is loaded by path: when an agent opens a path a corpus
   entry names, it is given that entry, once per turn.
 - The Map's harbor town shows the region's rules and corpus, read from

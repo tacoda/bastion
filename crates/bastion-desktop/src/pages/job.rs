@@ -736,10 +736,11 @@ fn atlas_card<'a>(state: &'a State, d: &'a JobDetail) -> Element<'a, Message> {
         .on_press(Message::Job(Msg::CloseCard));
     let head = row![title, iced::widget::space::horizontal(), close].align_y(iced::Center);
     let notes = d.notes.iter().map(|n| {
-        let whom = match (n.about.as_str(), n.branch.is_empty()) {
+        let whom = match (n.about.as_str(), n.branch.as_str()) {
             ("bastion", _) => "about Bastion".to_string(),
-            (kind, false) => format!("a {kind} on {}, to merge", n.branch),
-            (kind, true) => format!("a {kind}"),
+            (kind, "on landing") => format!("a {kind}, written when the journey lands"),
+            (kind, "") => format!("a {kind}"),
+            (kind, branch) => format!("a {kind} on {branch}, to merge"),
         };
         let by = text(format!("{} · {whom} · {}", n.by, ago(n.at))).size(12);
         column![text(n.text.clone()).size(13), by.color(theme::muted())]

@@ -543,7 +543,7 @@ async fn field_note(
     Path(id): Path<String>,
     Json(b): Json<Note>,
 ) -> Response {
-    let w = api::notes::Written {
+    let w = crate::lessons::Written {
         about: b.about,
         text: b.text,
         by: person.name.clone(),

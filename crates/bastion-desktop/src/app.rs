@@ -53,6 +53,7 @@ pub enum Message {
     Session(pages::session::Msg),
     Settings(pages::settings::Msg),
     Workflows(pages::workflows::Msg),
+    Rules(pages::rules_page::Msg),
     /// Read the servers again, after Settings added or removed one.
     ReadServers,
     /// Open a link, such as a pull request, in the browser.
@@ -198,7 +199,8 @@ impl App {
             | Message::Verification(_)
             | Message::Session(_)
             | Message::Settings(_)
-            | Message::Workflows(_)) => {
+            | Message::Workflows(_)
+            | Message::Rules(_)) => {
                 let ctx = self.ctx();
                 return self.page.update(page, &ctx);
             }

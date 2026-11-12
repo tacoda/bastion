@@ -15,13 +15,19 @@ pub enum Route {
     Session(String),
     Engine,
     Workflows,
+    Constraints,
+    Capabilities,
+    Permissions,
     Settings,
 }
 
 /// The top bar's pages. A job and New request belong to Jobs.
-pub const PAGES: [(Route, &str, &str); 8] = [
+pub const PAGES: [(Route, &str, &str); 11] = [
     (Route::Jobs, "Jobs", icons::JOBS),
     (Route::Workflows, "Workflows", icons::WORKFLOWS),
+    (Route::Constraints, "Constraints", icons::CONSTRAINTS),
+    (Route::Capabilities, "Capabilities", icons::CAPABILITIES),
+    (Route::Permissions, "Permissions", icons::PERMISSIONS),
     (Route::Audit, "Audit Log", icons::AUDIT),
     (Route::Evals, "Evals", icons::EVALS),
     (Route::Costs, "Costs", icons::COSTS),

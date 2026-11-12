@@ -87,7 +87,7 @@ fn rung(c: &ConstraintView) -> (u8, iced::Color) {
 }
 
 /// A fixed-width pill, so the rules line up.
-fn badge<'a>(label: &str, color: iced::Color) -> Element<'a, Msg> {
+pub(super) fn badge<'a>(label: &str, color: iced::Color) -> Element<'a, Msg> {
     container(text(label.to_string()).size(11).color(color))
         .padding([2, 0])
         .width(76)

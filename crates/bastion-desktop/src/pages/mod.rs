@@ -12,6 +12,7 @@ pub mod evals;
 pub mod job;
 pub mod jobs;
 pub mod new_request;
+pub mod rules_page;
 pub mod session;
 pub mod settings;
 pub mod spinner;
@@ -31,6 +32,7 @@ use crate::app::Message;
 use crate::client;
 use crate::route::Route;
 use crate::theme;
+use step_rules::Which;
 
 /// What a page may read: the servers, which one is shown, and which cannot
 /// be reached now. Cheap to clone into a task.
@@ -261,11 +263,16 @@ pub enum Page {
     Eval(Box<evals::One>),
     Settings(Box<settings::State>),
     Workflows(Box<workflows::State>),
+    Rules(Box<rules_page::State>),
     /// Nothing yet: the window has not reached its first server.
     Pending,
 }
 
 impl Page {
+    fn rules(which: Which) -> Page {
+        Page::Rules(Box::new(rules_page::State::new(which)))
+    }
+
     /// Whether the page shows a job or step in progress, whose mark turns.
     pub fn moving(&self) -> bool {
         match self {
@@ -290,6 +297,9 @@ impl Page {
             Route::Eval(id) => Page::Eval(Box::new(evals::One::new(id.clone()))),
             Route::Settings => Page::Settings(Box::default()),
             Route::Workflows => Page::Workflows(Box::default()),
+            Route::Constraints => Page::rules(Which::Constraints),
+            Route::Capabilities => Page::rules(Which::Capabilities),
+            Route::Permissions => Page::rules(Which::Permissions),
         };
         let first = page.reload(ctx, Push::All);
         (page, first)
@@ -321,6 +331,7 @@ impl Page {
             Page::Eval(s) => evals::load_one(s, ctx),
             Page::Settings(_) => settings::load(ctx),
             Page::Workflows(_) => workflows::load(ctx),
+            Page::Rules(_) => rules_page::load(ctx),
             Page::Pending => Task::none(),
         }
     }
@@ -352,6 +363,7 @@ impl Page {
             (Page::Eval(s), Message::Evals(m)) => return evals::update_one(s, m, ctx),
             (Page::Settings(s), Message::Settings(m)) => return settings::update(s, m, ctx),
             (Page::Workflows(s), Message::Workflows(m)) => return workflows::update(s, m, ctx),
+            (Page::Rules(s), Message::Rules(m)) => return rules_page::update(s, m, ctx),
             _ => {}
         }
         Task::none()
@@ -371,6 +383,7 @@ impl Page {
             Page::Eval(s) => evals::view_one(s, ctx),
             Page::Settings(s) => settings::view(s, ctx),
             Page::Workflows(s) => workflows::view(s, ctx),
+            Page::Rules(s) => rules_page::view(s, route.title()),
             Page::Pending => {
                 let title = text(route.title()).size(24).font(theme::BOLD);
                 let note = text("Reaching the Bastion server…").color(theme::MUTED);

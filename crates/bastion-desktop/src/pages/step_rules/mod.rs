@@ -3,15 +3,17 @@
 //! level turns on, off, or leaves to inherit; the most specific setting
 //! wins. A rung belongs to the item, so it reads the same at every level.
 
+mod applies;
 mod capabilities;
 mod constraints;
 mod layers;
+mod pages;
 mod scope;
 
 use bastion_protocol::api::{self, Request, ScopeSet};
 use bastion_protocol::{
     CapabilityView, Console, ConstraintView, FactoryCapabilityView, McpServerView, Registered,
-    WorkspaceCharterView,
+    WorkflowView, WorkspaceCharterView,
 };
 use iced::widget::{button, text};
 use iced::{Element, Task};
@@ -20,6 +22,7 @@ use super::Ctx;
 use crate::theme;
 
 pub use layers::view;
+pub use pages::{Which, level, page};
 pub use scope::EVERY;
 
 /// The form shown to add an item: one at a time.
@@ -117,6 +120,10 @@ pub struct Rules {
     rule: RuleDraft,
     /// The rule whose deterministic form is open, if any.
     pub(super) forming: Option<FormDraft>,
+    /// The workflows and their steps, for where an item applies, and the
+    /// item whose list is open.
+    workflows: Vec<WorkflowView>,
+    open: Option<Item>,
     said: String,
 }
 
@@ -131,7 +138,12 @@ pub enum Msg {
     /// The kind a new grant above a step is for.
     ForKind(String),
     /// Set an item `on`, `off` or `inherit` at the level shown.
-    SetScope(Item, String),
+    /// Set an item `on`, `off` or `inherit` at a scope: a workflow, or
+    /// `workflow/step`, or `*` for every workflow.
+    SetScope(Item, String, String),
+    Workflows(Result<Vec<WorkflowView>, String>),
+    /// Open an item's list of workflows and steps, or close it.
+    Open(Item),
     /// Set a constraint's rung: told, checked or enforced.
     SetRung(String, String),
     /// Set a grant's rung: ask or allowed.
@@ -189,6 +201,7 @@ pub fn load(ctx: &Ctx) -> Task<Msg> {
         ctx.task(&ctx.current, api::McpServers, Msg::Mcp),
         ctx.task(&ctx.current, api::Charters, Msg::Charters),
         ctx.task(&ctx.current, api::FactoryCapabilities, Msg::Factory),
+        ctx.task(&ctx.current, api::Workflows, Msg::Workflows),
     ])
 }
 
@@ -234,7 +247,8 @@ pub fn count(rules: &Rules, at: &At) -> usize {
 /// every workflow, with an id no constraint has yet, such as
 /// `hook-short-build-1` or `rule-every-1`.
 fn made_at(rules: &Rules, kind: &str, scope: &str, rule: String) -> ConstraintView {
-    let at = match scope {
+    // At every workflow, on (`*`) or off (`!*`), the id says every.
+    let at = match scope.trim_start_matches('!') {
         EVERY => "every".to_string(),
         s => s.replace('/', "-"),
     };
@@ -425,6 +439,10 @@ fn typed(rules: &mut Rules, msg: Msg) {
         Msg::Reviewer(r) => rules.reviewer = r,
         Msg::Rule(field, value) => rule_field(&mut rules.rule, field, value),
         Msg::ForKind(k) => rules.for_kind = k,
+        Msg::Open(item) => {
+            let open = rules.open.as_ref() != Some(&item);
+            rules.open = open.then_some(item);
+        }
         Msg::Form(id, rung) => open_form(rules, id, rung),
         Msg::CancelForm => rules.forming = None,
         Msg::FormField(field, value) => {
@@ -444,6 +462,7 @@ fn read(rules: &mut Rules, msg: Msg) {
         Msg::Catalog(Ok(console)) => rules.catalog = console.functions,
         Msg::Mcp(Ok(all)) => rules.mcp = all,
         Msg::Charters(Ok(all)) => rules.charters = all,
+        Msg::Workflows(Ok(all)) => rules.workflows = all,
         Msg::Factory(Ok(all)) => rules.factory = all,
         Msg::Constraints(Err(e)) | Msg::Grants(Err(e)) | Msg::Done(Err(e)) => rules.said = e,
         // The search and the MCP shortcut are a help, not a need.
@@ -462,7 +481,9 @@ pub fn update(rules: &mut Rules, msg: Msg, at: &At, ctx: &Ctx) -> Task<Msg> {
         Msg::AddRule | Msg::AddCheck | Msg::AddNote | Msg::AddReviewer | Msg::AddHook => {
             send(ctx, api::ConstraintAdd(made(rules, &msg, at.scope)))
         }
-        Msg::SetScope(item, setting) => send(ctx, api::Scope(scope_set(item, setting, at.scope))),
+        Msg::SetScope(item, scope, setting) => {
+            send(ctx, api::Scope(scope_set(item, setting, &scope)))
+        }
         Msg::GrantRung(g, rung) => set_rung(g, rung, ctx),
         Msg::Ungrant(g) => send(ctx, api::CapabilityRemove(g)),
         Msg::SetRung(id, rung) => send(ctx, api::ConstraintRung { id, rung }),
@@ -480,6 +501,7 @@ pub fn update(rules: &mut Rules, msg: Msg, at: &At, ctx: &Ctx) -> Task<Msg> {
         | Msg::Mcp(_)
         | Msg::Charters(_)
         | Msg::Factory(_)
+        | Msg::Workflows(_)
         | Msg::Done(_)) => {
             read(rules, m);
             Task::none()
@@ -506,7 +528,11 @@ fn small<'a>(label: impl Into<String>, msg: Option<Msg>) -> Element<'a, Msg> {
 }
 
 /// One choice of a switch, filled when it is the one chosen.
-fn choice<'a>(label: impl Into<String>, on: bool, msg: Option<Msg>) -> Element<'a, Msg> {
+pub fn choice<'a, M: Clone + 'a>(
+    label: impl Into<String>,
+    on: bool,
+    msg: Option<M>,
+) -> Element<'a, M> {
     button(text(label.into()).size(12))
         .padding([4, 10])
         .style(theme::nav(on))
@@ -527,7 +553,8 @@ fn scope_switch<'a>(item: Item, scopes: &[String], at: &At, editable: bool) -> E
     let (own, inherited) = scope::at(scopes, at.scope);
     let now = own.unwrap_or(inherited);
     let set = |label: String, chosen: bool, to: &str| {
-        let msg = (editable && !chosen).then(|| Msg::SetScope(item.clone(), to.into()));
+        let msg =
+            (editable && !chosen).then(|| Msg::SetScope(item.clone(), at.scope.into(), to.into()));
         choice(label, chosen, msg)
     };
     let word = if inherited { "on" } else { "off" };

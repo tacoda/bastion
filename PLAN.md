@@ -37,19 +37,32 @@ kept, assertions kept, no skipped tests) into feedback that is off, as
 `!*`. The charter listing shows demo-local's agent `strict`. The brief
 lists "You may" before its rules.
 
-### R2. The rules view by type and mode
+### R2. Rules by type and mode (checkpoint)
 
-- Each level shows Constraints and Capabilities, each split into
-  feedforward and feedback, with a Workspace or Bastion chip on every row.
-- A Bastion rule has a Feedforward | Feedback switch; going to feedback
-  asks for its form, as D55 says. A grant keeps Ask | Allowed.
-- The levels are the workflow and the step. What applies to every
-  workflow shows as inherited at the workflow; editing it for all
-  workflows waits.
+- Done as a checkpoint on the Workflows page (2d44301): feedforward and
+  feedback, Workspace and Bastion chips, a Feedforward | Feedback switch,
+  and an Add bar. P1 to P3 move it to pages of its own.
 
-### R3. Docs
+### P1. Three rules pages (D57)
 
-- VISION.md and DECISIONS.md say how rules sort.
+- Constraints, Capabilities and Permissions return to the top bar.
+  Constraints holds rules, checks, hooks and reviewers; Capabilities the
+  notes on what the agent may use; Permissions the grants, ask or allowed.
+- Each page has two views. Global sets an item on or off for every
+  workflow. Workflows opens an item's list of workflows and their steps,
+  each Inherit | On | Off, so a rule lands on the steps you pick.
+
+### P2. A Workspaces page
+
+- Each workspace's charter, read-only: AGENTS.md, its permissions and
+  hooks, its skills and agents. Bastion still applies the charter; it
+  leaves the rules pages because it changes in the repository.
+
+### P3. The Workflows page shows, the pages change
+
+- The workflow level's rules panel goes. A step's Rules tab lists what
+  applies at it, read-only, with a link to each page.
+- VISION.md and DECISIONS.md say where rules live.
 
 ## Open questions
 

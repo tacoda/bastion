@@ -14,13 +14,18 @@ use super::{Adding, At, Msg, Rules, chip, choice, help};
 use crate::theme;
 
 /// The kinds of step an agent runs, each with grants of its own.
-const KINDS: [(&str, &str); 3] = [("prompt", "Prompt"), ("agent", "Agent"), ("skill", "Skill")];
+pub(super) const KINDS: [(&str, &str); 3] =
+    [("prompt", "Prompt"), ("agent", "Agent"), ("skill", "Skill")];
 
 /// The list narrows to a filter once a level has more constraints than this.
 const FILTER_FROM: usize = 5;
 
 /// A section: its title, what it covers, and its rows.
-fn section<'a>(title: &'a str, about: &'a str, body: Vec<Element<'a, Msg>>) -> Element<'a, Msg> {
+pub(super) fn section<'a>(
+    title: &'a str,
+    about: &'a str,
+    body: Vec<Element<'a, Msg>>,
+) -> Element<'a, Msg> {
     let head = row![
         text(title).size(13).font(theme::BOLD).color(theme::INK),
         text(about).size(12).color(theme::MUTED),
@@ -36,7 +41,7 @@ fn section<'a>(title: &'a str, about: &'a str, body: Vec<Element<'a, Msg>>) -> E
 }
 
 /// A mode's heading inside a section.
-fn heading<'a>(name: &'a str, about: &'a str) -> Element<'a, Msg> {
+pub(super) fn heading<'a>(name: &'a str, about: &'a str) -> Element<'a, Msg> {
     row![
         text(name).size(12).font(theme::BOLD).color(theme::MUTED),
         help(about)
@@ -146,7 +151,7 @@ fn grants<'a>(rules: &'a Rules, at: &At, editable: bool) -> Vec<Element<'a, Msg>
 }
 
 /// What the factory itself may do, as its workspace and steps set it.
-fn factory_line<'a>(f: &FactoryCapabilityView) -> Element<'a, Msg> {
+pub(super) fn factory_line<'a>(f: &FactoryCapabilityView) -> Element<'a, Msg> {
     let what = column![text(f.name.clone()).size(13), help(f.how.clone())]
         .spacing(2)
         .width(Fill);

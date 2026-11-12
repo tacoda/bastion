@@ -74,7 +74,11 @@ fn grant_buttons<'a>(function: String) -> Element<'a, Msg> {
 
 /// One grant: its function and what it covers, with its switch and its
 /// removal when the step's own grant may be changed.
-fn line<'a>(g: &CapabilityView, catalog: &[Registered], changeable: bool) -> Element<'a, Msg> {
+pub(super) fn line<'a>(
+    g: &CapabilityView,
+    catalog: &[Registered],
+    changeable: bool,
+) -> Element<'a, Msg> {
     let about = text(about(&g.function, catalog))
         .size(12)
         .color(theme::MUTED);

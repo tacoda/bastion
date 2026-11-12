@@ -9,7 +9,8 @@ mod layers;
 
 use bastion_protocol::api::{self, Request};
 use bastion_protocol::{
-    CapabilityView, Console, ConstraintView, McpServerView, Registered, WorkspaceCharterView,
+    CapabilityView, Console, ConstraintView, FactoryCapabilityView, McpServerView, Registered,
+    WorkspaceCharterView,
 };
 use iced::widget::{button, text};
 use iced::{Element, Task};
@@ -17,7 +18,7 @@ use iced::{Element, Task};
 use super::Ctx;
 use crate::theme;
 
-pub use layers::view;
+pub use layers::{every_step, view};
 
 /// The form shown to add a constraint: one at a time.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -63,8 +64,12 @@ pub enum Granting {
 pub struct Rules {
     constraints: Vec<ConstraintView>,
     grants: Vec<CapabilityView>,
-    /// Each workspace's charter, read from its repository.
+    /// Each workspace's charter, read from its repository, and what the
+    /// factory itself may do.
     charters: Vec<WorkspaceCharterView>,
+    factory: Vec<FactoryCapabilityView>,
+    /// The kind of step a grant for every step is for: prompt, agent or skill.
+    for_kind: String,
     /// The engine's functions, for the search, and the server's MCP servers.
     catalog: Vec<Registered>,
     mcp: Vec<McpServerView>,
@@ -90,6 +95,9 @@ pub enum Msg {
     Catalog(Result<Console, String>),
     Mcp(Result<Vec<McpServerView>, String>),
     Charters(Result<Vec<WorkspaceCharterView>, String>),
+    Factory(Result<Vec<FactoryCapabilityView>, String>),
+    /// The kind a new grant for every step is for.
+    ForKind(String),
     /// Set a constraint's rung: told, checked or enforced.
     SetRung(String, String),
     /// Apply a constraint at the step too, or take it off the step.
@@ -133,6 +141,7 @@ pub fn load(ctx: &Ctx) -> Task<Msg> {
         ctx.task(&ctx.current, api::Console, Msg::Catalog),
         ctx.task(&ctx.current, api::McpServers, Msg::Mcp),
         ctx.task(&ctx.current, api::Charters, Msg::Charters),
+        ctx.task(&ctx.current, api::FactoryCapabilities, Msg::Factory),
     ])
 }
 
@@ -160,6 +169,16 @@ impl Rules {
         self.constraints.iter().filter(at).collect()
     }
 
+    /// The kind a grant made at `at` is for: the step's, or for every step,
+    /// the one the form picked, a prompt's by default.
+    fn kind_of<'a>(&'a self, at: &At<'a>) -> &'a str {
+        match (at.step.is_empty(), self.for_kind.as_str()) {
+            (false, _) => at.stage,
+            (true, "") => "prompt",
+            (true, k) => k,
+        }
+    }
+
     /// The grants that decide the step's calls: its own, else its kind's.
     fn deciding(&self, at: &At) -> Vec<&CapabilityView> {
         let own = self.own(at.step);
@@ -176,10 +195,15 @@ pub fn count(rules: &Rules, at: &At) -> usize {
     rules.here(at.step).len() + rules.deciding(at).len()
 }
 
-/// An enforced constraint made for `step` alone, with an id no constraint
-/// has yet, such as `hook-short-build-1`.
+/// An enforced constraint made for `step` alone, or for every step when
+/// `step` is empty, with an id no constraint has yet, such as
+/// `hook-short-build-1` or `rule-every-step-1`.
 fn for_step(rules: &Rules, kind: &str, step: &str, rule: String) -> ConstraintView {
-    let base = format!("{kind}-{}", step.replace('/', "-"));
+    let at = match step.is_empty() {
+        true => "every-step".to_string(),
+        false => step.replace('/', "-"),
+    };
+    let base = format!("{kind}-{at}");
     let taken = |id: &String| rules.constraints.iter().any(|c| &c.id == id);
     let id = (1..).map(|n| format!("{base}-{n}")).find(|id| !taken(id));
     ConstraintView {
@@ -187,7 +211,10 @@ fn for_step(rules: &Rules, kind: &str, step: &str, rule: String) -> ConstraintVi
         rule,
         rung: "enforced".into(),
         source: "owner".into(),
-        steps: vec![step.into()],
+        steps: (!step.is_empty())
+            .then(|| step.to_string())
+            .into_iter()
+            .collect(),
         ..ConstraintView::default()
     }
 }
@@ -329,6 +356,7 @@ fn typed(rules: &mut Rules, msg: Msg) {
         Msg::Hook(h) => rules.hook = h,
         Msg::Reviewer(r) => rules.reviewer = r,
         Msg::Rule(field, value) => rule_field(&mut rules.rule, field, value),
+        Msg::ForKind(k) => rules.for_kind = k,
         _ => {}
     }
 }
@@ -341,6 +369,7 @@ fn read(rules: &mut Rules, msg: Msg) {
         Msg::Catalog(Ok(console)) => rules.catalog = console.functions,
         Msg::Mcp(Ok(all)) => rules.mcp = all,
         Msg::Charters(Ok(all)) => rules.charters = all,
+        Msg::Factory(Ok(all)) => rules.factory = all,
         Msg::Constraints(Err(e)) | Msg::Grants(Err(e)) | Msg::Done(Err(e)) => rules.said = e,
         // The search and the MCP shortcut are a help, not a need.
         _ => {}
@@ -371,13 +400,20 @@ pub fn update(rules: &mut Rules, msg: Msg, at: &At, ctx: &Ctx) -> Task<Msg> {
         Msg::SetRung(id, rung) => send(ctx, api::ConstraintRung { id, rung }),
         Msg::Grant(function, rung) => {
             (rules.search, rules.command) = Default::default();
-            send(ctx, api::CapabilityAdd(grant(&function, rung, at)))
+            // A grant for every step is for the kind the form picked.
+            let kind = rules.kind_of(at).to_string();
+            let at = At {
+                step: at.step,
+                stage: &kind,
+            };
+            send(ctx, api::CapabilityAdd(grant(&function, rung, &at)))
         }
         m @ (Msg::Constraints(_)
         | Msg::Grants(_)
         | Msg::Catalog(_)
         | Msg::Mcp(_)
         | Msg::Charters(_)
+        | Msg::Factory(_)
         | Msg::Done(_)) => {
             read(rules, m);
             Task::none()
@@ -458,6 +494,9 @@ mod tests {
         );
         rules.constraints.push(first);
         assert_eq!(new_hook(&rules, "short/build").id, "hook-short-build-2");
+        let every = new_hook(&rules, "");
+        assert_eq!(every.id, "hook-every-step-1");
+        assert!(every.steps.is_empty(), "no steps is every step");
     }
 
     #[test]

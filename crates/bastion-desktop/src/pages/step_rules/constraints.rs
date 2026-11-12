@@ -52,13 +52,19 @@ pub(super) fn fits(c: &ConstraintView, filter: &str) -> bool {
 /// is "Not here".
 fn scope<'a>(c: &ConstraintView, at: &At, editable: bool) -> Element<'a, Msg> {
     let only_here = c.steps.len() == 1 && c.steps[0] == at.step;
+    // At every step, no step is named: one for every step made here comes
+    // off there. A seeded rule is only demoted, never removed by a click.
+    let made_in_app = ["rule-", "hook-", "reviewer-"]
+        .iter()
+        .any(|p| c.id.starts_with(p));
+    let every_here = at.step.is_empty() && c.steps.is_empty() && made_in_app;
     let msg = |m: Msg| editable.then_some(m);
     // One the owner made for this step alone comes off whole; "Not here"
     // would leave it at no step, which means every step.
-    let made_here = c.source == "owner" && only_here;
-    match (c.steps.is_empty(), made_here) {
-        (true, _) => chip("every step"),
-        (false, true) => small("Remove", msg(Msg::Remove(c.id.clone()))),
+    let made_here = c.source == "owner" && (only_here || every_here);
+    match (made_here, c.steps.is_empty()) {
+        (true, _) => small("Remove", msg(Msg::Remove(c.id.clone()))),
+        (false, true) => chip("every step"),
         (false, false) => small("Not here", msg(Msg::Scope(c.id.clone(), false))),
     }
 }

@@ -846,7 +846,7 @@ fn picked(state: &State) -> Option<Element<'_, Message>> {
 pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let editable = state.editable();
     let about = format!(
-        "The series of steps a job on {} runs. Pick one to read or change it.",
+        "The series of steps a job on {} runs. Pick a step to read or change it, or none for what applies at every step.",
         ctx.current
     );
     let mut body = column![super::head("Workflows", about, vec![]), chooser(state)].spacing(12);
@@ -867,7 +867,12 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
             on: Some(on),
         }));
     }
-    body = body.extend(picked(state));
+    // With no step picked, the page shows what applies at every step.
+    let shown = picked(state).unwrap_or_else(|| {
+        super::step_rules::every_step(&state.rules, &ctx.current, state.admin)
+            .map(|m| wrap(Msg::Rules(m)))
+    });
+    body = body.push(shown);
     if editable {
         body = body.push(
             button("Save a new version")

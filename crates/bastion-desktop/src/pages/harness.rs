@@ -5,8 +5,8 @@
 use std::collections::BTreeMap;
 
 use bastion_protocol::api;
-use bastion_protocol::{ConstraintView, FieldNoteView, PersonView};
-use iced::widget::{Column, column, row, text};
+use bastion_protocol::{ConstraintView, FieldNoteView, PersonView, WorkflowView};
+use iced::widget::{Column, column, row, text, text_input};
 use iced::{Element, Task};
 
 use super::step_rules::{self, Which, choice};
@@ -21,8 +21,19 @@ struct Server {
     rules: step_rules::Rules,
     /// What journeys taught about Bastion, newest first (D61).
     learned: Vec<FieldNoteView>,
-    /// Why the last note could not become guidance.
+    /// Why the last note could not become guidance or a check.
     adopt_error: String,
+    /// The check being written from a note, when one is.
+    draft: Option<Draft>,
+}
+
+/// A check being written from a note: the calls it binds, by a function
+/// pattern and the words the call holds.
+#[derive(Clone, Debug, Default)]
+struct Draft {
+    note: FieldNoteView,
+    function: String,
+    contains: String,
 }
 
 pub struct State {
@@ -50,8 +61,15 @@ pub enum Msg {
     Global(bool),
     Me(String, Result<PersonView, String>),
     Learned(String, Result<Vec<FieldNoteView>, String>),
-    /// Make a note about Bastion guidance on its journey's trail.
+    /// Make a note about Bastion guidance at its journey's waypoint.
     Adopt(String, FieldNoteView),
+    /// Start writing a check from a note, or stop.
+    Draft(String, Option<FieldNoteView>),
+    /// The check's function pattern, or the words its call holds.
+    DraftCall(String, String),
+    DraftWords(String, String),
+    /// Add the check being written.
+    AddCheck(String),
     Adopted(String, Result<(), String>),
     Rules(String, step_rules::Msg),
 }
@@ -76,22 +94,59 @@ pub fn load(ctx: &Ctx) -> Task<Message> {
     Task::batch(each)
 }
 
-/// A note about Bastion as guidance: a rule the agent is told, on at the
-/// trail the journey took, or every trail when it took none on record.
+/// Where what a note taught applies: the waypoint its journey was at, its
+/// trail when the step is not on record, or every trail.
+fn waypoint(n: &FieldNoteView) -> String {
+    match (n.workflow.as_str(), n.step.as_str()) {
+        ("", _) => "*".into(),
+        (w, "") => w.into(),
+        (w, step) => format!("{w}/{step}"),
+    }
+}
+
+/// The waypoint in words, for a button: the trail by its name in `trails`.
+fn waypoint_words(n: &FieldNoteView, trails: &[WorkflowView]) -> String {
+    let trail = trails.iter().find(|w| w.id == n.workflow);
+    let name = trail.map_or(n.workflow.as_str(), |w| w.name.as_str());
+    match waypoint(n).as_str() {
+        "*" => "every trail".into(),
+        _ if n.step.is_empty() => name.into(),
+        _ => format!("{name} › {}", n.step),
+    }
+}
+
+/// A note about Bastion as guidance: a rule the agent is told, at the
+/// note's waypoint.
 fn guidance(n: &FieldNoteView) -> ConstraintView {
-    let scope = if n.workflow.is_empty() {
-        "*"
-    } else {
-        n.workflow.as_str()
-    };
     ConstraintView {
         id: format!("learned-{}-{}", n.job, n.at),
         rule: n.text.clone(),
         rung: "told".into(),
         source: "owner".into(),
-        steps: vec![scope.into()],
+        steps: vec![waypoint(n)],
         ..ConstraintView::default()
     }
+}
+
+/// A note about Bastion as a check: enforced on the calls the draft names,
+/// at the note's waypoint.
+fn check(d: &Draft) -> ConstraintView {
+    ConstraintView {
+        id: format!("learned-check-{}-{}", d.note.job, d.note.at),
+        function: d.function.trim().into(),
+        contains: d.contains.trim().into(),
+        rung: "enforced".into(),
+        ..guidance(&d.note)
+    }
+}
+
+/// Add `c`, made from a note, on server `name`.
+fn adopt(ctx: &Ctx, name: String, c: ConstraintView) -> Task<Message> {
+    let who = name.clone();
+    let here = ctx.on(&name);
+    Task::perform(here.get(name, api::ConstraintAdd(c)), move |r| {
+        Message::Rules(Msg::Adopted(who.clone(), r))
+    })
 }
 
 pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
@@ -106,14 +161,31 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
             let mine = about.filter(|n| n.about == "bastion").collect();
             state.servers.entry(name).or_default().learned = mine;
         }
-        Msg::Adopt(name, note) => {
-            let add = api::ConstraintAdd(guidance(&note));
-            let who = name.clone();
-            let here = ctx.on(&name);
-            return Task::perform(here.get(name, add), move |r| {
-                Message::Rules(Msg::Adopted(who.clone(), r))
+        Msg::Draft(name, note) => {
+            let s = state.servers.entry(name).or_default();
+            s.draft = note.map(|note| Draft {
+                note,
+                ..Draft::default()
             });
         }
+        Msg::DraftCall(name, v) => {
+            if let Some(d) = &mut state.servers.entry(name).or_default().draft {
+                d.function = v;
+            }
+        }
+        Msg::DraftWords(name, v) => {
+            if let Some(d) = &mut state.servers.entry(name).or_default().draft {
+                d.contains = v;
+            }
+        }
+        Msg::AddCheck(name) => {
+            let s = state.servers.entry(name.clone()).or_default();
+            let Some(d) = s.draft.take() else {
+                return Task::none();
+            };
+            return adopt(ctx, name, check(&d));
+        }
+        Msg::Adopt(name, note) => return adopt(ctx, name, guidance(&note)),
         Msg::Adopted(name, done) => {
             let s = state.servers.entry(name.clone()).or_default();
             if let Err(e) = done {
@@ -132,34 +204,76 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
     Task::none()
 }
 
+/// What a person may do with a note: make it guidance or a check at its
+/// waypoint, or nothing when it is already in the Guide.
+fn note_actions<'a>(s: &'a Server, server: &str, n: &FieldNoteView) -> Element<'a, Message> {
+    if s.rules.has_rule(&n.text) {
+        return text("In the Guide now").size(12).color(theme::ok()).into();
+    }
+    if !s.admin {
+        return text("").into();
+    }
+    let at = waypoint_words(n, s.rules.workflows());
+    let press = |label: String, msg: Msg| {
+        crate::lift::button(text(label).size(13))
+            .style(theme::secondary)
+            .on_press(Message::Rules(msg))
+    };
+    row![
+        press(
+            format!("Guidance at {at}"),
+            Msg::Adopt(server.into(), n.clone())
+        ),
+        press(
+            format!("A check at {at}"),
+            Msg::Draft(server.into(), Some(n.clone()))
+        ),
+    ]
+    .spacing(6)
+    .into()
+}
+
+/// The form a check from a note is written in: the calls it binds.
+fn check_form<'a>(server: &str, d: &'a Draft) -> Element<'a, Message> {
+    let (on_call, on_words) = (server.to_string(), server.to_string());
+    let call = text_input("The call it binds, such as sandbox::exec", &d.function)
+        .on_input(move |v| Message::Rules(Msg::DraftCall(on_call.clone(), v)))
+        .size(13);
+    let words = text_input("Words the call holds, such as git push", &d.contains)
+        .on_input(move |v| Message::Rules(Msg::DraftWords(on_words.clone(), v)))
+        .size(13);
+    let ready = !d.function.trim().is_empty();
+    let add = crate::lift::button(text("Add the check").size(13))
+        .style(theme::primary)
+        .on_press_maybe(ready.then_some(Message::Rules(Msg::AddCheck(server.into()))));
+    let cancel = crate::lift::button(text("Cancel").size(13))
+        .style(theme::link)
+        .on_press(Message::Rules(Msg::Draft(server.into(), None)));
+    column![call, words, row![add, cancel].spacing(6)]
+        .spacing(6)
+        .into()
+}
+
 /// The learning loop (D61): what journeys taught about Bastion, each one a
-/// press away from being guidance on the trail it came from.
+/// press away from being guidance or a check at the waypoint it came from.
 fn learned<'a>(s: &'a Server, server: &str) -> Element<'a, Message> {
-    let in_rules = |n: &FieldNoteView| s.rules.has_rule(&n.text);
     let rows = s.learned.iter().map(|n| {
-        let trail = if n.workflow.is_empty() {
-            "every trail".to_string()
-        } else {
-            n.workflow.clone()
-        };
         let whence = format!("{} · {} · {}", n.by, n.request, super::ago(n.at));
-        let act: Element<'a, Message> = match (in_rules(n), s.admin) {
-            (true, _) => text("Guidance now").size(12).color(theme::ok()).into(),
-            (false, true) => {
-                crate::lift::button(text(format!("Make it guidance on {trail}")).size(13))
-                    .style(theme::secondary)
-                    .on_press(Message::Rules(Msg::Adopt(server.into(), n.clone())))
-                    .into()
-            }
-            (false, false) => text("").into(),
-        };
         let words = column![
             text(n.text.clone()).size(13),
             text(whence).size(12).color(theme::muted())
         ]
         .spacing(2)
         .width(iced::Fill);
-        row![words, act].spacing(10).align_y(iced::Center).into()
+        let line = row![words, note_actions(s, server, n)]
+            .spacing(10)
+            .align_y(iced::Center);
+        let drafting = s
+            .draft
+            .as_ref()
+            .filter(|d| d.note.job == n.job && d.note.at == n.at);
+        let form = drafting.map(|d| check_form(server, d));
+        column![line].extend(form).spacing(8).into()
     });
     let mut body = Column::new().spacing(10).extend(rows);
     if s.learned.is_empty() {
@@ -172,9 +286,11 @@ fn learned<'a>(s: &'a Server, server: &str) -> Element<'a, Message> {
     }
     let head = row![
         text("Learned on journeys").size(15).font(theme::BOLD),
-        text("What journeys taught about Bastion. Make one guidance on its trail.")
-            .size(12)
-            .color(theme::muted())
+        text(
+            "What journeys taught about Bastion. Make one guidance or a check where it was learned."
+        )
+        .size(12)
+        .color(theme::muted())
     ]
     .spacing(10)
     .align_y(iced::Center);
@@ -216,4 +332,59 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         .extend(sections)
         .spacing(12);
     scrolled(body)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_note_becomes_guidance_or_a_check_at_its_waypoint() {
+        let note = FieldNoteView {
+            job: "j1".into(),
+            at: 7,
+            text: "Never push from a plan step.".into(),
+            workflow: "bug-fix".into(),
+            step: "plan".into(),
+            ..FieldNoteView::default()
+        };
+        let told = guidance(&note);
+        assert_eq!(
+            (told.rung.as_str(), told.steps.clone()),
+            ("told", vec!["bug-fix/plan".to_string()])
+        );
+        assert_eq!(waypoint_words(&note, &[]), "bug-fix › plan");
+        let named = WorkflowView {
+            id: "bug-fix".into(),
+            name: "Bug fix".into(),
+            ..WorkflowView::default()
+        };
+        assert_eq!(waypoint_words(&note, &[named]), "Bug fix › plan");
+        let d = Draft {
+            note: note.clone(),
+            function: " sandbox::exec ".into(),
+            contains: "git push".into(),
+        };
+        let c = check(&d);
+        assert_eq!(c.id, "learned-check-j1-7");
+        assert_eq!(
+            (c.function.as_str(), c.contains.as_str(), c.rung.as_str()),
+            ("sandbox::exec", "git push", "enforced")
+        );
+        assert_eq!(c.steps, ["bug-fix/plan"]);
+        let old = FieldNoteView {
+            step: String::new(),
+            ..note.clone()
+        };
+        assert_eq!(
+            waypoint(&old),
+            "bug-fix",
+            "a note from before waypoints: its trail"
+        );
+        let none = FieldNoteView {
+            workflow: String::new(),
+            ..note
+        };
+        assert_eq!(waypoint_words(&none, &[]), "every trail");
+    }
 }

@@ -845,6 +845,10 @@ pub struct FieldNoteView {
     /// merge (D61); empty for a note about Bastion.
     #[serde(default)]
     pub branch: String,
+    /// The waypoint the journey was at when the note was signed, so what
+    /// it taught can apply there.
+    #[serde(default)]
+    pub step: String,
 }
 
 /// A charter file's new text, committed on a new branch of the

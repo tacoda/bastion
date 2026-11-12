@@ -317,7 +317,9 @@ Next, notes become charter changes (D61, replacing D59's atlas):
   from the repository.
 - Done: a note about Bastion appears on the Guide under "Learned on
   journeys"; one press makes it guidance on the trail its journey took.
-- Next: offer a check as well as guidance, at the waypoint it came from.
+- Done: a note records the waypoint its journey was at (or the last one
+  it reached), and the Guide offers guidance or a check there; a check
+  names the call it binds and the words the call holds.
 
 The app should feel like an expedition, and improve itself from what jobs
 teach.
@@ -329,8 +331,8 @@ teach.
 - Done: a trail's wear on the Map: its journeys, at the summit and in the
   marsh, and at each waypoint the journeys waiting there and those that
   ended there.
-- A lesson from the atlas: a Bastion note offers "make this a check" or
-  "add this as guidance", applied at the step it came from.
+- Done: a lesson from the atlas: a Bastion note offers guidance or a
+  check, applied at the step it came from.
 - Done: everything clickable lifts a little on hover, as the landmarks do.
 - Words: a workflow is a trail; a job is a journey along it.
 - Done: a legend along the foot of the Map.

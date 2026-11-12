@@ -31,6 +31,8 @@ pub struct Written {
     pub shape: String,
     /// A hook's command, or a permission's rule.
     pub detail: String,
+    /// The waypoint the journey was at when it was signed.
+    pub step: String,
 }
 
 /// A signed note as the audit keeps it: what was written, and the branch
@@ -83,19 +85,20 @@ impl Written {
         }
     }
 
-    /// The audit entry's detail: `<by>\t<about>\t<text>\t<branch>\t<shape>\t<detail>`.
+    /// The audit entry's detail:
+    /// `<by>\t<about>\t<text>\t<branch>\t<shape>\t<detail>\t<step>`.
     pub fn detail_on(&self, branch: &str) -> String {
         let w = self;
         format!(
-            "{}\t{}\t{}\t{branch}\t{}\t{}",
-            w.by, w.about, w.text, w.shape, w.detail
+            "{}\t{}\t{}\t{branch}\t{}\t{}\t{}",
+            w.by, w.about, w.text, w.shape, w.detail, w.step
         )
     }
 }
 
 /// A note from its audit entry.
 pub fn signed(e: &Entry) -> Signed {
-    let mut parts = e.record.detail.splitn(6, '\t').map(String::from);
+    let mut parts = e.record.detail.splitn(7, '\t').map(String::from);
     let mut next = || parts.next().unwrap_or_default();
     let (by, about, text, branch) = (next(), next(), next(), next());
     Signed {
@@ -107,6 +110,7 @@ pub fn signed(e: &Entry) -> Signed {
             by,
             shape: next(),
             detail: next(),
+            step: next(),
         },
         branch,
     }
@@ -175,12 +179,16 @@ mod tests {
             by: "Ian".into(),
             shape: shape.into(),
             detail: detail.into(),
+            ..Written::default()
         }
     }
 
     #[test]
     fn a_note_reads_back_from_its_entry_and_keeps_only_what_it_may() {
-        let w = written("lesson", "deny", "Bash(rm:*)");
+        let w = Written {
+            step: "build".into(),
+            ..written("lesson", "deny", "Bash(rm:*)")
+        };
         let record = Record {
             kind: NOTE.into(),
             subject: "j1".into(),

@@ -25,9 +25,25 @@ fn view(e: &bastion_core::audit::Entry) -> FieldNoteView {
         about: s.written.about,
         text: s.written.text,
         branch: s.branch,
+        step: s.written.step,
         at: s.at,
         ..FieldNoteView::default()
     }
+}
+
+/// The waypoint a journey is at, or the last one it reached once home.
+fn waypoint(job: &bastion_core::Job) -> String {
+    let reached = bastion_core::steps(job)
+        .into_iter()
+        .rev()
+        .find(|(_, _, s)| {
+            !matches!(
+                s,
+                bastion_core::StepState::Pending | bastion_core::StepState::Skipped
+            )
+        });
+    let last = reached.map(|(id, _, _)| id);
+    job.node.clone().or(last).unwrap_or_default()
 }
 
 /// Whether a journey has come home: at the summit or in the marsh.
@@ -78,8 +94,11 @@ pub async fn note(
     w: Written,
 ) -> Result<(), String> {
     let factory = factory(cell)?;
-    let w = w.kept()?;
     let record = factory.store().load(&id).await?;
+    let w = Written {
+        step: waypoint(&record.job),
+        ..w.kept()?
+    };
     let branch = match (w.about.as_str(), home(record.job.state)) {
         ("bastion", _) => String::new(),
         (_, false) => ON_LANDING.into(),
@@ -123,4 +142,23 @@ pub async fn atlas(cell: &FactoryCell) -> Result<Vec<FieldNoteView>, String> {
     }
     notes.sort_by_key(|n| std::cmp::Reverse(n.at));
     Ok(notes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bastion_core::Job;
+
+    #[test]
+    fn a_note_is_at_the_journeys_waypoint_or_the_last_it_reached() {
+        let graph = crate::seed_flows::graph_of("short").unwrap();
+        let job = Job::new("j1".into(), "w".into(), "r".into(), 1);
+        let mut job = job.running(graph.steps().unwrap());
+        assert_eq!(waypoint(&job), "plan");
+        let last = job.flow.last().unwrap().id.clone();
+        (job.node, job.state) = (None, State::Landed);
+        assert_eq!(waypoint(&job), last, "home: the last step it reached");
+        let old = Job::new("j0".into(), "w".into(), "r".into(), 1);
+        assert_eq!(waypoint(&old), "", "a journey with no trail on record");
+    }
 }

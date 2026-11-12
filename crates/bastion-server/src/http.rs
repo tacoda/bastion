@@ -549,6 +549,7 @@ async fn field_note(
         by: person.name.clone(),
         shape: b.shape,
         detail: b.detail,
+        step: String::new(),
     };
     let machine = app.server.machine.clone();
     let signed = api::notes::note(&app.server.factory, machine, id.clone(), w);

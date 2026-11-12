@@ -42,7 +42,6 @@ them. Decisions are in [DECISIONS.md](DECISIONS.md), D54 to D58.
   change them.
 - **Walls of text.** The Workspaces lede is 120 words; most pages explain
   themselves in a paragraph instead of in the controls.
-- **New request is its own page**, away from the jobs it adds to.
 - **No first-run path.** Nothing says "add a workspace, pick a workflow,
   send a request."
 - **One theme.** D4 allows only dark, and there is no way to add another.
@@ -188,8 +187,7 @@ switcher stays where it is and works as it does now.
 
 ### Jobs: where the day goes
 
-- **New request inline** at the top: server, workspace, workflow, the words,
-  Send. No page change.
+- **New request** stays a page of its own: it gathers a lot up front.
 - **Decisions first**: each job waiting on you, each held call, each branch
   to merge, with its one button (Approve, Allow, Refuse, Merge).
 - **In progress** and **Finished** below, as now.
@@ -260,16 +258,16 @@ before the next one starts.
 
 - `bastion-chart`, beside the first two.
 
-### L2. The bar
+### L2. The bar, done
 
-- Seven entries. Insights takes Audit Log, Costs, Evals and Verification as
-  tabs. Settings takes Engine as the server's health.
+- Six entries now, the Map joins in L5. Insights takes Audit Log, Costs,
+  Evals and Verification as tabs. Settings takes Engine as Health.
 - The Harness page replaces the three rules tabs, with the kind filter.
 
 ### L3. Jobs as home
 
-- New request inline. The decisions inbox: waiting jobs, held calls and
-  charter branches to merge.
+- The decisions inbox: waiting jobs, held calls and charter branches to
+  merge. New request stays its own page.
 
 ### L4. The job page
 

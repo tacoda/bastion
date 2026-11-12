@@ -57,8 +57,8 @@ pub(super) fn fits(c: &ConstraintView, filter: &str) -> bool {
 pub(super) fn mode(c: &ConstraintView) -> &'static str {
     let feedback = !c.reviewer.is_empty() || (c.rung != "told" && has_form(c));
     match (feedback, c.capability) {
-        (true, false) => "Feedback",
-        _ => "Feedforward",
+        (true, false) => "Check",
+        _ => "Guidance",
     }
 }
 
@@ -113,7 +113,7 @@ fn rung_switch<'a>(c: &ConstraintView, editable: bool) -> Element<'a, Msg> {
         };
         choice(label.to_string(), c.rung == to, msg)
     };
-    row![set("Feedforward", "told"), set("Feedback", "enforced")]
+    row![set("Guidance", "told"), set("Check", "enforced")]
         .spacing(2)
         .into()
 }
@@ -209,7 +209,7 @@ pub(super) fn rule_form<'a>(rules: &Rules) -> Element<'a, Msg> {
     let form = TextForm {
         hint: "What the agent is told, such as: Keep each commit under 200 lines.",
         label: "Add rule",
-        why: "Feedforward: said to the agent before it acts, and the agent judges it.",
+        why: "Guidance: told to the agent before it acts, and the agent judges it.",
     };
     text_form(rules, form, Msg::AddRule)
 }
@@ -219,7 +219,7 @@ pub(super) fn note_form<'a>(rules: &Rules) -> Element<'a, Msg> {
     let form = TextForm {
         hint: "What the agent may do, such as: Use the code-review skill before you commit.",
         label: "Add note",
-        why: "Feedforward: told to the agent as what it may do, such as a skill or an agent to use.",
+        why: "Guidance: told to the agent as what it may use, such as a skill or an agent.",
     };
     text_form(rules, form, Msg::AddNote)
 }
@@ -275,7 +275,7 @@ pub(super) fn check_form<'a>(rules: &Rules) -> Element<'a, Msg> {
     ]
     .spacing(8)
     .align_y(iced::Center);
-    let why = "Feedback: the gate refuses a call to these calls that holds these words.";
+    let why = "Check: the gate refuses a call to these functions that holds these words.";
     column![help(why), text, binds].spacing(6).into()
 }
 
@@ -355,17 +355,13 @@ mod tests {
             ..ConstraintView::default()
         };
         assert_eq!(layer(&reviewer), "factory", "a reviewer reads the work");
-        assert_eq!(mode(&hook), "Feedback", "an enforced hook");
-        assert_eq!(
-            mode(&reviewer),
-            "Feedback",
-            "a reviewer reads what was done"
-        );
+        assert_eq!(mode(&hook), "Check", "an enforced hook");
+        assert_eq!(mode(&reviewer), "Check", "a reviewer reads what was done");
         let told = ConstraintView {
             rung: "told".into(),
             ..hook.clone()
         };
-        assert_eq!(mode(&told), "Feedforward", "a told rule, form or not");
+        assert_eq!(mode(&told), "Guidance", "a told rule, form or not");
         assert!(has_form(&told), "demoted, it keeps its hook");
     }
 }

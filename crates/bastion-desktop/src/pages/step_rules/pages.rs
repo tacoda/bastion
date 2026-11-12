@@ -1,7 +1,8 @@
-//! The rules pages (D57): Constraints, Capabilities and Permissions. Each
-//! has an All workflows view, where an item is on or off for every
-//! workflow, and a Workflows view, where an item's list picks the
-//! workflows and steps it applies to. Nothing is global (D58).
+//! The Harness page (D57, D58): what an agent is told before it acts
+//! (Guidance), what judges its work (Checks), and what its calls may do
+//! (Permissions), each kind or all of them. The All workflows view sets an
+//! item on or off for every workflow; the Workflows view picks the
+//! workflows and steps it applies to. Nothing is global.
 
 use bastion_protocol::{CapabilityView, ConstraintView};
 use iced::widget::{Column, column, container, row, text, text_input};
@@ -12,26 +13,26 @@ use super::capabilities::{granting, line as grant_line};
 use super::constraints::{
     badge, check_form, hook_form, kind, mode, note_form, reviewer_form, rows, rule_form,
 };
-use super::layers::{KINDS, factory_line, heading, section};
+use super::layers::{KINDS, factory_line, section};
 use super::{Adding, At, EVERY, Item, Msg, Rules, choice, help, small};
 use crate::theme;
 
-/// Which rules a page holds.
+/// A kind of harness item.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Which {
-    Constraints,
-    Capabilities,
+    Guidance,
+    Checks,
     Permissions,
 }
 
 impl Which {
-    /// The page's route.
-    pub fn route(self) -> crate::route::Route {
-        use crate::route::Route;
+    pub const ALL: [Which; 3] = [Which::Guidance, Which::Checks, Which::Permissions];
+
+    pub fn label(self) -> &'static str {
         match self {
-            Which::Constraints => Route::Constraints,
-            Which::Capabilities => Route::Capabilities,
-            Which::Permissions => Route::Permissions,
+            Which::Guidance => "Guidance",
+            Which::Checks => "Checks",
+            Which::Permissions => "Permissions",
         }
     }
 }
@@ -105,7 +106,7 @@ fn grant_head<'a>(g: &CapabilityView) -> Element<'a, Msg> {
     .into()
 }
 
-/// Constraints as rows: at all workflows in the All workflows view, or with
+/// Rules and checks as rows: at all workflows in the All workflows view, or with
 /// their lists in the Workflows view.
 fn constraint_rows<'a>(v: Shown<'a>, list: Vec<&ConstraintView>) -> Vec<Element<'a, Msg>> {
     if v.global {
@@ -119,40 +120,30 @@ fn constraint_rows<'a>(v: Shown<'a>, list: Vec<&ConstraintView>) -> Vec<Element<
         .collect()
 }
 
-fn constraints<'a>(v: Shown<'a>) -> Element<'a, Msg> {
-    let kept = v
+/// Guidance: the told rules and the notes on what the agent may use.
+fn guidance<'a>(v: Shown<'a>) -> Element<'a, Msg> {
+    let told = v
         .rules
         .constraints
         .iter()
-        .filter(|c| !c.capability && c.layer != "charter");
-    let (feedback, feedforward): (Vec<&ConstraintView>, Vec<&ConstraintView>) =
-        kept.partition(|c| mode(c) == "Feedback");
-    let mut body = vec![heading(
-        "Feedforward",
-        "told to the agent before it acts; the agent judges it",
-    )];
-    body.extend(constraint_rows(v, feedforward));
-    body.push(heading(
-        "Feedback",
-        "checks what the agent did; code or a reviewer judges it",
-    ));
-    body.extend(constraint_rows(v, feedback));
-    section("Constraints", "What the agent must keep.", body)
+        .filter(|c| c.layer != "charter" && (c.capability || mode(c) == "Guidance"));
+    let body = constraint_rows(v, told.collect());
+    section("Guidance", "What the agent is told before it acts.", body)
 }
 
-fn capabilities<'a>(v: Shown<'a>) -> Element<'a, Msg> {
-    let notes: Vec<&ConstraintView> = v
+/// Checks: word checks, hooks and reviewers. A failing check blocks.
+fn checks<'a>(v: Shown<'a>) -> Element<'a, Msg> {
+    let checked = v
         .rules
         .constraints
         .iter()
-        .filter(|c| c.capability)
-        .collect();
-    let mut body = vec![heading(
-        "Feedforward",
-        "told to the agent as what it may use",
-    )];
-    body.extend(constraint_rows(v, notes));
-    section("Capabilities", "What the agent may use.", body)
+        .filter(|c| c.layer != "charter" && !c.capability && mode(c) == "Check");
+    let body = constraint_rows(v, checked.collect());
+    section(
+        "Checks",
+        "What judges the agent's work. A failing check blocks.",
+        body,
+    )
 }
 
 fn permissions<'a>(v: Shown<'a>) -> Element<'a, Msg> {
@@ -180,31 +171,31 @@ fn permissions<'a>(v: Shown<'a>) -> Element<'a, Msg> {
     )
 }
 
-/// The Add bar for the page's kind of item.
-fn adding<'a>(rules: &'a Rules, which: Which, global: bool) -> Element<'a, Msg> {
+/// The Add bar: the kinds of item the page shows.
+fn adding<'a>(rules: &'a Rules, kinds: &[Which], global: bool) -> Element<'a, Msg> {
     let pick =
         |label: &str, a: Adding| choice(label.to_string(), rules.adding == a, Some(Msg::Adding(a)));
-    let choices: Vec<Element<'a, Msg>> = match which {
-        Which::Constraints => vec![
-            pick("A rule", Adding::Rule),
+    let choices = kinds.iter().flat_map(|k| match k {
+        Which::Guidance => vec![pick("A rule", Adding::Rule), pick("A note", Adding::Note)],
+        Which::Checks => vec![
             pick("A check", Adding::Check),
             pick("A hook", Adding::Hook),
             pick("A reviewer", Adding::Reviewer),
         ],
-        Which::Capabilities => vec![pick("A note", Adding::Note)],
         Which::Permissions => vec![pick("A grant", Adding::Grant)],
-    };
+    });
     let switch = row![text("Add").size(13).color(theme::muted())]
         .extend(choices)
         .spacing(6)
-        .align_y(iced::Center);
-    let form = match (which, rules.adding) {
-        (Which::Capabilities, _) => note_form(rules),
-        (Which::Permissions, _) => grant_form(rules),
-        (_, Adding::Check) => check_form(rules),
-        (_, Adding::Hook) => hook_form(rules),
-        (_, Adding::Reviewer) => reviewer_form(rules),
-        _ => rule_form(rules),
+        .align_y(iced::Center)
+        .wrap();
+    let form = match rules.adding {
+        Adding::Note => note_form(rules),
+        Adding::Grant => grant_form(rules),
+        Adding::Check => check_form(rules),
+        Adding::Hook => hook_form(rules),
+        Adding::Reviewer => reviewer_form(rules),
+        Adding::Rule => rule_form(rules),
     };
     let lands = match global {
         true => "What you add is on for every workflow.",
@@ -234,10 +225,16 @@ fn grant_form<'a>(rules: &'a Rules) -> Element<'a, Msg> {
     column![kinds, granting(rules)].spacing(10).into()
 }
 
-/// One rules page: its items in the view picked, and its Add bar.
-pub fn page<'a>(rules: &'a Rules, which: Which, global: bool, editable: bool) -> Element<'a, Msg> {
+/// The Harness: the kinds picked, or every kind, in the view picked, and
+/// the Add bar.
+pub fn page<'a>(
+    rules: &'a Rules,
+    kinds: &[Which],
+    global: bool,
+    editable: bool,
+) -> Element<'a, Msg> {
     let mut body = Column::new().spacing(10);
-    if which != Which::Permissions {
+    if kinds != [Which::Permissions] {
         let filter = text_input("Filter by words or kind", &rules.filter)
             .on_input(Msg::Filter)
             .style(theme::field);
@@ -248,14 +245,14 @@ pub fn page<'a>(rules: &'a Rules, which: Which, global: bool, editable: bool) ->
         global,
         editable,
     };
-    let shown = match which {
-        Which::Constraints => constraints(v),
-        Which::Capabilities => capabilities(v),
+    let shown = kinds.iter().map(|k| match k {
+        Which::Guidance => guidance(v),
+        Which::Checks => checks(v),
         Which::Permissions => permissions(v),
-    };
-    body = body.push(shown);
+    });
+    body = body.extend(shown);
     if editable {
-        body = body.push(adding(rules, which, global));
+        body = body.push(adding(rules, kinds, global));
     }
     body.extend(super::said(rules)).into()
 }

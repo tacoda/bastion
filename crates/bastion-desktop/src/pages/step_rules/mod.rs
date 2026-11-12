@@ -174,8 +174,8 @@ pub enum Msg {
     /// Remove a constraint made in the app, everywhere.
     Remove(String),
     Done(Result<(), String>),
-    /// Open a rules page; the page that shows the list routes it.
-    Go(Which),
+    /// Open the Harness; the page that shows the list routes it.
+    Go,
 }
 
 /// The level a page shows rules for: its scope, `*`, a workflow, or

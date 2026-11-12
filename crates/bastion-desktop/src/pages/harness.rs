@@ -1,7 +1,6 @@
-//! The Constraints, Capabilities and Permissions tabs of Workflows (D57):
-//! Bastion's rules, each on for all workflows, or on at the workflows and
-//! steps you pick. On All servers each server has its section, and a
-//! change goes to that server (D58).
+//! The Harness: what governs an agent, by kind, each item on for all
+//! workflows or at the workflows and steps you pick. On All servers each
+//! server has its section, and a change goes to that server (D58).
 
 use std::collections::BTreeMap;
 
@@ -23,17 +22,18 @@ struct Server {
 }
 
 pub struct State {
-    pub which: Which,
+    /// The kind shown, or every kind.
+    kind: Option<Which>,
     /// The All workflows view, or the Workflows view.
     global: bool,
     /// Each server shown, by its name.
     servers: BTreeMap<String, Server>,
 }
 
-impl State {
-    pub fn new(which: Which) -> State {
+impl Default for State {
+    fn default() -> State {
         State {
-            which,
+            kind: None,
             global: true,
             servers: BTreeMap::new(),
         }
@@ -42,6 +42,7 @@ impl State {
 
 #[derive(Clone, Debug)]
 pub enum Msg {
+    Kind(Option<Which>),
     Global(bool),
     Me(String, Result<PersonView, String>),
     Rules(String, step_rules::Msg),
@@ -66,6 +67,7 @@ pub fn load(ctx: &Ctx) -> Task<Message> {
 
 pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
     match msg {
+        Msg::Kind(kind) => state.kind = kind,
         Msg::Global(global) => state.global = global,
         Msg::Me(name, me) => {
             state.servers.entry(name).or_default().admin = me.is_ok_and(|me| me.role == "admin")
@@ -79,7 +81,7 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
     Task::none()
 }
 
-pub fn view<'a>(state: &'a State, title: &'a str, ctx: &Ctx) -> Element<'a, Message> {
+pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let pick = |label: &str, global: bool| {
         choice(
             label,
@@ -88,18 +90,24 @@ pub fn view<'a>(state: &'a State, title: &'a str, ctx: &Ctx) -> Element<'a, Mess
         )
     };
     let views = row![pick("All workflows", true), pick("Workflows", false)].spacing(6);
-    let tabs = super::workflow_tabs(&state.which.route());
+    let kind = |label: &str, k: Option<Which>| {
+        choice(label, state.kind == k, Some(Message::Rules(Msg::Kind(k))))
+    };
+    let kinds = Which::ALL.iter().map(|k| kind(k.label(), Some(*k)));
+    let kinds = row![kind("Everything", None)].extend(kinds).spacing(6);
+    let shown_kinds: Vec<Which> = state.kind.map_or(Which::ALL.to_vec(), |k| vec![k]);
     let shown = ctx.shown();
     let named = shown.len() > 1;
     let sections = shown.into_iter().filter_map(|name| {
         let s = state.servers.get(&name)?;
-        let page = step_rules::page(&s.rules, state.which, state.global, s.admin);
+        let page = step_rules::page(&s.rules, &shown_kinds, state.global, s.admin);
         let page = page.map(on(name.clone()));
         let head = named.then(|| text(name).size(18).font(theme::BOLD));
         let head = head.map(Element::from);
         Some(Column::new().spacing(10).extend(head).push(page).into())
     });
-    let body = column![text(title).size(24).font(theme::BOLD), tabs, views]
+    let about = "What an agent is told, what checks its work, and what its calls may do.";
+    let body = column![super::head("Harness", about, vec![]), kinds, views]
         .extend(sections)
         .spacing(12);
     scrolled(body)

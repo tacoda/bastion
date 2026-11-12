@@ -16,22 +16,20 @@ pub enum Route {
     Engine,
     Workflows,
     Workspaces,
-    Constraints,
-    Capabilities,
-    Permissions,
+    Harness,
     Settings,
 }
 
 /// The top bar's pages. A job and New request belong to Jobs.
-pub const PAGES: [(Route, &str, &str); 9] = [
+/// The top bar's pages (L2), in the order a person uses them. Insights
+/// opens on the Audit Log and holds the other records as tabs; Settings
+/// holds the server's health.
+pub const PAGES: [(Route, &str, &str); 6] = [
     (Route::Jobs, "Jobs", icons::JOBS),
     (Route::Workflows, "Workflows", icons::WORKFLOWS),
     (Route::Workspaces, "Workspaces", icons::FOLDER),
-    (Route::Audit, "Audit Log", icons::AUDIT),
-    (Route::Evals, "Evals", icons::EVALS),
-    (Route::Costs, "Costs", icons::COSTS),
-    (Route::Verification, "Verification", icons::VERIFICATION),
-    (Route::Engine, "Engine", icons::ENGINE),
+    (Route::Harness, "Harness", icons::HARNESS),
+    (Route::Audit, "Insights", icons::INSIGHTS),
     (Route::Settings, "Settings", icons::SETTINGS),
 ];
 
@@ -40,10 +38,26 @@ impl Route {
     pub fn section(&self) -> Route {
         match self {
             Route::NewRequest | Route::Job(_) => Route::Jobs,
+            Route::Eval(_)
+            | Route::Evals
+            | Route::Session(_)
+            | Route::Costs
+            | Route::Verification => Route::Audit,
+            Route::Engine => Route::Settings,
+            other => other.clone(),
+        }
+    }
+
+    /// The top-bar entry whose tabs this page sits among.
+    pub fn tab_group(&self) -> Route {
+        self.section()
+    }
+
+    /// The tab this page lights: its own, or the list a record belongs to.
+    pub fn tab(&self) -> Route {
+        match self {
             Route::Eval(_) => Route::Evals,
             Route::Session(_) => Route::Costs,
-            // The rules a workflow applies are its tabs (S2).
-            Route::Constraints | Route::Capabilities | Route::Permissions => Route::Workflows,
             other => other.clone(),
         }
     }
@@ -60,9 +74,7 @@ impl Route {
                 | Route::Evals
                 | Route::Verification
                 | Route::Workspaces
-                | Route::Constraints
-                | Route::Capabilities
-                | Route::Permissions
+                | Route::Harness
         )
     }
 
@@ -91,7 +103,9 @@ mod tests {
         assert_eq!(job.title(), "Jobs");
         assert!(!job.records() && job.one_record());
         assert!(Route::Costs.records() && !Route::Settings.records());
-        assert_eq!(Route::Eval("e1".into()).title(), "Evals");
-        assert_eq!(Route::Permissions.title(), "Workflows");
+        assert_eq!(Route::Eval("e1".into()).title(), "Insights");
+        assert_eq!(Route::Eval("e1".into()).tab(), Route::Evals);
+        assert_eq!(Route::Costs.title(), "Insights");
+        assert_eq!(Route::Engine.section(), Route::Settings);
     }
 }

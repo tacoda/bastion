@@ -460,8 +460,8 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
             (state.chosen, state.draft) = (c.id, None);
             state.show_latest();
         }
-        Msg::Rules(super::step_rules::Msg::Go(which)) => {
-            return Task::done(Message::Go(which.route()));
+        Msg::Rules(super::step_rules::Msg::Go) => {
+            return Task::done(Message::Go(Route::Harness));
         }
         // The step's list is read-only: only what it reads arrives.
         Msg::Rules(m) => {
@@ -837,12 +837,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         "The series of steps a job on {} runs. Pick a step to read or change it, and its Rules tab for what applies there.",
         ctx.current
     );
-    let mut body = column![
-        super::head("Workflows", about, vec![]),
-        super::workflow_tabs(&Route::Workflows),
-        chooser(state)
-    ]
-    .spacing(12);
+    let mut body = column![super::head("Workflows", about, vec![]), chooser(state)].spacing(12);
     if state.admin {
         body = body.push(manage_view(state));
     }

@@ -9,10 +9,10 @@ pub mod drawing;
 pub mod edit;
 pub mod engine;
 pub mod evals;
+pub mod harness;
 pub mod job;
 pub mod jobs;
 pub mod new_request;
-pub mod rules_page;
 pub mod session;
 pub mod settings;
 pub mod spinner;
@@ -33,7 +33,6 @@ use crate::app::Message;
 use crate::client;
 use crate::route::Route;
 use crate::theme;
-use step_rules::Which;
 
 /// What a page may read: the servers, which one is shown, and which cannot
 /// be reached now. Cheap to clone into a task.
@@ -260,22 +259,29 @@ pub enum Push {
     Engine,
 }
 
-/// The Workflows page's tabs: its steps, and the rules it applies (S2).
-pub fn workflow_tabs<'a>(here: &Route) -> Element<'a, Message> {
-    let tabs = [
-        (Route::Workflows, "Steps"),
-        (Route::Constraints, "Constraints"),
-        (Route::Capabilities, "Capabilities"),
-        (Route::Permissions, "Permissions"),
-    ];
-    let tabs = tabs.into_iter().map(|(route, label)| {
-        iced::widget::button(text(label).size(13))
+/// The tabs under a top-bar entry that holds more than one page: the
+/// records under Insights, and the server's health under Settings (L2).
+fn sub_tabs<'a>(route: &Route) -> Option<Element<'a, Message>> {
+    let here = route.section();
+    let tabs: &[(Route, &str)] = match route.tab_group() {
+        Route::Audit => &[
+            (Route::Audit, "Audit Log"),
+            (Route::Costs, "Costs"),
+            (Route::Evals, "Evals"),
+            (Route::Verification, "Verification"),
+        ],
+        Route::Settings => &[(Route::Settings, "Settings"), (Route::Engine, "Health")],
+        _ => return None,
+    };
+    let tabs = tabs.iter().map(|(r, label)| {
+        let on = *r == here || (*r == route.tab());
+        iced::widget::button(text(*label).size(13))
             .padding([5, 12])
-            .style(theme::nav(&route == here))
-            .on_press(Message::Go(route))
+            .style(theme::nav(on))
+            .on_press(Message::Go(r.clone()))
             .into()
     });
-    iced::widget::Row::with_children(tabs).spacing(6).into()
+    Some(iced::widget::Row::with_children(tabs).spacing(6).into())
 }
 
 /// The page the window shows, with its state.
@@ -293,16 +299,12 @@ pub enum Page {
     Settings(Box<settings::State>),
     Workflows(Box<workflows::State>),
     Workspaces(Box<workspaces::Servers>),
-    Rules(Box<rules_page::State>),
+    Rules(Box<harness::State>),
     /// Nothing yet: the window has not reached its first server.
     Pending,
 }
 
 impl Page {
-    fn rules(which: Which) -> Page {
-        Page::Rules(Box::new(rules_page::State::new(which)))
-    }
-
     /// Whether the page shows a job or step in progress, whose mark turns.
     pub fn moving(&self) -> bool {
         match self {
@@ -328,9 +330,7 @@ impl Page {
             Route::Settings => Page::Settings(Box::default()),
             Route::Workflows => Page::Workflows(Box::default()),
             Route::Workspaces => Page::Workspaces(Box::default()),
-            Route::Constraints => Page::rules(Which::Constraints),
-            Route::Capabilities => Page::rules(Which::Capabilities),
-            Route::Permissions => Page::rules(Which::Permissions),
+            Route::Harness => Page::Rules(Box::default()),
         };
         let first = page.reload(ctx, Push::All);
         (page, first)
@@ -363,7 +363,7 @@ impl Page {
             Page::Settings(_) => settings::load(ctx),
             Page::Workflows(_) => workflows::load(ctx),
             Page::Workspaces(_) => workspaces::load_all(ctx),
-            Page::Rules(_) => rules_page::load(ctx),
+            Page::Rules(_) => harness::load(ctx),
             Page::Pending => Task::none(),
         }
     }
@@ -398,14 +398,14 @@ impl Page {
             (Page::Workspaces(s), Message::Workspaces(server, m)) => {
                 return workspaces::update_all(s, server, m, ctx);
             }
-            (Page::Rules(s), Message::Rules(m)) => return rules_page::update(s, m, ctx),
+            (Page::Rules(s), Message::Rules(m)) => return harness::update(s, m, ctx),
             _ => {}
         }
         Task::none()
     }
 
     pub fn view<'a>(&'a self, route: &Route, ctx: &Ctx) -> Element<'a, Message> {
-        match self {
+        let body = match self {
             Page::Jobs(s) => jobs::view(s, ctx),
             Page::NewRequest(s) => new_request::view(s, ctx),
             Page::Job(s) => job::view(s, ctx),
@@ -419,12 +419,16 @@ impl Page {
             Page::Settings(s) => settings::view(s, ctx),
             Page::Workflows(s) => workflows::view(s, ctx),
             Page::Workspaces(s) => workspaces::view(s, ctx),
-            Page::Rules(s) => rules_page::view(s, route.title(), ctx),
+            Page::Rules(s) => harness::view(s, ctx),
             Page::Pending => {
                 let title = text(route.title()).size(24).font(theme::BOLD);
                 let note = text("Reaching the Bastion server…").color(theme::muted());
                 column![title, note].spacing(12).into()
             }
+        };
+        match sub_tabs(route) {
+            Some(tabs) => column![tabs, body].spacing(16).into(),
+            None => body,
         }
     }
 }

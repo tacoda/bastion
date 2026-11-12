@@ -55,7 +55,7 @@ pub enum Message {
     Workflows(pages::workflows::Msg),
     /// A message from a server's section of the Workspaces page.
     Workspaces(String, pages::workspaces::Msg),
-    Rules(pages::rules_page::Msg),
+    Rules(pages::harness::Msg),
     /// Read the servers again, after Settings added or removed one.
     ReadServers,
     /// Open a link, such as a pull request, in the browser.

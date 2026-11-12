@@ -51,6 +51,7 @@ fn summary(r: &Record) -> JobSummary {
         actions: actions(j).into_iter().map(name).collect(),
         issue: r.runtime.issue.clone(),
         requester: r.runtime.requester.clone(),
+        workflow: r.runtime.workflow.clone(),
     }
 }
 

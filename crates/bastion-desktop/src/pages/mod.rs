@@ -21,6 +21,7 @@ pub mod spinner;
 pub mod step_rules;
 pub mod trail;
 pub mod verification;
+pub mod wear;
 pub mod workflows;
 pub mod workspaces;
 

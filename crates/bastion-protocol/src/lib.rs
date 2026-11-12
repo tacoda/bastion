@@ -512,6 +512,9 @@ pub struct JobSummary {
     /// Who asked for the job (D31).
     #[serde(default)]
     pub requester: Option<String>,
+    /// The trail the journey takes, for the Map's wear (D60).
+    #[serde(default)]
+    pub workflow: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

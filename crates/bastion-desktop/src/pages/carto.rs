@@ -72,6 +72,14 @@ fn lettering(content: String, at: Point, face: &Face) -> Text {
     }
 }
 
+/// A legend's words: small italic, starting at `at`.
+pub fn caption(frame: &mut Frame, at: Point, words: &str) {
+    let mut text = lettering(words.into(), at, &NOTE);
+    text.align_x = iced::alignment::Horizontal::Left.into();
+    text.color = theme::ink();
+    frame.fill_text(text);
+}
+
 /// The chart's frame: a double rule with a band of ticks between.
 pub fn border(frame: &mut Frame, size: Size) {
     let outer = Path::rectangle(

@@ -324,13 +324,14 @@ teach.
   workspace or Bastion (D59), and the marsh on every trail.
 - Done: on the Map, each harbor town opens its workspace's atlas, with
   its notes about the workspace and about Bastion.
-- A route's wear: the Map shows where recent jobs on each workflow wait,
-  turn back and end in the marsh.
+- Done: a trail's wear on the Map: its journeys, at the summit and in the
+  marsh, and at each waypoint the journeys waiting there and those that
+  ended there.
 - A lesson from the atlas: a Bastion note offers "make this a check" or
   "add this as guidance", applied at the step it came from.
 - Done: everything clickable lifts a little on hover, as the landmarks do.
 - Words: a workflow is a trail; a job is a journey along it.
-- A legend on each chart that teaches its marks.
+- Done: a legend along the foot of the Map.
 
 ## Open questions
 

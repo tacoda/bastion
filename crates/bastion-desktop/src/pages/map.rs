@@ -10,13 +10,13 @@
 use std::collections::BTreeMap;
 
 use bastion_protocol::api;
-use bastion_protocol::{FieldNoteView, NodeView, WorkflowView};
+use bastion_protocol::{FieldNoteView, JobSummary, NodeView, WorkflowView};
 use iced::widget::canvas::{self, Canvas, Frame, Geometry, LineDash, Path, Stroke, Text};
 use iced::widget::{Column, column, container, pin, row, scrollable, stack, text};
 use iced::{Element, Fill, Point, Rectangle, Renderer, Size, Task, Theme, mouse};
 
 use super::step_rules::{self, At, Rules};
-use super::{Ctx, carto, scrolled};
+use super::{Ctx, carto, scrolled, wear};
 use crate::app::Message;
 use crate::route::Route;
 use crate::theme;
@@ -92,9 +92,12 @@ pub fn places(rules: &Rules, width: f32) -> Vec<Place> {
 }
 
 /// How tall the chart is: room for every route and every town.
+/// Room along the foot of the chart for its legend.
+const LEGEND: f32 = 70.0;
+
 fn height(rules: &Rules) -> f32 {
     let rows = rules.workflows().len().max(rules.charters().len()).max(1);
-    TOP + rows as f32 * ROW + 40.0
+    TOP + rows as f32 * ROW + 40.0 + LEGEND
 }
 
 /// The landmark under `p`, if one is near enough to press.
@@ -134,15 +137,21 @@ fn card_at(p: &Picked, height: f32) -> Point {
 struct Chart<'a> {
     rules: &'a Rules,
     picked: Option<&'a str>,
+    /// The server's recent journeys, for each trail's wear.
+    journeys: &'a [JobSummary],
 }
 
 /// A count of the rules on at a landmark, as a red seal.
 fn badge(frame: &mut Frame, at: Point, n: usize) {
+    seal(frame, Point::new(at.x + 16.0, at.y - 40.0), n, theme::bad());
+}
+
+/// A count in a round seal of `color`; nothing for none.
+fn seal(frame: &mut Frame, seal: Point, n: usize, color: iced::Color) {
     if n == 0 {
         return;
     }
-    let seal = Point::new(at.x + 16.0, at.y - 40.0);
-    frame.fill(&Path::circle(seal, 9.0), theme::bad());
+    frame.fill(&Path::circle(seal, 9.0), color);
     frame.fill_text(Text {
         content: n.to_string(),
         position: seal,
@@ -171,7 +180,58 @@ fn towns(frame: &mut Frame, rules: &Rules, hovered: Option<&str>) {
 
 /// A workflow's route: its name, the way out through its steps, and its
 /// summit.
-fn route(frame: &mut Frame, w: &WorkflowView, row: usize, width: f32, steps: &[Point]) {
+/// A trail's wear at each waypoint: an amber seal for the journeys waiting
+/// there, a red cross with a count for those that ended there.
+fn worn(frame: &mut Frame, journeys: &[JobSummary], p: &Place) {
+    let (waiting, ended) = wear::waypoint(journeys, &p.key);
+    seal(
+        frame,
+        Point::new(p.at.x - 18.0, p.at.y - 40.0),
+        waiting,
+        theme::warn(),
+    );
+    if ended > 0 {
+        let at = Point::new(p.at.x + 24.0, p.at.y - 6.0);
+        carto::cross(frame, at, theme::bad());
+        let count = ended.to_string();
+        carto::name(frame, Point::new(at.x + 14.0, at.y - 6.0), &count, "");
+    }
+}
+
+/// The legend along the foot of the chart: what each mark means.
+fn legend(frame: &mut Frame, size: Size) {
+    let y = size.height - LEGEND + 30.0;
+    let mut x = SHORE + 60.0;
+    let mut item = |frame: &mut Frame, draw: &dyn Fn(&mut Frame, Point), words: &str| {
+        draw(frame, Point::new(x, y));
+        carto::caption(frame, Point::new(x + 24.0, y - 14.0), words);
+        x += 60.0 + words.len() as f32 * 6.5;
+    };
+    item(frame, &|f, at| carto::outpost(f, at), "a region");
+    item(
+        frame,
+        &|f, at| carto::mountain(f, at, 24.0, false),
+        "an agent's waypoint",
+    );
+    item(frame, &|f, at| carto::castle(f, at, false), "a script");
+    item(
+        frame,
+        &|f, at| seal(f, Point::new(at.x, at.y - 8.0), 3, theme::bad()),
+        "rules on here",
+    );
+    item(
+        frame,
+        &|f, at| seal(f, Point::new(at.x, at.y - 8.0), 2, theme::warn()),
+        "journeys waiting",
+    );
+    item(
+        frame,
+        &|f, at| carto::cross(f, Point::new(at.x, at.y - 8.0), theme::bad()),
+        "ended in the marsh",
+    );
+}
+
+fn route(frame: &mut Frame, w: &WorkflowView, row: usize, width: f32, steps: &[Point], note: &str) {
     let base = TOP + row as f32 * ROW + 60.0;
     let start = Point::new(WEST - 60.0, base + 6.0);
     let end = Point::new(width - EAST * 0.55, base - 40.0);
@@ -197,12 +257,11 @@ fn route(frame: &mut Frame, w: &WorkflowView, row: usize, width: f32, steps: &[P
         }
     });
     frame.stroke(&path, way.with_width(2.5).with_color(theme::link_color()));
-    let steps = format!("{} steps", w.nodes.len());
     carto::name(
         frame,
         Point::new(start.x + 10.0, base - 64.0),
         &w.name,
-        &steps,
+        note,
     );
     carto::mountain(frame, Point::new(end.x, end.y + 30.0), 54.0, false);
     carto::flag(frame, Point::new(end.x, end.y - 24.0), theme::bad());
@@ -269,7 +328,8 @@ impl canvas::Program<Picked> for Chart<'_> {
                 .filter(|p| p.key.starts_with(&prefix))
                 .map(|p| p.at)
                 .collect();
-            route(&mut frame, w, row, size.width, &mine);
+            let note = wear::line(wear::trail(self.journeys, &w.id));
+            route(&mut frame, w, row, size.width, &mine, &note);
         }
         for p in all.into_iter().filter(|p| p.stage != "town") {
             let lit = Some(p.key.as_str()) == self.picked || hovered.as_deref() == Some(&p.key);
@@ -283,6 +343,7 @@ impl canvas::Program<Picked> for Chart<'_> {
                 stage: &p.stage,
             };
             badge(&mut frame, p.at, step_rules::count(self.rules, &at));
+            worn(&mut frame, self.journeys, &p);
             let step = p
                 .key
                 .split_once('/')
@@ -293,6 +354,7 @@ impl canvas::Program<Picked> for Chart<'_> {
         }
         let corner = Point::new(size.width - 52.0, size.height - 60.0);
         carto::compass(&mut frame, corner, 24.0);
+        legend(&mut frame, size);
         carto::border(&mut frame, size);
         vec![frame.into_geometry()]
     }
@@ -316,6 +378,8 @@ struct Server {
     rules: Rules,
     /// The server's field notes, newest first (D59).
     atlas: Vec<FieldNoteView>,
+    /// The server's recent journeys.
+    journeys: Vec<JobSummary>,
     picked: Option<Picked>,
     /// The card shows what applies, not what the step does.
     applies: bool,
@@ -338,6 +402,7 @@ pub enum Msg {
     Tab(String, bool),
     /// A server's field notes; an older server has none to give.
     Atlas(String, Result<Vec<FieldNoteView>, String>),
+    Journeys(String, Result<Vec<JobSummary>, String>),
 }
 
 fn on(server: String) -> impl Fn(step_rules::Msg) -> Message + Clone {
@@ -347,11 +412,14 @@ fn on(server: String) -> impl Fn(step_rules::Msg) -> Message + Clone {
 pub fn load(ctx: &Ctx) -> Task<Message> {
     let each = ctx.shown().into_iter().map(|name| {
         let here = ctx.on(&name);
-        let who = name.clone();
+        let (who, whose) = (name.clone(), name.clone());
         let atlas = Task::perform(here.clone().get(name.clone(), api::Atlas), move |r| {
             Message::Map(Msg::Atlas(who.clone(), r))
         });
-        Task::batch([step_rules::load(&here).map(on(name)), atlas])
+        let journeys = Task::perform(here.clone().get(name.clone(), api::Jobs), move |r| {
+            Message::Map(Msg::Journeys(whose.clone(), r))
+        });
+        Task::batch([step_rules::load(&here).map(on(name)), atlas, journeys])
     });
     Task::batch(each)
 }
@@ -369,6 +437,9 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         Msg::Atlas(name, notes) => {
             state.servers.entry(name).or_default().atlas = notes.unwrap_or_default()
         }
+        Msg::Journeys(name, all) => {
+            state.servers.entry(name).or_default().journeys = all.unwrap_or_default()
+        }
         Msg::Tab(name, applies) => state.servers.entry(name).or_default().applies = applies,
     }
     Task::none()
@@ -379,6 +450,7 @@ fn section<'a>(name: String, s: &'a Server, named: bool) -> Element<'a, Message>
     let chart = Chart {
         rules: &s.rules,
         picked: s.picked.as_ref().map(|p| p.key.as_str()),
+        journeys: &s.journeys,
     };
     let h = height(&s.rules);
     let who = name.clone();
@@ -566,7 +638,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let sections = shown
         .into_iter()
         .filter_map(|name| state.servers.get(&name).map(|s| section(name, s, named)));
-    let about = "Each server's regions along the coast, and its trails inland. Press a waypoint to see what it does and what applies, or a harbor to read its atlas.";
+    let about = "Each server's regions along the coast, and its trails inland. Press a waypoint to see what it does and what applies, or a harbor to see what its region has learned.";
     let body = column![super::head("Map", about, vec![])]
         .extend(sections)
         .spacing(16);

@@ -36,8 +36,8 @@ pub trait GovernStore {
     fn append_audit<'a>(&'a self, entry: &'a Entry) -> Answer<'a, ()>;
 }
 
-const UPSERT_CONSTRAINT: &str = "INSERT INTO constraints (id, rule, function, contains, rung, source, steps, hook, reviewer) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT (id) DO UPDATE SET rule = excluded.rule, function = excluded.function, contains = excluded.contains, rung = excluded.rung, source = excluded.source, steps = excluded.steps, hook = excluded.hook, reviewer = excluded.reviewer";
+const UPSERT_CONSTRAINT: &str = "INSERT INTO constraints (id, rule, function, contains, rung, source, steps, hook, reviewer, capability) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (id) DO UPDATE SET rule = excluded.rule, function = excluded.function, contains = excluded.contains, rung = excluded.rung, source = excluded.source, steps = excluded.steps, hook = excluded.hook, reviewer = excluded.reviewer, capability = excluded.capability";
 const UPSERT_CAPABILITY: &str =
     "INSERT INTO capabilities (stage, step, function, rung, scopes) VALUES (?, ?, ?, ?, ?)
     ON CONFLICT (stage, step, function) DO UPDATE SET rung = excluded.rung, scopes = excluded.scopes";
@@ -52,7 +52,8 @@ fn constraint_params(c: &Constraint) -> Value {
         name(c.source),
         c.steps.join(" "),
         c.hook,
-        c.reviewer
+        c.reviewer,
+        c.capability as i64
     ])
 }
 
@@ -82,6 +83,7 @@ pub(crate) fn constraint(r: &Value) -> Result<Constraint, String> {
             .collect(),
         hook: r["hook"].as_str().unwrap_or_default().into(),
         reviewer: r["reviewer"].as_str().unwrap_or_default().into(),
+        capability: r["capability"].as_i64().unwrap_or(0) != 0,
     })
 }
 
@@ -135,7 +137,7 @@ pub(crate) fn entry(row: &Value) -> Result<Entry, String> {
 impl GovernStore for SqlStore {
     fn constraints(&self) -> Answer<'_, Vec<Constraint>> {
         Box::pin(async move {
-            let sql = "SELECT id, rule, function, contains, rung, source, steps, hook, reviewer FROM constraints ORDER BY id";
+            let sql = "SELECT id, rule, function, contains, rung, source, steps, hook, reviewer, capability FROM constraints ORDER BY id";
             self.rows(sql, json!([]), constraint).await
         })
     }

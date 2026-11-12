@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use bastion_core::govern::{Capability, Constraint, Source};
+use bastion_core::govern::{Capability, Constraint, Enforcement, Source};
 use bastion_protocol::{
     AuditEntryView, AuditView, CapabilityView, ConstraintView, FactoryCapabilityView, HeldCallRef,
     WorkspaceCharterView,
@@ -51,6 +51,7 @@ pub async fn constraints(cell: &FactoryCell) -> Result<Vec<ConstraintView>, Stri
             steps: c.steps,
             hook: c.hook,
             reviewer: c.reviewer,
+            capability: c.capability,
         })
         .collect())
 }
@@ -75,8 +76,7 @@ pub async fn constraint_steps(
 
 /// Add an owner's constraint from the form.
 pub async fn constraint_add(cell: &FactoryCell, constraint: ConstraintView) -> Result<(), String> {
-    let rung = serde_json::from_value(json!(constraint.rung))
-        .map_err(|_| format!("{:?} is not told, checked or enforced", constraint.rung))?;
+    let rung = mode(&constraint.rung)?;
     let c = Constraint {
         id: constraint.id.trim().into(),
         rule: constraint.rule.trim().into(),
@@ -87,6 +87,7 @@ pub async fn constraint_add(cell: &FactoryCell, constraint: ConstraintView) -> R
         steps: steps_of(&constraint.steps),
         hook: constraint.hook.trim().into(),
         reviewer: constraint.reviewer.trim().into(),
+        capability: constraint.capability,
     };
     factory(cell)?.gate().add_constraint(c).await
 }
@@ -101,13 +102,7 @@ pub async fn constraint_form(
     id: String,
     f: ConstraintForm,
 ) -> Result<(), String> {
-    let rung = match &f.rung {
-        Some(r) => Some(
-            serde_json::from_value(json!(r))
-                .map_err(|_| format!("{r:?} is not told, checked or enforced"))?,
-        ),
-        None => None,
-    };
+    let rung = f.rung.as_deref().map(mode).transpose()?;
     let form = Form {
         function: f.function,
         contains: f.contains,
@@ -118,9 +113,20 @@ pub async fn constraint_form(
 
 /// Set a constraint's rung: told, checked or enforced.
 pub async fn constraint_rung(cell: &FactoryCell, id: String, rung: String) -> Result<(), String> {
-    let rung = serde_json::from_value(json!(rung))
-        .map_err(|_| format!("{rung:?} is not told, checked or enforced"))?;
-    factory(cell)?.gate().set_constraint_rung(&id, rung).await
+    factory(cell)?
+        .gate()
+        .set_constraint_rung(&id, mode(&rung)?)
+        .await
+}
+
+/// A constraint's mode (D56): feedforward, stored as told, or feedback,
+/// stored as enforced. Checked gave way and is refused.
+fn mode(word: &str) -> Result<Enforcement, String> {
+    match word {
+        "told" | "feedforward" => Ok(Enforcement::Told),
+        "enforced" | "feedback" => Ok(Enforcement::Enforced),
+        other => Err(format!("{other:?} is not feedforward or feedback")),
+    }
 }
 
 pub async fn constraint_move(cell: &FactoryCell, id: String, up: bool) -> Result<(), String> {
@@ -284,6 +290,12 @@ pub async fn charters(
                 rules: c.constraints.iter().map(|r| r.rule.clone()).collect(),
                 hooks: before.chain(stop).collect(),
                 allow: c.allow.clone(),
+                skills: machine.list(&root.join(".agents/skills")),
+                agents: machine
+                    .list(&root.join(".agents/agents"))
+                    .into_iter()
+                    .filter_map(|n| n.strip_suffix(".md").map(String::from))
+                    .collect(),
             }
         })
         .collect())

@@ -76,6 +76,7 @@ pub fn constraints(deny: &[String], ask: &[String]) -> Vec<Constraint> {
                 steps: Vec::new(),
                 hook: String::new(),
                 reviewer: String::new(),
+                capability: false,
             },
             None => Constraint {
                 id: format!("charter-{}", i + 1),
@@ -89,6 +90,7 @@ pub fn constraints(deny: &[String], ask: &[String]) -> Vec<Constraint> {
                 steps: Vec::new(),
                 hook: String::new(),
                 reviewer: String::new(),
+                capability: false,
             },
         })
         .collect()

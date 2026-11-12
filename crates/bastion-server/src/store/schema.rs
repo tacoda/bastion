@@ -219,7 +219,7 @@ pub(super) const LEGACY_JOB_COLUMNS: &str = "id, workspace, request, stage, stat
 /// Columns added after a table was first made. Each runs once; on a table
 /// that already has the column it fails, and that failure is expected.
 // They run before the numbered migrations, which need these columns to exist.
-pub(super) const ALTERS: [&str; 38] = [
+pub(super) const ALTERS: [&str; 39] = [
     "ALTER TABLE jobs ADD COLUMN pr TEXT",
     "ALTER TABLE jobs ADD COLUMN ci_fixes INTEGER NOT NULL DEFAULT 0 CHECK (ci_fixes >= 0)",
     "ALTER TABLE jobs ADD COLUMN issue TEXT",
@@ -258,6 +258,7 @@ pub(super) const ALTERS: [&str; 38] = [
     "ALTER TABLE constraints ADD COLUMN hook TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE constraints ADD COLUMN reviewer TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE capabilities ADD COLUMN scopes TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE constraints ADD COLUMN capability INTEGER NOT NULL DEFAULT 0 CHECK (capability IN (0, 1))",
 ];
 
 /// Numbered migrations, each run once in order; `PRAGMA user_version` is the
@@ -334,6 +335,12 @@ pub(super) fn migrations() -> Vec<Vec<String>> {
                 "DELETE FROM eval_arms WHERE kind = 'capability' AND rung = 'denied'".to_string(),
             ])
             .collect(),
+        // Checked gives way (D56): a checked constraint is deterministic, and
+        // off for every workflow until a person turns it on.
+        vec![
+            "UPDATE constraints SET rung = 'enforced', steps = TRIM('!* ' || steps) WHERE rung = 'checked'"
+                .to_string(),
+        ],
     ]
 }
 

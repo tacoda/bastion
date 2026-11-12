@@ -617,6 +617,9 @@ pub struct ConstraintView {
     /// it applies at (D51). Empty for a rule.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub reviewer: String,
+    /// A capability told to the agent, as what it may do (D56).
+    #[serde(default)]
+    pub capability: bool,
 }
 
 /// A grant on its ladder (DECISIONS.md D48): `ask` or `allowed`.
@@ -797,6 +800,12 @@ pub struct WorkspaceCharterView {
     pub hooks: Vec<String>,
     /// Its `permissions.allow` rules.
     pub allow: Vec<String>,
+    /// The skills in `.agents/skills` and the agents in `.agents/agents`,
+    /// which it brings as inferential capabilities (D56).
+    #[serde(default)]
+    pub skills: Vec<String>,
+    #[serde(default)]
+    pub agents: Vec<String>,
 }
 
 /// One thing the factory may do, and who decides it.

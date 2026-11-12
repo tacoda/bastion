@@ -1,73 +1,55 @@
-# Bastion plan: rules at three scopes, in two forms
+# Bastion plan: rules by who judges them
 
 <!-- voice-register: informational -->
 <!-- voice-english: ste -->
 
-A constraint or a grant is one item, and three scopes turn it on or off:
-all workflows, one workflow, and one step. The most specific setting wins,
-so a rule can be on for all workflows, off for one workflow, and on again
-at one of its steps. A rule also has two forms. An agent judges a told rule
-or a reviewer's verdict; code judges a word match, a hook, or a review
-check. Promoting a rule moves it from the first form to the second. The
-cost is reading: each row now says where its setting comes from.
+A step's rules sort on three questions. Is it a constraint or a
+capability? Is it feedforward, which guides the agent before it acts, or
+feedback, which checks what it did? And does it come from the
+workspace's repository or from Bastion? Each item is on or off at a step,
+or for every step of its workflow. Told, checked and enforced go: a
+feedforward rule is said to the agent, a feedback one always blocks, and
+a grant keeps ask or allowed. The cost is the old "checked" rules, which
+noted a break and let it pass; they start off, so nothing changes until
+you turn one on.
 
-The capabilities plan (C1 to C4) is done, and git history holds it.
-Decisions are in [DECISIONS.md](DECISIONS.md), D54 and D55.
+The scopes plan (G1 to G3) is done, and git history holds it. Decisions
+are in [DECISIONS.md](DECISIONS.md), D54 to D56.
 
 ## Phases
 
 Each phase passes CI, gets a live check in the app, and lands in a commit
 before the next one starts.
 
-### G1. Scopes in the core and the server (D54)
+### R1. The model on the server (D56)
 
-- A constraint's and a grant's scope list holds settings: `*` for all
-  workflows, `bug-fix` for one workflow, `bug-fix/build` for one step, and
-  `!` before any of them for off.
-- At a step, its own setting wins, then its workflow's, then the all
-  workflows setting. A list with no `*` keeps today's meaning: on at every
-  step when it names no step to turn on, and on only where it says
-  otherwise.
-- A grant is an item for one kind and one function, with its rung. A
-  step's own grants no longer replace its kind's: a step turns items on or
-  off. The gate folds the few step grants from before into items once.
-- `PUT /scopes` sets an item's setting at a scope: on, off, or inherit.
+- A constraint is feedforward (stored as told) or feedback (stored as
+  enforced). A reviewer is feedback: it reads what the step did. Migration
+  9 turns each checked one into feedback, off for every workflow.
+- A constraint row may be a capability: a note told to the agent as what
+  it may do, such as a skill to use. The brief lists them under "You may".
+- The charter listing adds the repository's skills and agents, which a
+  workspace brings as feedforward capabilities.
+- Setting a mode refuses checked.
 
-Done 2026-11-12. Live, the gate folded the one step grant from before,
-Bug fix's plan step's `sandbox::*`, into the prompt kind's item as
-`* bug-fix/plan`, and the audit kept the fold. `PUT /scopes` turned "Keep
-shell use small" off for Bug fix, as `* !bug-fix`, and back to inherit.
+Done 2026-11-12. Live, migration 9 turned the three checked rules (tests
+kept, assertions kept, no skipped tests) into feedback that is off, as
+`!*`. The charter listing shows demo-local's agent `strict`. The brief
+lists "You may" before its rules.
 
-### G2. Levels on the Workflows page
+### R2. The rules view by type and mode
 
-- A level bar: All workflows › the workflow › the step. Picking a step on
-  the canvas opens its level, and the canvas background opens the
-  workflow's.
-- Each level shows the same Rules view: the charter, the harness and the
-  factory. Each item has an Inherit | On | Off switch, says what it
-  inherits, and keeps its rung switch.
-- The Add bar adds an item on at the level it is on.
+- Each level shows Constraints and Capabilities, each split into
+  feedforward and feedback, with a Workspace or Bastion chip on every row.
+- A Bastion rule has a Feedforward | Feedback switch; going to feedback
+  asks for its form, as D55 says. A grant keeps Ask | Allowed.
+- The levels are the workflow and the step. What applies to every
+  workflow shows as inherited at the workflow; editing it for all
+  workflows waits.
 
-Done 2026-11-12. Live, at Bug fix "Keep shell use small" went Off, as
-`* !bug-fix`; Bug fix's build step then showed it as "Inherit · off", and
-On there gave `* !bug-fix bug-fix/build`. At All workflows the canvas
-hides and each item shows On | Off, with Remove. A "here" label sets the
-scope switch apart from the rung switch beside it.
+### R3. Docs
 
-### G3. One rule, two forms (D55)
-
-- A constraint shows who judges it: an agent (a told rule, a reviewer) or
-  code (a word match, a hook, or a review check).
-- Promoting a told rule asks for its deterministic form: the words a call
-  holds, or a hook command. Demoting keeps that form and stops running it.
-- A grant's rung stays ask or allowed.
-- "Form" on a rule edits that form at any rung.
-
-Done 2026-11-12. Live, at All workflows a told test rule showed "agent
-judges it". Enforced opened its form, which asked for calls to match or a
-hook; with `./.agents/hooks/lint.sh` it saved as an enforced hook, "code
-judges it". Told then kept the hook and stopped it running. The audit kept
-the form, both promotions, and both demotions.
+- VISION.md and DECISIONS.md say how rules sort.
 
 ## Open questions
 
@@ -76,3 +58,11 @@ the form, both promotions, and both demotions.
   one?
 - **Stdio MCP servers.** Should one run in the job's VM, so a step may use
   a local MCP server without breaking the VM rule?
+- **Rules for every workflow.** Whether some items should be set once for
+  all workflows, and where that lives.
+- **Codified and ambient context.** Constraints and direction are codified
+  context: written down, stable, and Bastion can scope and judge them.
+  Ambient context comes from MCP servers and other outside sources: it is
+  scattered, it changes over time, and it depends on state. How should
+  Bastion handle it: where it came from, how fresh it is, and when to read
+  it again? Today an MCP server is only a grant.

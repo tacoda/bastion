@@ -79,6 +79,7 @@ fn approved_test(file: &str) -> Constraint {
         steps: Vec::new(),
         hook: String::new(),
         reviewer: String::new(),
+        capability: false,
     }
 }
 
@@ -343,16 +344,21 @@ impl Gate {
 
     /// Every rule, for the brief. The agent is told each rule at every rung.
     pub fn rules(&self, job: &str, step: &str) -> String {
-        let rules: Vec<String> = self
-            .constraints(job)
-            .iter()
-            .filter(|c| govern::applies(c, step))
-            .map(|c| format!("- {}", c.rule))
-            .collect();
-        if rules.is_empty() {
-            return String::new();
-        }
-        format!("Rules for this job:\n{}\n\n", rules.join("\n"))
+        let all = self.constraints(job);
+        let on: Vec<&Constraint> = all.iter().filter(|c| govern::applies(c, step)).collect();
+        // What the agent may do (D56), then what it must keep.
+        let list = |may: bool, head: &str| {
+            let lines: Vec<String> = on
+                .iter()
+                .filter(|c| c.capability == may)
+                .map(|c| format!("- {}", c.rule))
+                .collect();
+            match lines.is_empty() {
+                true => String::new(),
+                false => format!("{head}\n{}\n\n", lines.join("\n")),
+            }
+        };
+        list(true, "You may:") + &list(false, "Rules for this job:")
     }
 
     /// The functions a turn at `at` may call: `base`, and every function the
@@ -1327,6 +1333,7 @@ mod tests {
             steps: vec!["short/build".into()],
             hook: "./lint.sh".into(),
             reviewer: String::new(),
+            capability: false,
         };
         crate::rt::block_on(r.gate.add_constraint(hook)).unwrap();
         let at = |step: &str| {
@@ -1442,6 +1449,21 @@ mod tests {
     }
 
     #[test]
+    fn the_brief_says_what_the_agent_may_do_before_its_rules() {
+        let r = rig();
+        let note = Constraint {
+            id: "rule-docs-1".into(),
+            rule: "Edit the docs as well as the code.".into(),
+            capability: true,
+            ..Constraint::default()
+        };
+        crate::rt::block_on(r.gate.add_constraint(note)).unwrap();
+        let brief = r.gate.rules("j1", "short/build");
+        let may = brief.find("You may:\n- Edit the docs").unwrap();
+        assert!(may < brief.find("Rules for this job:").unwrap(), "{brief}");
+    }
+
+    #[test]
     fn a_repeated_review_finding_is_reported_as_repeated() {
         let r = rig();
         let finding = |detail: &str| bastion_core::review::Finding {
@@ -1470,6 +1492,7 @@ mod tests {
             steps: Vec::new(),
             hook: String::new(),
             reviewer: String::new(),
+            capability: false,
         };
         crate::rt::block_on(async {
             r.gate.add_constraint(rule.clone()).await.unwrap();

@@ -139,7 +139,7 @@ fn transactions_at(version: u64) -> Vec<Vec<String>> {
 #[test]
 fn migration_1_rebuilds_the_staged_tables_once_with_deferred_keys() {
     let fresh = transactions_at(0);
-    assert_eq!(fresh.len(), 9, "the schema, then migrations 1 to 8");
+    assert_eq!(fresh.len(), 10, "the schema, then migrations 1 to 9");
     let m1 = &fresh[1];
     assert_eq!(m1.first().unwrap(), "PRAGMA defer_foreign_keys = ON");
     assert_eq!(m1.last().unwrap(), "PRAGMA user_version = 1");
@@ -171,7 +171,7 @@ fn migration_1_rebuilds_the_staged_tables_once_with_deferred_keys() {
         let renamed = format!("UPDATE {table} SET stage = 'shell' WHERE stage = 'command'");
         assert!(m4.contains(&renamed), "{table}");
     }
-    assert_eq!(transactions_at(8).len(), 1, "nothing left to migrate");
+    assert_eq!(transactions_at(9).len(), 1, "nothing left to migrate");
 }
 
 #[test]
@@ -217,8 +217,8 @@ fn the_later_migrations_make_steps_of_stages_and_keep_each_meaning_of_command() 
         m8.iter().any(|s| s.contains("WHERE rung = 'denied'")),
         "refusal is the default"
     );
-    assert_eq!(transactions_at(4).len(), 5, "migrations 5 to 8 are left");
-    assert_eq!(transactions_at(8).len(), 1, "nothing left to migrate");
+    assert_eq!(transactions_at(4).len(), 6, "migrations 5 to 9 are left");
+    assert_eq!(transactions_at(9).len(), 1, "nothing left to migrate");
 }
 
 #[test]
@@ -322,4 +322,15 @@ fn a_transaction_that_did_not_commit_is_an_error_with_its_reason() {
         Err("the transaction did not commit: NOT NULL constraint failed: workflows.name".into())
     );
     assert_eq!(sql::committed(&json!({ "committed": true })), Ok(()));
+}
+
+#[test]
+fn migration_9_turns_each_checked_constraint_into_feedback_that_starts_off() {
+    let m9 = &transactions_at(0)[9];
+    assert!(
+        m9.iter()
+            .any(|s| s.contains("rung = 'enforced'") && s.contains("'!* '")),
+        "{m9:#?}"
+    );
+    assert_eq!(m9.last().unwrap(), "PRAGMA user_version = 9");
 }

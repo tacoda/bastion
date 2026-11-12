@@ -111,6 +111,10 @@ pub struct Constraint {
     /// it applies at (D51); empty for a rule.
     #[serde(default)]
     pub reviewer: String,
+    /// A capability told to the agent, as what it may do, rather than a
+    /// constraint on what it does (D56).
+    #[serde(default)]
+    pub capability: bool,
 }
 
 /// The scope that turns everything on or off at every workflow (D54).
@@ -571,6 +575,7 @@ mod tests {
             steps: vec!["short/build".into()],
             hook: format!("./{id}.sh"),
             reviewer: String::new(),
+            capability: false,
         };
         let all = [
             hook("lint", Enforcement::Enforced),
@@ -648,6 +653,7 @@ mod tests {
             steps: Vec::new(),
             hook: String::new(),
             reviewer: String::new(),
+            capability: false,
         };
         let pickled = Call {
             content: "import os\nimport pickle\n".into(),
@@ -826,6 +832,7 @@ mod tests {
             steps: vec!["short/build".into()],
             hook: String::new(),
             reviewer: String::new(),
+            capability: false,
         };
         let at = |step| {
             gate_at(
@@ -846,6 +853,7 @@ mod tests {
                 steps: vec![],
                 hook: String::new(),
                 reviewer: String::new(),
+                capability: false,
                 ..rule.clone()
             },
             "any/step"

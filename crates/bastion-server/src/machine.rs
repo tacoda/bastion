@@ -31,6 +31,10 @@ pub trait Machine: Send + Sync {
     /// Make a folder and its parents, if missing.
     fn make_dir(&self, path: &Path) -> Result<(), String>;
     fn exists(&self, path: &Path) -> bool;
+    /// The names in directory `path`, sorted; none when it cannot be read.
+    fn list(&self, _path: &Path) -> Vec<String> {
+        Vec::new()
+    }
     /// `std::env::consts::OS` and `ARCH`.
     fn platform(&self) -> (&'static str, &'static str);
 }
@@ -166,6 +170,15 @@ impl Machine for ThisMachine {
             }
             _ => Ok(()),
         }
+    }
+
+    fn list(&self, path: &Path) -> Vec<String> {
+        let entries = std::fs::read_dir(path).into_iter().flatten().flatten();
+        let mut names: Vec<String> = entries
+            .filter_map(|e| e.file_name().into_string().ok())
+            .collect();
+        names.sort();
+        names
     }
 
     fn exists(&self, path: &Path) -> bool {

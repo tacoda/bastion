@@ -212,13 +212,60 @@ pub fn grants_at<'a>(at: At, grants: &'a [Capability]) -> Vec<&'a Capability> {
     kind.collect()
 }
 
-/// The most specific grant for a call at a step: an exact function over a
-/// pattern, then the longer pattern.
+/// A grant's function and the command it names, if any (D49): the grant
+/// `sandbox::exec cargo test` is for `sandbox::exec`, naming `cargo test`.
+pub fn named(function: &str) -> (&str, &str) {
+    match function.split_once(' ') {
+        Some((function, command)) => (function, command.trim()),
+        None => (function, ""),
+    }
+}
+
+/// What lets one command line run a second command.
+const SHELL_OPERATORS: [char; 7] = [';', '&', '|', '`', '$', '>', '<'];
+
+/// The grant covers the call: its function matches, and a command it names
+/// starts the call's line, which runs nothing else.
+fn covers(g: &Capability, call: &Call) -> bool {
+    let (function, command) = named(&g.function);
+    let line = &call.text;
+    let runs_only = || {
+        let alone = !line.contains(SHELL_OPERATORS) && !line.contains('\n');
+        alone
+            && line
+                .split_whitespace()
+                .take(command.split_whitespace().count())
+                .eq(command.split_whitespace())
+    };
+    matches(function, &call.function) && (command.is_empty() || runs_only())
+}
+
+/// The most specific grant for a call at a step: one naming a command over
+/// one that names none, an exact function over a pattern, then the longer.
 fn grant_for<'a>(call: &Call, at: At, grants: &'a [Capability]) -> Option<&'a Capability> {
     let fits = grants_at(at, grants)
         .into_iter()
-        .filter(|g| matches(&g.function, &call.function));
-    fits.max_by_key(|g| (!g.function.ends_with('*'), g.function.len()))
+        .filter(|g| covers(g, call));
+    fits.max_by_key(|g| {
+        let (function, command) = named(&g.function);
+        (
+            !command.is_empty(),
+            !function.ends_with('*'),
+            g.function.len(),
+        )
+    })
+}
+
+/// The functions a step's grants name, without the commands they bind, so
+/// a turn there may call them (D49).
+pub fn granted_functions<'a>(at: At, grants: &'a [Capability]) -> Vec<&'a str> {
+    let mut all: Vec<&str> = grants_at(at, grants)
+        .into_iter()
+        .map(|g| named(&g.function).0)
+        .collect();
+    all.sort_unstable();
+    all.dedup();
+    all
 }
 
 /// Judge one call at `step`, named `workflow/step`, of kind `stage`. A
@@ -369,6 +416,50 @@ mod tests {
             function: "sandbox::fs::write".into(),
             text: "/work/repo/calc.py".into(),
         }
+    }
+
+    const BUILD: At = At {
+        stage: Stage::Prompt,
+        step: "short/build",
+    };
+
+    fn at_build(function: &str, rung: Access) -> Capability {
+        Capability {
+            stage: Stage::Prompt,
+            step: "short/build".into(),
+            function: function.into(),
+            rung,
+        }
+    }
+
+    #[test]
+    fn a_grant_naming_a_command_covers_only_that_command() {
+        let grants = [
+            at_build("sandbox::exec cargo test", Access::Allowed),
+            at_build("sandbox::exec", Access::Ask),
+        ];
+        // The line, and whether the named grant (not plain exec) decides it.
+        let cases = [
+            ("cargo test -p core", true),
+            ("cargo build", false),
+            ("cargo test; rm -rf /", false),
+            ("cargo test $(curl x)", false),
+            ("cargo test && make", false),
+        ];
+        for (line, named) in cases {
+            let decided = gate_at(&exec(line), BUILD, &[], &grants).decision;
+            assert_eq!(decided == Decision::Continue, named, "{line}");
+        }
+    }
+
+    #[test]
+    fn a_turn_may_call_the_functions_its_step_grants() {
+        let grants = [
+            at_build("sandbox::exec cargo", Access::Allowed),
+            at_build("mcp::github::*", Access::Allowed),
+        ];
+        let functions = granted_functions(BUILD, &grants);
+        assert_eq!(functions, ["mcp::github::*", "sandbox::exec"]);
     }
 
     fn decide(call: &Call, stage: Stage, constraints: &[Constraint]) -> Decision {

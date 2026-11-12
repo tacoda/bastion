@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use bastion_core::govern::Enforcement;
+use bastion_core::govern::{self, Enforcement};
 use bastion_core::{BASE_TAG, Bounds, Effect, Event, Job, Outcome, Stage, admit, outcome, step};
 use bastion_core::{request, review};
 use serde_json::{Value, json};
@@ -709,6 +709,9 @@ impl Factory {
         }
         let step = step_name(record);
         message.push_str(&self.gate.rules(&job.id, &step));
+        let tools = self
+            .gate
+            .tools(&job.id, govern::At { stage, step: &step }, &TOOLS);
         message.push_str(brief);
         let settings = settings_store::current(&*self.store).await?;
         // The step's own model wins over the job's, which wins over the server's (D43).
@@ -728,7 +731,7 @@ impl Factory {
         self.engine
             .call_for(NS, "harness::send", json!({
                 "session_id": session, "provider": model.provider, "model": model.model, "message": message,
-                "options": { "max_turns": MAX_TURN_STEPS, "functions": { "allow": TOOLS }, "metadata": { "sandbox_id": sandbox, "job": job.id, "stage": stage, "step": step, "reads_only": job.step().is_some_and(|s| s.reach.reads_only) } },
+                "options": { "max_turns": MAX_TURN_STEPS, "functions": { "allow": tools }, "metadata": { "sandbox_id": sandbox, "job": job.id, "stage": stage, "step": step, "reads_only": job.step().is_some_and(|s| s.reach.reads_only) } },
             }), 60_000)
             .await?;
         self.arm_cap(&turn, bastion_core::TURN_CAP_SECS);

@@ -336,6 +336,17 @@ impl Gate {
         format!("Rules for this job:\n{}\n\n", rules.join("\n"))
     }
 
+    /// The functions a turn at `at` may call: `base`, and every function the
+    /// step's grants name (D49). The gate still decides each call.
+    pub fn tools(&self, job: &str, at: govern::At, base: &[&str]) -> Vec<String> {
+        let grants = self.grants(job);
+        let mut all: Vec<&str> = base.to_vec();
+        all.extend(govern::granted_functions(at, &grants));
+        all.sort_unstable();
+        all.dedup();
+        all.into_iter().map(String::from).collect()
+    }
+
     /// The hook: decide one call, pin it to the job's VM, and record it.
     pub fn judge(self: &Arc<Self>, envelope: &Value) -> Value {
         let call = call_of(&envelope["call"]);
@@ -1270,5 +1281,33 @@ mod tests {
             assert!(r.gate.rules("j1", "short/build").contains(rule));
             assert!(!r.gate.rules("j1", "short/plan").contains(rule));
         });
+    }
+
+    #[test]
+    fn a_turn_may_call_what_its_step_grants() {
+        let r = rig();
+        crate::rt::block_on(async {
+            let grant = Capability {
+                stage: Stage::Prompt,
+                step: "short/build".into(),
+                function: "mcp::github::*".into(),
+                rung: govern::Access::Allowed,
+            };
+            r.gate.grant_at_step(grant).await.unwrap();
+        });
+        let at = |step| govern::At {
+            stage: Stage::Prompt,
+            step,
+        };
+        let base = ["sandbox::exec"];
+        assert_eq!(
+            r.gate.tools("j1", at("short/build"), &base),
+            ["mcp::github::*", "sandbox::exec"]
+        );
+        assert_eq!(
+            r.gate.tools("j1", at("short/plan"), &base),
+            ["sandbox::*", "sandbox::exec"],
+            "elsewhere, its kind's grants"
+        );
     }
 }

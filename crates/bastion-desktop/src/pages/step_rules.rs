@@ -224,9 +224,12 @@ fn grant_form(rules: &Rules) -> Element<'_, Msg> {
     let rung = Some(rules.rung.clone()).filter(|r| !r.is_empty());
     let named = !rules.function.trim().is_empty();
     row![
-        text_input("sandbox::fs::read", &rules.function)
-            .on_input(Msg::Function)
-            .style(theme::field),
+        text_input(
+            "sandbox::exec cargo test, or mcp::github::*",
+            &rules.function
+        )
+        .on_input(Msg::Function)
+        .style(theme::field),
         pick_list(rungs, rung.or(Some("ask".into())), Msg::Rung).style(theme::select),
         small("Grant", named.then_some(Msg::Add)),
         small("Use its kind's instead", Some(Msg::Kind)),
@@ -244,7 +247,9 @@ fn grants<'a>(rules: &'a Rules, at: &At, editable: bool) -> Element<'a, Msg> {
     let shown = if mine { own } else { rules.kind(at.stage) };
     let rows = shown.into_iter().map(|g| grant_line(g, mine && editable));
     let title = match mine {
-        true => "This step's own grants. A call none covers is refused.",
+        true => {
+            "This step's own grants. A call none covers is refused. A grant on sandbox::exec may name a command: then it covers only that command, alone."
+        }
         false => "Its kind's grants. A call none covers is refused.",
     };
     let body = Column::with_children(rows).spacing(6);

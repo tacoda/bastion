@@ -75,6 +75,10 @@ retired with the old plan.
 | D46 | A repository's charter is `AGENTS.md` and `.agents/`: `.agents/settings.json` holds its permissions and hooks, and `.agents/agents` and `.agents/skills` hold the agents and skills its steps run. Bastion assumes no one vendor's files. The harness, the rules on an agent's calls, is Bastion's own. |
 | D47 | A link may be a failure link: when its step fails, the job goes along it instead of back to the step that writes. A failure link orders nothing, so it may go back to an earlier step; a step reached only by failure links is skipped otherwise. The failing step's revisions bound any loop, and past them a person decides. A step has at most one failure link. |
 | D48 | A grant is ask or allowed; a call no grant covers is refused, so there is no denied grant. Demoting a grant from ask removes it. A step's own grants, when it has any, take the place of its kind's, so a step is narrowed by listing what it may call. This replaces D44's "wins over its kind's". |
+| D49 | A grant on `sandbox::exec` may name a command, and then it covers only a line that starts with those words and has no shell operators. A turn may call the four sandbox tools and every function its step's grants name. |
+| D50 | A constraint may be a hook: a command that runs in the job's VM before each matching call at its steps, after the charter's hooks. Exit 2 refuses the call. |
+| D51 | A constraint may name a reviewer from `.agents/agents/`. When its step finishes, the reviewer reads the step's change in a turn that only reads, and its fail fails the step as D47 says. |
+| D52 | A server's MCP servers reach a turn through `workers/bastion-mcp`, which registers each tool as `mcp::<server>::<tool>`. Only MCP servers over HTTP: a stdio server would run on the host, outside the VM. |
 
 ## Open questions
 

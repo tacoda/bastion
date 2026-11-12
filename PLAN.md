@@ -91,6 +91,10 @@ These exist in the code or the decisions but have no name or no home.
   permission points at. Today they live in three places.
 - **Lesson.** An escape found after a job landed should become a check, so
   the same miss can't land twice. Verification and the harness meet here.
+- **Field note.** What a job taught, signed by a person when it lands or
+  stops. Together the notes are the atlas.
+- **Outcome.** A job already keeps `criteria`: the summit picked before it
+  leaves. The job page should show it first.
 - **Experiment.** An eval is a harness change tried on past requests. A
   rule could offer "try this on the last 10 requests" before it goes live.
 - **Proposal.** A charter edit is a branch to merge, and a workflow edit is
@@ -121,6 +125,48 @@ Harness page, off, and a person applies it to steps like any other item
 (D58). Updating a plugin is a new pinned commit, so a job always records
 which version ran. Caveman is the first plugin to try: its skills and its
 prompt hook map onto guidance and a hook.
+
+## The look and feel: an expedition
+
+[The software expedition](https://blog.tacoda.dev/the-software-expedition-ca3631d61530)
+gives the app its picture. Every landmark in it is already a thing in
+Bastion, so the app draws them without new words: a person never has to
+say "summit" to use it.
+
+| On the map | In Bastion |
+|---|---|
+| The outpost | Where requests arrive: Jobs, an issue, a schedule |
+| The summit | The outcome a job must reach, picked before it leaves |
+| The guide | The harness: models, tools, the loop |
+| Base camp | The job's worktree and VM |
+| The charter | The workspace's charter (the same word) |
+| The checkpoint | A commit the checks passed |
+| The range of reality | Failing checks, a reviewer, a person sending work back |
+| The final peak | The job lands |
+| The track | The turns and the audit log |
+| Specimens | The change and its artifacts |
+| Field notes | What the job taught, one sentence signed by a person |
+| The marsh | A job stopped or failed, said out loud |
+| The atlas | Everything learned, where the next request starts |
+
+What this changes in the app:
+
+- **A job is a trail, not a list.** The job page draws the route: the
+  workflow's steps as landmarks, each pass back as a peak climbed again,
+  each commit the checks passed as a checkpoint. Where the job is now is a
+  marker on the trail.
+- **Workflows are routes.** Bastion's difference is many workflows, so the
+  Map draws them as routes across a server's ground, from the outpost to
+  the final peak, and a request picks its route at the outpost.
+- **Field notes are a new thing.** When a job lands or stops, a person can
+  sign one sentence: what reality said. A stopped job asks for one, so the
+  marsh is said out loud. Notes feed the atlas, the start of the next
+  request.
+- **A third theme, `bastion-chart`.** The old-world chart's parchment and
+  ink, for people who want the map to look like one. Ink #3b2a1a, paper
+  #efe4c8, red #9b2c1f.
+- **Tactile.** Landmarks are things to press: hover lifts them, a step on
+  the trail opens in place, and a route can be followed with the keys.
 
 ## The layout
 
@@ -209,6 +255,10 @@ before the next one starts.
   the app. The first two are `bastion-dark` and `bastion-light`; more can
   be added later. D4 changes.
 - Shorter ledes on every page.
+
+### L1b. The chart theme
+
+- `bastion-chart`, beside the first two.
 
 ### L2. The bar
 

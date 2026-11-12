@@ -3,10 +3,13 @@
 <!-- voice-register: informational -->
 <!-- voice-english: ste -->
 
-Bastion is an agent control plane. On each server, it manages a harness and
-a factory: the rules, agents, skills, hooks and grants an agent works under,
-and the workflows that run it. You send a request, and Bastion runs it as a
-job through a workflow. The cost is plain: a job does only what its workflow
+Bastion is an orchestration control plane for coding agents. Its
+difference is the workflows: you define as many as your work needs, each a
+route of steps with its own people, models and rules, and every request
+picks one. On each server, Bastion manages the harness and the factory
+those routes run on: the rules, agents, skills, hooks and grants an agent
+works under. You send a request, and Bastion runs it as a job along its
+workflow. The cost is plain: a job does only what its workflow
 says, so a check you take out of a workflow is gone. Bastion runs on your
 machine, on a remote server, or on both.
 

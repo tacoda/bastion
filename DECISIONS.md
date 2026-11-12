@@ -1,10 +1,13 @@
 # Bastion decisions
 
-Bastion is a software factory you can govern. A request goes in, agents work
-it through a workflow of steps a person can watch and gate, and a reviewed
-change comes out. Bastion is a server and its clients: `bastion-server`
-runs the factory on the iii engine, and clients such as the iced desktop app
-reach it over HTTP.
+<!-- voice-register: informational -->
+
+Bastion is an agent control plane. You define workflows and send requests,
+and Bastion fulfills each request as a job: agents work through the
+workflow's steps, which a person can watch and gate, and the job ends with
+its branch ready. Bastion is a server and its clients: `bastion-server` runs
+jobs on the iii engine, and clients such as the iced desktop app reach it
+over HTTP.
 
 This file holds the goals and the decisions the code cites as
 `DECISIONS.md D<n>`. The plans that built Bastion, phase by phase, are in
@@ -42,13 +45,13 @@ retired with the old plan.
 | D14 | Every agent turn runs in an `iii-sandbox` VM on its job's worktree. No credential enters an agent's VM. A shell step that needs one asks for it (D40). |
 | D16 | A note on a step goes to the agent word for word as its next brief. A fix loop stops after a set count, or sooner when a refusal repeats word for word. |
 | D17 | Every job runs a workflow. A free-form task is the shipped Short workflow, not a second mode. |
-| D18 | The factory's rules live in `bastion-core`: pure functions from an event and a state to a new state and effects, with no I/O and no `async`. |
+| D18 | The rules a job runs by live in `bastion-core`: pure functions from an event and a state to a new state and effects, with no I/O and no `async`. |
 | D19 | The seams are Cargo dependencies, and `scripts/check-seams.sh` fails CI when one is crossed. Only the engine adapter imports `iii-sdk`. Clients depend on `bastion-protocol` and the client library only. |
 | D20 | Every constraint and capability is enforced in a hook, and its rung is data, so an eval can name what changed. |
 | D21 | The audit record is a hash chain with one writer. Each entry carries an HMAC-SHA256 of its fields and the entry before it, keyed with a secret outside the record. |
 | D22 | An eval compares two harness configurations on the same requests from the same commit, and reports the difference with the decisions behind it. |
 | D23 | The tracker, model providers and notifications are adapters behind seams, chosen in Settings. Pull requests, CI and merges are a workflow's shell steps (D39). |
-| D25 | Every rule belongs to one layer: the charter (the repository's own), the harness (an agent's calls), or the factory (the workflow). |
+| D25 | Every rule belongs to one layer: the charter (the repository's own), the harness (an agent's calls), or the factory (the workflow). Under review: the harness's and the factory's rules are moving onto workflows and their steps (see the open questions). |
 | D26 | Rules, grants and settings are data in the server's database, versioned, edited on the pages; first-run defaults come from `seed/governance.sql`. |
 | D27 | The server is the source of truth and holds all business logic. A client shows state and sends a person's actions, nothing more. |
 | D28 | The API is HTTP with JSON, one route per action on one resource, typed in `bastion-protocol`, with a bearer token on every request. |
@@ -60,13 +63,13 @@ retired with the old plan.
 | D34 | Model provider keys live in the stack's vault, read only by `llm-router`, never in the environment and never returned. |
 | D35 | A workflow is a graph of steps a person edits on a canvas. Steps pass declared results to the steps linked after them. |
 | D36 | Claude takes an API key only. No Claude subscription sign-in. |
-| D37 | The desktop client is a native Rust app on `iced`. It holds no factory logic and reaches a server only through the client library. |
+| D37 | The desktop client is a native Rust app on `iced`. It holds no job or workflow logic and reaches a server only through the client library. |
 | D38 | Every client goes through `crates/bastion-client`: the server list, typed calls, and the event stream. A new interface adds pages, not a second way to talk to a server. |
 | D39 | A workflow is a series of steps, and nothing else runs. A step is a prompt, an agent (`.agents/agents`), a skill (`.agents/skills`) or a shell script (D45), each with one text. Bastion's built-in stages are gone. |
 | D40 | A shell step runs in the job's VM, with no network unless it asks. A step that asks gets a VM of its own with the network and the vault secrets it names as environment variables. |
 | D41 | A job ends with its branch ready. When the last step passes, a workspace set to merge merges the branch into its base on the host; one set to leave keeps the branch. |
 | D42 | Governance is per step. A step may change files or only reads, and the gate refuses a write from a step that only reads. Dials, notices, artifacts and evals name steps. |
-| D43 | A step may name its own model and budget. The model wins over the job's and the server's. The budget is how often its failure may send work back (two by default) and the most its turns may cost; past the cost, the factory starts no more turns there by itself, but a person's retry, note or answer still runs. |
+| D43 | A step may name its own model and budget. The model wins over the job's and the server's. The budget is how often its failure may send work back (two by default) and the most its turns may cost; past the cost, Bastion starts no more turns there by itself, but a person's retry, note or answer still runs. |
 | D44 | A step is known as `workflow/step`. A grant may be for one workflow step, and it wins over the grant for its kind; a constraint may apply at some steps only, and with none named it applies at every step. The gate reads the step from the turn. |
 | D45 | A step is a prompt, an agent, a skill or a shell script. A repository's command is not a kind of its own: a prompt that reads its file does what it did, and that is what migration 7 makes of each command step. This narrows D39. |
 | D46 | A repository's charter is `AGENTS.md` and `.agents/`: `.agents/settings.json` holds its permissions and hooks, and `.agents/agents` and `.agents/skills` hold the agents and skills its steps run. Bastion assumes no one vendor's files. The harness, the rules on an agent's calls, is Bastion's own. |
@@ -83,5 +86,9 @@ retired with the old plan.
   importable as files, such as team rule packs shared by servers?
 - **Multi-user hosting.** A shared server with people and TLS works today.
   Is hosted Bastion a goal?
-- **Unused stack workers.** C4 lists them; some may be the harness's
+- **Unused engine workers.** C4 lists them; some may be the harness's
   dependencies.
+- **Harness and factory.** D25's two layers are collapsing onto workflows
+  and their steps: a step's grants, constraints, model and budget all live
+  on the step. Should the split stay, or should Bastion apply everything
+  from the settings of a workflow and its steps?

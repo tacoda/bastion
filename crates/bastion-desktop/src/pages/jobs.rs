@@ -13,7 +13,7 @@ use crate::route::Route;
 use crate::theme;
 
 const FINISHED: [&str; 3] = ["landed", "failed", "stopped"];
-const EVERY: &str = "Every workspace";
+const EVERY: &str = "Every region";
 
 /// A job, and the Bastion server it runs on (D30).
 #[derive(Clone, Debug)]
@@ -158,7 +158,7 @@ fn line(job: &JobSummary, server: &str, down: bool) -> String {
         .requester
         .as_ref()
         .map_or_else(String::new, |who| format!(" · by {who}"));
-    let state = job.state.replace('_', " ");
+    let state = super::journey_word(&job.state);
     format!(
         "{server}{unreachable} · {} · {} · {state} · {}{by}",
         job.workspace,
@@ -192,7 +192,12 @@ fn job_row<'a>(sj: ServerJob, down: bool) -> Element<'a, Message> {
             .size(12)
             .color(theme::muted()),
     );
-    let at = sj.job.node.as_deref().unwrap_or("finish").replace('_', " ");
+    let at = sj
+        .job
+        .node
+        .as_deref()
+        .unwrap_or("the summit")
+        .replace('_', " ");
     let stage = container(text(at).size(12))
         .padding([2, 8])
         .style(theme::chip);
@@ -241,18 +246,18 @@ fn group<'a>(title: String, jobs: Vec<ServerJob>, ctx: &Ctx, accent: bool) -> El
 
 /// How a job ended, or that it has not, for the chart.
 const ENDS: [(&str, theme::Tint); 4] = [
-    ("landed", theme::ok),
-    ("failed", theme::bad),
-    ("stopped", theme::muted),
-    ("open", theme::primary_color),
+    ("at the summit", theme::ok),
+    ("marsh: failed", theme::bad),
+    ("marsh: stopped", theme::muted),
+    ("under way", theme::primary_color),
 ];
 
 fn end_of(state: &str) -> &'static str {
     match state {
-        "landed" => "landed",
-        "failed" => "failed",
-        "stopped" => "stopped",
-        _ => "open",
+        "landed" => "at the summit",
+        "failed" => "marsh: failed",
+        "stopped" => "marsh: stopped",
+        _ => "under way",
     }
 }
 
@@ -293,19 +298,15 @@ fn overview<'a>(jobs: &[ServerJob]) -> Element<'a, Message> {
     };
     let tiles = row![
         chart::tile(count(&["needs_you"]), "waiting for you", theme::warn()),
-        chart::tile(
-            count(&super::IN_PROGRESS),
-            "in progress",
-            theme::link_color()
-        ),
-        chart::tile(count(&["landed"]), "landed", theme::ok()),
-        chart::tile(count(&["failed"]), "failed", theme::bad()),
+        chart::tile(count(&super::IN_PROGRESS), "under way", theme::link_color()),
+        chart::tile(count(&["landed"]), "at the summit", theme::ok()),
+        chart::tile(count(&["failed"]), "in the marsh", theme::bad()),
     ]
     .spacing(12);
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
-    let chart = chart::view("Jobs started by day, last 30 days", started(jobs, now));
+    let chart = chart::view("Journeys set out by day, last 30 days", started(jobs, now));
     column![tiles, chart].spacing(12).into()
 }
 
@@ -318,7 +319,7 @@ fn filters<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         .on_input(|s| Message::Jobs(Msg::Search(s)))
         .style(theme::field)
         .width(260);
-    row![labeled("Workspace", place), labeled("Search", search)]
+    row![labeled("Region", place), labeled("Search", search)]
         .spacing(12)
         .into()
 }
@@ -346,19 +347,19 @@ fn groups<'a>(state: &State, ctx: &Ctx) -> Element<'a, Message> {
         ));
     }
     list = list.push(group(
-        format!("In progress ({})", active.len()),
+        format!("Under way ({})", active.len()),
         active,
         ctx,
         false,
     ));
     let arrow = if state.show_finished { "▾" } else { "▸" };
-    let toggle = crate::lift::button(text(format!("{arrow} Finished ({})", done.len())).size(13))
+    let toggle = crate::lift::button(text(format!("{arrow} Home again ({})", done.len())).size(13))
         .style(theme::link)
         .on_press(Message::Jobs(Msg::ToggleFinished));
     list = list.push(toggle);
     if state.show_finished {
         list = list.push(group(
-            format!("Finished ({})", done.len()),
+            format!("Home again ({})", done.len()),
             done,
             ctx,
             false,
@@ -368,17 +369,17 @@ fn groups<'a>(state: &State, ctx: &Ctx) -> Element<'a, Message> {
 }
 
 pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
-    let new = crate::lift::button("New request")
+    let new = crate::lift::button("New journey")
         .padding([8, 12])
         .style(theme::primary)
         .on_press(Message::Go(Route::NewRequest));
     let about = format!(
-        "The jobs on {}, the ones waiting for you first.",
+        "The journeys on {}, the ones waiting for you first.",
         super::on(ctx)
     );
     let down: Vec<String> = ctx.down.iter().cloned().collect();
     let shown = state.shown(scope(ctx));
-    let body = column![super::head("Jobs", about, vec![new.into()])]
+    let body = column![super::head("Journeys", about, vec![new.into()])]
         .extend(super::problem(&page_note(&down, &state.errors)))
         .extend([filters(state, ctx), overview(&shown), groups(state, ctx)])
         .spacing(16);

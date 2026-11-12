@@ -299,6 +299,17 @@ before the next one starts.
 
 ### X. Exploration: learning, discovery, feedback
 
+Next, the atlas moves (revises D59):
+
+- A note about the region goes into the region's repository, as
+  documentation: appended to its atlas file and committed on a branch,
+  as a charter edit is (D58), for a person to merge. Agents can read it
+  there.
+- A note about Bastion stays in Bastion's database. It is not an atlas:
+  it feeds a learning loop on the Guide, where each note offers to
+  become guidance or a check at the waypoint it came from.
+- Open: the atlas file's path in a repository.
+
 The app should feel like an expedition, and improve itself from what jobs
 teach.
 

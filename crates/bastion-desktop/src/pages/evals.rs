@@ -342,11 +342,11 @@ pub fn view_list<'a>(list: &'a List, ctx: &Ctx) -> Element<'a, Message> {
         Column::with_children(list.evals.iter().map(|(s, e)| summary_row(s, e))).into()
     };
     let body = column![
-        column![super::head("Evals", lede, vec![])]
+        column![super::head("Trials", lede, vec![])]
             .extend(super::problem(&list.error))
             .spacing(8),
         form_view(&list.form, &ctx.current),
-        section("Evals".into(), rows, false),
+        section("Trials".into(), rows, false),
     ];
     scrolled(body.spacing(12))
 }

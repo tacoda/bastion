@@ -293,13 +293,13 @@ fn workspace<'a>(
 }
 
 fn workspaces(state: &State) -> Element<'_, Message> {
-    let lede = "The repositories jobs run against on this Bastion server. Checks run the tests at the checks step. A job pushes to its branch prefix and its id, the job limit caps how many run at once, and the revision budget caps how often its steps send work back before you decide. Setup runs with the network in a VM of its own, before the agent starts; the agent's VM stays offline. The environment is visible to the agent, so keep secrets out of it. Before a push, each gate runs over the change's files, where {files} names them; a failing gate gets the autofix once, then stops the push.";
+    let lede = "Each region is a repository journeys work in. Checks run the tests at the checks step. A job pushes to its branch prefix and its id, the job limit caps how many run at once, and the revision budget caps how often its steps send work back before you decide. Setup runs with the network in a VM of its own, before the agent starts; the agent's VM stays offline. The environment is visible to the agent, so keep secrets out of it. Before a push, each gate runs over the change's files, where {files} names them; a failing gate gets the autofix once, then stops the push.";
     let rows = state.workspaces.iter().map(|w| {
         let own = state.charters.iter().find(|c| c.workspace == w.name);
         workspace(w, own, &state.charter)
     });
     card(
-        "Workspaces",
+        "Regions",
         column![
             text(lede).size(13).color(theme::muted()),
             Column::with_children(rows).spacing(18),
@@ -445,8 +445,13 @@ pub fn view<'a>(all: &'a Servers, ctx: &Ctx) -> Element<'a, Message> {
     let shown = ctx.shown();
     let named = shown.len() > 1;
     let about = match named {
-        true => "The repositories jobs on each server run against.".to_string(),
-        false => format!("The repositories jobs on {} run against.", ctx.current),
+        true => {
+            "The regions each server explores: the repositories its journeys work in.".to_string()
+        }
+        false => format!(
+            "The regions {} explores: the repositories its journeys work in.",
+            ctx.current
+        ),
     };
     let sections = shown.into_iter().filter_map(|name| {
         let state = all.each.get(&name)?;
@@ -460,7 +465,7 @@ pub fn view<'a>(all: &'a Servers, ctx: &Ctx) -> Element<'a, Message> {
                 .into(),
         )
     });
-    let body = column![crate::pages::head("Workspaces", about, vec![])]
+    let body = column![crate::pages::head("Regions", about, vec![])]
         .extend(sections)
         .spacing(16);
     scrolled(body)

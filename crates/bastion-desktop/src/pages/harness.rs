@@ -89,7 +89,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
             Some(Message::Rules(Msg::Global(global))),
         )
     };
-    let views = row![pick("All workflows", true), pick("Workflows", false)].spacing(6);
+    let views = row![pick("All trails", true), pick("Trails", false)].spacing(6);
     let kind = |label: &str, k: Option<Which>| {
         choice(label, state.kind == k, Some(Message::Rules(Msg::Kind(k))))
     };
@@ -106,8 +106,8 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         let head = head.map(Element::from);
         Some(Column::new().spacing(10).extend(head).push(page).into())
     });
-    let about = "What an agent is told, what checks its work, and what its calls may do.";
-    let body = column![super::head("Harness", about, vec![]), kinds, views]
+    let about = "The guide that takes each journey up the trail: what the agent is told, what checks its work, and what its calls may do.";
+    let body = column![super::head("The guide", about, vec![]), kinds, views]
         .extend(sections)
         .spacing(12);
     scrolled(body)

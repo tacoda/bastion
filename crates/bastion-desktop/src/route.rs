@@ -26,12 +26,12 @@ pub enum Route {
 /// opens on the Audit Log and holds the other records as tabs; Settings
 /// holds the server's health.
 pub const PAGES: [(Route, &str, &str); 7] = [
-    (Route::Jobs, "Jobs", icons::JOBS),
+    (Route::Jobs, "Journeys", icons::JOBS),
     (Route::Map, "Map", icons::MAP),
-    (Route::Workflows, "Workflows", icons::WORKFLOWS),
-    (Route::Workspaces, "Workspaces", icons::FOLDER),
-    (Route::Harness, "Harness", icons::HARNESS),
-    (Route::Audit, "Insights", icons::INSIGHTS),
+    (Route::Workflows, "Trails", icons::WORKFLOWS),
+    (Route::Workspaces, "Regions", icons::FOLDER),
+    (Route::Harness, "Guide", icons::HARNESS),
+    (Route::Audit, "Logbook", icons::INSIGHTS),
     (Route::Settings, "Settings", icons::SETTINGS),
 ];
 
@@ -103,12 +103,12 @@ mod tests {
     fn a_job_sits_under_jobs_and_only_record_lists_span_servers() {
         let job = Route::Job("j1".into());
         assert_eq!(job.section(), Route::Jobs);
-        assert_eq!(job.title(), "Jobs");
+        assert_eq!(job.title(), "Journeys");
         assert!(!job.records() && job.one_record());
         assert!(Route::Costs.records() && !Route::Settings.records());
-        assert_eq!(Route::Eval("e1".into()).title(), "Insights");
+        assert_eq!(Route::Eval("e1".into()).title(), "Logbook");
         assert_eq!(Route::Eval("e1".into()).tab(), Route::Evals);
-        assert_eq!(Route::Costs.title(), "Insights");
+        assert_eq!(Route::Costs.title(), "Logbook");
         assert_eq!(Route::Engine.section(), Route::Settings);
     }
 }

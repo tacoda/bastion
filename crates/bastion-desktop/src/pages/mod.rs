@@ -193,6 +193,21 @@ pub fn ago(at: u64) -> String {
     }
 }
 
+/// A journey's state in the expedition's words (D60): under way, waiting
+/// for you, the summit, or the marsh.
+pub fn journey_word(state: &str) -> String {
+    match state {
+        "queued" => "at the outpost".into(),
+        "provisioning" => "making camp".into(),
+        "running" => "under way".into(),
+        "needs_you" => "waiting for you".into(),
+        "landed" => "at the summit".into(),
+        "failed" => "in the marsh: failed".into(),
+        "stopped" => "in the marsh: stopped".into(),
+        other => other.replace('_', " "),
+    }
+}
+
 /// A titled section: a rounded panel with its title above a line. An
 /// accented one has the warning color's edge.
 pub fn section<'a, M: 'a>(title: String, body: Element<'a, M>, accent: bool) -> Element<'a, M> {
@@ -268,10 +283,10 @@ fn sub_tabs<'a>(route: &Route) -> Option<Element<'a, Message>> {
     let here = route.section();
     let tabs: &[(Route, &str)] = match route.tab_group() {
         Route::Audit => &[
-            (Route::Audit, "Audit Log"),
-            (Route::Costs, "Costs"),
-            (Route::Evals, "Evals"),
-            (Route::Verification, "Verification"),
+            (Route::Audit, "The track"),
+            (Route::Costs, "Provisions"),
+            (Route::Evals, "Trials"),
+            (Route::Verification, "Specimens"),
         ],
         Route::Settings => &[(Route::Settings, "Settings"), (Route::Engine, "Health")],
         _ => return None,

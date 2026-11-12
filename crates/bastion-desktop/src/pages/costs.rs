@@ -190,11 +190,11 @@ fn session_row<'a>(server: &str, s: &SessionView, many: bool) -> Element<'a, Mes
 pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let many = ctx.all;
     let about = format!(
-        "What the turns on {} cost, as each turn's end metered it.",
+        "Provisions: what the turns on {} cost, as each turn's end metered it.",
         super::on(ctx)
     );
     let failed = state.failed.iter().filter_map(|f| super::problem(f));
-    let mut body = column![super::head("Costs", about, vec![])].extend(failed);
+    let mut body = column![super::head("Provisions", about, vec![])].extend(failed);
     let Some(v) = &state.view else {
         return scrolled(body.spacing(12));
     };

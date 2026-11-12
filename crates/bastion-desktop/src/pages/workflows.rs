@@ -543,7 +543,7 @@ fn palette(state: &State) -> Element<'_, Message> {
     let add = state
         .editable()
         .then(|| wrap(Msg::AddStep("prompt".into())));
-    row![small("Add a step", add)].into()
+    row![small("Add a waypoint", add)].into()
 }
 
 /// The kinds a step may be (D39).
@@ -834,10 +834,10 @@ fn picked(state: &State) -> Option<Element<'_, Message>> {
 pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let editable = state.editable();
     let about = format!(
-        "The series of steps a job on {} runs. Pick a step to read or change it, and its Rules tab for what applies there.",
+        "The trails a journey on {} can take. Pick a waypoint to read or change it, and its Rules tab for what applies there.",
         ctx.current
     );
-    let mut body = column![super::head("Workflows", about, vec![]), chooser(state)].spacing(12);
+    let mut body = column![super::head("Trails", about, vec![]), chooser(state)].spacing(12);
     if state.admin {
         body = body.push(manage_view(state));
     }

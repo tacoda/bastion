@@ -196,14 +196,14 @@ fn landed_view(server: &str, l: &LandedView, many: bool) -> Element<'static, Mes
 
 pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let lede = format!(
-        "Each job {} landed, with the decisions that let it through and its commits. Report a defect by its commit to trace it to its job.",
+        "Specimens: each journey {} brought home, with the decisions that let it through and its commits. Report a defect by its commit to trace it to its journey.",
         super::on(ctx)
     );
     let many = ctx.all;
     let landed = state.landed.iter().map(|(s, l)| landed_view(s, l, many));
     scrolled(
         column![
-            column![super::head("Verification", lede, vec![])]
+            column![super::head("Specimens", lede, vec![])]
                 .extend(super::problem(&state.error))
                 .spacing(8),
             section("Escape rate".into(), rates_view(&state.landed, many), false),

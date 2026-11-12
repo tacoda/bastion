@@ -378,7 +378,7 @@ fn still_working(job: &JobSummary, now: u64) -> Option<String> {
 
 fn header<'a>(d: &JobDetail, server: &str) -> Element<'a, Message> {
     let (symbol, color) = mark(&d.job.state);
-    let state = d.job.state.replace('_', " ");
+    let state = super::journey_word(&d.job.state);
     let state = match super::IN_PROGRESS.contains(&d.job.state.as_str()) {
         true => row![super::mark_view(&d.job.state, 16.0), chip(state, color)]
             .spacing(6)
@@ -876,7 +876,7 @@ fn steps<'a>(state: &'a State, d: &'a JobDetail) -> Element<'a, Message> {
 }
 
 fn top(state: &State) -> Element<'_, Message> {
-    let back = crate::lift::button(text("← All jobs").size(13))
+    let back = crate::lift::button(text("← All journeys").size(13))
         .style(theme::link)
         .on_press(Message::Go(Route::Jobs));
     let mut bar = row![back, iced::widget::space::horizontal()]

@@ -383,12 +383,12 @@ fn issues(state: &State) -> Element<'_, Message> {
 }
 
 pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
-    let back = crate::lift::button(text("← All jobs").size(13))
+    let back = crate::lift::button(text("← All journeys").size(13))
         .style(theme::link)
         .on_press(Message::Go(Route::Jobs));
     let head = super::head(
-        "New request",
-        "A change for one workspace, in your words.",
+        "New journey",
+        "A request for one region, in your words, and the trail it takes.",
         vec![],
     );
     super::scrolled(column![back, head, form(state, ctx), issues(state)].spacing(12))

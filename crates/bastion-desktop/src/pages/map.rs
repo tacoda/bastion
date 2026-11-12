@@ -562,7 +562,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let sections = shown
         .into_iter()
         .filter_map(|name| state.servers.get(&name).map(|s| section(name, s, named)));
-    let about = "Each server's workspaces along the coast, and its workflows as trails every job journeys along. Press a landmark to see what it does and what applies.";
+    let about = "Each server's regions along the coast, and its trails inland. Press a waypoint to see what it does and what applies, or a harbor to read its atlas.";
     let body = column![super::head("Map", about, vec![])]
         .extend(sections)
         .spacing(16);

@@ -1,0 +1,178 @@
+I guess jobs technically work like this too - each server has jobs and there is also an aggregate
+
+---
+
+<task-notification>
+<task-id>bw4b5ppnb</task-id>
+<tool-use-id>toolu_01QiPHXXeFErrNami4pEhURC</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/bw4b5ppnb.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI on the pushed commits" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+SO I guess I really want to swap between servers (or all servers) for all these concepts in a horizontal menu bar at the top. Seeing aggregates and swapping servers should be easy.
+Remove the sidebar. Update the pages to be clean and well-organized. Also add some more rich elements like graphs.
+
+---
+
+<task-notification>
+<task-id>bv8m0vulb</task-id>
+<tool-use-id>toolu_01CfSMj4xcAuB5nHGnCAq9TL</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/bv8m0vulb.output</output-file>
+<status>failed</status>
+<summary>Background command "Run new desktop build" failed with exit code 143</summary>
+</task-notification>
+
+---
+
+steps should probably use workflow and step name for identifiers and I think constraints and capabilities are also per workflow step
+
+---
+
+<task-notification>
+<task-id>bg9brpk8i</task-id>
+<tool-use-id>toolu_01RcS5ybgEF1iMPSiCSpD3oR</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/bg9brpk8i.output</output-file>
+<status>killed</status>
+<summary>Background command "Start dev server on fixed build" was stopped after reaching its background time limit</summary>
+<note>If the work in progress still needs it, start it again with `run_in_background` and a longer `timeout`. If it already had the longest `timeout` allowed, do not restart it. Either way, report that it was stopped.</note>
+</task-notification>
+
+---
+
+Looks good. I could be convinced that evals, costs, and verification lives there too. But I still want easy accessibility in the UI.
+PUsh and continue
+
+---
+
+<task-notification>
+<task-id>bbnq4ph36</task-id>
+<tool-use-id>toolu_01EdqovW4YzyEcMDMbfv3tHM</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/bbnq4ph36.output</output-file>
+<status>completed</status>
+<summary>Background command "Push and get CI run id" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bu3ha6ntr</task-id>
+<tool-use-id>toolu_01X6TApgqtRodp4pRutNYjGY</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/bu3ha6ntr.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI on the push" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+SO I guess each step has a budget really
+
+---
+
+Graphs for evals would also be nice
+
+---
+
+We want to compare A and B
+
+---
+
+yes, push and then continue
+
+---
+
+<task-notification>
+<task-id>btwgs8pfk</task-id>
+<tool-use-id>toolu_01C2fF8C5NhDjaUn9pXvUbRa</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/btwgs8pfk.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the server to answer" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+THere are some mentions in the UI of 'stack'. Replace these with 'engine'
+
+---
+
+<task-notification>
+<task-id>b6h681rbk</task-id>
+<tool-use-id>toolu_01KbfCjKiLDj5ujsAmkgYJEi</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/b6h681rbk.output</output-file>
+<status>completed</status>
+<summary>Background command "Drive the test job to its end" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+continue
+
+---
+
+<task-notification>
+<task-id>bjv62j3th</task-id>
+<tool-use-id>toolu_01JHT2YAJSZoi9Mr8smEX5Sg</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/bjv62j3th.output</output-file>
+<status>completed</status>
+<summary>Background command "Drive the test job" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Yes, also I think we can drop the command - anything I can think of would either be an agent skill or a shell command.
+
+---
+
+Also I don't want to assume claude - For this project assume the harness lives in two places: AGENTS.md and .agents/
+
+---
+
+the charter - sorry assume that about the charter
+
+---
+
+the harness is part of the product
+
+---
+
+<task-notification>
+<task-id>bhk1uhett</task-id>
+<tool-use-id>toolu_01EYyAYEkzPXrH3YNWw2djm8</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/bhk1uhett.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI on U11" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+push and continue
+
+---
+
+<task-notification>
+<task-id>bnsf2y49u</task-id>
+<tool-use-id>toolu_01Qy3Tu58ZDqatdVxG1jvWh6</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-tacoda-tacoda-bastion/4fe51ecd-d6cc-423f-a39e-68f5e5b7e45e/tasks/bnsf2y49u.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI on U12" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+1. yes
+2. yes
+
+---
+
+Next up I'd like to add a constraints and capabilities section to the workflows page. Each step can have these, so I want to be able to manage them in that view. Also, don't do deny for capabilities - deny is the default.
+
+---
+
+Awesome, next I want to update the vision and the readme. Bastion is not a factory. It is an agent control plane. It's primary concepts stay the same. The most vital are jobs and workflows. Users primarily define workflows and send requests to have them fulfilled by jobs which run agents.
+Previously we had a separation between harness and factory. That may still be useful, but things appear to be collapsing onto workflows and so all of these things may end up being done by bastion using the settings from the workflows and/or their steps.
+
+---
+
+yes, update DECISIONS.md too

@@ -18,6 +18,9 @@ pub struct Rules {
     /// A new grant for the step, as the form holds it.
     function: String,
     rung: String,
+    /// A new hook for the step: the calls it runs before, and its command.
+    hook_function: String,
+    hook: String,
     said: String,
 }
 
@@ -35,6 +38,11 @@ pub enum Msg {
     Function(String),
     Rung(String),
     Add,
+    HookFunction(String),
+    Hook(String),
+    AddHook,
+    /// Remove a hook made for this step.
+    Remove(String),
     Done(Result<(), String>),
 }
 
@@ -70,6 +78,31 @@ impl Rules {
     }
 }
 
+/// A hook at `step` (D50): enforced, so its exit 2 refuses the call, with an
+/// id no constraint has yet.
+fn new_hook(rules: &Rules, step: &str) -> ConstraintView {
+    let function = rules.hook_function.trim();
+    let function = if function.is_empty() {
+        "sandbox::exec"
+    } else {
+        function
+    };
+    let command = rules.hook.trim();
+    let base = format!("hook-{}", step.replace('/', "-"));
+    let taken = |id: &String| rules.constraints.iter().any(|c| &c.id == id);
+    let id = (1..).map(|n| format!("{base}-{n}")).find(|id| !taken(id));
+    ConstraintView {
+        id: id.unwrap_or(base),
+        rule: format!("Before each {function} call, `{command}` runs; exit 2 refuses it."),
+        function: function.into(),
+        rung: "enforced".into(),
+        source: "owner".into(),
+        steps: vec![step.into()],
+        hook: command.into(),
+        ..ConstraintView::default()
+    }
+}
+
 /// The steps a constraint applies at once `step` is added to or taken off
 /// them; none when taking it off would leave none, which means every step.
 fn rescoped(c: &ConstraintView, step: &str, add: bool) -> Option<Vec<String>> {
@@ -90,6 +123,14 @@ pub fn update(rules: &mut Rules, msg: Msg, at: &At, ctx: &Ctx) -> Task<Msg> {
             return load(ctx);
         }
         Msg::Function(f) => rules.function = f,
+        Msg::HookFunction(f) => rules.hook_function = f,
+        Msg::Hook(h) => rules.hook = h,
+        Msg::Remove(id) => return send(ctx, api::ConstraintRemove { id }),
+        Msg::AddHook => {
+            let hook = new_hook(rules, at.step);
+            rules.hook.clear();
+            return send(ctx, api::ConstraintAdd(hook));
+        }
         Msg::Rung(r) => rules.rung = r,
         Msg::Scope(id, add) => {
             let Some(c) = rules.constraints.iter().find(|c| c.id == id) else {
@@ -156,6 +197,18 @@ fn chip<'a>(label: String) -> Element<'a, Msg> {
         .into()
 }
 
+/// Where a constraint applies, and how it comes off the step: a hook made
+/// for this step alone is removed, and any other scoped one is "Not here".
+fn scope<'a>(c: &ConstraintView, at: &At, editable: bool) -> Element<'a, Msg> {
+    let only_here = c.steps.len() == 1 && c.steps[0] == at.step;
+    let msg = |m: Msg| editable.then_some(m);
+    match (c.steps.is_empty(), !c.hook.is_empty() && only_here) {
+        (true, _) => chip("every step".into()),
+        (false, true) => small("Remove", msg(Msg::Remove(c.id.clone()))),
+        (false, false) => small("Not here", msg(Msg::Scope(c.id.clone(), false))),
+    }
+}
+
 /// The constraints that apply at the step, and a picker for one that
 /// applies at other steps to apply here too.
 fn constraints<'a>(rules: &Rules, at: &At, editable: bool) -> Element<'a, Msg> {
@@ -164,13 +217,7 @@ fn constraints<'a>(rules: &Rules, at: &At, editable: bool) -> Element<'a, Msg> {
         .iter()
         .filter(|c| c.steps.is_empty() || c.steps.iter().any(|s| s == at.step));
     let rows = here.map(|c| {
-        let scope = match c.steps.is_empty() {
-            true => chip("every step".into()),
-            false => small(
-                "Not here",
-                editable.then(|| Msg::Scope(c.id.clone(), false)),
-            ),
-        };
+        let scope = scope(c, at, editable);
         row![
             chip(c.rung.clone()),
             text(c.rule.clone()).size(13).width(Fill),
@@ -187,6 +234,9 @@ fn constraints<'a>(rules: &Rules, at: &At, editable: bool) -> Element<'a, Msg> {
         .map(|c| Choice::new(&c.id, &c.rule))
         .collect();
     let mut body = Column::with_children(rows).spacing(6);
+    if editable {
+        body = body.push(hook_form(rules));
+    }
     if editable && !elsewhere.is_empty() {
         let add = pick_list(elsewhere, None::<Choice>, |c| Msg::Scope(c.id, true))
             .placeholder("Also apply here a constraint for other steps…")
@@ -195,6 +245,25 @@ fn constraints<'a>(rules: &Rules, at: &At, editable: bool) -> Element<'a, Msg> {
         body = body.push(add);
     }
     body.into()
+}
+
+/// The form for a hook at the step: the calls it runs before, and its
+/// command, which runs in the job's VM.
+fn hook_form<'a>(rules: &Rules) -> Element<'a, Msg> {
+    let named = !rules.hook.trim().is_empty();
+    row![
+        text_input("sandbox::exec", &rules.hook_function)
+            .on_input(Msg::HookFunction)
+            .style(theme::field)
+            .width(180),
+        text_input("./.agents/hooks/check.sh", &rules.hook)
+            .on_input(Msg::Hook)
+            .style(theme::field),
+        small("Add hook", named.then_some(Msg::AddHook)),
+    ]
+    .spacing(8)
+    .align_y(iced::Center)
+    .into()
 }
 
 /// One grant: its rung and its function, with its ladder when the step's
@@ -306,6 +375,20 @@ mod tests {
             rescoped(&two, "short/build", false),
             Some(vec!["short/plan".to_string()])
         );
+    }
+
+    #[test]
+    fn a_new_hook_takes_an_id_no_constraint_has() {
+        let mut rules = Rules {
+            hook: " ./lint.sh ".into(),
+            ..Rules::default()
+        };
+        let first = new_hook(&rules, "short/build");
+        assert_eq!(first.id, "hook-short-build-1");
+        assert_eq!(first.function, "sandbox::exec");
+        assert_eq!(first.hook, "./lint.sh");
+        rules.constraints.push(first);
+        assert_eq!(new_hook(&rules, "short/build").id, "hook-short-build-2");
     }
 
     #[test]

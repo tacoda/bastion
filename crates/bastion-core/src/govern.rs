@@ -8,9 +8,10 @@ use crate::Stage;
 
 /// How hard a constraint binds: the agent is told it, a call that breaks it
 /// is recorded, or that call is refused.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Enforcement {
+    #[default]
     Told,
     Checked,
     Enforced,
@@ -58,10 +59,11 @@ impl Access {
 
 /// Where a constraint comes from: the workspace's charter, or the owner's
 /// defaults when the workspace has none.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Source {
     Charter,
+    #[default]
     Owner,
 }
 
@@ -85,7 +87,7 @@ pub fn layer(c: &Constraint) -> Layer {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Constraint {
     pub id: String,
     /// What the agent is told.
@@ -101,11 +103,27 @@ pub struct Constraint {
     /// every step (D44).
     #[serde(default)]
     pub steps: Vec<String>,
+    /// A command that runs in the job's VM before each call it binds, and
+    /// refuses the call by exiting 2 (D50); empty for a rule.
+    #[serde(default)]
+    pub hook: String,
 }
 
 /// Whether constraint `c` applies at `step`, named `workflow/step`.
 pub fn applies(c: &Constraint, step: &str) -> bool {
     c.steps.is_empty() || c.steps.iter().any(|s| s == step)
+}
+
+/// The hooks to run before `call` at `step`: those of the constraints that
+/// apply there, bind its function, and are more than told (D50).
+pub fn hooks_at<'a>(constraints: &'a [Constraint], step: &str, call: &Call) -> Vec<&'a str> {
+    let runs =
+        |c: &&Constraint| !c.hook.is_empty() && c.rung != Enforcement::Told && applies(c, step);
+    let bound = constraints.iter().filter(runs);
+    bound
+        .filter(|c| matches(&c.function, &call.function))
+        .map(|c| c.hook.as_str())
+        .collect()
 }
 
 /// A grant: what calls to a function pattern may do at one kind of step,
@@ -277,7 +295,9 @@ pub fn gate_at(call: &Call, at: At, constraints: &[Constraint], grants: &[Capabi
     let broken = || {
         constraints
             .iter()
-            .filter(|c| applies(c, step) && matches(&c.function, &call.function) && binds(c, call))
+            // A hook decides its own calls, when it runs (D50).
+            .filter(|c| c.hook.is_empty() && applies(c, step))
+            .filter(|c| matches(&c.function, &call.function) && binds(c, call))
     };
     let flagged = broken()
         .filter(|c| c.rung == Enforcement::Checked)
@@ -319,8 +339,7 @@ pub fn default_constraints() -> Vec<Constraint> {
         function: function.into(),
         contains: contains.into(),
         rung,
-        source: Source::Owner,
-        steps: Vec::new(),
+        ..Constraint::default()
     };
     vec![
         rule(
@@ -462,6 +481,32 @@ mod tests {
         assert_eq!(functions, ["mcp::github::*", "sandbox::exec"]);
     }
 
+    #[test]
+    fn a_hook_runs_at_its_steps_unless_only_told() {
+        let hook = |id: &str, rung| Constraint {
+            id: id.into(),
+            rule: "Lint first.".into(),
+            function: "sandbox::exec".into(),
+            contains: "never".into(),
+            rung,
+            source: Source::Owner,
+            steps: vec!["short/build".into()],
+            hook: format!("./{id}.sh"),
+        };
+        let all = [
+            hook("lint", Enforcement::Enforced),
+            hook("note", Enforcement::Told),
+        ];
+        assert_eq!(hooks_at(&all, "short/build", &exec("never")), ["./lint.sh"]);
+        assert!(hooks_at(&all, "short/plan", &exec("never")).is_empty());
+        let words = gate_at(&exec("never"), BUILD, &all, &default_capabilities());
+        assert_eq!(
+            words.decision,
+            Decision::Continue,
+            "the hook decides, not its words"
+        );
+    }
+
     fn decide(call: &Call, stage: Stage, constraints: &[Constraint]) -> Decision {
         gate(call, stage, constraints, &default_capabilities()).decision
     }
@@ -522,6 +567,7 @@ mod tests {
             rung: Enforcement::Enforced,
             source: Source::Owner,
             steps: Vec::new(),
+            hook: String::new(),
         };
         let pickled = Call {
             content: "import os\nimport pickle\n".into(),
@@ -665,6 +711,7 @@ mod tests {
             rung: Enforcement::Enforced,
             source: Source::Owner,
             steps: vec!["short/build".into()],
+            hook: String::new(),
         };
         let at = |step| {
             gate_at(
@@ -683,6 +730,7 @@ mod tests {
         assert!(applies(
             &Constraint {
                 steps: vec![],
+                hook: String::new(),
                 ..rule.clone()
             },
             "any/step"

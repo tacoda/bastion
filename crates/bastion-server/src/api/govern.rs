@@ -47,6 +47,7 @@ pub async fn constraints(cell: &FactoryCell) -> Result<Vec<ConstraintView>, Stri
             rung: name(c.rung),
             source: name(c.source),
             steps: c.steps,
+            hook: c.hook,
         })
         .collect())
 }
@@ -81,8 +82,13 @@ pub async fn constraint_add(cell: &FactoryCell, constraint: ConstraintView) -> R
         rung,
         source: Source::Owner,
         steps: steps_of(&constraint.steps),
+        hook: constraint.hook.trim().into(),
     };
     factory(cell)?.gate().add_constraint(c).await
+}
+
+pub async fn constraint_remove(cell: &FactoryCell, id: String) -> Result<(), String> {
+    factory(cell)?.gate().remove_constraint(&id).await
 }
 
 pub async fn constraint_move(cell: &FactoryCell, id: String, up: bool) -> Result<(), String> {

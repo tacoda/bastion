@@ -11,6 +11,7 @@ pub trait GovernStore {
     fn constraints(&self) -> Answer<'_, Vec<Constraint>>;
     /// Add a constraint, or replace the one with its id.
     fn set_constraint<'a>(&'a self, constraint: &'a Constraint) -> Answer<'a, ()>;
+    fn remove_constraint<'a>(&'a self, id: &'a str) -> Answer<'a, ()>;
     fn capabilities(&self) -> Answer<'_, Vec<Capability>>;
     /// Add a grant, or replace the one for its stage, step and function.
     fn set_capability<'a>(&'a self, grant: &'a Capability) -> Answer<'a, ()>;
@@ -35,8 +36,8 @@ pub trait GovernStore {
     fn append_audit<'a>(&'a self, entry: &'a Entry) -> Answer<'a, ()>;
 }
 
-const UPSERT_CONSTRAINT: &str = "INSERT INTO constraints (id, rule, function, contains, rung, source, steps) VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT (id) DO UPDATE SET rule = excluded.rule, function = excluded.function, contains = excluded.contains, rung = excluded.rung, source = excluded.source, steps = excluded.steps";
+const UPSERT_CONSTRAINT: &str = "INSERT INTO constraints (id, rule, function, contains, rung, source, steps, hook) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (id) DO UPDATE SET rule = excluded.rule, function = excluded.function, contains = excluded.contains, rung = excluded.rung, source = excluded.source, steps = excluded.steps, hook = excluded.hook";
 const UPSERT_CAPABILITY: &str =
     "INSERT INTO capabilities (stage, step, function, rung) VALUES (?, ?, ?, ?)
     ON CONFLICT (stage, step, function) DO UPDATE SET rung = excluded.rung";
@@ -49,7 +50,8 @@ fn constraint_params(c: &Constraint) -> Value {
         c.contains,
         name(c.rung),
         name(c.source),
-        c.steps.join(" ")
+        c.steps.join(" "),
+        c.hook
     ])
 }
 
@@ -71,6 +73,7 @@ pub(crate) fn constraint(r: &Value) -> Result<Constraint, String> {
             .split_whitespace()
             .map(String::from)
             .collect(),
+        hook: r["hook"].as_str().unwrap_or_default().into(),
     })
 }
 
@@ -118,7 +121,7 @@ pub(crate) fn entry(row: &Value) -> Result<Entry, String> {
 impl GovernStore for SqlStore {
     fn constraints(&self) -> Answer<'_, Vec<Constraint>> {
         Box::pin(async move {
-            let sql = "SELECT id, rule, function, contains, rung, source, steps FROM constraints ORDER BY id";
+            let sql = "SELECT id, rule, function, contains, rung, source, steps, hook FROM constraints ORDER BY id";
             self.rows(sql, json!([]), constraint).await
         })
     }
@@ -128,6 +131,13 @@ impl GovernStore for SqlStore {
             self.execute(UPSERT_CONSTRAINT, constraint_params(c))
                 .await
                 .map(|_| ())
+        })
+    }
+
+    fn remove_constraint<'a>(&'a self, id: &'a str) -> Answer<'a, ()> {
+        Box::pin(async move {
+            let sql = "DELETE FROM constraints WHERE id = ?";
+            self.execute(sql, json!([id])).await.map(|_| ())
         })
     }
 
@@ -238,6 +248,11 @@ pub mod fake {
             let mut all = self.constraints.lock().unwrap();
             all.retain(|x| x.id != c.id);
             all.push(c.clone());
+            Box::pin(async { Ok(()) })
+        }
+
+        fn remove_constraint<'a>(&'a self, id: &'a str) -> Answer<'a, ()> {
+            self.constraints.lock().unwrap().retain(|x| x.id != id);
             Box::pin(async { Ok(()) })
         }
 

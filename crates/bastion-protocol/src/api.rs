@@ -269,6 +269,15 @@ impl Request for ConstraintMove {
     }
 }
 
+at!(
+    /// Remove an owner's constraint, such as a step's hook (D50).
+    ConstraintRemove,
+    "POST",
+    "/constraints/{id}/remove",
+    id,
+    ()
+);
+
 bare!(Capabilities, "GET", "/capabilities", Vec<CapabilityView>);
 
 /// Move a step's grant of a function up or down its ladder.
@@ -592,6 +601,7 @@ fn factory_requests() -> Vec<(&'static str, &'static str)> {
         ConstraintAdd,
         ConstraintMove,
         ConstraintSteps,
+        ConstraintRemove,
         Capabilities,
         CapabilityMove,
         CapabilityAdd,
@@ -661,6 +671,6 @@ mod tests {
         assert_eq!(comment.path(), "/jobs/j1/comment");
         let spaced = WorkflowDelete { id: "a b/c".into() };
         assert_eq!(spaced.path(), "/workflows/a%20b%2Fc");
-        assert_eq!(every().len(), 73);
+        assert_eq!(every().len(), 74);
     }
 }

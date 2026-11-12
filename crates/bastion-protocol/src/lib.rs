@@ -595,6 +595,10 @@ pub struct ConstraintView {
     /// step (D44).
     #[serde(default)]
     pub steps: Vec<String>,
+    /// A command that runs in the job's VM before each call it binds;
+    /// exit 2 refuses the call (D50). Empty for a rule.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub hook: String,
 }
 
 /// A grant on its ladder (DECISIONS.md D20): `denied`, `ask` or `allowed`.

@@ -74,6 +74,7 @@ pub fn constraints(deny: &[String], ask: &[String]) -> Vec<Constraint> {
                 rung: Enforcement::Enforced,
                 source: Source::Charter,
                 steps: Vec::new(),
+                hook: String::new(),
             },
             None => Constraint {
                 id: format!("charter-{}", i + 1),
@@ -85,6 +86,7 @@ pub fn constraints(deny: &[String], ask: &[String]) -> Vec<Constraint> {
                 rung: Enforcement::Told,
                 source: Source::Charter,
                 steps: Vec::new(),
+                hook: String::new(),
             },
         })
         .collect()

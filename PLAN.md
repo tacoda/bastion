@@ -49,7 +49,15 @@ pattern such as `sandbox::*`. C4 checks that with the MCP tools.
   is the reason.
 - The charter's `PreToolUse` hooks still run. A step's hooks run after
   them.
-- The Constraints section of the step editor adds and removes a hook.
+- The Constraints section of the step editor adds and removes a hook. A
+  hook that is only told doesn't run, and only an owner's constraint can
+  be removed: a charter's changes in its repository.
+
+Done 2026-11-11. Live, a hook at Short's plan step that exits 2: the turn's
+`git log` was refused with "A hook refused this call: hook says no", and
+the audit kept the hook's run. In the app, Bug fix's build step added
+`./.agents/hooks/check.sh` as a hook and removed it again; the audit
+recorded both.
 
 ### C3. A reviewer that must pass (D51)
 

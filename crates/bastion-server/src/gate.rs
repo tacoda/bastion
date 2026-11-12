@@ -61,6 +61,7 @@ fn approved_test(file: &str) -> Constraint {
         rung: bastion_core::govern::Enforcement::Enforced,
         source: bastion_core::govern::Source::Owner,
         steps: Vec::new(),
+        hook: String::new(),
     }
 }
 
@@ -379,13 +380,20 @@ impl Gate {
         };
         let verdict = reads_only(envelope, &call, verdict);
         self.note("gate", &job, bastion_core::eval::describe(&call, &verdict));
-        let hooks: Vec<String> = self
+        let mut hooks: Vec<String> = self
             .charter(&job)
             .iter()
             .flat_map(|c| c.before.iter())
             .filter(|h| h.functions.contains(&call.function.as_str()))
             .map(|h| h.command.clone())
             .collect();
+        // The step's own hooks run after the charter's (D50).
+        let constraints = self.constraints(&job);
+        hooks.extend(
+            govern::hooks_at(&constraints, step, &call)
+                .into_iter()
+                .map(String::from),
+        );
         let held = || HeldCall {
             id: envelope["call"]["id"].as_str().unwrap_or_default().into(),
             job: job.clone(),
@@ -396,11 +404,11 @@ impl Gate {
             at: now(),
         };
         match verdict.decision {
-            // The repository's hooks run first, in the VM, so the call waits on them.
+            // The hooks run first, in the VM, so the call waits on them.
             Decision::Continue if !hooks.is_empty() => {
                 let (gate, held) = (self.clone(), held());
                 crate::rt::spawn(async move { gate.before(held, hooks).await });
-                json!({ "decision": "hold", "reason": "The repository's hooks run first." })
+                json!({ "decision": "hold", "reason": "Its hooks run first." })
             }
             Decision::Continue => {
                 let mut arguments = envelope["call"]["arguments"].clone();
@@ -486,10 +494,7 @@ impl Gate {
                 }
                 match refused {
                     Some(ran) => {
-                        let text = format!(
-                            "The repository's hook refused this call: {}",
-                            ran.output.trim()
-                        );
+                        let text = format!("A hook refused this call: {}", ran.output.trim());
                         self.resolve(&held, text_result(&text, Value::Null, true), "hook-refuse")
                             .await
                     }
@@ -703,6 +708,23 @@ impl Gate {
         self.reload().await?;
         let subject = format!("{:?} {} {}", g.stage, g.step, g.function);
         self.note("ungrant", &subject, String::new());
+        Ok(())
+    }
+
+    /// Remove an owner's constraint. A charter's comes from its repository,
+    /// so it changes there.
+    pub async fn remove_constraint(&self, id: &str) -> Result<(), String> {
+        let constraints = self.store.constraints().await?;
+        let c = constraints.iter().find(|c| c.id == id);
+        let c = c.ok_or(format!("no constraint {id}"))?;
+        if c.source != govern::Source::Owner {
+            return Err(format!(
+                "{id} comes from the charter; change it in the repository"
+            ));
+        }
+        self.store.remove_constraint(id).await?;
+        self.reload().await?;
+        self.note("remove", id, c.rule.clone());
         Ok(())
     }
 
@@ -1102,6 +1124,69 @@ mod tests {
     }
 
     #[test]
+    fn a_hook_constraint_runs_before_calls_at_its_steps() {
+        let r = rig_with(
+            FakeEngine::new(Link::Up)
+                .answer("harness::function::resolve", Ok(json!({})))
+                .answer(
+                    "sandbox::exec",
+                    Ok(json!({ "exit_code": 2, "stderr": "lint first" })),
+                ),
+        );
+        let hook = Constraint {
+            id: "lint".into(),
+            rule: "Lint runs before each command.".into(),
+            function: "sandbox::exec".into(),
+            contains: String::new(),
+            rung: govern::Enforcement::Enforced,
+            source: govern::Source::Owner,
+            steps: vec!["short/build".into()],
+            hook: "./lint.sh".into(),
+        };
+        crate::rt::block_on(r.gate.add_constraint(hook)).unwrap();
+        let at = |step: &str| {
+            let mut call = envelope("prompt", "sandbox::exec", json!({ "argv": ["pytest"] }));
+            call["metadata"]["step"] = json!(step);
+            r.gate.judge(&call)["decision"].clone()
+        };
+        assert_eq!(at("short/plan"), "continue", "not its step");
+        assert_eq!(at("short/build"), "hold", "its hook runs first");
+        settle();
+        let calls = r.engine.calls.lock().unwrap().clone();
+        let hooked = calls.iter().find(|c| c.1 == "sandbox::exec").unwrap();
+        assert!(hooked.2.to_string().contains("./lint.sh"));
+        assert!(r.gate.hook_runs("j1")[0].contains("exit 2"));
+    }
+
+    #[test]
+    fn an_owners_constraint_comes_off_and_a_charters_does_not() {
+        let r = rig();
+        let owned = Constraint {
+            id: "hook-short-build-1".into(),
+            rule: "Lint first.".into(),
+            hook: "./lint.sh".into(),
+            ..Constraint::default()
+        };
+        let charter = Constraint {
+            id: "charter-1".into(),
+            source: govern::Source::Charter,
+            ..owned.clone()
+        };
+        crate::rt::block_on(async {
+            r.gate.add_constraint(owned).await.unwrap();
+            r.gate.add_constraint(charter).await.unwrap();
+            r.gate
+                .remove_constraint("hook-short-build-1")
+                .await
+                .unwrap();
+            let refused = r.gate.remove_constraint("charter-1").await;
+            assert!(refused.unwrap_err().contains("charter"));
+            let left = r.store.constraints.lock().unwrap().clone();
+            assert!(left.iter().all(|c| c.id != "hook-short-build-1"));
+        });
+    }
+
+    #[test]
     fn a_repeated_review_finding_is_reported_as_repeated() {
         let r = rig();
         let finding = |detail: &str| bastion_core::review::Finding {
@@ -1128,6 +1213,7 @@ mod tests {
             rung: govern::Enforcement::Enforced,
             source: govern::Source::Owner,
             steps: Vec::new(),
+            hook: String::new(),
         };
         crate::rt::block_on(async {
             r.gate.add_constraint(rule.clone()).await.unwrap();

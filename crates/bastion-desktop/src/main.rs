@@ -5,6 +5,7 @@ mod app;
 mod dock;
 mod events;
 mod icons;
+mod lift;
 mod pages;
 mod route;
 mod theme;

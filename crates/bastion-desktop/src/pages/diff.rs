@@ -2,7 +2,7 @@
 //! starts a comment on it, as `file:line: `; a shift-click on another line
 //! of the same file widens it to a range, as `file:from-to: `.
 
-use iced::widget::{Column, button, column, container, row, text};
+use iced::widget::{Column, column, container, row, text};
 use iced::{Color, Element, Fill};
 
 use crate::theme;
@@ -148,7 +148,7 @@ fn file_view<'a, M: Clone + 'a>(
         let picked = line
             .new
             .is_some_and(|n| pick.is_some_and(|p| p.holds(&file.path, n)));
-        let line = button(row![number, body].spacing(8))
+        let line = crate::lift::button(row![number, body].spacing(8))
             .padding([0, 4])
             .width(Fill)
             .style(move |t, status| match picked {

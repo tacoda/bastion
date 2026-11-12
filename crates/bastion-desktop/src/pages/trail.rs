@@ -1,4 +1,5 @@
-//! A job drawn as a trail (L4), on a chart after the software expedition:
+//! A job drawn as a journey (L4) along its workflow's trail, on a chart
+//! after the software expedition:
 //! the request at the outpost, base camp, each step a landmark the route
 //! climbs past (a peak for an agent's step, a checkpoint for a script), a
 //! marker where the job is now, and the summit where it lands. A job that
@@ -369,8 +370,8 @@ impl<M> canvas::Program<M> for Trail<'_, M> {
         carto::name(
             &mut frame,
             Point::new(width / 2.0, 22.0),
-            "the trail",
-            "from the request to the summit",
+            "the journey",
+            "this job, along its workflow's trail",
         );
         carto::border(&mut frame, size);
         vec![frame.into_geometry()]

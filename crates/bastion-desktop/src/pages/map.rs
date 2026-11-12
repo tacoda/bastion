@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 
 use bastion_protocol::{NodeView, WorkflowView};
 use iced::widget::canvas::{self, Canvas, Frame, Geometry, LineDash, Path, Stroke, Text};
-use iced::widget::{Column, button, column, container, pin, row, scrollable, stack, text};
+use iced::widget::{Column, column, container, pin, row, scrollable, stack, text};
 use iced::{Element, Fill, Point, Rectangle, Renderer, Size, Task, Theme, mouse};
 
 use super::step_rules::{self, At, Rules};
@@ -448,7 +448,7 @@ fn card<'a>(s: &'a Server, p: &'a Picked, name: String) -> Element<'a, Message> 
         stage: &p.stage,
     };
     let title = text(p.key.replace('/', " › ")).size(15).font(theme::BOLD);
-    let close = button(text("Close").size(13))
+    let close = crate::lift::button(text("Close").size(13))
         .style(theme::link)
         .on_press(Message::Map(Msg::Close(name.clone())));
     let tab = |label: &'a str, applies: bool| {
@@ -476,7 +476,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let sections = shown
         .into_iter()
         .filter_map(|name| state.servers.get(&name).map(|s| section(name, s, named)));
-    let about = "Each server's workspaces along the coast, and its workflows as routes. Press a landmark to see what applies there.";
+    let about = "Each server's workspaces along the coast, and its workflows as trails every job journeys along. Press a landmark to see what it does and what applies.";
     let body = column![super::head("Map", about, vec![])]
         .extend(sections)
         .spacing(16);

@@ -3,7 +3,7 @@
 
 use bastion_protocol::api::{self, Request};
 use bastion_protocol::{LOCAL, PersonView, TokenView};
-use iced::widget::{Column, button, column, pick_list, row, text, text_input};
+use iced::widget::{Column, column, pick_list, row, text, text_input};
 use iced::{Element, Task};
 
 use super::{card, small};
@@ -149,7 +149,7 @@ fn person_row<'a>(p: &PersonView) -> Element<'a, Message> {
         wrap(Msg::ChangeRole(name.clone(), r))
     })
     .style(theme::select);
-    let token = button(text("Issue a token").size(13).color(theme::link_color()))
+    let token = crate::lift::button(text("Issue a token").size(13).color(theme::link_color()))
         .style(theme::link)
         .on_press(wrap(Msg::Issue(p.name.clone())));
     row![text(p.name.clone()).font(theme::BOLD), role, token]
@@ -159,7 +159,7 @@ fn person_row<'a>(p: &PersonView) -> Element<'a, Message> {
 }
 
 fn token_row<'a>(t: &TokenView) -> Element<'a, Message> {
-    let revoke = button(text("Revoke").size(13).color(theme::bad()))
+    let revoke = crate::lift::button(text("Revoke").size(13).color(theme::bad()))
         .style(theme::link)
         .on_press(wrap(Msg::Revoke(t.id.clone())));
     row![

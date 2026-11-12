@@ -7,7 +7,7 @@ use bastion_protocol::{
     Check, CheckState, Console, Container, DoctorReport, EngineStatus, Link, LogCursor, LogLine,
     LogPage, LogRequest, Queue, Registered, StackState, StackStatus, StartRefused,
 };
-use iced::widget::{Column, button, column, container, row, scrollable, text, text_input};
+use iced::widget::{Column, column, container, row, scrollable, text, text_input};
 use iced::{Color, Element, Fill, Task};
 
 use super::{Ctx, scrolled, section};
@@ -237,8 +237,12 @@ fn stack_panel(state: &State) -> Element<'_, Message> {
         .stack
         .as_ref()
         .map_or_else(|| "…".to_string(), describe_stack);
-    let start = button("Start").padding([8, 12]).style(theme::primary);
-    let stop = button("Stop").padding([8, 12]).style(theme::secondary);
+    let start = crate::lift::button("Start")
+        .padding([8, 12])
+        .style(theme::primary);
+    let stop = crate::lift::button("Stop")
+        .padding([8, 12])
+        .style(theme::secondary);
     let start =
         start.on_press_maybe((!state.busy && !running).then_some(Message::Engine(Msg::Start)));
     let stop = stop.on_press_maybe((!state.busy && running).then_some(Message::Engine(Msg::Stop)));
@@ -276,7 +280,7 @@ fn check_row<'a>(check: &Check) -> Element<'a, Message> {
 }
 
 fn doctor(state: &State) -> Element<'_, Message> {
-    let again = button(text("Run again").size(13))
+    let again = crate::lift::button(text("Run again").size(13))
         .padding([4, 12])
         .style(theme::secondary)
         .on_press(Message::Engine(Msg::RunDoctor));
@@ -302,7 +306,7 @@ fn container_row<'a>(state: &State, c: &Container) -> Element<'a, Message> {
         status = status.push(text(e.clone()).size(12).color(theme::muted()));
     }
     let small = |label: &'static str, msg: Option<Message>| {
-        button(text(label).size(13))
+        crate::lift::button(text(label).size(13))
             .padding([2, 8])
             .style(theme::secondary)
             .on_press_maybe(msg)
@@ -357,7 +361,7 @@ fn containers(state: &State) -> Element<'_, Message> {
 
 fn logs(state: &State) -> Option<Element<'_, Message>> {
     let name = state.watching.as_ref()?;
-    let close = button(text("Close").size(13))
+    let close = crate::lift::button(text("Close").size(13))
         .padding([2, 8])
         .style(theme::secondary)
         .on_press(Message::Engine(Msg::CloseLogs));

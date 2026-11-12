@@ -2,7 +2,7 @@
 //! remote one with its URL and token.
 
 use bastion_protocol::{LOCAL, Server};
-use iced::widget::{Column, button, column, row, text, text_input};
+use iced::widget::{Column, column, row, text, text_input};
 use iced::{Element, Task};
 
 use super::{card, small};
@@ -100,7 +100,7 @@ fn field<'a>(label: &'a str, hint: &'a str, value: &str, f: Field) -> Element<'a
 pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let rows = ctx.servers.iter().map(|s| {
         let remove = (s.name != LOCAL).then(|| {
-            button(text("Remove").size(13).color(theme::bad()))
+            crate::lift::button(text("Remove").size(13).color(theme::bad()))
                 .style(theme::link)
                 .on_press(wrap(Msg::Remove(s.name.clone())))
         });

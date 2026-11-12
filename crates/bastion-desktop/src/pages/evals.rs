@@ -6,9 +6,7 @@ use bastion_protocol::api::{self, Request};
 use bastion_protocol::{
     ConstraintView, EvalRow, EvalSummary, EvalView, NewEval, RunView, Workspace,
 };
-use iced::widget::{
-    Column, Row, button, column, container, pick_list, row, text, text_editor, text_input,
-};
+use iced::widget::{Column, Row, column, container, pick_list, row, text, text_editor, text_input};
 use iced::{Element, Fill, Task};
 
 use super::{Choice, Ctx, Each, ago, chart, labeled, scrolled, section};
@@ -247,7 +245,7 @@ fn rung_pick<'a>(arm: Rung, value: &str) -> Element<'a, Message> {
 fn form_view<'a>(form: &'a Form, server: &str) -> Element<'a, Message> {
     let msg = Message::Evals;
     let arrow = if form.open { "▾" } else { "▸" };
-    let toggle = button(
+    let toggle = crate::lift::button(
         text(format!("{arrow} Run an eval on {server}"))
             .size(13)
             .font(theme::BOLD),
@@ -279,7 +277,7 @@ fn form_view<'a>(form: &'a Form, server: &str) -> Element<'a, Message> {
     let requests = text_editor(&form.requests)
         .on_action(move |a| msg(Msg::Requests(a)))
         .height(96);
-    let run = button(text("Run it").size(13))
+    let run = crate::lift::button(text("Run it").size(13))
         .padding([6, 12])
         .style(theme::secondary)
         .on_press(msg(Msg::Run));
@@ -323,7 +321,7 @@ fn summary_row<'a>(server: &str, e: &EvalSummary) -> Element<'a, Message> {
         .size(13)
         .color(theme::muted());
     let line = row![about.width(Fill), progress].align_y(iced::Center);
-    button(line)
+    crate::lift::button(line)
         .width(Fill)
         .padding([8, 12])
         .style(theme::row_button)
@@ -479,7 +477,7 @@ fn refusals<'a>(arm: &str, run: Option<&RunView>, server: &str) -> Option<Elemen
         server: server.into(),
         id: r.job.clone(),
     };
-    let link = button(
+    let link = crate::lift::button(
         text(format!("job {}", r.job))
             .size(12)
             .color(theme::link_color()),
@@ -535,7 +533,7 @@ fn totals<'a>(one: &'a One, v: &'a EvalView) -> Element<'a, Message> {
         format!("B differs from A: {}", v.differences.join("; "))
     };
     let arm = |label: &'static str, which: &'static str| {
-        let b = button(text(label).size(13))
+        let b = crate::lift::button(text(label).size(13))
             .padding([6, 12])
             .style(theme::secondary);
         b.on_press_maybe(done.then_some(Message::Evals(Msg::Apply(which))))
@@ -565,7 +563,7 @@ fn totals<'a>(one: &'a One, v: &'a EvalView) -> Element<'a, Message> {
 }
 
 pub fn view_one<'a>(one: &'a One, ctx: &Ctx) -> Element<'a, Message> {
-    let back = button(text("← All evals").size(13))
+    let back = crate::lift::button(text("← All evals").size(13))
         .style(theme::link)
         .on_press(Message::Go(Route::Evals));
     let mut body = column![back, text(&one.error).color(theme::bad())].spacing(12);

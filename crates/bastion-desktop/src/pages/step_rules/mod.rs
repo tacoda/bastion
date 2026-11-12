@@ -15,7 +15,7 @@ use bastion_protocol::{
     CapabilityView, Console, ConstraintView, FactoryCapabilityView, McpServerView, Registered,
     WorkflowView, WorkspaceCharterView,
 };
-use iced::widget::{button, text};
+use iced::widget::text;
 use iced::{Element, Task};
 
 use super::Ctx;
@@ -528,7 +528,7 @@ pub fn said(rules: &Rules) -> Option<Element<'_, Msg>> {
 }
 
 fn small<'a>(label: impl Into<String>, msg: Option<Msg>) -> Element<'a, Msg> {
-    button(text(label.into()).size(12))
+    crate::lift::button(text(label.into()).size(12))
         .padding([3, 10])
         .style(theme::secondary)
         .on_press_maybe(msg)
@@ -541,7 +541,7 @@ pub fn choice<'a, M: Clone + 'a>(
     on: bool,
     msg: Option<M>,
 ) -> Element<'a, M> {
-    button(text(label.into()).size(12))
+    crate::lift::button(text(label.into()).size(12))
         .padding([4, 10])
         .style(theme::nav(on))
         .on_press_maybe(msg)

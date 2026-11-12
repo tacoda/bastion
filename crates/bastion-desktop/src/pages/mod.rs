@@ -278,7 +278,7 @@ fn sub_tabs<'a>(route: &Route) -> Option<Element<'a, Message>> {
     };
     let tabs = tabs.iter().map(|(r, label)| {
         let on = *r == here || (*r == route.tab());
-        iced::widget::button(text(*label).size(13))
+        crate::lift::button(text(*label).size(13))
             .padding([5, 12])
             .style(theme::nav(on))
             .on_press(Message::Go(r.clone()))

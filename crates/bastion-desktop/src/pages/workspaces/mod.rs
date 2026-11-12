@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 use bastion_protocol::api::{self, Request};
 use bastion_protocol::{AccountView, Workspace, WorkspaceCharterView, branch_prefix};
-use iced::widget::{Column, button, column, row, text, text_editor, text_input};
+use iced::widget::{Column, column, row, text, text_editor, text_input};
 use iced::{Element, Task};
 
 use crate::app::Message;
@@ -275,7 +275,7 @@ fn workspace<'a>(
     own: Option<&'a WorkspaceCharterView>,
     editing: &'a charter::State,
 ) -> Element<'a, Message> {
-    let edit = button(text("Edit").size(13))
+    let edit = crate::lift::button(text("Edit").size(13))
         .style(theme::link)
         .on_press(wrap(Msg::EditWorkspace(w.name.clone())));
     let mut about = vec![format!("{} @ {}", w.path, w.branch)];

@@ -5,7 +5,7 @@
 use std::collections::BTreeSet;
 
 use bastion_protocol::{Change, LOCAL, Server, StackState, api};
-use iced::widget::{Row, button, center, column, container, opaque, row, stack, svg, text};
+use iced::widget::{Row, center, column, container, opaque, row, stack, svg, text};
 use iced::{Element, Fill, Subscription, Task, window};
 
 use crate::client;
@@ -396,7 +396,7 @@ fn tab<'a>(label: String, glyph: &str, on: bool, go: Message) -> Element<'a, Mes
     let body = row![icons::icon(glyph, color), text(label).size(13)]
         .spacing(6)
         .align_y(iced::Center);
-    button(body)
+    crate::lift::button(body)
         .padding([6, 10])
         .style(theme::nav(on))
         .on_press(go)
@@ -415,7 +415,7 @@ fn choice<'a>(label: String, up: Option<bool>, on: bool, pick: Message) -> Eleme
         };
         body = body.push(text(mark).size(10).color(color));
     }
-    button(body.push(text(label).size(13)))
+    crate::lift::button(body.push(text(label).size(13)))
         .padding([4, 10])
         .style(theme::nav(on))
         .on_press(pick)
@@ -436,11 +436,11 @@ fn open(url: &str) {
 
 fn quit_dialog<'a>() -> Element<'a, Message> {
     let buttons = row![
-        button("Quit")
+        crate::lift::button("Quit")
             .padding([8, 12])
             .style(theme::primary)
             .on_press(Message::Quit),
-        button("Cancel")
+        crate::lift::button("Cancel")
             .padding([8, 12])
             .style(theme::quiet)
             .on_press(Message::Stay),

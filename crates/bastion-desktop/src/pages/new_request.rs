@@ -4,9 +4,7 @@
 
 use bastion_protocol::api::{self, Request, Screenshot};
 use bastion_protocol::{IssueView, LOCAL, ModelOption, WorkflowView, Workspace};
-use iced::widget::{
-    Column, button, column, container, pick_list, row, text, text_editor, text_input,
-};
+use iced::widget::{Column, column, container, pick_list, row, text, text_editor, text_input};
 use iced::{Element, Fill, Task};
 
 use super::{Choice, Ctx, labeled};
@@ -253,12 +251,12 @@ fn details(state: &State) -> Element<'_, Message> {
     let path = text_input("/path/to/screenshot.png", &state.shot_path)
         .on_input(move |p| msg(Msg::ShotPath(p)))
         .on_submit(msg(Msg::AddShot));
-    let add = button(text("Add").size(13))
+    let add = crate::lift::button(text("Add").size(13))
         .padding([4, 12])
         .style(theme::secondary)
         .on_press(msg(Msg::AddShot));
     let added = state.shots.iter().enumerate().map(|(i, s)| {
-        let drop = button(text("Remove").size(12)).style(theme::link);
+        let drop = crate::lift::button(text("Remove").size(12)).style(theme::link);
         row![
             text(s.name.clone()).size(13).width(Fill),
             drop.on_press(msg(Msg::DropShot(i)))
@@ -310,7 +308,9 @@ fn form<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     } else {
         ""
     };
-    let submit = button("Submit").padding([8, 12]).style(theme::primary);
+    let submit = crate::lift::button("Submit")
+        .padding([8, 12])
+        .style(theme::primary);
     let submit = if state.ready() {
         submit.on_press(msg(Msg::Submit))
     } else {
@@ -345,7 +345,7 @@ fn form<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
 }
 
 fn issues(state: &State) -> Element<'_, Message> {
-    let load = button(text("Load issues").size(13))
+    let load = crate::lift::button(text("Load issues").size(13))
         .padding([4, 12])
         .style(theme::secondary);
     let head = row![
@@ -363,7 +363,7 @@ fn issues(state: &State) -> Element<'_, Message> {
             text(i.title.clone())
         ];
         let open = Message::NewRequest(Msg::FromIssue(i.number));
-        button(label)
+        crate::lift::button(label)
             .width(Fill)
             .padding([4, 8])
             .style(theme::row_button)
@@ -383,7 +383,7 @@ fn issues(state: &State) -> Element<'_, Message> {
 }
 
 pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
-    let back = button(text("← All jobs").size(13))
+    let back = crate::lift::button(text("← All jobs").size(13))
         .style(theme::link)
         .on_press(Message::Go(Route::Jobs));
     let head = super::head(

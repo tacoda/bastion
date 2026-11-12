@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use bastion_protocol::api::{self, Request};
 use bastion_protocol::{HostView, ProviderView, SignIn};
-use iced::widget::{Column, button, column, row, text, text_input};
+use iced::widget::{Column, column, row, text, text_input};
 use iced::{Element, Fill, Task};
 
 use super::{card, small};
@@ -200,7 +200,7 @@ fn key_row<'a>(state: &State, p: &ProviderView) -> Element<'a, Message> {
         (!typed.trim().is_empty()).then(|| wrap(Msg::SetKey(p.id.clone()))),
     );
     let remove = (p.source == "secret").then(|| {
-        button(text("Remove").size(13).color(theme::bad()))
+        crate::lift::button(text("Remove").size(13).color(theme::bad()))
             .style(theme::link)
             .on_press(wrap(Msg::RemoveKey(p.id.clone())))
     });
@@ -227,11 +227,11 @@ fn codex_row<'a>(state: &State, p: &ProviderView) -> Element<'a, Message> {
         "uses a ChatGPT plan, no key"
     };
     let action = if signed_in {
-        button(text("Sign out").size(13).color(theme::bad()))
+        crate::lift::button(text("Sign out").size(13).color(theme::bad()))
             .style(theme::link)
             .on_press(wrap(Msg::SignOut))
     } else {
-        button(text("Sign in with ChatGPT").size(13))
+        crate::lift::button(text("Sign in with ChatGPT").size(13))
             .padding([4, 12])
             .style(theme::secondary)
             .on_press(wrap(Msg::SignIn))
@@ -246,7 +246,7 @@ fn codex_row<'a>(state: &State, p: &ProviderView) -> Element<'a, Message> {
     let Some(s) = &state.signing_in else {
         return line.into();
     };
-    let open = button(
+    let open = crate::lift::button(
         text(s.verification_uri.clone())
             .size(13)
             .color(theme::link_color()),
@@ -285,7 +285,7 @@ fn providers(state: &State) -> Element<'_, Message> {
 fn hosts(state: &State) -> Element<'_, Message> {
     let lede = "Each host serves its models as a provider of its own. A host that needs a key gets it under Model providers.";
     let rows = state.hosts.iter().map(|h| {
-        let remove = button(text("Remove").size(13).color(theme::bad()))
+        let remove = crate::lift::button(text("Remove").size(13).color(theme::bad()))
             .style(theme::link)
             .on_press(wrap(Msg::RemoveHost(h.id.clone())));
         row![

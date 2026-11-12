@@ -10,9 +10,7 @@ use bastion_protocol::{
     TranscriptLine,
 };
 use iced::widget::markdown;
-use iced::widget::{
-    Column, button, column, container, row, scrollable, text, text_editor, text_input,
-};
+use iced::widget::{Column, column, container, row, scrollable, text, text_editor, text_input};
 use iced::{Element, Fill, Task};
 
 use super::{Ctx, ago, diff, mark, section};
@@ -358,7 +356,7 @@ fn chip<'a>(label: String, color: iced::Color) -> Element<'a, Message> {
 }
 
 fn link_chip<'a>(label: String, url: String) -> Element<'a, Message> {
-    button(text(label).size(12).color(theme::link_color()))
+    crate::lift::button(text(label).size(12).color(theme::link_color()))
         .padding([2, 8])
         .style(theme::secondary)
         .on_press(Message::OpenUrl(url))
@@ -428,7 +426,7 @@ fn failure<'a>(state: &State, d: &JobDetail) -> Option<Element<'a, Message>> {
     ]
     .spacing(8);
     if state.allows("retry") {
-        let retry = button(text("Retry").size(13))
+        let retry = crate::lift::button(text("Retry").size(13))
             .padding([8, 12])
             .style(theme::secondary)
             .on_press(Message::Job(Msg::Act(Action::Retry)));
@@ -458,7 +456,7 @@ fn actions(state: &State) -> Element<'_, Message> {
     let mut buttons = row![].spacing(8);
     if state.allows("approve") {
         buttons = buttons.push(
-            button(approve_label(state))
+            crate::lift::button(approve_label(state))
                 .padding([8, 12])
                 .style(theme::primary)
                 .on_press(Message::Job(Msg::Act(Action::Approve))),
@@ -467,7 +465,9 @@ fn actions(state: &State) -> Element<'_, Message> {
     if state.allows("comment") || answer {
         let label = if answer { "Answer" } else { "Send back" };
         let ready = !state.note.text().trim().is_empty();
-        let send = button(label).padding([8, 12]).style(theme::secondary);
+        let send = crate::lift::button(label)
+            .padding([8, 12])
+            .style(theme::secondary);
         buttons = buttons
             .push(send.on_press_maybe(ready.then_some(Message::Job(Msg::Act(Action::Comment)))));
     }
@@ -539,11 +539,11 @@ fn held_call<'a>(state: &'a State, call: &'a HeldCallView) -> Element<'a, Messag
     let field = text_input("What the agent should do instead", &typed)
         .on_input(move |t| Message::Job(Msg::Feedback(id.clone(), t)))
         .style(theme::field);
-    let allow = button("Allow once")
+    let allow = crate::lift::button("Allow once")
         .padding([8, 12])
         .style(theme::primary)
         .on_press(Message::Job(Msg::Allow(call.id.clone())));
-    let refuse = button("Refuse with this note")
+    let refuse = crate::lift::button("Refuse with this note")
         .padding([8, 12])
         .style(theme::secondary);
     let refuse = refuse.on_press_maybe(
@@ -685,7 +685,7 @@ fn card_at(p: &super::trail::Pressed) -> (f32, f32) {
 /// job taught, about its workspace or about Bastion.
 fn atlas_card<'a>(state: &'a State, d: &'a JobDetail) -> Element<'a, Message> {
     let title = text("Field notes").size(15).font(theme::BOLD);
-    let close = button(text("Close").size(13))
+    let close = crate::lift::button(text("Close").size(13))
         .style(theme::link)
         .on_press(Message::Job(Msg::CloseCard));
     let head = row![title, iced::widget::space::horizontal(), close].align_y(iced::Center);
@@ -718,7 +718,7 @@ fn atlas_card<'a>(state: &'a State, d: &'a JobDetail) -> Element<'a, Message> {
         .on_input(|t| Message::Job(Msg::Field(t)))
         .on_submit(Message::Job(Msg::Sign))
         .style(theme::field);
-    let sign = button(text("Sign").size(13))
+    let sign = crate::lift::button(text("Sign").size(13))
         .style(theme::primary)
         .on_press_maybe((!state.field.trim().is_empty()).then_some(Message::Job(Msg::Sign)));
     let form = column![about, row![words, sign].spacing(8)].spacing(6);
@@ -767,7 +767,7 @@ fn step_card<'a>(state: &'a State, d: &'a JobDetail, id: &'a str) -> Element<'a,
     let step = d.steps.iter().find(|s| s.id == id);
     let st = step.map_or("not run".to_string(), |s| s.state.clone());
     let title = text(id.replace('_', " ")).size(15).font(theme::BOLD);
-    let close = button(text("Close").size(13))
+    let close = crate::lift::button(text("Close").size(13))
         .style(theme::link)
         .on_press(Message::Job(Msg::CloseCard));
     let head = row![
@@ -803,9 +803,11 @@ fn artifact<'a>(state: &'a State, a: &ArtifactView) -> Element<'a, Message> {
 
 fn turn<'a>(lines: &'a [TranscriptLine], open: bool) -> Element<'a, Message> {
     let arrow = if open { "▾" } else { "▸" };
-    let toggle = button(text(format!("{arrow} Latest turn ({} messages)", lines.len())).size(12))
-        .style(theme::link)
-        .on_press(Message::Job(Msg::ToggleTurn));
+    let toggle = crate::lift::button(
+        text(format!("{arrow} Latest turn ({} messages)", lines.len())).size(12),
+    )
+    .style(theme::link)
+    .on_press(Message::Job(Msg::ToggleTurn));
     if !open {
         return toggle.into();
     }
@@ -840,7 +842,7 @@ fn step_row<'a>(
     ]
     .spacing(12)
     .align_y(iced::Center);
-    let head = button(summary)
+    let head = crate::lift::button(summary)
         .width(Fill)
         .padding([10, 12])
         .style(theme::row_button)
@@ -874,21 +876,21 @@ fn steps<'a>(state: &'a State, d: &'a JobDetail) -> Element<'a, Message> {
 }
 
 fn top(state: &State) -> Element<'_, Message> {
-    let back = button(text("← All jobs").size(13))
+    let back = crate::lift::button(text("← All jobs").size(13))
         .style(theme::link)
         .on_press(Message::Go(Route::Jobs));
     let mut bar = row![back, iced::widget::space::horizontal()]
         .spacing(8)
         .align_y(iced::Center);
     if state.allows("extend") {
-        let extend = button(text("Extend turn").size(13))
+        let extend = crate::lift::button(text("Extend turn").size(13))
             .padding([8, 12])
             .style(theme::secondary)
             .on_press(Message::Job(Msg::Act(Action::Extend)));
         bar = bar.push(extend);
     }
     if state.allows("stop") {
-        let stop = button(text("Stop").color(theme::bad()))
+        let stop = crate::lift::button(text("Stop").color(theme::bad()))
             .padding([8, 12])
             .style(theme::secondary);
         bar = bar.push(stop.on_press(Message::Job(Msg::Act(Action::Stop))));
@@ -920,7 +922,7 @@ fn kept_files(d: &JobDetail) -> Option<Element<'_, Message>> {
         return None;
     }
     let rows = d.media.iter().map(|name| {
-        let open = button(text("Open").size(12))
+        let open = crate::lift::button(text("Open").size(12))
             .style(theme::link)
             .on_press(Message::Job(Msg::OpenMedia(name.clone())));
         row![

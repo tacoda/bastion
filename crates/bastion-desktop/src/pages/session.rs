@@ -3,7 +3,7 @@
 
 use bastion_protocol::api;
 use bastion_protocol::{SessionDetail, TurnStep};
-use iced::widget::{Column, button, column, container, row, text};
+use iced::widget::{Column, column, container, row, text};
 use iced::{Color, Element, Fill, Task};
 
 use super::{Ctx, scrolled};
@@ -93,7 +93,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
             server: ctx.current.clone(),
             id: d.job.clone(),
         };
-        let job = button(text(format!("Job {}", d.job)).size(13))
+        let job = crate::lift::button(text(format!("Job {}", d.job)).size(13))
             .style(theme::link)
             .on_press(open);
         let steps = Column::with_children(d.steps.iter().map(step_view));

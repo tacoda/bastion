@@ -5,7 +5,7 @@
 
 use bastion_protocol::api;
 use bastion_protocol::{CharterChange, WorkspaceCharterView};
-use iced::widget::{Column, button, column, row, text, text_editor};
+use iced::widget::{Column, column, row, text, text_editor};
 use iced::{Element, Task};
 
 use super::wrap;
@@ -97,7 +97,7 @@ fn part<'a>(label: &'a str, lines: &[String]) -> Option<Element<'a, Message>> {
 fn files<'a>(c: &WorkspaceCharterView) -> Element<'a, Message> {
     let links = c.texts.iter().map(|(path, body)| {
         let open = Msg::Edit(c.workspace.clone(), path.clone(), body.clone());
-        button(text(path.clone()).size(13))
+        crate::lift::button(text(path.clone()).size(13))
             .style(theme::link)
             .on_press(send(open))
             .into()

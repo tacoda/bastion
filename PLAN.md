@@ -310,7 +310,8 @@ teach.
   turn back and end in the marsh.
 - A lesson from the atlas: a Bastion note offers "make this a check" or
   "add this as guidance", applied at the step it came from.
-- Everything clickable lifts a little on hover, as the landmarks do.
+- Done: everything clickable lifts a little on hover, as the landmarks do.
+- Words: a workflow is a trail; a job is a journey along it.
 - A legend on each chart that teaches its marks.
 
 ## Open questions

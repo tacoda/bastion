@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use bastion_protocol::api;
 use bastion_protocol::{CostsView, SessionView, Tally};
-use iced::widget::{Column, button, column, container, row, text};
+use iced::widget::{Column, column, container, row, text};
 use iced::{Element, Fill, Task};
 
 use super::chart::{self, Bars};
@@ -157,10 +157,10 @@ fn session_row<'a>(server: &str, s: &SessionView, many: bool) -> Element<'a, Mes
         server: server.to_string(),
         id: s.job.clone(),
     };
-    let job = button(text(s.job.clone()).size(13).font(theme::MONO))
+    let job = crate::lift::button(text(s.job.clone()).size(13).font(theme::MONO))
         .style(theme::link)
         .on_press(open);
-    let steps = button(text("steps").size(13))
+    let steps = crate::lift::button(text("steps").size(13))
         .style(theme::link)
         .on_press(Message::OpenOn {
             server: server.to_string(),

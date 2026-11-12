@@ -3,7 +3,7 @@
 //! GitHub Actions' runs list.
 
 use bastion_protocol::{JobSummary, api};
-use iced::widget::{Column, button, column, container, pick_list, row, text, text_input};
+use iced::widget::{Column, column, container, pick_list, row, text, text_input};
 use iced::{Element, Fill, Task};
 
 use super::chart::{self, Bars};
@@ -206,7 +206,7 @@ fn job_row<'a>(sj: ServerJob, down: bool) -> Element<'a, Message> {
         server: sj.server,
         id: sj.job.id,
     };
-    let row_button = button(body)
+    let row_button = crate::lift::button(body)
         .width(Fill)
         .padding([10, 12])
         .style(theme::card_row)
@@ -352,7 +352,7 @@ fn groups<'a>(state: &State, ctx: &Ctx) -> Element<'a, Message> {
         false,
     ));
     let arrow = if state.show_finished { "▾" } else { "▸" };
-    let toggle = button(text(format!("{arrow} Finished ({})", done.len())).size(13))
+    let toggle = crate::lift::button(text(format!("{arrow} Finished ({})", done.len())).size(13))
         .style(theme::link)
         .on_press(Message::Jobs(Msg::ToggleFinished));
     list = list.push(toggle);
@@ -368,7 +368,7 @@ fn groups<'a>(state: &State, ctx: &Ctx) -> Element<'a, Message> {
 }
 
 pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
-    let new = button("New request")
+    let new = crate::lift::button("New request")
         .padding([8, 12])
         .style(theme::primary)
         .on_press(Message::Go(Route::NewRequest));

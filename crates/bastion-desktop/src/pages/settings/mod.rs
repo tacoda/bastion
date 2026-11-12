@@ -9,7 +9,7 @@ mod people;
 mod providers;
 mod servers;
 
-use iced::widget::{Column, button, column, container, text};
+use iced::widget::{Column, column, container, text};
 use iced::{Element, Fill, Task};
 
 use super::{Ctx, scrolled};
@@ -55,7 +55,7 @@ pub(in crate::pages) fn card<'a>(
 
 /// A small lined button, faded when it cannot be pressed.
 pub(in crate::pages) fn small(label: &str, msg: Option<Message>) -> Element<'_, Message> {
-    button(text(label).size(13))
+    crate::lift::button(text(label).size(13))
         .padding([4, 12])
         .style(theme::secondary)
         .on_press_maybe(msg)
@@ -66,7 +66,7 @@ pub(in crate::pages) fn small(label: &str, msg: Option<Message>) -> Element<'_, 
 fn appearance(state: &State) -> Element<'_, Message> {
     let picks = theme::THEMES.iter().map(|(name, _)| {
         let on = *name == theme::name();
-        button(text(*name).size(13))
+        crate::lift::button(text(*name).size(13))
             .padding([5, 12])
             .style(theme::nav(on))
             .on_press(Message::Settings(Msg::Theme(name.to_string())))

@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use bastion_protocol::api;
 use bastion_protocol::{EscapeReport, EscapeView, LandedView};
-use iced::widget::{Column, button, column, row, text, text_input};
+use iced::widget::{Column, column, row, text, text_input};
 use iced::{Element, Fill, Task};
 
 use super::{Ctx, Each, ago, scrolled, section};
@@ -151,7 +151,7 @@ fn report_form(state: &State) -> Element<'_, Message> {
         text_input("what went wrong", &state.what)
             .on_input(move |w| msg(Msg::What(w)))
             .on_submit(msg(Msg::Report)),
-        button(text("Report").size(13))
+        crate::lift::button(text("Report").size(13))
             .style(theme::primary)
             .on_press(msg(Msg::Report)),
     ]
@@ -171,7 +171,7 @@ fn landed_view(server: &str, l: &LandedView, many: bool) -> Element<'static, Mes
     };
     let request = l.request.lines().next().unwrap_or_default().to_string();
     let head = row![
-        button(text(l.job.clone()).size(13).font(theme::MONO))
+        crate::lift::button(text(l.job.clone()).size(13).font(theme::MONO))
             .style(theme::link)
             .on_press(open),
         text(format!("{place} · {request}")).width(Fill),

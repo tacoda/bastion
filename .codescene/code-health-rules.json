@@ -1,5 +1,5 @@
 {
-  "usage": "A canvas's draw and update take the arguments iced's canvas::Program trait fixes, so the argument count does not apply in the files that draw one.",
+  "usage": "A canvas's draw and update, and a widget's trait methods, take the arguments iced fixes, so the argument count does not apply in the files that draw one or wrap one.",
   "rule_sets": [
     {
       "matching_content_path": "crates/bastion-desktop/src/pages/drawing.rs",
@@ -30,6 +30,15 @@
     },
     {
       "matching_content_path": "crates/bastion-desktop/src/pages/map.rs",
+      "rules": [
+        {
+          "name": "Excess Number of Function Arguments",
+          "weight": 0.0
+        }
+      ]
+    },
+    {
+      "matching_content_path": "crates/bastion-desktop/src/lift.rs",
       "rules": [
         {
           "name": "Excess Number of Function Arguments",

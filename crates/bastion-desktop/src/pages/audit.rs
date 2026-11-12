@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use bastion_protocol::api;
 use bastion_protocol::{AuditEntryView, AuditView};
-use iced::widget::{Column, button, column, container, row, text};
+use iced::widget::{Column, column, container, row, text};
 use iced::{Color, Element, Fill, Task};
 
 use super::chart::{self, Bars};
@@ -220,7 +220,7 @@ fn entry_row<'a>(server: &str, e: &AuditEntryView, many: bool) -> Element<'a, Me
 pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let many = ctx.all;
     // An export writes the file on the server, so it takes one server.
-    let export = button(text("Export").size(13))
+    let export = crate::lift::button(text("Export").size(13))
         .padding([4, 12])
         .style(theme::secondary)
         .on_press_maybe((!many).then_some(Message::Audit(Msg::Export)));

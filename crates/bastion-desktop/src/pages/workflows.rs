@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 
 use bastion_protocol::api::{self, Request};
 use bastion_protocol::{ModelOption, PersonView, WorkflowView};
-use iced::widget::{button, column, container, pick_list, row, text, text_editor, text_input};
+use iced::widget::{column, container, pick_list, row, text, text_editor, text_input};
 use iced::{Element, Fill, Task};
 
 use super::drawing::{self, Drawing, Pointer};
@@ -489,7 +489,7 @@ fn facts(w: &WorkflowView) -> String {
 }
 
 fn small<'a>(label: &'a str, msg: Option<Message>) -> Element<'a, Message> {
-    button(text(label).size(13))
+    crate::lift::button(text(label).size(13))
         .padding([4, 12])
         .style(theme::secondary)
         .on_press_maybe(msg)
@@ -727,7 +727,7 @@ fn options_tab<'a>(
 /// rule on an agent's calls binds it, and it has no rules tabs.
 fn tabs<'a>(state: &State, n: &bastion_protocol::NodeView) -> Element<'a, Message> {
     let tab = |label: String, t: StepTab| {
-        button(text(label).size(13))
+        crate::lift::button(text(label).size(13))
             .padding([5, 12])
             .style(theme::nav(state.tab == t))
             .on_press(wrap(Msg::Tab(t)))
@@ -860,7 +860,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     }
     if editable {
         body = body.push(
-            button("Save a new version")
+            crate::lift::button("Save a new version")
                 .padding([8, 12])
                 .style(theme::primary)
                 .on_press(wrap(Msg::Save)),

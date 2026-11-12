@@ -25,11 +25,15 @@ pub use scope::EVERY;
 /// The form shown to add an item: one at a time.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Adding {
+    /// Feedforward: a rule told to the agent, or a note on what it may do.
     #[default]
-    Grant,
     Rule,
+    Note,
+    /// Feedback: a word match, a hook, a reviewer, or a grant.
+    Check,
     Hook,
     Reviewer,
+    Grant,
 }
 
 /// A field of a new rule's form.
@@ -40,7 +44,6 @@ pub enum RuleField {
     /// The calls it binds: a function pattern, and words a call holds.
     Function,
     Contains,
-    Rung,
 }
 
 /// A new rule, as typed.
@@ -49,7 +52,6 @@ struct RuleDraft {
     text: String,
     function: String,
     contains: String,
-    rung: String,
 }
 
 /// A field of a rule's deterministic form (D55).
@@ -150,6 +152,8 @@ pub enum Msg {
     AddReviewer,
     Rule(RuleField, String),
     AddRule,
+    AddCheck,
+    AddNote,
     /// Open a rule's deterministic form, with the rung to promote it to.
     Form(String, Option<String>),
     FormField(FormField, String),
@@ -273,18 +277,32 @@ fn new_reviewer(rules: &Rules, scope: &str) -> ConstraintView {
     }
 }
 
-/// A rule: told to the agent, and at checked or enforced it binds the calls
-/// to its function that hold its words. Told by default.
+/// A feedforward rule (D56): told to the agent, and judged by it.
 fn new_rule(rules: &Rules, scope: &str) -> ConstraintView {
+    ConstraintView {
+        rung: "told".into(),
+        ..made_at(rules, "rule", scope, rules.rule.text.trim().into())
+    }
+}
+
+/// A feedback check (D56): the gate refuses a call to its function that
+/// holds its words.
+fn new_check(rules: &Rules, scope: &str) -> ConstraintView {
     let d = &rules.rule;
-    let rung = Some(d.rung.as_str())
-        .filter(|r| !r.is_empty())
-        .unwrap_or("told");
     ConstraintView {
         function: d.function.trim().into(),
         contains: d.contains.trim().into(),
-        rung: rung.into(),
         ..made_at(rules, "rule", scope, d.text.trim().into())
+    }
+}
+
+/// A feedforward capability (D56): a note told to the agent on what it may
+/// do, such as a skill to use.
+fn new_note(rules: &Rules, scope: &str) -> ConstraintView {
+    ConstraintView {
+        rung: "told".into(),
+        capability: true,
+        ..made_at(rules, "note", scope, rules.rule.text.trim().into())
     }
 }
 
@@ -292,6 +310,8 @@ fn new_rule(rules: &Rules, scope: &str) -> ConstraintView {
 fn made(rules: &mut Rules, msg: &Msg, scope: &str) -> ConstraintView {
     let made = match msg {
         Msg::AddRule => new_rule(rules, scope),
+        Msg::AddCheck => new_check(rules, scope),
+        Msg::AddNote => new_note(rules, scope),
         Msg::AddHook => new_hook(rules, scope),
         _ => new_reviewer(rules, scope),
     };
@@ -306,7 +326,6 @@ fn rule_field(d: &mut RuleDraft, field: RuleField, value: String) {
         RuleField::Text => d.text = value,
         RuleField::Function => d.function = value,
         RuleField::Contains => d.contains = value,
-        RuleField::Rung => d.rung = value,
     }
 }
 
@@ -440,7 +459,7 @@ pub fn update(rules: &mut Rules, msg: Msg, at: &At, ctx: &Ctx) -> Task<Msg> {
         }
         Msg::Remove(id) => send(ctx, api::ConstraintRemove { id }),
         Msg::SaveForm => save_form(rules, ctx),
-        Msg::AddRule | Msg::AddReviewer | Msg::AddHook => {
+        Msg::AddRule | Msg::AddCheck | Msg::AddNote | Msg::AddReviewer | Msg::AddHook => {
             send(ctx, api::ConstraintAdd(made(rules, &msg, at.scope)))
         }
         Msg::SetScope(item, setting) => send(ctx, api::Scope(scope_set(item, setting, at.scope))),
@@ -556,25 +575,31 @@ mod tests {
     }
 
     #[test]
-    fn a_new_rule_is_told_unless_its_rung_says_more() {
+    fn a_rule_is_feedforward_a_check_is_feedback_and_a_note_is_a_capability() {
         let mut rules = Rules::default();
         rule_field(
             &mut rules.rule,
             RuleField::Text,
             " Keep diffs small. ".into(),
         );
-        let told = new_rule(&rules, "short/build");
-        assert_eq!(
-            (told.rule.as_str(), told.rung.as_str()),
-            ("Keep diffs small.", "told")
-        );
-        rule_field(&mut rules.rule, RuleField::Rung, "enforced".into());
         rule_field(&mut rules.rule, RuleField::Function, "sandbox::exec".into());
-        let enforced = new_rule(&rules, "short/build");
+        let rule = new_rule(&rules, "short/build");
         assert_eq!(
-            (enforced.rung.as_str(), enforced.function.as_str()),
+            (
+                rule.rule.as_str(),
+                rule.rung.as_str(),
+                rule.function.as_str()
+            ),
+            ("Keep diffs small.", "told", "")
+        );
+        let check = new_check(&rules, "short/build");
+        assert_eq!(
+            (check.rung.as_str(), check.function.as_str()),
             ("enforced", "sandbox::exec")
         );
+        let note = new_note(&rules, "short");
+        assert!(note.capability && note.rung == "told");
+        assert_eq!(note.id, "note-short-1");
     }
 
     #[test]

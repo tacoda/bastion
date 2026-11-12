@@ -2,7 +2,7 @@
 //! as a switch, its setting at the level, and the forms that add one.
 
 use bastion_protocol::ConstraintView;
-use iced::widget::{column, container, pick_list, row, text, text_input};
+use iced::widget::{column, container, row, text, text_input};
 use iced::{Element, Fill};
 
 use super::{
@@ -12,10 +12,13 @@ use crate::theme;
 
 /// What kind of constraint `c` is: a rule on calls, a hook or a reviewer.
 pub(super) fn kind(c: &ConstraintView) -> &'static str {
-    match (c.hook.is_empty(), c.reviewer.is_empty()) {
-        (false, _) => "Hook",
-        (_, false) => "Reviewer",
-        _ => "Rule",
+    match (c.hook.is_empty(), c.reviewer.is_empty(), c.capability) {
+        (_, _, true) => "Note",
+        (false, _, _) => "Hook",
+        (_, false, _) => "Reviewer",
+        // A told rule keeps its calls when demoted, so its mode names it.
+        _ if c.function.is_empty() || c.rung == "told" => "Rule",
+        _ => "Check",
     }
 }
 
@@ -48,14 +51,23 @@ pub(super) fn fits(c: &ConstraintView, filter: &str) -> bool {
         .all(|w| all.contains(w))
 }
 
-/// Who judges a constraint (D55): an agent, for a told rule or a reviewer;
-/// code, for a word match, a hook, or a review check once it is more than
-/// told.
-pub(super) fn judged_by(c: &ConstraintView) -> &'static str {
-    let code = !c.function.is_empty() || !c.hook.is_empty();
-    match (c.rung.as_str(), c.reviewer.is_empty(), code) {
-        ("told", _, _) | (_, false, _) | (_, true, false) => "agent",
-        _ => "code",
+/// A constraint's mode (D56): feedback checks what the agent did, as a
+/// word match, a hook, a review check or a reviewer does; feedforward
+/// guides it before it acts, as a told rule or a note does.
+pub(super) fn mode(c: &ConstraintView) -> &'static str {
+    let feedback = !c.reviewer.is_empty() || (c.rung != "told" && has_form(c));
+    match (feedback, c.capability) {
+        (true, false) => "Feedback",
+        _ => "Feedforward",
+    }
+}
+
+/// Where a constraint comes from: the workspace's charter, or Bastion, at
+/// the harness or the factory.
+fn source(c: &ConstraintView) -> String {
+    match layer(c) {
+        "charter" => "Workspace".into(),
+        l => format!("Bastion · {l}"),
     }
 }
 
@@ -87,35 +99,31 @@ fn badge<'a>(label: &str, color: iced::Color) -> Element<'a, Msg> {
 /// A constraint's rung: a switch to move it, or its badge when it may not
 /// be changed here. The rung is the item's, the same at every level.
 fn rung_switch<'a>(c: &ConstraintView, editable: bool) -> Element<'a, Msg> {
-    if !editable || c.source == "charter" {
-        return badge(&c.rung, rung(c).1);
+    let fixed = !editable || c.source == "charter" || !c.reviewer.is_empty() || c.capability;
+    if fixed {
+        return badge(mode(c), theme::MUTED);
     }
-    // A told rule with nothing for code to judge asks for its form first.
-    let needs_form = c.reviewer.is_empty() && !has_form(c);
+    // Feedforward with nothing for code to judge asks for its form first.
+    let needs_form = !has_form(c);
     let set = |label: &str, to: &str| {
-        let msg = match (c.rung == to, needs_form && to != "told") {
+        let msg = match (c.rung == to, needs_form && to == "enforced") {
             (true, _) => None,
             (false, true) => Some(Msg::Form(c.id.clone(), Some(to.into()))),
             (false, false) => Some(Msg::SetRung(c.id.clone(), to.into())),
         };
         choice(label.to_string(), c.rung == to, msg)
     };
-    row![
-        set("Told", "told"),
-        set("Checked", "checked"),
-        set("Enforced", "enforced")
-    ]
-    .spacing(2)
-    .into()
+    row![set("Feedforward", "told"), set("Feedback", "enforced")]
+        .spacing(2)
+        .into()
 }
 
-/// One made in the app comes off whole, at every workflow; a seeded one is
-/// only turned off or moved down its rungs.
+/// One made in the app for this workflow comes off whole at the workflow's
+/// level; a seeded one, or one other workflows use, is only turned off.
 fn removable(c: &ConstraintView, at: &At) -> bool {
-    let made_in_app = ["rule-", "hook-", "reviewer-"]
-        .iter()
-        .any(|p| c.id.starts_with(p));
-    at.is_every() && made_in_app
+    let prefixes = ["rule-", "hook-", "reviewer-", "note-"];
+    let made_in_app = prefixes.iter().any(|p| c.id.starts_with(p));
+    !at.is_step() && made_in_app && scope::only_in(&c.steps, at.scope)
 }
 
 /// The editor for a rule's deterministic form: the calls and words code
@@ -166,7 +174,7 @@ fn form_editor<'a>(d: &FormDraft) -> Element<'a, Msg> {
 /// A row's buttons: Form for a rule the owner keeps, and Remove where it
 /// may come off whole.
 fn actions<'a>(c: &ConstraintView, at: &At, editable: bool) -> Vec<Element<'a, Msg>> {
-    let formed = editable && c.source != "charter" && c.reviewer.is_empty();
+    let formed = editable && c.source != "charter" && c.reviewer.is_empty() && !c.capability;
     let form = formed.then(|| small("Form", Some(Msg::Form(c.id.clone(), None))));
     let remove =
         (editable && removable(c, at)).then(|| small("Remove", Some(Msg::Remove(c.id.clone()))));
@@ -176,12 +184,9 @@ fn actions<'a>(c: &ConstraintView, at: &At, editable: bool) -> Vec<Element<'a, M
 fn line<'a>(rules: &Rules, c: &ConstraintView, at: &At, editable: bool) -> Element<'a, Msg> {
     let on = scope::on(&c.steps, at.scope);
     let color = if on { theme::INK } else { theme::MUTED };
-    let rule = column![
-        text(c.rule.clone()).size(13).color(color),
-        help(format!("{} judges it", judged_by(c))),
-    ]
-    .spacing(2)
-    .width(Fill);
+    let rule = column![text(c.rule.clone()).size(13).color(color), help(source(c)),]
+        .spacing(2)
+        .width(Fill);
     let item = Item::Constraint(c.id.clone());
     let mut line = row![
         badge(kind(c), theme::MUTED),
@@ -201,26 +206,59 @@ fn line<'a>(rules: &Rules, c: &ConstraintView, at: &At, editable: bool) -> Eleme
 /// The form for a rule: what the agent is told, its rung, and the calls it
 /// binds once it is more than told.
 pub(super) fn rule_form<'a>(rules: &Rules) -> Element<'a, Msg> {
+    let form = TextForm {
+        hint: "What the agent is told, such as: Keep each commit under 200 lines.",
+        label: "Add rule",
+        why: "Feedforward: said to the agent before it acts, and the agent judges it.",
+    };
+    text_form(rules, form, Msg::AddRule)
+}
+
+/// The form for a note on what the agent may do, a feedforward capability.
+pub(super) fn note_form<'a>(rules: &Rules) -> Element<'a, Msg> {
+    let form = TextForm {
+        hint: "What the agent may do, such as: Use the code-review skill before you commit.",
+        label: "Add note",
+        why: "Feedforward: told to the agent as what it may do, such as a skill or an agent to use.",
+    };
+    text_form(rules, form, Msg::AddNote)
+}
+
+/// The words of a one-line form: its hint, its button, and what it adds.
+struct TextForm {
+    hint: &'static str,
+    label: &'static str,
+    why: &'static str,
+}
+
+/// A form of one line of text and its button.
+fn text_form<'a>(rules: &Rules, form: TextForm, add: Msg) -> Element<'a, Msg> {
+    let named = !rules.rule.text.trim().is_empty();
+    let text = text_input(form.hint, &rules.rule.text)
+        .on_input(|v| Msg::Rule(RuleField::Text, v))
+        .on_submit_maybe(named.then(|| add.clone()))
+        .style(theme::field);
+    let row = row![text, small(form.label, named.then_some(add))]
+        .spacing(8)
+        .align_y(iced::Center);
+    column![help(form.why), row].spacing(6).into()
+}
+
+/// The form for a check: what the agent is told, and the calls and words
+/// the gate refuses.
+pub(super) fn check_form<'a>(rules: &Rules) -> Element<'a, Msg> {
     let d = &rules.rule;
-    let named = !d.text.trim().is_empty();
+    let ready = !d.text.trim().is_empty() && !d.function.trim().is_empty();
     let field = |hint: &'static str, value: &str, f: RuleField| {
         text_input(hint, value)
             .on_input(move |v| Msg::Rule(f, v))
             .style(theme::field)
     };
-    let rungs = vec!["told".to_string(), "checked".into(), "enforced".into()];
-    let rung = Some(d.rung.clone())
-        .filter(|r| !r.is_empty())
-        .or(Some("told".into()));
-    let rung = pick_list(rungs, rung, |r| Msg::Rule(RuleField::Rung, r))
-        .text_size(13)
-        .style(theme::select);
     let text = field(
-        "What the agent is told, such as: Keep each commit under 200 lines.",
+        "What the agent is told, such as: Do not push to main.",
         &d.text,
         RuleField::Text,
-    )
-    .on_submit_maybe(named.then_some(Msg::AddRule));
+    );
     let binds = row![
         field(
             "Calls, such as sandbox::exec",
@@ -233,12 +271,11 @@ pub(super) fn rule_form<'a>(rules: &Rules) -> Element<'a, Msg> {
             &d.contains,
             RuleField::Contains
         ),
-        rung,
-        small("Add rule", named.then_some(Msg::AddRule)),
+        small("Add check", ready.then_some(Msg::AddCheck)),
     ]
     .spacing(8)
     .align_y(iced::Center);
-    let why = "Told is only said to the agent. Checked notes a call that breaks it, and enforced refuses one: both need the calls it binds.";
+    let why = "Feedback: the gate refuses a call to these calls that holds these words.";
     column![help(why), text, binds].spacing(6).into()
 }
 
@@ -318,12 +355,17 @@ mod tests {
             ..ConstraintView::default()
         };
         assert_eq!(layer(&reviewer), "factory", "a reviewer reads the work");
-        assert_eq!(judged_by(&hook), "code", "an enforced hook");
+        assert_eq!(mode(&hook), "Feedback", "an enforced hook");
+        assert_eq!(
+            mode(&reviewer),
+            "Feedback",
+            "a reviewer reads what was done"
+        );
         let told = ConstraintView {
             rung: "told".into(),
             ..hook.clone()
         };
-        assert_eq!(judged_by(&told), "agent", "a told rule, form or not");
+        assert_eq!(mode(&told), "Feedforward", "a told rule, form or not");
         assert!(has_form(&told), "demoted, it keeps its hook");
     }
 }

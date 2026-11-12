@@ -103,10 +103,15 @@ pub(super) fn line<'a>(
     ]
     .spacing(8)
     .align_y(iced::Center);
-    if editable && at.is_every() {
+    if editable && removable(g, at) {
         line = line.push(small("Remove", Some(Msg::Ungrant(g.clone()))));
     }
     line.into()
+}
+
+/// A grant made for this workflow alone comes off at the workflow's level.
+fn removable(g: &CapabilityView, at: &At) -> bool {
+    !at.is_step() && scope::only_in(&g.scopes, at.scope)
 }
 
 /// The search over the engine's functions, and what it found.

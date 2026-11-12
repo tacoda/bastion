@@ -38,6 +38,19 @@ pub fn at(scopes: &[String], key: &str) -> (Option<bool>, bool) {
     (own, inherited)
 }
 
+/// Whether every setting in `scopes` is about `workflow` or its steps, so
+/// the item was made for it and removing it touches no other workflow.
+pub fn only_in(scopes: &[String], workflow: &str) -> bool {
+    let mine = |s: &String| {
+        let key = s.trim_start_matches('!');
+        key == workflow
+            || key
+                .strip_prefix(workflow)
+                .is_some_and(|rest| rest.starts_with('/'))
+    };
+    !scopes.is_empty() && scopes.iter().all(mine)
+}
+
 /// Whether the item is on at `key`, its own setting or what it inherits.
 pub fn on(scopes: &[String], key: &str) -> bool {
     let (own, inherited) = at(scopes, key);
@@ -66,5 +79,12 @@ mod tests {
             !on(&list(&["short/plan"]), "bug-fix/build"),
             "only the steps it names"
         );
+        assert!(only_in(&list(&["bug-fix", "!bug-fix/plan"]), "bug-fix"));
+        assert!(
+            !only_in(&list(&["*", "!bug-fix"]), "bug-fix"),
+            "it is everywhere else"
+        );
+        assert!(!only_in(&list(&["bug-fixer"]), "bug-fix"));
+        assert!(!only_in(&[], "bug-fix"), "no setting is every workflow");
     }
 }

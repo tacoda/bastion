@@ -715,6 +715,13 @@ fn a_lesson_signed_under_way_is_written_onto_the_journey_branch_as_it_lands() {
         subject: "j1".into(),
         detail,
     };
+    let written = "Keep calc small.\n\nLearned on journey j1, signed by Ian.\n";
+    let again = rig_with(
+        engine(),
+        FakeMachine::new()
+            .run_ok("git", "")
+            .file("/wt/.agents/rules/keep-calc-small.md", written),
+    );
     crate::rt::block_on(async {
         let first = bastion_core::audit::append(None, 1, record(note("lesson", ON_LANDING)), b"k");
         rig.store.append_audit(&first).await.unwrap();
@@ -722,8 +729,19 @@ fn a_lesson_signed_under_way_is_written_onto_the_journey_branch_as_it_lands() {
         rig.store.append_audit(&mine).await.unwrap();
         let journey = record_at("build", State::Running);
         let path = std::path::Path::new("/wt");
-        rig.factory.write_lessons(&journey, path).await.unwrap();
+        assert_eq!(rig.factory.write_lessons(&journey, path).await, Ok(true));
+        again.store.append_audit(&first).await.unwrap();
+        let twice = again.factory.write_lessons(&journey, path).await;
+        assert_eq!(twice, Ok(false), "already written before a pull request");
+        assert!(!again.machine.called("git commit"));
     });
+    let calls = rig.machine.calls.lock().unwrap().clone();
+    assert!(
+        calls
+            .iter()
+            .any(|c| c.starts_with("git diff") && c.ends_with("-- . :(exclude).agents")),
+        "a fact's paths come from the code, not the charter"
+    );
     assert!(
         rig.machine
             .called("write /wt/.agents/rules/keep-calc-small.md")

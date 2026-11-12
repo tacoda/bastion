@@ -118,7 +118,15 @@ impl Factory {
         let (path, _) = self.bring_back(record).await?;
         let worktree = record.runtime.worktree.clone().ok_or("no worktree")?;
         let (_, branch) = self.worktree_path(&worktree).await?;
+        let taught = self.write_lessons(record, &path).await;
+        let taught = taught.unwrap_or_else(|e| {
+            eprintln!("job {}: its lessons were not written: {e}", record.job.id);
+            false
+        });
         let bundle = self.bundle(&record.job.id, &path, &branch)?;
+        if taught {
+            self.catch_up(record, &bundle, &branch).await?;
+        }
         let base = self.fork_point(record, &path).await;
         let access = setup::Access {
             network: true,
@@ -135,6 +143,26 @@ impl Factory {
             return Err(e);
         }
         Ok(vm)
+    }
+
+    /// Bring the job's VM up to its branch on the host after the host
+    /// committed what the journey taught, so the next bring-back still
+    /// fast-forwards.
+    async fn catch_up(&self, record: &Record, bundle: &[u8], branch: &str) -> Result<(), String> {
+        let sandbox = record.runtime.sandbox.as_deref().ok_or("no VM")?;
+        self.put(sandbox, "/work/in.bundle", bundle.to_vec())
+            .await?;
+        let pull = [
+            "git",
+            "-C",
+            REPO,
+            "pull",
+            "-q",
+            "--ff-only",
+            "/work/in.bundle",
+            branch,
+        ];
+        self.vm_exec(sandbox, &pull).await.map(|_| ())
     }
 
     /// A secret's value from the vault. The vault gives a value only to a

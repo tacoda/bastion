@@ -39,8 +39,11 @@ impl Factory {
 
     /// Write the lessons and facts signed while the journey was under way
     /// onto its own branch, so they land with its change (D61). Paths are
-    /// inferred from the journey's change as it lands.
-    pub(super) async fn write_lessons(&self, record: &Record, path: &Path) -> Result<(), String> {
+    /// inferred from the journey's change, leaving out the charter itself.
+    /// It runs before a step that reaches past its VM, such as one opening
+    /// a pull request, and again as the journey lands; a file already
+    /// written as it would be is left alone. Answers whether it committed.
+    pub(super) async fn write_lessons(&self, record: &Record, path: &Path) -> Result<bool, String> {
         let id = &record.job.id;
         let entries = self.store.entries_of(lessons::NOTE).await?;
         let queued: Vec<lessons::Written> = entries
@@ -50,10 +53,11 @@ impl Factory {
             .map(|s| s.written)
             .collect();
         if queued.is_empty() {
-            return Ok(());
+            return Ok(false);
         }
         let base = self.fork_point(record, path).await;
-        let diff = self.git(path, &["diff", &base, "HEAD"])?;
+        let code = [&base, "HEAD", "--", ".", ":(exclude).agents"];
+        let diff = self.git(path, &[&["diff"][..], &code].concat())?;
         let settings = self.machine.read(&path.join(crate::charter::SETTINGS)).ok();
         let landing = lessons::Landing {
             job: id,
@@ -61,7 +65,11 @@ impl Factory {
             settings,
         };
         let files = lessons::files(&queued, landing)?;
-        for (name, text) in &files {
+        let fresh = files
+            .iter()
+            .filter(|(name, text)| self.machine.read(&path.join(name)).ok().as_ref() != Some(text));
+        let fresh: Vec<_> = fresh.collect();
+        for (name, text) in &fresh {
             let file = path.join(name);
             if let Some(dir) = file.parent() {
                 self.machine.make_dir(dir)?;
@@ -69,9 +77,12 @@ impl Factory {
             self.machine.write_bytes(&file, text.as_bytes())?;
             self.git(path, &["add", "--", name])?;
         }
+        if fresh.is_empty() {
+            return Ok(false);
+        }
         let message = format!("What journey {id} taught: lessons and facts");
         self.git(path, &["commit", "-q", "-m", &message])?;
-        Ok(())
+        Ok(true)
     }
 
     /// Bring the VM's commits back to the job's worktree. Returns the

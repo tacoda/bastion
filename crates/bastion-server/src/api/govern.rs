@@ -296,6 +296,7 @@ pub async fn charters(
                     .into_iter()
                     .filter_map(|n| n.strip_suffix(".md").map(String::from))
                     .collect(),
+                texts: super::charters::texts(machine.as_ref(), root),
             }
         })
         .collect())

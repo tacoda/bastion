@@ -395,6 +395,14 @@ bare!(
     Vec<FactoryCapabilityView>
 );
 bare!(Charters, "GET", "/charters", Vec<WorkspaceCharterView>);
+with!(
+    /// Answers with the branch the change was committed on.
+    CharterEdit,
+    "POST",
+    "/charters/edit",
+    crate::CharterChange,
+    String
+);
 bare!(Audit, "GET", "/audit", AuditView);
 bare!(
     /// Answers with the exported file's path.
@@ -676,6 +684,7 @@ fn factory_requests() -> Vec<(&'static str, &'static str)> {
         CapabilityRemove,
         FactoryCapabilities,
         Charters,
+        CharterEdit,
         Audit,
         AuditExport,
     ]
@@ -741,6 +750,6 @@ mod tests {
         assert_eq!(comment.path(), "/jobs/j1/comment");
         let spaced = WorkflowDelete { id: "a b/c".into() };
         assert_eq!(spaced.path(), "/workflows/a%20b%2Fc");
-        assert_eq!(every().len(), 79);
+        assert_eq!(every().len(), 80);
     }
 }

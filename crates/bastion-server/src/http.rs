@@ -185,6 +185,7 @@ fn govern_routes() -> Router<App> {
         .route("/capabilities/remove", post(capability_remove))
         .route("/capabilities/factory", get(factory_capabilities))
         .route("/charters", get(charters))
+        .route("/charters/edit", post(charter_edit))
         .route("/audit", get(audit))
         .route("/audit/export", post(audit_export))
 }
@@ -726,6 +727,14 @@ async fn factory_capabilities(State(app): State<App>) -> Response {
 
 async fn charters(State(app): State<App>) -> Response {
     answer(api::govern::charters(&app.server.factory, &app.server.machine).await)
+}
+
+async fn charter_edit(
+    State(app): State<App>,
+    Json(change): Json<bastion_protocol::CharterChange>,
+) -> Response {
+    let machine = app.server.machine.as_ref();
+    answer(api::charters::edit(&app.server.factory, machine, change).await)
 }
 
 async fn audit(State(app): State<App>, Query(page): Query<api::Page>) -> Response {

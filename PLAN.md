@@ -50,10 +50,12 @@ the top bar loses Constraints, Capabilities and Permissions.
   server, named. A change goes to its section's server.
 - A workflow's Steps tab stays on one server: a canvas edits one workflow.
 
-### S4. Charter edits
+### S4. Charter edits, done
 
-- Edit a charter file in the app. The server commits the edit on a new
-  branch of the workspace's repository, never on its base branch.
+- Edit a charter file in the app: `AGENTS.md`, `.agents/settings.json`,
+  an agent's file, or a skill's `SKILL.md`. The server commits the edit on
+  a new branch, `<prefix>charter-<time>`, in a worktree of its own, so the
+  checkout and the base branch never change. It applies once merged.
 - An agent's turn still may not change the charter.
 
 ## Open questions

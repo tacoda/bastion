@@ -31,6 +31,7 @@ pub struct State {
     workspaces: Vec<Workspace>,
     accounts: Vec<AccountView>,
     charters: Vec<WorkspaceCharterView>,
+    charter: charter::State,
     note: String,
 }
 
@@ -62,6 +63,7 @@ impl Default for State {
             workspaces: vec![],
             accounts: vec![],
             charters: vec![],
+            charter: charter::State::default(),
             note: String::new(),
         }
     }
@@ -96,6 +98,7 @@ pub enum Msg {
     DraftWorkspace,
     Drafted(Box<Result<Workspace, String>>),
     Gates(text_editor::Action),
+    Charter(charter::Msg),
     Done(Result<(), String>),
 }
 
@@ -239,6 +242,11 @@ fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         }
         Msg::Drafted(drafted) => drafted_into(state, *drafted),
         Msg::Gates(action) => state.gates.perform(action),
+        Msg::Charter(charter::Msg::Saved(Ok(branch))) => {
+            let saved = charter::Msg::Saved(Ok(branch));
+            return Task::batch([charter::update(&mut state.charter, saved, ctx), load(ctx)]);
+        }
+        Msg::Charter(m) => return charter::update(&mut state.charter, m, ctx),
         Msg::Done(Ok(_)) => {
             state.note.clear();
             return load(ctx);
@@ -262,7 +270,11 @@ fn fixed<'a>(label: &'a str, value: &str) -> Element<'a, Message> {
 
 /// One workspace: its name, where it is, how it checks a change, and its
 /// charter.
-fn workspace<'a>(w: &Workspace, own: Option<&'a WorkspaceCharterView>) -> Element<'a, Message> {
+fn workspace<'a>(
+    w: &Workspace,
+    own: Option<&'a WorkspaceCharterView>,
+    editing: &'a charter::State,
+) -> Element<'a, Message> {
     let edit = button(text("Edit").size(13))
         .style(theme::link)
         .on_press(wrap(Msg::EditWorkspace(w.name.clone())));
@@ -274,7 +286,7 @@ fn workspace<'a>(w: &Workspace, own: Option<&'a WorkspaceCharterView>) -> Elemen
             .spacing(10)
             .align_y(iced::Center),
         text(about.join(" · ")).size(13).color(theme::MUTED),
-        charter::view(own),
+        charter::view(own, editing),
     ]
     .spacing(6)
     .into()
@@ -284,7 +296,7 @@ fn workspaces(state: &State) -> Element<'_, Message> {
     let lede = "The repositories jobs run against on this Bastion server. Checks run the tests at the checks step. A job pushes to its branch prefix and its id, the job limit caps how many run at once, and the revision budget caps how often its steps send work back before you decide. Setup runs with the network in a VM of its own, before the agent starts; the agent's VM stays offline. The environment is visible to the agent, so keep secrets out of it. Before a push, each gate runs over the change's files, where {files} names them; a failing gate gets the autofix once, then stops the push.";
     let rows = state.workspaces.iter().map(|w| {
         let own = state.charters.iter().find(|c| c.workspace == w.name);
-        workspace(w, own)
+        workspace(w, own, &state.charter)
     });
     card(
         "Workspaces",

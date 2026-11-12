@@ -34,6 +34,23 @@ pub fn guards(path: &str) -> Option<String> {
     })
 }
 
+/// Whether a person may edit `path` from the app (D58): `AGENTS.md`, the
+/// settings, an agent's file, or a skill's `SKILL.md`. Nothing else, and
+/// nothing that leaves the repository.
+pub fn editable(path: &str) -> bool {
+    let parts: Vec<&str> = path.split('/').collect();
+    let plain = |p: &&str| !p.is_empty() && *p != "." && *p != "..";
+    if !parts.iter().all(plain) {
+        return false;
+    }
+    match parts.as_slice() {
+        ["AGENTS.md"] | [".agents", "settings.json"] => true,
+        [".agents", "agents", name] => name.ends_with(".md"),
+        [".agents", "skills", _, "SKILL.md"] => true,
+        _ => false,
+    }
+}
+
 /// The tool name for a sandbox function, as a hook expects it.
 pub fn tool_name(function: &str) -> &'static str {
     TOOLS
@@ -107,6 +124,30 @@ fn bash_words(rule: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_person_edits_only_the_charter_files() {
+        for ok in [
+            "AGENTS.md",
+            ".agents/settings.json",
+            ".agents/agents/strict.md",
+            ".agents/skills/root-cause/SKILL.md",
+        ] {
+            assert!(editable(ok), "{ok}");
+        }
+        for no in [
+            "src/main.rs",
+            "/etc/passwd",
+            "../AGENTS.md",
+            ".agents/../AGENTS.md",
+            "sub/AGENTS.md",
+            ".agents/agents/a/b.md",
+            ".agents/skills/x/run.sh",
+            ".agents//settings.json",
+        ] {
+            assert!(!editable(no), "{no}");
+        }
+    }
     use crate::Stage;
     use crate::govern::{Call, Decision, default_capabilities, gate};
 

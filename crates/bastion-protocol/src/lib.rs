@@ -806,6 +806,19 @@ pub struct WorkspaceCharterView {
     pub skills: Vec<String>,
     #[serde(default)]
     pub agents: Vec<String>,
+    /// Each file a person may edit from the app (D58), by its path in the
+    /// repository, with its text as the base branch's checkout has it.
+    #[serde(default)]
+    pub texts: Vec<(String, String)>,
+}
+
+/// A charter file's new text, committed on a new branch of the
+/// workspace's repository, never on its base branch (D58).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CharterChange {
+    pub workspace: String,
+    pub path: String,
+    pub text: String,
 }
 
 /// One thing the factory may do, and who decides it.

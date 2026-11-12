@@ -1,12 +1,16 @@
 # Bastion
 
-Bastion is a software factory you can govern. A request goes in, agents work
-it through a workflow, and a reviewed change comes out. A workflow is a graph
-of steps that you see on a canvas. Each step is a prompt, an agent, a skill
-or a shell script, each with one text you edit, and each waits for
-your approval or runs on its own, as you set it. Bastion ships the common
-workflows with their text filled in, and every word of them is yours to
-change. Bastion is a server and its clients: `bastion-server` runs the factory on
+<!-- voice-register: informational -->
+<!-- voice-first-person content="exempt: install steps and reference; every value comes from the tools, not from a judgment call" -->
+
+Bastion is an agent control plane. You define workflows and send requests,
+and Bastion fulfills each request as a job that runs agents through the
+workflow's steps. A workflow is a graph of steps that you see on a canvas.
+Each step is a prompt, an agent, a skill or a shell script, each with one
+text you edit, and each step carries its own model, budget and rules. A step
+waits for your approval or runs on its own, as you set it. Bastion ships the
+common workflows with their text filled in, and every word of them is yours
+to change. Bastion is a server and its clients: `bastion-server` runs jobs on
 the [iii](https://iii.dev) engine, and the desktop app (on
 [iced](https://iced.rs)) and the `bastion` command line talk to it over HTTP.
 It's early. [VISION.md](VISION.md) says where it is going, and
@@ -34,8 +38,8 @@ cargo run -p bastion-desktop
 ```
 
 The client starts a local server if none runs on port 49190, and the server
-starts the stack in `worker-compose.yaml`. Go to **Engine** to see Doctor and
-the stack, then **Jobs** and **New request** to start work.
+starts its engine from `worker-compose.yaml`. Go to **Engine** to see Doctor
+and the engine, then **Jobs** and **New request** to start work.
 
 ## What it is not
 
@@ -49,9 +53,9 @@ server issued them.
 
 - Rust, from `rust-toolchain.toml` (rustup picks it up).
 - `iii` 0.25.0 on your `PATH`.
-- A model provider key, set in **Settings**, which keeps it in the stack's
+- A model provider key, set in **Settings**, which keeps it in the engine's
   vault. A key in the environment works too.
-- A `GH_TOKEN` in the stack's vault for the workflows that open pull
+- A `GH_TOKEN` in the engine's vault for the workflows that open pull
   requests: their shell steps ask for the network and that secret. A workflow
   that merges on this machine works without it.
 
@@ -62,9 +66,9 @@ fix it. A failed required check stops the start.
 
 | Part | Where | Does |
 |---|---|---|
-| Core | `crates/bastion-core` | The factory's rules, as pure functions. |
+| Core | `crates/bastion-core` | The rules a job runs by, as pure functions. |
 | Protocol | `crates/bastion-protocol` | The API's types and routes, shared by the server and its clients. |
-| Server | `crates/bastion-server` | The HTTP API and its events, the factory, the store, the gate, the audit and the stack. |
+| Server | `crates/bastion-server` | The HTTP API and its events, the job runner, the store, the gate, the audit and the engine. |
 | Engine adapter | `crates/bastion-server/src/engine/` | The only server code that imports `iii-sdk`. |
 | Client library | `crates/bastion-client` | What every client uses to reach a server: the server list, the local server's start, the calls and the event stream. |
 | Desktop client | `crates/bastion-desktop` | The pages, on iced. |
@@ -86,5 +90,5 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-CI runs the same on macOS and Linux. The live checks need a running stack:
+CI runs the same on macOS and Linux. The live checks need a running engine:
 `cargo test -p bastion-server -- --ignored --nocapture`.

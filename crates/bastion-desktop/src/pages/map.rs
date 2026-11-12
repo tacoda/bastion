@@ -2,14 +2,14 @@
 //! towns along the coast, where requests come ashore; its workflows are
 //! routes across the land, each step a landmark, each route ending at its
 //! summit. A badge on a landmark counts the rules that apply there.
-//! Pressing a landmark opens what applies at that step. On All servers
-//! each server has its chart.
+//! Pressing a landmark opens a card over the chart, beside it, with what
+//! applies at that step. On All servers each server has its chart.
 
 use std::collections::BTreeMap;
 
 use bastion_protocol::{NodeView, WorkflowView};
 use iced::widget::canvas::{self, Canvas, Frame, Geometry, LineDash, Path, Stroke, Text};
-use iced::widget::{Column, column, text};
+use iced::widget::{Column, button, column, container, pin, row, scrollable, stack, text};
 use iced::{Element, Fill, Point, Rectangle, Renderer, Size, Task, Theme, mouse};
 
 use super::step_rules::{self, At, Rules};
@@ -81,7 +81,34 @@ fn under(places: &[Place], p: Point) -> Option<&Place> {
     places.iter().find(|m| middle(m).distance(p) <= REACH)
 }
 
-/// One server's chart. A press publishes the step's key and its kind.
+/// A landmark pressed: its `workflow/step`, its kind, where it stands, and
+/// how wide the chart was, so the card can sit beside it.
+#[derive(Clone, Debug)]
+pub struct Picked {
+    key: String,
+    stage: String,
+    at: Point,
+    width: f32,
+}
+
+/// The card's width, and its tallest before it scrolls.
+const CARD: f32 = 440.0;
+const CARD_MAX: f32 = 340.0;
+
+/// Where the card goes: right of the landmark, or left when that would
+/// run off the chart; never past the chart's foot.
+fn card_at(p: &Picked, height: f32) -> Point {
+    let right = p.at.x + 34.0;
+    let x = if right + CARD > p.width - 16.0 {
+        p.at.x - 34.0 - CARD
+    } else {
+        right
+    };
+    let y = (p.at.y - 60.0).clamp(16.0, (height - CARD_MAX - 16.0).max(16.0));
+    Point::new(x.max(16.0), y)
+}
+
+/// One server's chart. A press publishes the landmark picked.
 struct Chart<'a> {
     rules: &'a Rules,
     picked: Option<&'a str>,
@@ -159,7 +186,7 @@ fn route(frame: &mut Frame, w: &WorkflowView, row: usize, width: f32, steps: &[P
     carto::flag(frame, Point::new(end.x, end.y - 24.0), theme::bad());
 }
 
-impl canvas::Program<(String, String)> for Chart<'_> {
+impl canvas::Program<Picked> for Chart<'_> {
     /// The landmark the pointer is over.
     type State = Option<String>;
 
@@ -170,7 +197,7 @@ impl canvas::Program<(String, String)> for Chart<'_> {
         event: &canvas::Event,
         bounds: Rectangle,
         cursor: mouse::Cursor,
-    ) -> Option<canvas::Action<(String, String)>> {
+    ) -> Option<canvas::Action<Picked>> {
         let places = places(self.rules, bounds.width);
         let over = cursor.position_in(bounds).and_then(|p| under(&places, p));
         let press = matches!(
@@ -178,7 +205,12 @@ impl canvas::Program<(String, String)> for Chart<'_> {
             canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
         );
         if let (true, Some(p)) = (press, over) {
-            let picked = (p.key.clone(), p.stage.clone());
+            let picked = Picked {
+                key: p.key.clone(),
+                stage: p.stage.clone(),
+                at: p.at,
+                width: bounds.width,
+            };
             return Some(canvas::Action::publish(picked).and_capture());
         }
         let key = over.map(|p| p.key.clone());
@@ -260,7 +292,7 @@ impl canvas::Program<(String, String)> for Chart<'_> {
 #[derive(Default)]
 struct Server {
     rules: Rules,
-    picked: Option<(String, String)>,
+    picked: Option<Picked>,
 }
 
 /// Each server shown, by its name.
@@ -272,8 +304,10 @@ pub struct State {
 #[derive(Clone, Debug)]
 pub enum Msg {
     Rules(String, step_rules::Msg),
-    /// A step picked on a server's chart: its `workflow/step` and its kind.
-    Pick(String, (String, String)),
+    /// A landmark picked on a server's chart.
+    Pick(String, Picked),
+    /// Close the card on a server's chart.
+    Close(String),
 }
 
 fn on(server: String) -> impl Fn(step_rules::Msg) -> Message + Clone {
@@ -297,6 +331,7 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
             return step_rules::update(rules, m, &at, &ctx.on(&name)).map(on(name));
         }
         Msg::Pick(name, picked) => state.servers.entry(name).or_default().picked = Some(picked),
+        Msg::Close(name) => state.servers.entry(name).or_default().picked = None,
     }
     Task::none()
 }
@@ -305,23 +340,45 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
 fn section<'a>(name: String, s: &'a Server, named: bool) -> Element<'a, Message> {
     let chart = Chart {
         rules: &s.rules,
-        picked: s.picked.as_ref().map(|(k, _)| k.as_str()),
+        picked: s.picked.as_ref().map(|p| p.key.as_str()),
     };
     let h = height(&s.rules);
     let who = name.clone();
     let canvas = Element::from(Canvas::new(chart).width(Fill).height(h))
         .map(move |p| Message::Map(Msg::Pick(who.clone(), p)));
     let head = named.then(|| text(name.clone()).size(18).font(theme::BOLD).into());
-    let mut body = Column::new().spacing(10).extend(head).push(canvas);
-    if let Some((key, stage)) = &s.picked {
-        let at = At { scope: key, stage };
-        let title = text(format!("What applies at {}", key.replace('/', " › ")))
-            .size(15)
-            .font(theme::BOLD);
-        let list = step_rules::view(&s.rules, &at).map(on(name));
-        body = body.push(column![title, list].spacing(8));
+    let mut map = stack![canvas];
+    if let Some(p) = &s.picked {
+        let at = card_at(p, h);
+        map = map.push(
+            pin(card(&s.rules, p, name.clone()))
+                .x(at.x)
+                .y(at.y)
+                .width(Fill)
+                .height(h),
+        );
     }
-    body.into()
+    Column::new().spacing(10).extend(head).push(map).into()
+}
+
+/// What applies at the landmark picked, as a card over the chart.
+fn card<'a>(rules: &'a Rules, p: &'a Picked, name: String) -> Element<'a, Message> {
+    let at = At {
+        scope: &p.key,
+        stage: &p.stage,
+    };
+    let title = text(p.key.replace('/', " › ")).size(15).font(theme::BOLD);
+    let close = button(text("Close").size(13))
+        .style(theme::link)
+        .on_press(Message::Map(Msg::Close(name.clone())));
+    let head = row![title, iced::widget::space::horizontal(), close].align_y(iced::Center);
+    let list = step_rules::view(rules, &at).map(on(name));
+    let body = scrollable(list).height(iced::Length::Shrink);
+    container(column![head, container(body).max_height(CARD_MAX)].spacing(8))
+        .padding(12)
+        .width(CARD)
+        .style(theme::panel)
+        .into()
 }
 
 pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {

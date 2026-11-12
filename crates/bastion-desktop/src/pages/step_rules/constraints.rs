@@ -64,7 +64,7 @@ pub(super) fn mode(c: &ConstraintView) -> &'static str {
 
 /// Where a constraint comes from: the workspace's charter, or Bastion, at
 /// the harness or the factory.
-fn source(c: &ConstraintView) -> String {
+pub(super) fn source(c: &ConstraintView) -> String {
     match layer(c) {
         "charter" => "Workspace".into(),
         l => format!("Bastion · {l}"),

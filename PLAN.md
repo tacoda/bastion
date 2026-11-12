@@ -43,7 +43,7 @@ lists "You may" before its rules.
   feedback, Workspace and Bastion chips, a Feedforward | Feedback switch,
   and an Add bar. P1 to P3 move it to pages of its own.
 
-### P1. Three rules pages (D57)
+### P1. Three rules pages (D57), done
 
 - Constraints, Capabilities and Permissions return to the top bar.
   Constraints holds rules, checks, hooks and reviewers; Capabilities the
@@ -58,7 +58,7 @@ lists "You may" before its rules.
   hooks, its skills and agents. Bastion still applies the charter; it
   leaves the rules pages because it changes in the repository.
 
-### P3. The Workflows page shows, the pages change
+### P3. The Workflows page shows, the pages change, done
 
 - The workflow level's rules panel goes. A step's Rules tab lists what
   applies at it, read-only, with a link to each page.

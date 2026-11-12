@@ -53,11 +53,13 @@ servers is one more choice in the server picker, so you filter by server the
 same way on each of these pages. You open a job, an entry or a turn and act
 on it wherever it lives.
 
-**Rules, one server at a time.** Workflows, Engine and Settings belong to
-the server you pick. A step's rules live on the Workflows page, with the
-step, and what applies at every step shows there when you pick no step. A
-rules page never mixes two servers, because each server's rules shape only
-its own jobs, and a sum of two rule sets means nothing.
+**Rules, one server at a time.** Workflows, Constraints, Capabilities,
+Permissions, Engine and Settings belong to the server you pick. Bastion
+holds the rules as its harness, and a workflow applies them: each rules
+page turns an item on for every workflow, or for the workflows and steps
+you pick. A step's Rules tab lists what applies there, read-only. A rules
+page never mixes two servers, because each server's rules shape only its
+own jobs, and a sum of two rule sets means nothing.
 
 ## What a server holds
 
@@ -67,11 +69,13 @@ lives with it.
 - **Workspaces:** the repositories it works in, each with its checks, its
   setup, its VM image, and what happens to a job's branch at the end.
 - **Workflows:** its series of steps, each step with its settings.
-- **Rules, by layer:** the charter each workspace's repository brings; the
-  harness, what an agent may call and the rules and hooks on those calls;
-  and the factory, the checks on the work and the reviewers that must pass.
-  Each grant is ask or allowed, and each constraint runs from told to
-  enforced. They apply at one workflow step, or at every step.
+- **Rules:** constraints, what the agent must keep; capabilities, what it
+  may use; and permissions, what the gate lets a call do. A constraint is
+  feedforward, told to the agent before it acts, or feedback, a check, hook
+  or reviewer on what it did. Each grant is ask or allowed. Each item
+  applies at every workflow, or at the workflows and steps you pick. The
+  charter each workspace's repository brings applies too, and changes in
+  the repository.
 - **Settings:** its model providers, its people and their roles, its
   notifications, and its secrets.
 - **Records:** its jobs, its audit log, its evals, its costs, and what

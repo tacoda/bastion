@@ -84,8 +84,6 @@ pub enum Msg {
     Workflows(Result<Vec<WorkflowView>, String>),
     Models(Result<Vec<ModelOption>, String>),
     Rules(super::step_rules::Msg),
-    /// Show the chosen workflow's level: every one of its steps.
-    Level,
     Tab(StepTab),
     /// The picked step's model; the default is empty.
     Model(Choice),
@@ -192,17 +190,6 @@ impl State {
             .map_or_else(String::new, |m| format!("{}", m as f64 / 1e6));
         self.results = step.map(|n| n.results.join(", ")).unwrap_or_default();
         self.picked = pick;
-    }
-
-    /// The level the rules show: `*` for every workflow, the workflow's id,
-    /// or the picked step's `workflow/step`, with the step's kind.
-    fn level(&self) -> (String, String) {
-        let workflow = self
-            .draft
-            .as_ref()
-            .map(|w| w.id.clone())
-            .unwrap_or_default();
-        self.picked_step().unwrap_or((workflow, String::new()))
     }
 
     /// The picked step's name, `workflow/step`, and its kind (D44).
@@ -472,13 +459,12 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
             (state.chosen, state.draft) = (c.id, None);
             state.show_latest();
         }
-        Msg::Level => state.pick(Pick::Nothing),
+        Msg::Rules(super::step_rules::Msg::Go(which)) => {
+            return Task::done(Message::Go(which.route()));
+        }
+        // The step's list is read-only: only what it reads arrives.
         Msg::Rules(m) => {
-            let (scope, stage) = state.level();
-            let at = super::step_rules::At {
-                scope: &scope,
-                stage: &stage,
-            };
+            let at = super::step_rules::level(true);
             return super::step_rules::update(&mut state.rules, m, &at, ctx)
                 .map(|m| wrap(Msg::Rules(m)));
         }
@@ -777,14 +763,14 @@ fn step_head<'a>(n: &bastion_protocol::NodeView, editable: bool) -> Element<'a, 
     .into()
 }
 
-/// The picked step's rules, by layer.
-fn rules_tab<'a>(state: &'a State, editable: bool) -> Option<Element<'a, Message>> {
+/// What applies at the picked step, read-only.
+fn rules_tab(state: &State) -> Option<Element<'_, Message>> {
     let (step, stage) = state.picked_step()?;
     let at = super::step_rules::At {
         scope: &step,
         stage: &stage,
     };
-    let view = super::step_rules::view(&state.rules, &at, editable);
+    let view = super::step_rules::view(&state.rules, &at);
     Some(view.map(|m| wrap(Msg::Rules(m))))
 }
 
@@ -797,7 +783,7 @@ fn step_detail<'a>(state: &'a State, id: &str, editable: bool) -> Option<Element
     let rules = state.tab == StepTab::Rules;
     let shown = match state.tab {
         StepTab::Options => options_tab(state, &n, editable),
-        _ if rules && !is_script(&n) => rules_tab(state, editable)?,
+        _ if rules && !is_script(&n) => rules_tab(state)?,
         _ => step_tab(state, &n, editable),
     };
     let body = column![step_head(&n, editable), tabs(state, &n), shown].spacing(14);
@@ -844,83 +830,16 @@ fn picked(state: &State) -> Option<Element<'_, Message>> {
     }
 }
 
-/// The level bar: the chosen workflow › the picked step.
-fn levels(state: &State) -> Element<'_, Message> {
-    let crumb = |label: String, here: bool, go: Option<Message>| {
-        button(text(label).size(13))
-            .padding([5, 12])
-            .style(theme::nav(here))
-            .on_press_maybe(go)
-            .into()
-    };
-    let name = state
-        .draft
-        .as_ref()
-        .map(|w| w.name.clone())
-        .unwrap_or_default();
-    let step = state
-        .picked_step()
-        .map(|(s, _)| s.split_once('/').map(|(_, s)| s.to_string()).unwrap_or(s));
-    let mut all: Vec<Element<'_, Message>> = vec![crumb(
-        format!("{name} · every step"),
-        step.is_none(),
-        Some(wrap(Msg::Level)),
-    )];
-    if let Some(step) = step {
-        all.extend([
-            text("›").size(14).color(theme::MUTED).into(),
-            crumb(step, true, None),
-        ]);
-    }
-    iced::widget::Row::with_children(all)
-        .spacing(6)
-        .align_y(iced::Center)
-        .into()
-}
-
-/// The rules at every step of the chosen workflow.
-fn level_panel<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
-    let (scope, stage) = state.level();
-    let name = state
-        .draft
-        .as_ref()
-        .map(|w| w.name.clone())
-        .unwrap_or_default();
-    let about = format!(
-        "What is on at every step of this workflow on {}, unless a step turns it off. Pick a step on the canvas for its own.",
-        ctx.current
-    );
-    let at = super::step_rules::At {
-        scope: &scope,
-        stage: &stage,
-    };
-    let rules =
-        super::step_rules::view(&state.rules, &at, state.admin).map(|m| wrap(Msg::Rules(m)));
-    let head = column![
-        text(format!("{name} · every step"))
-            .size(18)
-            .font(theme::BOLD),
-        text(about).size(12).color(theme::MUTED),
-    ]
-    .spacing(2);
-    container(column![head, rules].spacing(14))
-        .padding(16)
-        .width(Fill)
-        .style(theme::panel)
-        .into()
-}
-
 pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let editable = state.editable();
     let about = format!(
-        "The series of steps a job on {} runs. Pick a step to read or change it, or none for what applies at every step.",
+        "The series of steps a job on {} runs. Pick a step to read or change it, and its Rules tab for what applies there.",
         ctx.current
     );
     let mut body = column![super::head("Workflows", about, vec![]), chooser(state)].spacing(12);
     if state.admin {
         body = body.push(manage_view(state));
     }
-    body = body.push(levels(state));
     if editable {
         body = body.push(palette(state));
     }
@@ -935,10 +854,9 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
             on: Some(on),
         }));
     }
-    // With no step picked, the page shows what applies at every step of the
-    // chosen workflow.
-    let shown = picked(state).unwrap_or_else(|| level_panel(state, ctx));
-    body = body.push(shown);
+    if let Some(shown) = picked(state) {
+        body = body.push(shown);
+    }
     if editable {
         body = body.push(
             button("Save a new version")

@@ -24,6 +24,18 @@ pub enum Which {
     Permissions,
 }
 
+impl Which {
+    /// The page's route.
+    pub fn route(self) -> crate::route::Route {
+        use crate::route::Route;
+        match self {
+            Which::Constraints => Route::Constraints,
+            Which::Capabilities => Route::Capabilities,
+            Which::Permissions => Route::Permissions,
+        }
+    }
+}
+
 /// Where a new item goes: on for every workflow in the Global view; off
 /// everywhere in the Workflows view, until its list picks steps.
 const OFF: &str = "!*";

@@ -2,6 +2,7 @@
 //! the servers through `Ctx`, and draws with the shared pieces below.
 
 pub mod audit;
+pub mod carto;
 pub mod chart;
 pub mod costs;
 pub mod diff;

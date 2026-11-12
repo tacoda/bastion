@@ -1,37 +1,41 @@
-//! A job drawn as a trail (L4), after the software expedition: the request
-//! at the outpost, each step a landmark the route climbs past, a marker
-//! where the job is now, and the final peak where it lands. A job that
+//! A job drawn as a trail (L4), on a chart after the software expedition:
+//! the request at the outpost, base camp, each step a landmark the route
+//! climbs past (a peak for an agent's step, a checkpoint for a script), a
+//! marker where the job is now, and the summit where it lands. A job that
 //! stops or fails ends in the marsh. Pressing a landmark opens its step.
 
 use bastion_protocol::StepView;
 use iced::widget::canvas::{self, Canvas, Frame, Geometry, LineDash, Path, Stroke, Text};
-use iced::{Element, Fill, Point, Rectangle, Renderer, Theme, mouse};
+use iced::{Element, Fill, Point, Rectangle, Renderer, Size, Theme, mouse};
 
+use super::carto;
 use crate::theme;
 
-const HEIGHT: f32 = 190.0;
-/// Room at each end for the outpost and the peak.
-const END: f32 = 70.0;
-const DOT: f32 = 10.0;
+const HEIGHT: f32 = 300.0;
+/// Where the land starts, past the sea of requests.
+const SHORE: f32 = 70.0;
+/// Room on the right for the summit and the compass.
+const EAST: f32 = 190.0;
 /// How near a press must land to a landmark to pick it.
-const REACH: f32 = 16.0;
+const REACH: f32 = 22.0;
 
-/// One step's place on the trail.
+/// One step's place on the trail: `at` is the foot of its landmark.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Landmark {
     pub id: String,
+    pub stage: String,
     pub state: String,
     pub at: Point,
 }
 
-/// Where the route climbs: the outpost low on the left, each step a little
-/// higher, the peak high on the right, with a gentle wander so it reads as
-/// ground rather than a chart.
+/// Where the route climbs: from base camp low on the left toward the
+/// summit high on the right, with a wander so it reads as ground.
 fn rise(i: usize, n: usize, width: f32) -> Point {
-    let span = (width - 2.0 * END).max(1.0);
-    let t = (i as f32 + 1.0) / (n as f32 + 1.0);
-    let wander = (i as f32 * 1.7).sin() * 10.0;
-    Point::new(END + t * span, HEIGHT * 0.70 - t * HEIGHT * 0.38 + wander)
+    let west = SHORE + 190.0;
+    let span = (width - west - EAST).max(1.0);
+    let t = (i as f32 + 0.5) / n.max(1) as f32;
+    let wander = (i as f32 * 1.9).sin() * 14.0;
+    Point::new(west + t * span, HEIGHT * 0.80 - t * HEIGHT * 0.36 + wander)
 }
 
 /// Each step's landmark on a trail `width` wide, in the order the job runs.
@@ -42,6 +46,7 @@ pub fn landmarks(steps: &[StepView], width: f32) -> Vec<Landmark> {
         .enumerate()
         .map(|(i, s)| Landmark {
             id: s.id.clone(),
+            stage: s.stage.clone(),
             state: s.state.clone(),
             at: rise(i, n, width),
         })
@@ -49,16 +54,21 @@ pub fn landmarks(steps: &[StepView], width: f32) -> Vec<Landmark> {
 }
 
 fn outpost() -> Point {
-    Point::new(END * 0.5, HEIGHT * 0.74)
+    Point::new(SHORE + 70.0, HEIGHT * 0.78)
 }
 
-fn peak(width: f32) -> Point {
-    Point::new(width - END * 0.5, HEIGHT * 0.26)
+fn camp() -> Point {
+    Point::new(SHORE + 140.0, HEIGHT * 0.84)
 }
 
-/// The landmark under `p`, if one is near enough to press.
+fn summit(width: f32) -> Point {
+    Point::new(width - EAST * 0.62, HEIGHT * 0.40)
+}
+
+/// The landmark whose drawing is under `p`, if one is near enough.
 fn under(marks: &[Landmark], p: Point) -> Option<&Landmark> {
-    marks.iter().find(|m| m.at.distance(p) <= REACH)
+    let middle = |m: &Landmark| Point::new(m.at.x, m.at.y - 16.0);
+    marks.iter().find(|m| middle(m).distance(p) <= REACH)
 }
 
 /// Whether the route up to this landmark is walked: the steps done.
@@ -78,147 +88,122 @@ pub struct Trail<'a, M> {
     pub pick: fn(String) -> M,
 }
 
-fn label(content: String, at: Point, size: f32) -> Text {
-    Text {
-        content,
-        position: at,
-        color: theme::muted(),
-        size: size.into(),
-        font: theme::FONT,
-        align_x: iced::alignment::Horizontal::Center.into(),
-        align_y: iced::alignment::Vertical::Top,
-        ..Text::default()
-    }
-}
-
-/// Faint contour lines, so the trail sits on ground.
-fn contours(frame: &mut Frame, width: f32) {
-    let line = Stroke::default().with_width(1.0).with_color(theme::line());
-    for k in 0..3 {
-        let base = HEIGHT * (0.45 + 0.17 * k as f32);
-        let path = Path::new(|b| {
-            b.move_to(Point::new(0.0, base));
-            let mut x = 0.0;
-            while x < width {
-                let y = base + ((x / 90.0) + k as f32).sin() * 6.0;
-                b.line_to(Point::new(x, y));
-                x += 12.0;
-            }
-        });
-        frame.stroke(&path, line);
-    }
-}
-
-/// The route through every landmark, walked solid, the rest dashed.
+/// The route out, walked in red dashes, the rest of the way dotted.
 fn route(frame: &mut Frame, points: &[(Point, bool)]) {
     for pair in points.windows(2) {
         let ((a, _), (b, done)) = (pair[0], pair[1]);
-        let mid = Point::new((a.x + b.x) / 2.0, a.y.min(b.y) - 8.0);
+        let mid = Point::new((a.x + b.x) / 2.0, a.y.min(b.y) - 10.0);
         let path = Path::new(|p| {
             p.move_to(a);
             p.quadratic_curve_to(mid, b);
         });
-        let stroke = match done {
-            true => Stroke::default().with_width(3.0).with_color(theme::ink()),
-            false => Stroke {
-                line_dash: LineDash {
-                    segments: &[6.0, 5.0],
-                    offset: 0,
-                },
-                ..Stroke::default()
-            }
-            .with_width(2.0)
-            .with_color(theme::muted()),
+        let (dash, width, color): (&[f32], f32, _) = match done {
+            true => (&[9.0, 6.0], 3.0, theme::link_color()),
+            false => (&[2.0, 5.0], 2.0, theme::ink()),
         };
-        frame.stroke(&path, stroke);
+        let stroke = Stroke {
+            line_dash: LineDash {
+                segments: dash,
+                offset: 0,
+            },
+            ..Stroke::default()
+        };
+        frame.stroke(&path, stroke.with_width(width).with_color(color));
     }
 }
 
-/// A landmark: done is a filled stone, failed a red peak, the rest open.
-fn landmark(frame: &mut Frame, m: &Landmark, hovered: bool) {
-    let r = if hovered { DOT + 3.0 } else { DOT };
+/// A shell step is a checkpoint; an agent's step is a peak to climb.
+fn landmark(frame: &mut Frame, m: &Landmark, i: usize, hovered: bool) {
+    let faint = m.state == "pending";
+    if m.stage == "shell" {
+        carto::castle(frame, m.at, faint);
+    } else {
+        let height = 38.0 + (i % 3) as f32 * 7.0 + if hovered { 6.0 } else { 0.0 };
+        carto::mountain(frame, m.at, height, faint);
+    }
     match m.state.as_str() {
-        "failed" => {
-            let peak = Path::new(|p| {
-                p.move_to(Point::new(m.at.x - r, m.at.y + r));
-                p.line_to(Point::new(m.at.x, m.at.y - r * 1.2));
-                p.line_to(Point::new(m.at.x + r, m.at.y + r));
-                p.close();
-            });
-            frame.fill(&peak, theme::bad());
-        }
-        "done" => frame.fill(&Path::circle(m.at, r), theme::ok()),
-        state if here(state) => {
-            frame.fill(&Path::circle(m.at, r), theme::warn());
-            pin(frame, m.at);
-        }
-        _ => {
-            frame.fill(&Path::circle(m.at, r), theme::panel_color());
-            let ring = Stroke::default().with_width(2.0).with_color(theme::muted());
-            frame.stroke(&Path::circle(m.at, r), ring);
-        }
+        "failed" => carto::cross(frame, Point::new(m.at.x, m.at.y + 4.0), theme::bad()),
+        "done" => carto::flag(frame, Point::new(m.at.x + 14.0, m.at.y), theme::ok()),
+        state if here(state) => pin(frame, Point::new(m.at.x, m.at.y - 40.0)),
+        _ => {}
     }
-    let name = m.id.replace('_', " ");
-    frame.fill_text(label(name, Point::new(m.at.x, m.at.y + r + 6.0), 13.0));
-    if hovered {
-        let state = label(m.state.clone(), Point::new(m.at.x, m.at.y + r + 22.0), 11.0);
-        frame.fill_text(state);
-    }
+    let note = if hovered { m.state.as_str() } else { "" };
+    carto::name(
+        frame,
+        Point::new(m.at.x, m.at.y + 8.0),
+        &m.id.replace('_', " "),
+        note,
+    );
 }
 
 /// The marker over the step the job is at now.
-fn pin(frame: &mut Frame, at: Point) {
-    let top = Point::new(at.x, at.y - 34.0);
-    let stem = Stroke::default().with_width(2.0).with_color(theme::ink());
-    frame.stroke(&Path::line(Point::new(at.x, at.y - DOT), top), stem);
-    let flag = Path::new(|p| {
-        p.move_to(top);
-        p.line_to(Point::new(top.x + 16.0, top.y + 5.0));
-        p.line_to(Point::new(top.x, top.y + 10.0));
+fn pin(frame: &mut Frame, tip: Point) {
+    let head = Point::new(tip.x, tip.y - 14.0);
+    let body = Path::new(|p| {
+        p.move_to(tip);
+        p.line_to(Point::new(head.x - 7.0, head.y));
+        p.line_to(Point::new(head.x + 7.0, head.y));
         p.close();
     });
-    frame.fill(&flag, theme::primary_color());
-    let mut you = label("you are here".into(), Point::new(at.x, top.y - 16.0), 11.0);
+    frame.fill(&body, theme::bad());
+    frame.fill(&Path::circle(head, 7.0), theme::bad());
+    frame.fill(&Path::circle(head, 2.5), theme::panel_color());
+    let mut you = Text {
+        content: "you are here".into(),
+        position: Point::new(head.x, head.y - 24.0),
+        size: 12.0.into(),
+        font: carto::SERIF,
+        align_x: iced::alignment::Horizontal::Center.into(),
+        ..Text::default()
+    };
     you.color = theme::ink();
     frame.fill_text(you);
 }
 
-/// The final peak, reached when the job lands; the marsh when it does not.
-fn finish(frame: &mut Frame, at: Point, job: &str) {
+/// The summit when the job lands or is on its way; the marsh when it
+/// stopped or failed.
+fn finish(frame: &mut Frame, width: f32, job: &str) {
+    let top = summit(width);
     if matches!(job, "failed" | "stopped") {
-        let reeds = Stroke::default().with_width(2.0).with_color(theme::muted());
-        for k in 0..3 {
-            let y = at.y + 40.0 + k as f32 * 6.0;
-            let wave = Path::new(|p| {
-                p.move_to(Point::new(at.x - 22.0, y));
-                p.quadratic_curve_to(Point::new(at.x, y - 6.0), Point::new(at.x + 22.0, y));
-            });
-            frame.stroke(&wave, reeds);
-        }
-        frame.fill_text(label(
-            "the marsh".into(),
-            Point::new(at.x, at.y + 66.0),
-            12.0,
-        ));
+        let low = Point::new(top.x, HEIGHT * 0.78);
+        carto::marsh(frame, low);
+        carto::name(
+            frame,
+            Point::new(low.x, low.y + 18.0),
+            "the marsh",
+            "the trail went nowhere, said out loud",
+        );
+        carto::mountain(frame, Point::new(top.x, top.y + 70.0), 80.0, true);
         return;
     }
-    let reached = job == "landed";
-    let summit = Path::new(|p| {
-        p.move_to(Point::new(at.x - 26.0, at.y + 22.0));
-        p.line_to(Point::new(at.x, at.y - 18.0));
-        p.line_to(Point::new(at.x + 26.0, at.y + 22.0));
-        p.close();
-    });
-    let color = if reached {
-        theme::ok()
+    let base = Point::new(top.x, top.y + 70.0);
+    carto::mountain(frame, base, 90.0, job != "landed");
+    if job == "landed" {
+        carto::flag(frame, Point::new(top.x, top.y - 20.0), theme::bad());
+    }
+    let note = if job == "landed" {
+        "it works: the job landed"
     } else {
-        theme::raised()
+        "where it lands"
     };
-    frame.fill(&summit, color);
-    let edge = Stroke::default().with_width(2.0).with_color(theme::muted());
-    frame.stroke(&summit, edge);
-    let words = if reached { "landed" } else { "final peak" };
-    frame.fill_text(label(words.into(), Point::new(at.x, at.y + 28.0), 12.0));
+    carto::name(frame, Point::new(top.x, top.y - 92.0), "the summit", note);
+}
+
+/// The ground between: hills and trees, the same each time it is drawn.
+fn scenery(frame: &mut Frame, width: f32) {
+    for k in 0..4 {
+        let x = SHORE + 220.0 + (k as f32 * 271.0) % (width - SHORE - EAST - 260.0).max(1.0);
+        carto::hill(
+            frame,
+            Point::new(x, HEIGHT * 0.30 + (k % 2) as f32 * 18.0),
+            46.0,
+        );
+    }
+    for k in 0..9 {
+        let x = SHORE + 170.0 + (k as f32 * 157.0) % (width - SHORE - EAST - 200.0).max(1.0);
+        let y = HEIGHT * 0.90 - (k % 3) as f32 * 6.0;
+        carto::tree(frame, Point::new(x, y));
+    }
 }
 
 impl<M> canvas::Program<M> for Trail<'_, M> {
@@ -260,31 +245,43 @@ impl<M> canvas::Program<M> for Trail<'_, M> {
         _: mouse::Cursor,
     ) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
-        let width = bounds.width;
-        contours(&mut frame, width);
+        let (width, size) = (bounds.width, Size::new(bounds.width, HEIGHT));
+        carto::rhumbs(&mut frame, Point::new(width * 0.55, HEIGHT * 0.55), size);
+        carto::coast(&mut frame, SHORE, size);
+        scenery(&mut frame, width);
         let marks = landmarks(self.steps, width);
-        let start = (outpost(), true);
+        let start = (camp(), true);
         let middle = marks.iter().map(|m| (m.at, walked(&m.state)));
-        let end = (peak(width), self.job == "landed");
-        let points: Vec<(Point, bool)> = std::iter::once(start)
+        let end = (
+            Point::new(summit(width).x, summit(width).y + 70.0),
+            self.job == "landed",
+        );
+        let points: Vec<(Point, bool)> = std::iter::once((outpost(), true))
+            .chain(std::iter::once(start))
             .chain(middle)
             .chain(std::iter::once(end))
             .collect();
         route(&mut frame, &points);
-        let camp = Path::new(|p| {
-            let o = outpost();
-            p.move_to(Point::new(o.x - 12.0, o.y + 8.0));
-            p.line_to(Point::new(o.x, o.y - 10.0));
-            p.line_to(Point::new(o.x + 12.0, o.y + 8.0));
-            p.close();
-        });
-        frame.fill(&camp, theme::muted());
-        let o = outpost();
-        frame.fill_text(label("request".into(), Point::new(o.x, o.y + 14.0), 12.0));
-        finish(&mut frame, peak(width), self.job);
-        for m in &marks {
-            landmark(&mut frame, m, hovered.as_deref() == Some(m.id.as_str()));
+        carto::outpost(&mut frame, outpost());
+        carto::name(
+            &mut frame,
+            Point::new(outpost().x, outpost().y + 8.0),
+            "the outpost",
+            "the request",
+        );
+        carto::tents(&mut frame, camp());
+        finish(&mut frame, width, self.job);
+        for (i, m) in marks.iter().enumerate() {
+            landmark(&mut frame, m, i, hovered.as_deref() == Some(m.id.as_str()));
         }
+        carto::compass(&mut frame, Point::new(width - 52.0, HEIGHT - 66.0), 26.0);
+        carto::name(
+            &mut frame,
+            Point::new(width / 2.0, 22.0),
+            "the trail",
+            "from the request to the summit",
+        );
+        carto::border(&mut frame, size);
         vec![frame.into_geometry()]
     }
 
@@ -330,8 +327,8 @@ mod tests {
         ];
         let marks = landmarks(&steps, 900.0);
         assert!(marks.windows(2).all(|w| w[0].at.x < w[1].at.x), "in order");
-        assert!(marks[0].at.y > peak(900.0).y, "the peak is highest");
-        let near = Point::new(marks[1].at.x + 5.0, marks[1].at.y);
+        assert!(marks[0].at.y > summit(900.0).y, "the summit is highest");
+        let near = Point::new(marks[1].at.x + 5.0, marks[1].at.y - 16.0);
         assert_eq!(under(&marks, near).map(|m| m.id.as_str()), Some("build"));
         assert_eq!(under(&marks, Point::new(0.0, 0.0)), None);
         assert!(here("waiting") && !here("done") && walked("done"));

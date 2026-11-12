@@ -68,8 +68,29 @@ const LIGHT: Colors = Colors {
     warn: hex(0xa16207),
 };
 
+/// The old-world chart of the software expedition: parchment and ink, red
+/// for what went wrong, forest for what landed.
+const CHART: Colors = Colors {
+    bg: hex(0xefe4c8),
+    panel: hex(0xf6eed8),
+    ink: hex(0x3b2a1a),
+    muted: hex(0x6b5233),
+    line: hex(0xcdbb8a),
+    raised: hex(0xe5d6b0),
+    primary: hex(0x3b2a1a),
+    primary_hover: hex(0x5a4128),
+    link: hex(0x7a2418),
+    ok: hex(0x3f6b2a),
+    bad: hex(0x9b2c1f),
+    warn: hex(0x8a5a00),
+};
+
 /// The themes, by name; the first is the default.
-pub const THEMES: [(&str, Colors); 2] = [("bastion-dark", DARK), ("bastion-light", LIGHT)];
+pub const THEMES: [(&str, Colors); 3] = [
+    ("bastion-dark", DARK),
+    ("bastion-light", LIGHT),
+    ("bastion-chart", CHART),
+];
 
 static CURRENT: AtomicUsize = AtomicUsize::new(0);
 

@@ -834,6 +834,10 @@ pub struct FieldNoteView {
     /// Whether the job landed; false for the marsh.
     #[serde(default)]
     pub landed: bool,
+    /// The trail the journey took, for a note about Bastion to become
+    /// guidance on it (D61).
+    #[serde(default)]
+    pub workflow: String,
     /// The branch a lesson or a fact was committed on, for a person to
     /// merge (D61); empty for a note about Bastion.
     #[serde(default)]

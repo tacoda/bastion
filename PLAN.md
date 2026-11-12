@@ -311,8 +311,9 @@ Next, notes become charter changes (D61, replacing D59's atlas):
   entry names, it is given that entry, once per turn.
 - The Map's harbor town shows the region's rules and corpus, read from
   the repository.
-- A note about Bastion stays in the database and appears on the Guide,
-  where it offers to become guidance or a check at its waypoint.
+- Done: a note about Bastion appears on the Guide under "Learned on
+  journeys"; one press makes it guidance on the trail its journey took.
+- Next: offer a check as well as guidance, at the waypoint it came from.
 
 The app should feel like an expedition, and improve itself from what jobs
 teach.

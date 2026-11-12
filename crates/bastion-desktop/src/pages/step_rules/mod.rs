@@ -220,6 +220,11 @@ impl Rules {
         &self.workflows
     }
 
+    /// Whether a rule with these words is already on the server.
+    pub fn has_rule(&self, words: &str) -> bool {
+        self.constraints.iter().any(|c| c.rule == words)
+    }
+
     /// Each workspace's charter.
     pub fn charters(&self) -> &[WorkspaceCharterView] {
         &self.charters

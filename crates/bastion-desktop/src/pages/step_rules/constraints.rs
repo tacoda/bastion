@@ -121,7 +121,7 @@ fn rung_switch<'a>(c: &ConstraintView, editable: bool) -> Element<'a, Msg> {
 /// One made in the app for this workflow comes off whole at the workflow's
 /// level; a seeded one, or one other workflows use, is only turned off.
 fn removable(c: &ConstraintView, at: &At) -> bool {
-    let prefixes = ["rule-", "hook-", "reviewer-", "note-"];
+    let prefixes = ["rule-", "hook-", "reviewer-", "note-", "learned-"];
     let made_in_app = prefixes.iter().any(|p| c.id.starts_with(p));
     !at.is_step() && made_in_app && scope::only_in(&c.steps, at.scope)
 }

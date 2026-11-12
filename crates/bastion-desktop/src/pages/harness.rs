@@ -4,8 +4,8 @@
 
 use std::collections::BTreeMap;
 
-use bastion_protocol::PersonView;
 use bastion_protocol::api;
+use bastion_protocol::{ConstraintView, FieldNoteView, PersonView};
 use iced::widget::{Column, column, row, text};
 use iced::{Element, Task};
 
@@ -19,6 +19,10 @@ use crate::theme;
 struct Server {
     admin: bool,
     rules: step_rules::Rules,
+    /// What journeys taught about Bastion, newest first (D61).
+    learned: Vec<FieldNoteView>,
+    /// Why the last note could not become guidance.
+    adopt_error: String,
 }
 
 pub struct State {
@@ -45,6 +49,10 @@ pub enum Msg {
     Kind(Option<Which>),
     Global(bool),
     Me(String, Result<PersonView, String>),
+    Learned(String, Result<Vec<FieldNoteView>, String>),
+    /// Make a note about Bastion guidance on its journey's trail.
+    Adopt(String, FieldNoteView),
+    Adopted(String, Result<(), String>),
     Rules(String, step_rules::Msg),
 }
 
@@ -56,13 +64,34 @@ fn on(server: String) -> impl Fn(step_rules::Msg) -> Message + Clone {
 pub fn load(ctx: &Ctx) -> Task<Message> {
     let each = ctx.shown().into_iter().map(|name| {
         let here = ctx.on(&name);
-        let who = name.clone();
+        let (who, whose) = (name.clone(), name.clone());
         let me = Task::perform(here.clone().get(name.clone(), api::Me), move |me| {
             Message::Rules(Msg::Me(who.clone(), me))
         });
-        Task::batch([me, step_rules::load(&here).map(on(name))])
+        let learned = Task::perform(here.clone().get(name.clone(), api::Atlas), move |r| {
+            Message::Rules(Msg::Learned(whose.clone(), r))
+        });
+        Task::batch([me, learned, step_rules::load(&here).map(on(name))])
     });
     Task::batch(each)
+}
+
+/// A note about Bastion as guidance: a rule the agent is told, on at the
+/// trail the journey took, or every trail when it took none on record.
+fn guidance(n: &FieldNoteView) -> ConstraintView {
+    let scope = if n.workflow.is_empty() {
+        "*"
+    } else {
+        n.workflow.as_str()
+    };
+    ConstraintView {
+        id: format!("learned-{}-{}", n.job, n.at),
+        rule: n.text.clone(),
+        rung: "told".into(),
+        source: "owner".into(),
+        steps: vec![scope.into()],
+        ..ConstraintView::default()
+    }
 }
 
 pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
@@ -72,6 +101,28 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         Msg::Me(name, me) => {
             state.servers.entry(name).or_default().admin = me.is_ok_and(|me| me.role == "admin")
         }
+        Msg::Learned(name, notes) => {
+            let about = notes.unwrap_or_default().into_iter();
+            let mine = about.filter(|n| n.about == "bastion").collect();
+            state.servers.entry(name).or_default().learned = mine;
+        }
+        Msg::Adopt(name, note) => {
+            let add = api::ConstraintAdd(guidance(&note));
+            let who = name.clone();
+            let here = ctx.on(&name);
+            return Task::perform(here.get(name, add), move |r| {
+                Message::Rules(Msg::Adopted(who.clone(), r))
+            });
+        }
+        Msg::Adopted(name, done) => {
+            let s = state.servers.entry(name.clone()).or_default();
+            if let Err(e) = done {
+                s.adopt_error = e;
+                return Task::none();
+            }
+            s.adopt_error.clear();
+            return load(&ctx.on(&name));
+        }
         Msg::Rules(name, m) => {
             let at = step_rules::level(state.global);
             let rules = &mut state.servers.entry(name.clone()).or_default().rules;
@@ -79,6 +130,59 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         }
     }
     Task::none()
+}
+
+/// The learning loop (D61): what journeys taught about Bastion, each one a
+/// press away from being guidance on the trail it came from.
+fn learned<'a>(s: &'a Server, server: &str) -> Element<'a, Message> {
+    let in_rules = |n: &FieldNoteView| s.rules.has_rule(&n.text);
+    let rows = s.learned.iter().map(|n| {
+        let trail = if n.workflow.is_empty() {
+            "every trail".to_string()
+        } else {
+            n.workflow.clone()
+        };
+        let whence = format!("{} · {} · {}", n.by, n.request, super::ago(n.at));
+        let act: Element<'a, Message> = match (in_rules(n), s.admin) {
+            (true, _) => text("Guidance now").size(12).color(theme::ok()).into(),
+            (false, true) => {
+                crate::lift::button(text(format!("Make it guidance on {trail}")).size(13))
+                    .style(theme::secondary)
+                    .on_press(Message::Rules(Msg::Adopt(server.into(), n.clone())))
+                    .into()
+            }
+            (false, false) => text("").into(),
+        };
+        let words = column![
+            text(n.text.clone()).size(13),
+            text(whence).size(12).color(theme::muted())
+        ]
+        .spacing(2)
+        .width(iced::Fill);
+        row![words, act].spacing(10).align_y(iced::Center).into()
+    });
+    let mut body = Column::new().spacing(10).extend(rows);
+    if s.learned.is_empty() {
+        let none =
+            "Nothing yet. When a journey comes home, sign a note about Bastion on its charter.";
+        body = body.push(text(none).size(13).color(theme::muted()));
+    }
+    if !s.adopt_error.is_empty() {
+        body = body.push(text(&s.adopt_error).size(13).color(theme::bad()));
+    }
+    let head = row![
+        text("Learned on journeys").size(15).font(theme::BOLD),
+        text("What journeys taught about Bastion. Make one guidance on its trail.")
+            .size(12)
+            .color(theme::muted())
+    ]
+    .spacing(10)
+    .align_y(iced::Center);
+    iced::widget::container(column![head, body].spacing(10))
+        .padding(12)
+        .width(iced::Fill)
+        .style(theme::panel)
+        .into()
 }
 
 pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
@@ -102,6 +206,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         let s = state.servers.get(&name)?;
         let page = step_rules::page(&s.rules, &shown_kinds, state.global, s.admin);
         let page = page.map(on(name.clone()));
+        let page = column![learned(s, &name), page].spacing(10);
         let head = named.then(|| text(name).size(18).font(theme::BOLD));
         let head = head.map(Element::from);
         Some(Column::new().spacing(10).extend(head).push(page).into())

@@ -136,6 +136,7 @@ pub async fn atlas(cell: &FactoryCell) -> Result<Vec<FieldNoteView>, String> {
             n.request = r.job.request;
             n.workspace = r.job.workspace;
             n.landed = r.job.state == State::Landed;
+            n.workflow = r.runtime.workflow.unwrap_or_default();
         }
     }
     notes.sort_by_key(|n| std::cmp::Reverse(n.at));

@@ -81,12 +81,24 @@ fn here(state: &str) -> bool {
     matches!(state, "running" | "waiting" | "queued")
 }
 
+/// A landmark pressed: its step, where it stands, and how wide the trail
+/// was, so a card can sit beside it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Pressed {
+    pub id: String,
+    pub at: Point,
+    pub width: f32,
+}
+
 pub struct Trail<'a, M> {
     pub steps: &'a [StepView],
     /// The job's own state: `landed`, `failed`, `stopped` or on its way.
     pub job: &'a str,
-    pub pick: fn(String) -> M,
+    pub pick: fn(Pressed) -> M,
 }
+
+/// The trail's height, for a card laid over it.
+pub const TALL: f32 = HEIGHT;
 
 /// The route out, walked in red dashes, the rest of the way dotted.
 fn route(frame: &mut Frame, points: &[(Point, bool)]) {
@@ -220,13 +232,19 @@ impl<M> canvas::Program<M> for Trail<'_, M> {
     ) -> Option<canvas::Action<M>> {
         let at = cursor.position_in(bounds);
         let marks = landmarks(self.steps, bounds.width);
-        let over = at.and_then(|p| under(&marks, p)).map(|m| m.id.clone());
+        let mark = at.and_then(|p| under(&marks, p));
+        let over = mark.map(|m| m.id.clone());
         let press = matches!(
             event,
             canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
         );
-        if let (true, Some(id)) = (press, &over) {
-            return Some(canvas::Action::publish((self.pick)(id.clone())).and_capture());
+        if let (true, Some(m)) = (press, mark) {
+            let pressed = Pressed {
+                id: m.id.clone(),
+                at: m.at,
+                width: bounds.width,
+            };
+            return Some(canvas::Action::publish((self.pick)(pressed)).and_capture());
         }
         if over != *hovered {
             *hovered = over;

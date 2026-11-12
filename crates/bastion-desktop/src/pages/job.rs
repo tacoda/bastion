@@ -34,6 +34,8 @@ pub struct State {
     marks: BTreeMap<String, String>,
     /// The landmarks of the job's trail.
     trail: Vec<StepView>,
+    /// The landmark pressed, whose card is open over the trail.
+    pressed: Option<super::trail::Pressed>,
     /// Each artifact's body, parsed as markdown, by its text.
     docs: BTreeMap<String, markdown::Content>,
     /// The diff lines the last click named in the note.
@@ -53,6 +55,7 @@ impl State {
             pick: None,
             marks: BTreeMap::new(),
             trail: Vec::new(),
+            pressed: None,
             docs: BTreeMap::new(),
         }
     }
@@ -76,6 +79,10 @@ pub enum Msg {
     Allow(String),
     Refuse(String),
     ToggleStep(String),
+    /// A landmark pressed on the trail; its card opens over the trail.
+    Pressed(super::trail::Pressed),
+    /// Close the trail's card.
+    CloseCard,
     ToggleTurn,
     /// Open a kept screenshot or recording with the system's viewer.
     OpenMedia(String),
@@ -221,6 +228,8 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
             }
         }
         Msg::ToggleTurn => state.turn_open = !state.turn_open,
+        Msg::Pressed(p) => state.pressed = Some(p),
+        Msg::CloseCard => state.pressed = None,
         Msg::OpenMedia(name) => return open_media(ctx, &state.id, name),
     }
     Task::none()
@@ -607,9 +616,15 @@ fn flow<'a>(state: &'a State, d: &'a JobDetail) -> Element<'a, Message> {
     let trail = super::trail::view(super::trail::Trail {
         steps: &state.trail,
         job: &d.job.state,
-        pick: |id| Message::Job(Msg::ToggleStep(id)),
+        pick: |p| Message::Job(Msg::Pressed(p)),
     });
-    let mut body = column![trail].spacing(8);
+    let mut map = iced::widget::stack![trail];
+    if let Some(p) = &state.pressed {
+        let (x, y) = card_at(p);
+        let card = iced::widget::pin(step_card(state, d, &p.id)).x(x).y(y);
+        map = map.push(card.width(Fill).height(super::trail::TALL));
+    }
+    let mut body = column![map].spacing(8);
     for (name, result) in &d.results {
         let head = text(format!("Result · {name}"))
             .size(12)
@@ -623,6 +638,85 @@ fn flow<'a>(state: &'a State, d: &'a JobDetail) -> Element<'a, Message> {
         );
     }
     body.into()
+}
+
+/// The trail card's width, and its tallest before it scrolls.
+const CARD: f32 = 460.0;
+const CARD_MAX: f32 = 230.0;
+
+/// Where the card goes over the trail: beside the landmark, flipped left
+/// near the right edge.
+fn card_at(p: &super::trail::Pressed) -> (f32, f32) {
+    let right = p.at.x + 34.0;
+    let x = if right + CARD > p.width - 16.0 {
+        p.at.x - 34.0 - CARD
+    } else {
+        right
+    };
+    (x.max(16.0), 16.0)
+}
+
+/// A step's output: the results it gave, its artifacts, and its latest
+/// turn, or a line that says it has none yet.
+fn step_output<'a>(state: &'a State, d: &'a JobDetail, id: &'a str) -> Column<'a, Message> {
+    let node = d.workflow.nodes.iter().find(|n| n.id == id);
+    let gives = |name: &String| name == id || node.is_some_and(|n| n.results.contains(name));
+    let results = d
+        .results
+        .iter()
+        .filter(|(name, _)| gives(name))
+        .map(|(name, out)| {
+            let head = text(format!("Result · {name}")).size(12).font(theme::BOLD);
+            column![head.color(theme::muted()), block(out.clone())]
+                .spacing(4)
+                .into()
+        });
+    let mine: Vec<&ArtifactView> = d.artifacts.iter().rev().filter(|a| a.step == id).collect();
+    let none = !d.results.keys().any(gives) && mine.is_empty();
+    let out = mine.into_iter().map(|a| artifact(state, a));
+    let mut body = Column::new().spacing(10).extend(results).extend(out);
+    let agent = |s: &&StepView| s.stage != "shell" && s.state != "pending";
+    let turned = d.steps.iter().rev().find(agent).is_some_and(|s| s.id == id);
+    if turned && !d.transcript.is_empty() {
+        body = body.push(turn(&d.transcript, state.turn_open));
+    }
+    if none && !turned {
+        let line = text("No output from this step yet.").size(13);
+        body = body.push(line.color(theme::muted()));
+    }
+    body
+}
+
+/// A step's card on the trail: its state, its output, its latest turn,
+/// and what it does.
+fn step_card<'a>(state: &'a State, d: &'a JobDetail, id: &'a str) -> Element<'a, Message> {
+    let step = d.steps.iter().find(|s| s.id == id);
+    let st = step.map_or("not run".to_string(), |s| s.state.clone());
+    let title = text(id.replace('_', " ")).size(15).font(theme::BOLD);
+    let close = button(text("Close").size(13))
+        .style(theme::link)
+        .on_press(Message::Job(Msg::CloseCard));
+    let head = row![
+        title,
+        text(st).size(12).color(theme::muted()),
+        iced::widget::space::horizontal(),
+        close
+    ]
+    .spacing(8)
+    .align_y(iced::Center);
+    let mut body = step_output(state, d, id);
+    if let Some(n) = d.workflow.nodes.iter().find(|n| n.id == id) {
+        let what = text("What it does").size(12).font(theme::BOLD);
+        body = body
+            .push(what.color(theme::muted()))
+            .push(super::map::does(n));
+    }
+    let body = scrollable(body).height(iced::Length::Shrink);
+    container(column![head, container(body).max_height(CARD_MAX)].spacing(8))
+        .padding(12)
+        .width(CARD)
+        .style(theme::panel)
+        .into()
 }
 
 fn artifact<'a>(state: &'a State, a: &ArtifactView) -> Element<'a, Message> {

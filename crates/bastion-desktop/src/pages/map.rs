@@ -2,8 +2,10 @@
 //! towns along the coast, where requests come ashore; its workflows are
 //! routes across the land, each step a landmark, each route ending at its
 //! summit. A badge on a landmark counts the rules that apply there.
-//! Pressing a landmark opens a card over the chart, beside it, with what
-//! applies at that step. On All servers each server has its chart.
+//! Pressing a landmark opens a card over the chart, beside it: what the
+//! step does (what it runs, who decides, its model, its instructions, the
+//! results it gives) and what applies there. On All servers each server
+//! has its chart.
 
 use std::collections::BTreeMap;
 
@@ -293,6 +295,8 @@ impl canvas::Program<Picked> for Chart<'_> {
 struct Server {
     rules: Rules,
     picked: Option<Picked>,
+    /// The card shows what applies, not what the step does.
+    applies: bool,
 }
 
 /// Each server shown, by its name.
@@ -308,6 +312,8 @@ pub enum Msg {
     Pick(String, Picked),
     /// Close the card on a server's chart.
     Close(String),
+    /// Show what applies (true) or what the step does (false).
+    Tab(String, bool),
 }
 
 fn on(server: String) -> impl Fn(step_rules::Msg) -> Message + Clone {
@@ -332,6 +338,7 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         }
         Msg::Pick(name, picked) => state.servers.entry(name).or_default().picked = Some(picked),
         Msg::Close(name) => state.servers.entry(name).or_default().picked = None,
+        Msg::Tab(name, applies) => state.servers.entry(name).or_default().applies = applies,
     }
     Task::none()
 }
@@ -351,7 +358,7 @@ fn section<'a>(name: String, s: &'a Server, named: bool) -> Element<'a, Message>
     if let Some(p) = &s.picked {
         let at = card_at(p, h);
         map = map.push(
-            pin(card(&s.rules, p, name.clone()))
+            pin(card(s, p, name.clone()))
                 .x(at.x)
                 .y(at.y)
                 .width(Fill)
@@ -361,8 +368,81 @@ fn section<'a>(name: String, s: &'a Server, named: bool) -> Element<'a, Message>
     Column::new().spacing(10).extend(head).push(map).into()
 }
 
-/// What applies at the landmark picked, as a card over the chart.
-fn card<'a>(rules: &'a Rules, p: &'a Picked, name: String) -> Element<'a, Message> {
+/// The step a key names, `workflow/step`.
+fn node<'a>(rules: &'a Rules, key: &str) -> Option<&'a NodeView> {
+    let (w, step) = key.split_once('/')?;
+    let flow = rules.workflows().iter().find(|f| f.id == w)?;
+    flow.nodes.iter().find(|n| n.id == step)
+}
+
+/// One labeled line of the card, or nothing when it has no value.
+fn fact<'a>(label: &'a str, value: String) -> Option<Element<'a, Message>> {
+    (!value.trim().is_empty()).then(|| {
+        row![
+            text(label).size(12).color(theme::muted()).width(96),
+            text(value).size(13).width(Fill)
+        ]
+        .spacing(8)
+        .into()
+    })
+}
+
+/// What a step's reach allows, in words.
+fn reach(n: &NodeView) -> String {
+    let mut all = Vec::new();
+    if n.reach.reads_only {
+        all.push("reads only".to_string());
+    }
+    if n.reach.network {
+        all.push("network".to_string());
+    }
+    all.extend(n.reach.secrets.iter().map(|s| format!("secret {s}")));
+    all.join(" · ")
+}
+
+/// A step's budget: the most its turns may spend, and how often it may
+/// send work back.
+fn budget(n: &NodeView) -> String {
+    let parts = [
+        n.options
+            .spend_micros
+            .map(|m| format!("${:.2}", m as f64 / 1e6)),
+        n.options.revisions.map(|r| format!("{r} sends back")),
+    ];
+    let parts: Vec<String> = parts.into_iter().flatten().collect();
+    parts.join(" · ")
+}
+
+/// What the step does: what it runs, who decides, its model and budget,
+/// its reach, the results it gives, and its instructions.
+pub(super) fn does(n: &NodeView) -> Element<'_, Message> {
+    let who = match n.dial.as_str() {
+        "dark" => "it runs on its own",
+        _ => "a person decides",
+    };
+    let facts = [
+        fact("Runs", super::drawing::kind_line(n)),
+        fact("Who decides", who.into()),
+        fact("Model", n.options.model.clone()),
+        fact("Budget", budget(n)),
+        fact("Reach", reach(n)),
+        fact("Gives", n.results.join(", ")),
+    ];
+    let mut body = Column::new().spacing(6).extend(facts.into_iter().flatten());
+    if !n.note.trim().is_empty() {
+        let note = container(text(n.note.clone()).size(13).font(theme::MONO))
+            .padding(8)
+            .width(Fill)
+            .style(theme::panel);
+        let label = text("Instructions").size(12).color(theme::muted());
+        body = body.push(label).push(note);
+    }
+    body.into()
+}
+
+/// The card over the chart for the landmark picked: what the step does, or
+/// what applies there.
+fn card<'a>(s: &'a Server, p: &'a Picked, name: String) -> Element<'a, Message> {
     let at = At {
         scope: &p.key,
         stage: &p.stage,
@@ -371,10 +451,19 @@ fn card<'a>(rules: &'a Rules, p: &'a Picked, name: String) -> Element<'a, Messag
     let close = button(text("Close").size(13))
         .style(theme::link)
         .on_press(Message::Map(Msg::Close(name.clone())));
+    let tab = |label: &'a str, applies: bool| {
+        let msg = Message::Map(Msg::Tab(name.clone(), applies));
+        step_rules::choice(label, s.applies == applies, Some(msg))
+    };
+    let tabs = row![tab("What it does", false), tab("What applies", true)].spacing(6);
     let head = row![title, iced::widget::space::horizontal(), close].align_y(iced::Center);
-    let list = step_rules::view(rules, &at).map(on(name));
-    let body = scrollable(list).height(iced::Length::Shrink);
-    container(column![head, container(body).max_height(CARD_MAX)].spacing(8))
+    let body: Element<'a, Message> = match (s.applies, node(&s.rules, &p.key)) {
+        (false, Some(n)) => does(n),
+        (false, None) => text("This step is gone from its workflow.").size(13).into(),
+        (true, _) => step_rules::view(&s.rules, &at).map(on(name)),
+    };
+    let body = scrollable(body).height(iced::Length::Shrink);
+    container(column![head, tabs, container(body).max_height(CARD_MAX)].spacing(8))
         .padding(12)
         .width(CARD)
         .style(theme::panel)

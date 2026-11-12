@@ -133,14 +133,17 @@ pub fn setting(scopes: &[String], key: &str) -> Option<bool> {
 
 /// Whether a scope list turns its item on at `step`, named `workflow/step`
 /// (D54): the step's own setting wins, then its workflow's, then every
-/// workflow's. With no setting for every workflow, a list that turns no
-/// step on means every step, and one that does means only those.
+/// workflow's. Nothing is global (D58): an item is on only where a setting
+/// selects it.
 pub fn on_at(scopes: &[String], step: &str) -> bool {
     let workflow = step.split('/').next().unwrap_or_default();
-    let named = [step, workflow].into_iter().filter(|k| !k.is_empty());
-    let set = named.into_iter().find_map(|k| setting(scopes, k));
-    set.or_else(|| setting(scopes, EVERY))
-        .unwrap_or_else(|| scopes.iter().all(|s| s.starts_with('!')))
+    let named = [step, workflow, EVERY]
+        .into_iter()
+        .filter(|k| !k.is_empty());
+    named
+        .into_iter()
+        .find_map(|k| setting(scopes, k))
+        .unwrap_or(false)
 }
 
 /// Whether constraint `c` applies at `step`, named `workflow/step`.
@@ -148,14 +151,8 @@ pub fn applies(c: &Constraint, step: &str) -> bool {
     on_at(&c.steps, step)
 }
 
-/// `scopes` with `key` set on or off, or cleared so it inherits. A narrower
-/// setting first writes down what every workflow had, so turning one step
-/// on never turns the others off.
+/// `scopes` with `key` set on or off, or cleared so it inherits.
 pub fn set_scope(scopes: &mut Vec<String>, key: &str, on: Option<bool>) {
-    if key != EVERY && setting(scopes, EVERY).is_none() {
-        let every = scopes.iter().all(|s| s.starts_with('!'));
-        set_scope(scopes, EVERY, Some(every));
-    }
     scopes.retain(|s| s != key && s.strip_prefix('!') != Some(key));
     match on {
         Some(true) => scopes.push(key.into()),
@@ -419,6 +416,7 @@ pub fn default_constraints() -> Vec<Constraint> {
         function: function.into(),
         contains: contains.into(),
         rung,
+        steps: vec![EVERY.into()],
         ..Constraint::default()
     };
     vec![
@@ -489,7 +487,7 @@ pub fn default_capabilities() -> Vec<Capability> {
         step: String::new(),
         function: function.into(),
         rung,
-        scopes: Vec::new(),
+        scopes: vec![EVERY.into()],
     };
     vec![
         grant(Stage::Agent, "sandbox::*", Access::Allowed),
@@ -650,7 +648,7 @@ mod tests {
             contains: "import pickle".into(),
             rung: Enforcement::Enforced,
             source: Source::Owner,
-            steps: Vec::new(),
+            steps: vec![EVERY.into()],
             hook: String::new(),
             reviewer: String::new(),
             capability: false,
@@ -795,12 +793,15 @@ mod tests {
     fn the_most_specific_scope_wins() {
         let scopes = |all: &[&str]| all.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         let on = |list: &[&str], step| on_at(&scopes(list), step);
-        assert!(on(&[], "bug-fix/build"), "no setting: every step");
+        assert!(!on(&[], "bug-fix/build"), "no selection: nowhere (D58)");
         assert!(
             !on(&["short/plan"], "bug-fix/build"),
             "only the steps it names"
         );
-        assert!(on(&["!bug-fix"], "short/plan"), "off for one workflow only");
+        assert!(
+            !on(&["!bug-fix"], "short/plan"),
+            "an off setting selects nothing"
+        );
         let mixed = ["*", "!bug-fix", "bug-fix/build"];
         assert_eq!(
             [
@@ -814,10 +815,10 @@ mod tests {
         set_scope(&mut list, "bug-fix", None);
         set_scope(&mut list, EVERY, Some(false));
         assert_eq!(list, ["bug-fix/build", "!*"]);
-        let mut everywhere = Vec::new();
-        set_scope(&mut everywhere, "bug-fix/build", Some(false));
-        assert_eq!(everywhere, ["*", "!bug-fix/build"], "the rest stays on");
-        assert!(on_at(&everywhere, "short/plan"));
+        let mut one = Vec::new();
+        set_scope(&mut one, "bug-fix/build", Some(true));
+        assert_eq!(one, ["bug-fix/build"], "nothing else is selected");
+        assert!(!on_at(&one, "short/plan"));
     }
 
     #[test]
@@ -848,7 +849,7 @@ mod tests {
         };
         assert!(matches!(at("short/build"), Decision::Deny { .. }));
         assert_eq!(at("short/plan"), Decision::Continue);
-        assert!(applies(
+        assert!(!applies(
             &Constraint {
                 steps: vec![],
                 hook: String::new(),

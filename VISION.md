@@ -3,12 +3,12 @@
 <!-- voice-register: informational -->
 <!-- voice-english: ste -->
 
-Bastion is an agent control plane. You define workflows and send requests,
-and Bastion fulfills each request as a job: agents work through the
-workflow's steps, under the rules you set on each step. Jobs and workflows
-are the two ideas everything else serves. The cost is plain: a job does only
-what its workflow says, so a check you take out of a workflow is gone.
-Bastion runs on your machine, on a remote server, or on both at once.
+Bastion is an agent control plane. On each server, it manages a harness and
+a factory: the rules, agents, skills, hooks and grants an agent works under,
+and the workflows that run it. You send a request, and Bastion runs it as a
+job through a workflow. The cost is plain: a job does only what its workflow
+says, so a check you take out of a workflow is gone. Bastion runs on your
+machine, on a remote server, or on both.
 
 ## Jobs and workflows
 
@@ -29,37 +29,50 @@ waits where a step's dial says a person decides, and ends with its branch
 ready, merged or left for you. Bastion ships the common workflows with their
 text filled in, and you can change every step of them.
 
-## Rules move onto the workflow
+## The harness and the factory
 
-Bastion used to split its rules into two layers. The harness bound an
-agent's calls. The factory bound the work around them: what a step may do,
-and when a change lands. Both now live more and more on a workflow and its
-steps, and Bastion applies them as each step runs. I think the two layers
-will collapse into one, with Bastion applying whatever the workflow and its
-steps set. The split may still be useful, though, and that isn't settled;
-the next few workflows people write will settle it.
+Other agent harnesses keep rules, agents, skills and hooks in files.
+Bastion keeps the same items on the server, and many of them already work:
+rules, checks, hooks, reviewers, notes and grants. You manage each one in
+the app:
 
-A repository brings its own rules too: its charter, in `AGENTS.md` and
-`.agents/settings.json`. A turn may read the charter but may not change it.
+- **Promote or demote it.** A rule moves between feedforward, told to the
+  agent before it acts, and feedback, a check, hook or reviewer that judges
+  what the agent did. A grant moves between ask and allowed.
+- **Turn it on or off.** One switch, and the item stays as it is.
+- **Apply it.** Select one step, every step of a workflow, some workflows,
+  or all workflows.
 
-## Two levels: each server, and all of them
+Nothing is global. "All workflows" is a selection, the same as one step,
+and an item applies only where you selected it. An item with no selection
+applies nowhere. So a step's Rules tab shows everything that applies at it,
+and nothing applies from somewhere you can't see.
 
-Every page shows one server, the one you pick at the top. Some pages can
-also show every server at once, and those are the ones about records.
+## A workspace's charter
 
-**Records, per server or across all.** Jobs, Audit Log, Costs, Evals and
-Verification read one server, or every server you added, side by side. All
-servers is one more choice in the server picker, so you filter by server the
-same way on each of these pages. You open a job, an entry or a turn and act
-on it wherever it lives.
+A repository can bring its own items in its charter: `AGENTS.md` and
+`.agents/`, with its rules, agents, skills and hooks. These items belong to
+the project, so they apply only to jobs in that workspace. A step can use
+them, and you read and edit them in the app the same way as Bastion's own.
+An edit in the app changes the file in the repository. An agent's turn may
+read the charter but may not change it.
 
-**Rules, one server at a time.** Workflows, Constraints, Capabilities,
-Permissions, Engine and Settings belong to the server you pick. Bastion
-holds the rules as its harness, and a workflow applies them: each rules
-page turns an item on for every workflow, or for the workflows and steps
-you pick. A step's Rules tab lists what applies there, read-only. A rules
-page never mixes two servers, because each server's rules shape only its
-own jobs, and a sum of two rule sets means nothing.
+## Every page: all servers, or one
+
+Each page shows every server you added, side by side, or the one server you
+pick at the top. All servers is one more choice in the server picker, so
+every page filters the same way.
+
+On All servers, each row names its server, and a change goes to that row's
+server only. Two servers' rules sit side by side and never merge, because
+each server's rules shape only its own jobs.
+
+- **Records:** Jobs, Audit Log, Costs, Evals and Verification.
+- **What runs:** Workspaces, Workflows, Constraints, Capabilities and
+  Permissions. The Workspaces page shows each workspace and its charter.
+  Each rules page applies an item to the steps and workflows you select,
+  and a step's Rules tab lists what applies there.
+- **The server itself:** Engine and Settings.
 
 ## What a server holds
 
@@ -69,13 +82,10 @@ lives with it.
 - **Workspaces:** the repositories it works in, each with its checks, its
   setup, its VM image, and what happens to a job's branch at the end.
 - **Workflows:** its series of steps, each step with its settings.
-- **Rules:** constraints, what the agent must keep; capabilities, what it
-  may use; and permissions, what the gate lets a call do. A constraint is
-  feedforward, told to the agent before it acts, or feedback, a check, hook
-  or reviewer on what it did. Each grant is ask or allowed. Each item
-  applies at every workflow, or at the workflows and steps you pick. The
-  charter each workspace's repository brings applies too, and changes in
-  the repository.
+- **Its harness and factory:** constraints, what the agent must keep;
+  capabilities, what it may use; and permissions, what the gate lets a
+  call do. Each item applies only where you selected it. A workspace's
+  charter adds its own items, for that workspace's jobs.
 - **Settings:** its model providers, its people and their roles, its
   notifications, and its secrets.
 - **Records:** its jobs, its audit log, its evals, its costs, and what

@@ -262,10 +262,7 @@ fn made_at(rules: &Rules, kind: &str, scope: &str, rule: String) -> ConstraintVi
         rule,
         rung: "enforced".into(),
         source: "owner".into(),
-        steps: (scope != EVERY)
-            .then(|| scope.to_string())
-            .into_iter()
-            .collect(),
+        steps: vec![scope.to_string()],
         ..ConstraintView::default()
     }
 }
@@ -379,7 +376,6 @@ fn set_rung(g: CapabilityView, rung: String, ctx: &Ctx) -> Task<Msg> {
 /// reads the view's step as the scope to turn it on at; none is every
 /// workflow.
 fn grant(function: &str, rung: String, stage: &str, scope: &str) -> CapabilityView {
-    let scope = if scope == EVERY { "" } else { scope };
     CapabilityView {
         stage: stage.into(),
         step: scope.into(),
@@ -597,10 +593,10 @@ mod tests {
         assert_eq!(new_hook(&rules, "short/build").id, "hook-short-build-2");
         let every = new_hook(&rules, EVERY);
         assert_eq!(every.id, "hook-every-1");
-        assert!(every.steps.is_empty(), "no steps is every step");
+        assert_eq!(every.steps, [EVERY], "all workflows, selected");
         let at_workflow = grant("sandbox::fs::read", "ask".into(), "prompt", "short");
         assert_eq!(at_workflow.step, "short", "on for the workflow");
-        assert_eq!(grant("x", "ask".into(), "prompt", EVERY).step, "");
+        assert_eq!(grant("x", "ask".into(), "prompt", EVERY).step, EVERY);
     }
 
     #[test]
@@ -659,8 +655,14 @@ mod tests {
             ..CapabilityView::default()
         };
         let rules = Rules {
-            grants: vec![grant(&[]), grant(&["*", "!short"])],
-            constraints: vec![ConstraintView::default()],
+            grants: vec![grant(&["*"]), grant(&[]), grant(&["*", "!short"])],
+            constraints: vec![
+                ConstraintView {
+                    steps: vec!["*".into()],
+                    ..ConstraintView::default()
+                },
+                ConstraintView::default(),
+            ],
             ..Rules::default()
         };
         let at = At {
@@ -670,7 +672,7 @@ mod tests {
         assert_eq!(
             count(&rules, &at),
             2,
-            "the rule and the grant on everywhere"
+            "the rule and the grant on at all workflows; no selection is off"
         );
     }
 }

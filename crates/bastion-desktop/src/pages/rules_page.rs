@@ -14,7 +14,7 @@ use crate::theme;
 
 pub struct State {
     pub which: Which,
-    /// The Global view, or the Workflows view.
+    /// The All workflows view, or the Workflows view.
     global: bool,
     admin: bool,
     rules: step_rules::Rules,
@@ -65,7 +65,7 @@ pub fn view<'a>(state: &'a State, title: &'a str) -> Element<'a, Message> {
             Some(Message::Rules(Msg::Global(global))),
         )
     };
-    let views = row![pick("Global", true), pick("Workflows", false)].spacing(6);
+    let views = row![pick("All workflows", true), pick("Workflows", false)].spacing(6);
     let body = step_rules::page(&state.rules, state.which, state.global, state.admin)
         .map(|m| Message::Rules(Msg::Rules(m)));
     scrolled(column![text(title).size(24).font(theme::BOLD), views, body].spacing(12))

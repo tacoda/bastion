@@ -341,7 +341,22 @@ pub(super) fn migrations() -> Vec<Vec<String>> {
             "UPDATE constraints SET rung = 'enforced', steps = TRIM('!* ' || steps) WHERE rung = 'checked'"
                 .to_string(),
         ],
+        // Nothing is global (D58): a list that selects no step used to mean
+        // every step, so it now says every workflow, and works as it did.
+        [("constraints", "steps"), ("capabilities", "scopes")]
+            .iter()
+            .map(|(table, list)| select_every(table, list))
+            .collect(),
     ]
+}
+
+/// Select every workflow in each list of `table` that selects nothing: no
+/// key turned on, and every workflow not turned off.
+fn select_every(table: &str, list: &str) -> String {
+    format!(
+        "UPDATE {table} SET {list} = TRIM('* ' || {list}) \
+         WHERE (' ' || {list}) NOT GLOB '* [^!]*' AND (' ' || {list} || ' ') NOT LIKE '% !* %'"
+    )
 }
 
 /// A command step as the prompt that does what it did: read the command's

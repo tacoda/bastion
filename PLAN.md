@@ -1,68 +1,50 @@
-# Bastion plan: rules by who judges them
+# Bastion plan: nothing is global
 
 <!-- voice-register: informational -->
 <!-- voice-english: ste -->
 
-A step's rules sort on three questions. Is it a constraint or a
-capability? Is it feedforward, which guides the agent before it acts, or
-feedback, which checks what it did? And does it come from the
-workspace's repository or from Bastion? Each item is on or off at a step,
-or for every step of its workflow. Told, checked and enforced go: a
-feedforward rule is said to the agent, a feedback one always blocks, and
-a grant keeps ask or allowed. The cost is the old "checked" rules, which
-noted a break and let it pass; they start off, so nothing changes until
-you turn one on.
+Bastion manages a harness and a factory on each server: rules, agents,
+skills, hooks, reviewers and grants. Each item applies only where you
+select it: one step, a workflow's steps, some workflows, or all workflows
+(D58). A workspace's charter brings its own items for its jobs, and you
+edit them in the app; an edit is a commit on a branch, never on the base.
+Every page shows all servers or one. The cost is the old default: a list
+that selected nothing meant every step, so migration 10 writes that down
+as all workflows before the default turns off.
 
-The scopes plan (G1 to G3) is done, and git history holds it. Decisions
-are in [DECISIONS.md](DECISIONS.md), D54 to D56.
+The rules-pages plan (R1, R2, P1, P3) is done, and git history holds it.
+Decisions are in [DECISIONS.md](DECISIONS.md), D54 to D58.
 
 ## Phases
 
 Each phase passes CI, gets a live check in the app, and lands in a commit
 before the next one starts.
 
-### R1. The model on the server (D56)
+### S1. Nothing is global
 
-- A constraint is feedforward (stored as told) or feedback (stored as
-  enforced). A reviewer is feedback: it reads what the step did. Migration
-  9 turns each checked one into feedback, off for every workflow.
-- A constraint row may be a capability: a note told to the agent as what
-  it may do, such as a skill to use. The brief lists them under "You may".
-- The charter listing adds the repository's skills and agents, which a
-  workspace brings as feedforward capabilities.
-- Setting a mode refuses checked.
+- An item with no selection applies nowhere, in core and in the desktop.
+  A narrower setting no longer writes down what all workflows had.
+- Migration 10 selects all workflows in each list that selected nothing,
+  so each item works as it did.
+- A new item made at all workflows carries `*`. A charter's rules and an
+  approved test carry `*` for their job's steps.
+- The Global view is named All workflows.
 
-Done 2026-11-12. Live, migration 9 turned the three checked rules (tests
-kept, assertions kept, no skipped tests) into feedback that is off, as
-`!*`. The charter listing shows demo-local's agent `strict`. The brief
-lists "You may" before its rules.
+### S2. The rules pages across all servers
 
-### R2. Rules by type and mode (checkpoint)
+- On All servers, each rules page shows one section per server, named.
+- A change goes to its section's server.
 
-- Done as a checkpoint on the Workflows page (2d44301): feedforward and
-  feedback, Workspace and Bastion chips, a Feedforward | Feedback switch,
-  and an Add bar. P1 to P3 move it to pages of its own.
+### S3. A Workspaces page
 
-### P1. Three rules pages (D57), done
+- Each workspace and its charter: AGENTS.md, its permissions and hooks,
+  its skills and agents. All servers or one.
 
-- Constraints, Capabilities and Permissions return to the top bar.
-  Constraints holds rules, checks, hooks and reviewers; Capabilities the
-  notes on what the agent may use; Permissions the grants, ask or allowed.
-- Each page has two views. Global sets an item on or off for every
-  workflow. Workflows opens an item's list of workflows and their steps,
-  each Inherit | On | Off, so a rule lands on the steps you pick.
+### S4. Charter edits
 
-### P2. A Workspaces page
-
-- Each workspace's charter, read-only: AGENTS.md, its permissions and
-  hooks, its skills and agents. Bastion still applies the charter; it
-  leaves the rules pages because it changes in the repository.
-
-### P3. The Workflows page shows, the pages change, done
-
-- The workflow level's rules panel goes. A step's Rules tab lists what
-  applies at it, read-only, with a link to each page.
-- VISION.md and DECISIONS.md say where rules live.
+- Edit a charter file in the app. The server commits the edit on a new
+  branch of the workspace's repository, never on its base branch.
+- An agent's turn still may not change the charter.
 
 ## Open questions
 
@@ -71,8 +53,6 @@ lists "You may" before its rules.
   one?
 - **Stdio MCP servers.** Should one run in the job's VM, so a step may use
   a local MCP server without breaking the VM rule?
-- **Rules for every workflow.** Whether some items should be set once for
-  all workflows, and where that lives.
 - **Codified and ambient context.** Constraints and direction are codified
   context: written down, stable, and Bastion can scope and judge them.
   Ambient context comes from MCP servers and other outside sources: it is

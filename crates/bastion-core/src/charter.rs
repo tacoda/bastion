@@ -73,7 +73,8 @@ pub fn constraints(deny: &[String], ask: &[String]) -> Vec<Constraint> {
                 contains: words,
                 rung: Enforcement::Enforced,
                 source: Source::Charter,
-                steps: Vec::new(),
+                // A charter's rules hold at each of its workspace's steps (D58).
+                steps: vec![crate::govern::EVERY.into()],
                 hook: String::new(),
                 reviewer: String::new(),
                 capability: false,
@@ -87,7 +88,7 @@ pub fn constraints(deny: &[String], ask: &[String]) -> Vec<Constraint> {
                 contains: String::new(),
                 rung: Enforcement::Told,
                 source: Source::Charter,
-                steps: Vec::new(),
+                steps: vec![crate::govern::EVERY.into()],
                 hook: String::new(),
                 reviewer: String::new(),
                 capability: false,

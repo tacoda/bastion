@@ -76,7 +76,7 @@ fn approved_test(file: &str) -> Constraint {
         contains: format!("/work/repo/{file}"),
         rung: bastion_core::govern::Enforcement::Enforced,
         source: bastion_core::govern::Source::Owner,
-        steps: Vec::new(),
+        steps: vec![bastion_core::govern::EVERY.into()],
         hook: String::new(),
         reviewer: String::new(),
         capability: false,
@@ -1455,6 +1455,7 @@ mod tests {
             id: "rule-docs-1".into(),
             rule: "Edit the docs as well as the code.".into(),
             capability: true,
+            steps: vec![govern::EVERY.into()],
             ..Constraint::default()
         };
         crate::rt::block_on(r.gate.add_constraint(note)).unwrap();
@@ -1489,7 +1490,7 @@ mod tests {
             contains: "curl".into(),
             rung: govern::Enforcement::Enforced,
             source: govern::Source::Owner,
-            steps: Vec::new(),
+            steps: vec![govern::EVERY.into()],
             hook: String::new(),
             reviewer: String::new(),
             capability: false,

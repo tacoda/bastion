@@ -1,7 +1,7 @@
 //! The rules pages (D57): Constraints, Capabilities and Permissions. Each
-//! has a Global view, where an item is on or off for every workflow, and a
-//! Workflows view, where an item's list picks the workflows and steps it
-//! applies to.
+//! has an All workflows view, where an item is on or off for every
+//! workflow, and a Workflows view, where an item's list picks the
+//! workflows and steps it applies to. Nothing is global (D58).
 
 use bastion_protocol::{CapabilityView, ConstraintView};
 use iced::widget::{Column, column, container, row, text, text_input};
@@ -36,7 +36,7 @@ impl Which {
     }
 }
 
-/// Where a new item goes: on for every workflow in the Global view; off
+/// Where a new item goes: on for all workflows in the All workflows view; off
 /// everywhere in the Workflows view, until its list picks steps.
 const OFF: &str = "!*";
 
@@ -105,7 +105,7 @@ fn grant_head<'a>(g: &CapabilityView) -> Element<'a, Msg> {
     .into()
 }
 
-/// Constraints as rows: at every workflow in the Global view, or with
+/// Constraints as rows: at all workflows in the All workflows view, or with
 /// their lists in the Workflows view.
 fn constraint_rows<'a>(v: Shown<'a>, list: Vec<&ConstraintView>) -> Vec<Element<'a, Msg>> {
     if v.global {

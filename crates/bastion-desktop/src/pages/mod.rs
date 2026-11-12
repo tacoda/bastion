@@ -9,7 +9,6 @@ pub mod drawing;
 pub mod edit;
 pub mod engine;
 pub mod evals;
-pub mod govern;
 pub mod job;
 pub mod jobs;
 pub mod new_request;
@@ -251,9 +250,8 @@ pub enum Push {
 /// The page the window shows, with its state.
 pub enum Page {
     Jobs(jobs::State),
-    NewRequest(new_request::State),
+    NewRequest(Box<new_request::State>),
     Job(Box<job::State>),
-    Govern(govern::State),
     Audit(Box<audit::State>),
     Engine(Box<engine::State>),
     Evals(Box<evals::List>),
@@ -281,10 +279,8 @@ impl Page {
     pub fn open(route: &Route, ctx: &Ctx) -> (Page, Task<Message>) {
         let page = match route {
             Route::Jobs => Page::Jobs(jobs::State::default()),
-            Route::NewRequest => Page::NewRequest(new_request::State::default()),
+            Route::NewRequest => Page::NewRequest(Box::default()),
             Route::Job(id) => Page::Job(Box::new(job::State::new(id.clone()))),
-            Route::Constraints => Page::Govern(govern::State::new(govern::Which::Constraints)),
-            Route::Capabilities => Page::Govern(govern::State::new(govern::Which::Capabilities)),
             Route::Audit => Page::Audit(Box::default()),
             Route::Engine => Page::Engine(Box::default()),
             Route::Evals => Page::Evals(Box::default()),
@@ -316,7 +312,6 @@ impl Page {
             Page::Jobs(s) => jobs::load(s, ctx).map(Message::Jobs),
             Page::NewRequest(s) => new_request::load(s, ctx),
             Page::Job(s) => job::load(s, ctx),
-            Page::Govern(s) => govern::load(s, ctx),
             Page::Audit(_) => audit::load(ctx),
             Page::Engine(_) => engine::load(ctx),
             Page::Evals(_) => evals::load_list(ctx),
@@ -346,7 +341,6 @@ impl Page {
             (Page::Jobs(s), Message::Jobs(m)) => jobs::update(s, m),
             (Page::NewRequest(s), Message::NewRequest(m)) => return new_request::update(s, m, ctx),
             (Page::Job(s), Message::Job(m)) => return job::update(s, m, ctx),
-            (Page::Govern(s), Message::Govern(m)) => return govern::update(s, m, ctx),
             (Page::Audit(s), Message::Audit(m)) => return audit::update(s, m, ctx),
             (Page::Engine(s), Message::Engine(m)) => return engine::update(s, m, ctx),
             (Page::Evals(s), Message::Evals(m)) => return evals::update_list(s, m, ctx),
@@ -368,7 +362,6 @@ impl Page {
             Page::Jobs(s) => jobs::view(s, ctx),
             Page::NewRequest(s) => new_request::view(s, ctx),
             Page::Job(s) => job::view(s, ctx),
-            Page::Govern(s) => govern::view(s, ctx),
             Page::Audit(s) => audit::view(s, ctx),
             Page::Engine(s) => engine::view(s, ctx),
             Page::Evals(s) => evals::view_list(s, ctx),

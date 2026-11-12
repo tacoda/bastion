@@ -10,7 +10,7 @@ use iced::{Element, Fill, Subscription, Task, window};
 
 use crate::client;
 use crate::events::{self, Feed};
-use crate::pages::{self, Ctx, Page, Push, engine, evals, govern, job, jobs, new_request};
+use crate::pages::{self, Ctx, Page, Push, engine, evals, job, jobs, new_request};
 use crate::route::{PAGES, Route};
 use crate::{icons, start, theme};
 
@@ -45,7 +45,6 @@ pub enum Message {
     Jobs(jobs::Msg),
     NewRequest(new_request::Msg),
     Job(job::Msg),
-    Govern(govern::Msg),
     Audit(pages::audit::Msg),
     Engine(engine::Msg),
     Evals(evals::Msg),
@@ -192,7 +191,6 @@ impl App {
             page @ (Message::Jobs(_)
             | Message::NewRequest(_)
             | Message::Job(_)
-            | Message::Govern(_)
             | Message::Audit(_)
             | Message::Engine(_)
             | Message::Evals(_)

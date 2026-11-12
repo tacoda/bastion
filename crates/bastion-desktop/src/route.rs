@@ -7,8 +7,6 @@ pub enum Route {
     Jobs,
     NewRequest,
     Job(String),
-    Constraints,
-    Capabilities,
     Audit,
     Evals,
     Eval(String),
@@ -21,11 +19,9 @@ pub enum Route {
 }
 
 /// The top bar's pages. A job and New request belong to Jobs.
-pub const PAGES: [(Route, &str, &str); 10] = [
+pub const PAGES: [(Route, &str, &str); 8] = [
     (Route::Jobs, "Jobs", icons::JOBS),
     (Route::Workflows, "Workflows", icons::WORKFLOWS),
-    (Route::Constraints, "Constraints", icons::CONSTRAINTS),
-    (Route::Capabilities, "Capabilities", icons::CAPABILITIES),
     (Route::Audit, "Audit Log", icons::AUDIT),
     (Route::Evals, "Evals", icons::EVALS),
     (Route::Costs, "Costs", icons::COSTS),

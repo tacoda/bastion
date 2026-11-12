@@ -79,6 +79,7 @@ retired with the old plan.
 | D50 | A constraint may be a hook: a command that runs in the job's VM before each matching call at its steps, after the charter's hooks, unless it is only told. Exit 2 refuses the call. An owner's constraint can be removed; a charter's changes in its repository. |
 | D51 | A constraint may name a reviewer from `.agents/agents/`. When its step finishes, the reviewer reads the step's change in a turn with no tools, from its file at the job's base, and its fail fails the step as D47 says. A reviewer that can't run leaves the job with a person. |
 | D52 | A server's MCP servers reach a turn through `workers/bastion-mcp`, which registers each tool as `mcp::<server>::<tool>`. Only MCP servers over HTTP: a stdio server would run on the host, outside the VM. A server's token stays in the vault, and only the bridge may read it. |
+| D53 | A step's rules live with the step, on the Workflows page, in one tab by layer: the charter (read-only, from the repository), the harness (grants, and the rules and hooks on calls), and the factory (review checks and reviewers). With no step picked, the page shows what applies at every step. Each rung is a switch. There is no Constraints or Capabilities page. |
 
 ## Open questions
 

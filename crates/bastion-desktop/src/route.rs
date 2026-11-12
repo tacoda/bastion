@@ -48,12 +48,21 @@ impl Route {
         }
     }
 
-    /// A records page can show every server at once; a rules page and
-    /// one record's page show one server (VISION.md).
+    /// A page that can show every server at once (D58): the records, the
+    /// workspaces, and the rules a workflow applies. A workflow's steps and
+    /// one record's page show one server.
     pub fn records(&self) -> bool {
         matches!(
             self,
-            Route::Jobs | Route::Audit | Route::Costs | Route::Evals | Route::Verification
+            Route::Jobs
+                | Route::Audit
+                | Route::Costs
+                | Route::Evals
+                | Route::Verification
+                | Route::Workspaces
+                | Route::Constraints
+                | Route::Capabilities
+                | Route::Permissions
         )
     }
 

@@ -1,8 +1,10 @@
-//! The Workspaces page: the repositories jobs on the server shown run
-//! against, each with its settings and its charter (D58), and the accounts
-//! they use.
+//! The Workspaces page: the repositories jobs run against, each with its
+//! settings and its charter (D58), and the accounts they use. On All
+//! servers each server has its section, and a change goes to that server.
 
 mod charter;
+
+use std::collections::BTreeMap;
 
 use bastion_protocol::api::{self, Request};
 use bastion_protocol::{AccountView, Workspace, WorkspaceCharterView, branch_prefix};
@@ -98,7 +100,8 @@ pub enum Msg {
 }
 
 fn wrap(msg: Msg) -> Message {
-    Message::Workspaces(msg)
+    // The page names the server as the message leaves its section.
+    Message::Workspaces(String::new(), msg)
 }
 
 fn task<R>(ctx: &Ctx, request: R, then: fn(Result<R::Answer, String>) -> Msg) -> Task<Message>
@@ -109,7 +112,7 @@ where
     ctx.task(&ctx.current, request, then).map(wrap)
 }
 
-pub fn load(ctx: &Ctx) -> Task<Message> {
+fn load(ctx: &Ctx) -> Task<Message> {
     Task::batch([
         task(ctx, api::Workspaces, Msg::Workspaces),
         task(ctx, api::Accounts, Msg::Accounts),
@@ -213,7 +216,7 @@ fn drafted_into(state: &mut State, drafted: Result<Workspace, String>) {
     state.note.clear();
 }
 
-pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
+fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
     match msg {
         Msg::Workspaces(Ok(all)) => state.workspaces = all,
         Msg::Accounts(Ok(all)) => state.accounts = all,
@@ -386,15 +389,65 @@ fn accounts(state: &State) -> Element<'_, Message> {
     card("Accounts", Column::with_children(rows).spacing(4))
 }
 
-pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
-    let about = format!("The repositories jobs on {} run against.", ctx.current);
-    let body = column![
-        crate::pages::head("Workspaces", about, vec![]),
+/// Each server shown, by its name.
+#[derive(Default)]
+pub struct Servers {
+    each: BTreeMap<String, State>,
+}
+
+/// A message from `server`'s section, named for it.
+fn tag(server: String) -> impl Fn(Message) -> Message + Clone {
+    move |m| match m {
+        Message::Workspaces(_, m) => Message::Workspaces(server.clone(), m),
+        other => other,
+    }
+}
+
+pub fn load_all(ctx: &Ctx) -> Task<Message> {
+    let each = ctx
+        .shown()
+        .into_iter()
+        .map(|name| load(&ctx.on(&name)).map(tag(name)));
+    Task::batch(each)
+}
+
+pub fn update_all(all: &mut Servers, server: String, msg: Msg, ctx: &Ctx) -> Task<Message> {
+    let state = all.each.entry(server.clone()).or_default();
+    update(state, msg, &ctx.on(&server)).map(tag(server))
+}
+
+/// One server's section: its workspaces, its accounts and why a change failed.
+fn section(state: &State) -> Column<'_, Message> {
+    column![
         workspaces(state),
         accounts(state),
         text(&state.note).size(13).color(theme::BAD)
     ]
-    .spacing(16);
+    .spacing(16)
+}
+
+pub fn view<'a>(all: &'a Servers, ctx: &Ctx) -> Element<'a, Message> {
+    let shown = ctx.shown();
+    let named = shown.len() > 1;
+    let about = match named {
+        true => "The repositories jobs on each server run against.".to_string(),
+        false => format!("The repositories jobs on {} run against.", ctx.current),
+    };
+    let sections = shown.into_iter().filter_map(|name| {
+        let state = all.each.get(&name)?;
+        let head = named.then(|| text(name.clone()).size(18).font(theme::BOLD));
+        let body = Element::from(section(state)).map(tag(name));
+        Some(
+            Column::new()
+                .spacing(10)
+                .extend(head.map(Element::from))
+                .push(body)
+                .into(),
+        )
+    });
+    let body = column![crate::pages::head("Workspaces", about, vec![])]
+        .extend(sections)
+        .spacing(16);
     scrolled(body)
 }
 

@@ -44,10 +44,11 @@ the top bar loses Constraints, Capabilities and Permissions.
 - Settings keeps what belongs to the server itself: servers, people,
   model providers, MCP servers, the factory, notifications and history.
 
-### S3. Workflows and Workspaces across all servers
+### S3. Workflows and Workspaces across all servers, done
 
-- On All servers, each tab shows one section per server, named.
-- A change goes to its section's server.
+- On All servers, Workspaces and the three rules tabs show one section per
+  server, named. A change goes to its section's server.
+- A workflow's Steps tab stays on one server: a canvas edits one workflow.
 
 ### S4. Charter edits
 

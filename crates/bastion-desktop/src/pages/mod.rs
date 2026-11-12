@@ -80,6 +80,16 @@ impl Ctx {
 }
 
 impl Ctx {
+    /// This context on one server alone: what a section of a page that
+    /// spans servers reads and changes.
+    pub fn on(&self, server: &str) -> Ctx {
+        Ctx {
+            current: server.into(),
+            all: false,
+            ..self.clone()
+        }
+    }
+
     /// The servers a records page reads: every one while All servers is
     /// on, else the one shown.
     pub fn shown(&self) -> Vec<String> {
@@ -282,7 +292,7 @@ pub enum Page {
     Eval(Box<evals::One>),
     Settings(Box<settings::State>),
     Workflows(Box<workflows::State>),
-    Workspaces(Box<workspaces::State>),
+    Workspaces(Box<workspaces::Servers>),
     Rules(Box<rules_page::State>),
     /// Nothing yet: the window has not reached its first server.
     Pending,
@@ -352,7 +362,7 @@ impl Page {
             Page::Eval(s) => evals::load_one(s, ctx),
             Page::Settings(_) => settings::load(ctx),
             Page::Workflows(_) => workflows::load(ctx),
-            Page::Workspaces(_) => workspaces::load(ctx),
+            Page::Workspaces(_) => workspaces::load_all(ctx),
             Page::Rules(_) => rules_page::load(ctx),
             Page::Pending => Task::none(),
         }
@@ -385,7 +395,9 @@ impl Page {
             (Page::Eval(s), Message::Evals(m)) => return evals::update_one(s, m, ctx),
             (Page::Settings(s), Message::Settings(m)) => return settings::update(s, m, ctx),
             (Page::Workflows(s), Message::Workflows(m)) => return workflows::update(s, m, ctx),
-            (Page::Workspaces(s), Message::Workspaces(m)) => return workspaces::update(s, m, ctx),
+            (Page::Workspaces(s), Message::Workspaces(server, m)) => {
+                return workspaces::update_all(s, server, m, ctx);
+            }
             (Page::Rules(s), Message::Rules(m)) => return rules_page::update(s, m, ctx),
             _ => {}
         }
@@ -407,7 +419,7 @@ impl Page {
             Page::Settings(s) => settings::view(s, ctx),
             Page::Workflows(s) => workflows::view(s, ctx),
             Page::Workspaces(s) => workspaces::view(s, ctx),
-            Page::Rules(s) => rules_page::view(s, route.title()),
+            Page::Rules(s) => rules_page::view(s, route.title(), ctx),
             Page::Pending => {
                 let title = text(route.title()).size(24).font(theme::BOLD);
                 let note = text("Reaching the Bastion server…").color(theme::MUTED);

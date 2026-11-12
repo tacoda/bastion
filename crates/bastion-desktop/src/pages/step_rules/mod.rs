@@ -21,9 +21,30 @@ pub use constraints::view as constraints;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Adding {
     #[default]
+    Rule,
     Hook,
     Reviewer,
     Elsewhere,
+}
+
+/// A field of a new rule's form.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RuleField {
+    /// What the agent is told.
+    Text,
+    /// The calls it binds: a function pattern, and words a call holds.
+    Function,
+    Contains,
+    Rung,
+}
+
+/// A new rule for the step, as typed.
+#[derive(Default)]
+struct RuleDraft {
+    text: String,
+    function: String,
+    contains: String,
+    rung: String,
 }
 
 /// The form shown to add a grant: one at a time.
@@ -53,6 +74,7 @@ pub struct Rules {
     hook_function: String,
     hook: String,
     reviewer: String,
+    rule: RuleDraft,
     said: String,
 }
 
@@ -83,6 +105,8 @@ pub enum Msg {
     AddHook,
     Reviewer(String),
     AddReviewer,
+    Rule(RuleField, String),
+    AddRule,
     /// Remove a hook or a reviewer made for this step.
     Remove(String),
     Done(Result<(), String>),
@@ -182,15 +206,41 @@ fn new_reviewer(rules: &Rules, step: &str) -> ConstraintView {
     }
 }
 
-/// The hook or the reviewer a form made for `step`, and the form cleared.
+/// A rule at `step`: told to the agent, and at checked or enforced it binds
+/// the calls to its function that hold its words. Told by default.
+fn new_rule(rules: &Rules, step: &str) -> ConstraintView {
+    let d = &rules.rule;
+    let rung = Some(d.rung.as_str())
+        .filter(|r| !r.is_empty())
+        .unwrap_or("told");
+    ConstraintView {
+        function: d.function.trim().into(),
+        contains: d.contains.trim().into(),
+        rung: rung.into(),
+        ..for_step(rules, "rule", step, d.text.trim().into())
+    }
+}
+
+/// The rule, hook or reviewer a form made for `step`, and the forms cleared.
 fn made(rules: &mut Rules, msg: &Msg, step: &str) -> ConstraintView {
     let made = match msg {
+        Msg::AddRule => new_rule(rules, step),
         Msg::AddHook => new_hook(rules, step),
         _ => new_reviewer(rules, step),
     };
     rules.hook.clear();
     rules.reviewer.clear();
+    rules.rule = RuleDraft::default();
     made
+}
+
+fn rule_field(d: &mut RuleDraft, field: RuleField, value: String) {
+    match field {
+        RuleField::Text => d.text = value,
+        RuleField::Function => d.function = value,
+        RuleField::Contains => d.contains = value,
+        RuleField::Rung => d.rung = value,
+    }
 }
 
 /// The steps a constraint applies at once `step` is added to or taken off
@@ -269,6 +319,7 @@ fn typed(rules: &mut Rules, msg: Msg) {
         Msg::HookFunction(f) => rules.hook_function = f,
         Msg::Hook(h) => rules.hook = h,
         Msg::Reviewer(r) => rules.reviewer = r,
+        Msg::Rule(field, value) => rule_field(&mut rules.rule, field, value),
         _ => {}
     }
 }
@@ -293,7 +344,7 @@ pub fn update(rules: &mut Rules, msg: Msg, at: &At, ctx: &Ctx) -> Task<Msg> {
             load(ctx)
         }
         Msg::Remove(id) => send(ctx, api::ConstraintRemove { id }),
-        Msg::AddReviewer | Msg::AddHook => {
+        Msg::AddRule | Msg::AddReviewer | Msg::AddHook => {
             send(ctx, api::ConstraintAdd(made(rules, &msg, at.step)))
         }
         Msg::Scope(id, add) => match scope(rules, id, add, at.step) {
@@ -395,6 +446,32 @@ mod tests {
         );
         rules.constraints.push(first);
         assert_eq!(new_hook(&rules, "short/build").id, "hook-short-build-2");
+    }
+
+    #[test]
+    fn a_new_rule_is_told_unless_its_rung_says_more() {
+        let mut rules = Rules::default();
+        rule_field(
+            &mut rules.rule,
+            RuleField::Text,
+            " Keep diffs small. ".into(),
+        );
+        let told = new_rule(&rules, "short/build");
+        assert_eq!(
+            (told.rule.as_str(), told.rung.as_str()),
+            ("Keep diffs small.", "told")
+        );
+        assert_eq!(
+            (told.id.as_str(), told.steps.as_slice()),
+            ("rule-short-build-1", &["short/build".to_string()][..])
+        );
+        rule_field(&mut rules.rule, RuleField::Rung, "enforced".into());
+        rule_field(&mut rules.rule, RuleField::Function, "sandbox::exec".into());
+        let enforced = new_rule(&rules, "short/build");
+        assert_eq!(
+            (enforced.rung.as_str(), enforced.function.as_str()),
+            ("enforced", "sandbox::exec")
+        );
     }
 
     #[test]

@@ -5,7 +5,7 @@ use bastion_protocol::ConstraintView;
 use iced::widget::{Column, column, container, pick_list, row, text, text_input};
 use iced::{Element, Fill};
 
-use super::{Adding, At, Msg, Rules, chip, choice, help, small};
+use super::{Adding, At, Msg, RuleField, Rules, chip, choice, help, small};
 use crate::pages::Choice;
 use crate::theme;
 
@@ -45,7 +45,9 @@ pub(super) fn fits(c: &ConstraintView, filter: &str) -> bool {
 fn scope<'a>(c: &ConstraintView, at: &At, editable: bool) -> Element<'a, Msg> {
     let only_here = c.steps.len() == 1 && c.steps[0] == at.step;
     let msg = |m: Msg| editable.then_some(m);
-    let made_here = kind(c) != "Rule" && only_here;
+    // One the owner made for this step alone comes off whole; "Not here"
+    // would leave it at no step, which means every step.
+    let made_here = c.source == "owner" && only_here;
     match (c.steps.is_empty(), made_here) {
         (true, _) => chip("every step"),
         (false, true) => small("Remove", msg(Msg::Remove(c.id.clone()))),
@@ -84,6 +86,50 @@ fn line<'a>(c: &ConstraintView, at: &At, editable: bool) -> Element<'a, Msg> {
     .spacing(8)
     .align_y(iced::Center)
     .into()
+}
+
+/// The form for a rule at the step: what the agent is told, its rung, and
+/// the calls it binds once it is more than told.
+fn rule_form<'a>(rules: &Rules) -> Element<'a, Msg> {
+    let d = &rules.rule;
+    let named = !d.text.trim().is_empty();
+    let field = |hint: &'static str, value: &str, f: RuleField| {
+        text_input(hint, value)
+            .on_input(move |v| Msg::Rule(f, v))
+            .style(theme::field)
+    };
+    let rungs = vec!["told".to_string(), "checked".into(), "enforced".into()];
+    let rung = Some(d.rung.clone())
+        .filter(|r| !r.is_empty())
+        .or(Some("told".into()));
+    let rung = pick_list(rungs, rung, |r| Msg::Rule(RuleField::Rung, r))
+        .text_size(13)
+        .style(theme::select);
+    let text = field(
+        "What the agent is told, such as: Keep each commit under 200 lines.",
+        &d.text,
+        RuleField::Text,
+    )
+    .on_submit_maybe(named.then_some(Msg::AddRule));
+    let binds = row![
+        field(
+            "Calls, such as sandbox::exec",
+            &d.function,
+            RuleField::Function
+        )
+        .width(260),
+        field(
+            "Words a call holds, such as git push",
+            &d.contains,
+            RuleField::Contains
+        ),
+        rung,
+        small("Add rule", named.then_some(Msg::AddRule)),
+    ]
+    .spacing(8)
+    .align_y(iced::Center);
+    let why = "Told is only said to the agent. Checked notes a call that breaks it, and enforced refuses one: both need the calls it binds.";
+    column![help(why), text, binds].spacing(6).into()
 }
 
 /// The form for a hook at the step: the calls it runs before, and its
@@ -153,6 +199,7 @@ fn adding<'a>(rules: &Rules, at: &At) -> Element<'a, Msg> {
         |label: &str, a: Adding| choice(label.to_string(), rules.adding == a, Some(Msg::Adding(a)));
     let switch = row![
         text("Add").size(13).color(theme::MUTED),
+        pick("A rule", Adding::Rule),
         pick("A hook", Adding::Hook),
         pick("A reviewer", Adding::Reviewer),
         pick("One from another step", Adding::Elsewhere),
@@ -160,6 +207,7 @@ fn adding<'a>(rules: &Rules, at: &At) -> Element<'a, Msg> {
     .spacing(6)
     .align_y(iced::Center);
     let form = match rules.adding {
+        Adding::Rule => rule_form(rules),
         Adding::Hook => hook_form(rules),
         Adding::Reviewer => reviewer_form(rules),
         Adding::Elsewhere => elsewhere_form(rules, at),

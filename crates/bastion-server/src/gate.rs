@@ -650,14 +650,23 @@ impl Gate {
             .find(|g| g.stage == stage && g.step == step && g.function == function)
             .ok_or(format!("no grant for {function} at {stage:?} {step}"))?;
         let was = g.rung;
-        g.rung = if up { was.promote() } else { was.demote() };
+        let next = if up {
+            Some(was.promote())
+        } else {
+            was.demote()
+        };
+        let subject = format!("{stage:?} {step} {function}");
+        // Below ask the grant goes, and refusal, the default, applies (D48).
+        let Some(rung) = next else {
+            return self.ungrant(&g).await;
+        };
+        g.rung = rung;
         self.store.set_capability(&g).await?;
         self.reload().await?;
-        let subject = format!("{stage:?} {step} {function}");
         self.note(
             if up { "promote" } else { "demote" },
             &subject,
-            format!("{was:?} -> {:?}", g.rung),
+            format!("{was:?} -> {rung:?}"),
         );
         Ok(())
     }
@@ -676,10 +685,9 @@ impl Gate {
 
     /// Take back a step's own grant; its kind's grant applies again. A
     /// kind's grant stays, as it only moves on its ladder.
-    pub async fn ungrant_at_step(&self, g: &Capability) -> Result<(), String> {
-        if g.step.is_empty() {
-            return Err("only a step's own grant can be taken back".into());
-        }
+    /// Take a grant back, a kind's or a step's own; what it let through is
+    /// refused again, unless another grant covers it.
+    pub async fn ungrant(&self, g: &Capability) -> Result<(), String> {
         self.store.remove_capability(g).await?;
         self.reload().await?;
         let subject = format!("{:?} {} {}", g.stage, g.step, g.function);
@@ -1239,21 +1247,20 @@ mod tests {
                 stage: Stage::Prompt,
                 step: "short/review".into(),
                 function: "sandbox::fs::write".into(),
-                rung: govern::Access::Denied,
+                rung: govern::Access::Ask,
             };
             r.gate.grant_at_step(grant.clone()).await.unwrap();
-            assert_eq!(at("short/review"), "deny", "the step's own grant");
+            assert_eq!(at("short/review"), "hold", "the step's own grant");
             assert_eq!(at("short/build"), "continue", "its kind's, elsewhere");
-            r.gate.ungrant_at_step(&grant).await.unwrap();
-            assert_eq!(at("short/review"), "continue", "taken back");
-            let kind = Capability {
-                step: String::new(),
-                ..grant
+            let at_review = govern::At {
+                stage: Stage::Prompt,
+                step: "short/review",
             };
-            assert!(
-                r.gate.ungrant_at_step(&kind).await.is_err(),
-                "a kind's grant stays"
-            );
+            r.gate
+                .move_capability(at_review, "sandbox::fs::write", false)
+                .await
+                .unwrap();
+            assert_eq!(at("short/review"), "continue", "demoted below ask, it goes");
 
             r.gate
                 .scope_constraint("keep-tests", vec!["short/build".into()])

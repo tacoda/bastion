@@ -32,27 +32,26 @@ impl Enforcement {
     }
 }
 
-/// What a grant lets a call do: refused, held for the owner, or let through.
+/// What a grant lets a call do: held for the owner, or let through. A call
+/// no grant covers is refused, so refusing needs no grant (D48).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Access {
-    Denied,
     Ask,
     Allowed,
 }
 
 impl Access {
     pub fn promote(self) -> Self {
-        match self {
-            Access::Denied => Access::Ask,
-            _ => Access::Allowed,
-        }
+        Access::Allowed
     }
 
-    pub fn demote(self) -> Self {
+    /// One rung down; none below ask, where the grant goes and the default,
+    /// refusal, applies.
+    pub fn demote(self) -> Option<Self> {
         match self {
-            Access::Allowed => Access::Ask,
-            _ => Access::Denied,
+            Access::Allowed => Some(Access::Ask),
+            Access::Ask => None,
         }
     }
 }
@@ -197,22 +196,29 @@ pub fn gate(
     gate_at(call, At { stage, step: "" }, constraints, grants)
 }
 
-/// The most specific grant for a call at `step` of kind `stage`: a grant for
-/// the step wins over one for its kind, then an exact function over a
+/// The grants that decide at `step` of kind `stage`: the step's own when it
+/// has any, which take the place of its kind's, else its kind's (D48).
+pub fn grants_at<'a>(at: At, grants: &'a [Capability]) -> Vec<&'a Capability> {
+    let own: Vec<&Capability> = grants
+        .iter()
+        .filter(|g| !at.step.is_empty() && g.step == at.step)
+        .collect();
+    if !own.is_empty() {
+        return own;
+    }
+    let kind = grants
+        .iter()
+        .filter(|g| g.step.is_empty() && g.stage == at.stage);
+    kind.collect()
+}
+
+/// The most specific grant for a call at a step: an exact function over a
 /// pattern, then the longer pattern.
 fn grant_for<'a>(call: &Call, at: At, grants: &'a [Capability]) -> Option<&'a Capability> {
-    let At { stage, step } = at;
-    let fits = |g: &&Capability| {
-        let here = (g.step.is_empty() && g.stage == stage) || (!step.is_empty() && g.step == step);
-        here && matches(&g.function, &call.function)
-    };
-    grants.iter().filter(fits).max_by_key(|g| {
-        (
-            !g.step.is_empty(),
-            !g.function.ends_with('*'),
-            g.function.len(),
-        )
-    })
+    let fits = grants_at(at, grants)
+        .into_iter()
+        .filter(|g| matches(&g.function, &call.function));
+    fits.max_by_key(|g| (!g.function.ends_with('*'), g.function.len()))
 }
 
 /// Judge one call at `step`, named `workflow/step`, of kind `stage`. A
@@ -247,9 +253,6 @@ pub fn gate_at(call: &Call, at: At, constraints: &[Constraint], grants: &[Capabi
             Some(Access::Allowed) => Decision::Continue,
             Some(Access::Ask) => Decision::Hold {
                 reason: format!("{} at {place} waits for the owner.", call.function),
-            },
-            Some(Access::Denied) => Decision::Deny {
-                reason: format!("{} is not granted at {place}.", call.function),
             },
             None => Decision::Deny {
                 reason: format!("No grant covers {} at {place}.", call.function),
@@ -382,11 +385,9 @@ mod tests {
             Enforcement::Enforced.demote().demote().demote(),
             Enforcement::Told
         );
-        assert_eq!(
-            Access::Denied.promote().promote().promote(),
-            Access::Allowed
-        );
-        assert_eq!(Access::Allowed.demote().demote().demote(), Access::Denied);
+        assert_eq!(Access::Ask.promote().promote(), Access::Allowed);
+        assert_eq!(Access::Allowed.demote(), Some(Access::Ask));
+        assert_eq!(Access::Ask.demote(), None, "below ask, the grant goes");
     }
 
     #[test]
@@ -460,18 +461,6 @@ mod tests {
     }
 
     #[test]
-    fn a_denied_grant_refuses() {
-        let grants = [Capability {
-            stage: Stage::Prompt,
-            step: String::new(),
-            function: "sandbox::exec".into(),
-            rung: Access::Denied,
-        }];
-        let verdict = gate(&exec("ls"), Stage::Prompt, &[], &grants);
-        assert!(matches!(verdict.decision, Decision::Deny { .. }));
-    }
-
-    #[test]
     fn promoting_a_constraint_turns_a_passing_call_into_a_refused_one() {
         let mut rules = default_constraints();
         let call = exec("git -C /work/repo rm test_calc.py");
@@ -538,39 +527,41 @@ mod tests {
     }
 
     #[test]
-    fn a_grant_for_one_workflow_step_wins_over_its_kinds() {
+    fn a_steps_own_grants_take_the_place_of_its_kinds() {
         let mut grants = default_capabilities();
         grants.push(Capability {
             stage: Stage::Prompt,
             step: "short/review".into(),
-            function: "sandbox::fs::write".into(),
-            rung: Access::Denied,
+            function: "sandbox::fs::read".into(),
+            rung: Access::Allowed,
         });
-        let at = |step| {
-            gate_at(
-                &write(),
-                At {
-                    stage: Stage::Prompt,
-                    step,
-                },
-                &[],
-                &grants,
-            )
-            .decision
+        let at = |call: &Call, step| {
+            let at = At {
+                stage: Stage::Prompt,
+                step,
+            };
+            gate_at(call, at, &[], &grants).decision
         };
         let named = Decision::Deny {
-            reason: "sandbox::fs::write is not granted at short/review.".into(),
+            reason: "No grant covers sandbox::fs::write at short/review.".into(),
         };
-        assert!(
-            at("short/review") == named,
-            "the step's own grant, and a refusal names the step"
-        );
         assert_eq!(
-            at("short/build"),
-            Decision::Continue,
-            "the kind's at another step"
+            at(&write(), "short/review"),
+            named,
+            "only what the step lists"
         );
-        assert_eq!(at(""), Decision::Continue, "no step named");
+        let read = Call {
+            function: "sandbox::fs::read".into(),
+            text: "a.py".into(),
+            content: String::new(),
+        };
+        assert_eq!(at(&read, "short/review"), Decision::Continue);
+        assert_eq!(
+            at(&write(), "short/build"),
+            Decision::Continue,
+            "its kind's elsewhere"
+        );
+        assert_eq!(at(&write(), ""), Decision::Continue, "no step named");
     }
 
     #[test]

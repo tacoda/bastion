@@ -139,7 +139,7 @@ fn transactions_at(version: u64) -> Vec<Vec<String>> {
 #[test]
 fn migration_1_rebuilds_the_staged_tables_once_with_deferred_keys() {
     let fresh = transactions_at(0);
-    assert_eq!(fresh.len(), 8, "the schema, then migrations 1 to 7");
+    assert_eq!(fresh.len(), 9, "the schema, then migrations 1 to 8");
     let m1 = &fresh[1];
     assert_eq!(m1.first().unwrap(), "PRAGMA defer_foreign_keys = ON");
     assert_eq!(m1.last().unwrap(), "PRAGMA user_version = 1");
@@ -171,6 +171,13 @@ fn migration_1_rebuilds_the_staged_tables_once_with_deferred_keys() {
         let renamed = format!("UPDATE {table} SET stage = 'shell' WHERE stage = 'command'");
         assert!(m4.contains(&renamed), "{table}");
     }
+    assert_eq!(transactions_at(8).len(), 1, "nothing left to migrate");
+}
+
+#[test]
+fn the_later_migrations_make_steps_of_stages_and_keep_each_meaning_of_command() {
+    let fresh = transactions_at(0);
+    let m4 = &transactions_at(3)[1];
     let m5 = &fresh[5];
     assert_eq!(m5.last().unwrap(), "PRAGMA user_version = 5");
     assert!(
@@ -201,8 +208,17 @@ fn migration_1_rebuilds_the_staged_tables_once_with_deferred_keys() {
         "the check names no command"
     );
     assert!(m7.iter().any(|s| s.contains(".claude/commands/' || run")));
-    assert_eq!(transactions_at(4).len(), 4, "migrations 5 to 7 are left");
-    assert_eq!(transactions_at(7).len(), 1, "nothing left to migrate");
+    let m8 = &fresh[8];
+    assert!(
+        m8.iter()
+            .any(|s| s.contains("CHECK (rung IN ('ask','allowed'))"))
+    );
+    assert!(
+        m8.iter().any(|s| s.contains("WHERE rung = 'denied'")),
+        "refusal is the default"
+    );
+    assert_eq!(transactions_at(4).len(), 5, "migrations 5 to 8 are left");
+    assert_eq!(transactions_at(8).len(), 1, "nothing left to migrate");
 }
 
 #[test]

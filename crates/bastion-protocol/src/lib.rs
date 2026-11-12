@@ -577,7 +577,7 @@ pub struct HeldCallRef {
 }
 
 /// A rule on its ladder (DECISIONS.md D20): `told`, `checked` or `enforced`.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConstraintView {
     pub id: String,
     pub rule: String,

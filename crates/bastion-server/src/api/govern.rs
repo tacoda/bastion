@@ -107,7 +107,7 @@ fn grant_of(v: &CapabilityView) -> Result<Capability, String> {
     let stage = serde_json::from_value(json!(v.stage))
         .map_err(|_| format!("{:?} is not a kind of step", v.stage))?;
     let rung = serde_json::from_value(json!(v.rung))
-        .map_err(|_| format!("{:?} is not denied, ask or allowed", v.rung))?;
+        .map_err(|_| format!("{:?} is not ask or allowed", v.rung))?;
     Ok(Capability {
         stage,
         step: v.step.trim().into(),
@@ -142,10 +142,7 @@ pub async fn capability_add(cell: &FactoryCell, grant: CapabilityView) -> Result
 
 /// Take back a step's own grant.
 pub async fn capability_remove(cell: &FactoryCell, grant: CapabilityView) -> Result<(), String> {
-    factory(cell)?
-        .gate()
-        .ungrant_at_step(&grant_of(&grant)?)
-        .await
+    factory(cell)?.gate().ungrant(&grant_of(&grant)?).await
 }
 
 /// The whole chain, verified under its key as it is read, and the writer's

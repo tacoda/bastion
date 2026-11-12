@@ -42,7 +42,7 @@ pub(super) fn staged_tables() -> [(&'static str, &'static str, String); 4] {
         stage TEXT NOT NULL {stage},
         step TEXT NOT NULL DEFAULT '',
         function TEXT NOT NULL CHECK (length(function) > 0),
-        rung TEXT NOT NULL CHECK (rung IN ('denied','ask','allowed')),
+        rung TEXT NOT NULL CHECK (rung IN ('ask','allowed')),
         PRIMARY KEY (stage, step, function))"
             ),
         ),
@@ -322,6 +322,15 @@ pub(super) fn migrations() -> Vec<Vec<String>> {
             .flat_map(new)
             .chain([COMMANDS_AS_PROMPTS.to_string()])
             .collect(),
+        // A grant is ask or allowed; refusal is the default (D48).
+        current
+            .iter()
+            .filter(|t| t.0 == "capabilities")
+            .flat_map(new)
+            .chain([
+                "DELETE FROM eval_arms WHERE kind = 'capability' AND rung = 'denied'".to_string(),
+            ])
+            .collect(),
     ]
 }
 
@@ -386,7 +395,11 @@ const FACTORY_STAGES: &str = "'land','prepare','baseline','checks','verify','acc
 fn as_steps(table: &str, copy: &str, command: &str) -> Vec<String> {
     if table == "capabilities" {
         let old = format!("{AGENT_STAGES},{FACTORY_STAGES}");
-        let mut gone = vec![format!("DELETE FROM {copy} WHERE stage IN ({old})")];
+        // Refusal is the default, so a denied grant says nothing (D48).
+        let mut gone = vec![
+            format!("DELETE FROM {copy} WHERE stage IN ({old})"),
+            format!("DELETE FROM {copy} WHERE rung = 'denied'"),
+        ];
         // A command's grant goes with it, as a prompt has its own.
         gone.push(match command {
             "shell" => format!("UPDATE {copy} SET stage = 'shell' WHERE stage = 'command'"),

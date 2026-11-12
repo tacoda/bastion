@@ -114,7 +114,6 @@ pub enum Msg {
     GrantFunction(String),
     GrantRung(String),
     Grant,
-    Ungrant(CapabilityView),
 }
 
 /// Each workflow's steps as choices: `workflow/step`, labeled with the
@@ -269,7 +268,6 @@ fn on_steps(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
             };
             return send(ctx, api::CapabilityAdd(grant));
         }
-        Msg::Ungrant(g) => return send(ctx, api::CapabilityRemove(g)),
         _ => {}
     }
     Task::none()
@@ -554,7 +552,10 @@ fn grant_row<'a>(g: &CapabilityView) -> Element<'a, Message> {
     ];
     let go = |up: bool| Message::Govern(Msg::MoveGrant(g.clone(), up));
     let buttons = vec![
-        small("Demote", (g.rung != "denied").then(|| go(false))),
+        small(
+            if g.rung == "ask" { "Remove" } else { "Demote" },
+            Some(go(false)),
+        ),
         small("Promote", (g.rung != "allowed").then(|| go(true))),
     ];
     ladder_row(&g.rung, about.into(), buttons)
@@ -570,9 +571,11 @@ fn step_grants(state: &State) -> Element<'_, Message> {
         ];
         let go = |up: bool| Message::Govern(Msg::MoveGrant(g.clone(), up));
         let buttons = vec![
-            small("Demote", (g.rung != "denied").then(|| go(false))),
+            small(
+                if g.rung == "ask" { "Remove" } else { "Demote" },
+                Some(go(false)),
+            ),
             small("Promote", (g.rung != "allowed").then(|| go(true))),
-            small("Remove", Some(Message::Govern(Msg::Ungrant(g.clone())))),
         ];
         ladder_row(&g.rung, about.into(), buttons)
     });
@@ -592,7 +595,7 @@ fn step_grants(state: &State) -> Element<'_, Message> {
     let function = text_input("sandbox::fs::write", &f.function)
         .on_input(|v| Message::Govern(Msg::GrantFunction(v)))
         .style(theme::field);
-    let rungs = vec!["denied".to_string(), "ask".into(), "allowed".into()];
+    let rungs = vec!["ask".to_string(), "allowed".into()];
     let rung = pick_list(rungs, Some(f.rung.clone()), |r| {
         Message::Govern(Msg::GrantRung(r))
     })
@@ -640,8 +643,8 @@ fn capabilities(state: &State) -> Element<'_, Message> {
     });
     column![
         section("Charter: what each repository allows".into(), Column::with_children(allows).into(), false),
-        section("Harness: what an agent's calls may do in each kind of step: denied, then ask (held for you), then allowed".into(), Column::with_children(grants).into(), false),
-        section("For one workflow step: a grant here wins over its kind's".into(), step_grants(state), false),
+        section("Harness: what an agent's calls may do in each kind of step: ask (held for you), then allowed; a call no grant covers is refused".into(), Column::with_children(grants).into(), false),
+        section("For one workflow step: a step's own grants take the place of its kind's".into(), step_grants(state), false),
         section("Factory: what the factory may do, as Settings set it".into(), Column::with_children(factory).into(), false),
     ]
     .spacing(16)

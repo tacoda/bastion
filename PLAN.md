@@ -207,6 +207,23 @@ landed. The canvas drew the link red and dashed.
 Done 2026-11-11. Live, the branching job again: plan done, build done,
 checks failed, report waiting.
 
+### U13. A step's rules on the workflows page (D48)
+
+- An agent's step shows its rules: the constraints that apply there, each
+  marked every step or scoped, with "Not here" and a picker to apply one
+  scoped to other steps here too; and its grants.
+- A step uses its kind's grants until "Give this step its own grants"
+  copies them as its own, which then take their place; "Use its kind's
+  instead" takes them back.
+- A grant is ask or allowed; demoting from ask removes it. Migration 8
+  drops denied grants and limits the rung to ask and allowed.
+
+Done 2026-11-11. Live, on Bug fix's build step: its own grants started as
+a copy of the prompt kind's `sandbox::*` allowed, demoted to ask, then
+Remove took it back to the kind's; the audit recorded the grant, the
+demotion and the removal. Taking a constraint off its only step is
+refused, as that would apply it at every step.
+
 ## Open questions
 
 - **Where the switcher sits on a narrow window.** The bar wraps. Should the

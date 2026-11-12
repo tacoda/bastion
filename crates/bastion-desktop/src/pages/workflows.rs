@@ -47,6 +47,8 @@ pub struct State {
     spend: String,
     /// The server's models, as `provider/id` choices for a step's model.
     models: Vec<Choice>,
+    /// The constraints and grants the picked step's rules come from.
+    rules: super::step_rules::Rules,
     /// The picked step's name, as typed: it renames the step once no
     /// other step has it.
     name: String,
@@ -70,6 +72,7 @@ pub enum StepField {
 pub enum Msg {
     Workflows(Result<Vec<WorkflowView>, String>),
     Models(Result<Vec<ModelOption>, String>),
+    Rules(super::step_rules::Msg),
     /// The picked step's model; the default is empty.
     Model(Choice),
     Me(Result<PersonView, String>),
@@ -115,7 +118,8 @@ pub fn load(ctx: &Ctx) -> Task<Message> {
     let read = ctx.task(&ctx.current, api::Workflows, Msg::Workflows);
     let me = ctx.task(&ctx.current, api::Me, Msg::Me);
     let models = ctx.task(&ctx.current, api::Models, Msg::Models);
-    Task::batch([read, me, models]).map(wrap)
+    let rules = super::step_rules::load(ctx).map(Msg::Rules);
+    Task::batch([read, me, models, rules]).map(wrap)
 }
 
 fn act<R>(ctx: &Ctx, request: R, done: fn(R::Answer) -> Done) -> Task<Message>
@@ -174,6 +178,16 @@ impl State {
             .map_or_else(String::new, |m| format!("{}", m as f64 / 1e6));
         self.results = step.map(|n| n.results.join(", ")).unwrap_or_default();
         self.picked = pick;
+    }
+
+    /// The picked step's name, `workflow/step`, and its kind (D44).
+    fn picked_step(&self) -> Option<(String, String)> {
+        let Pick::Step(id) = &self.picked else {
+            return None;
+        };
+        let w = self.draft.as_ref()?;
+        let n = edit::node(w, id)?;
+        Some((format!("{}/{}", w.id, n.id), n.stage.clone()))
     }
 
     /// Change the picked step.
@@ -422,12 +436,32 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
             (state.chosen, state.draft) = (c.id, None);
             state.show_latest();
         }
+        Msg::Rules(m) => {
+            let Some((step, stage)) = state.picked_step() else {
+                return super::step_rules::update(&mut state.rules, m, &none_at(), ctx)
+                    .map(|m| wrap(Msg::Rules(m)));
+            };
+            let at = super::step_rules::At {
+                step: &step,
+                stage: &stage,
+            };
+            return super::step_rules::update(&mut state.rules, m, &at, ctx)
+                .map(|m| wrap(Msg::Rules(m)));
+        }
         m @ (Msg::CopyName(_) | Msg::Copy | Msg::New | Msg::Delete | Msg::Save | Msg::Done(..)) => {
             return manage(state, m, ctx);
         }
         other => change(state, other),
     }
     Task::none()
+}
+
+/// No step: the rules' replies still land, with no step to act for.
+fn none_at() -> super::step_rules::At<'static> {
+    super::step_rules::At {
+        step: "",
+        stage: "",
+    }
 }
 
 /// The shown workflow's facts: shipped or not, its version and its level.
@@ -652,9 +686,18 @@ fn step_detail<'a>(state: &'a State, id: &str, editable: bool) -> Option<Element
     let results = text_input("", &state.results)
         .on_input_maybe(editable.then_some(|v| wrap(Msg::Field(StepField::Results, v))))
         .style(theme::field);
-    body = body
-        .push(labeled("Results it gives, comma-separated", results))
-        .push(small("Remove step", on(Msg::RemoveStep)));
+    body = body.push(labeled("Results it gives, comma-separated", results));
+    // A shell step runs no agent, so no rule on an agent's calls binds it.
+    if let (false, Some((step, stage))) = (is_script(&n), state.picked_step()) {
+        let at = super::step_rules::At {
+            step: &step,
+            stage: &stage,
+        };
+        let rules =
+            super::step_rules::view(&state.rules, &at, editable).map(|m| wrap(Msg::Rules(m)));
+        body = body.push(labeled("Rules at this step", rules));
+    }
+    body = body.push(small("Remove step", on(Msg::RemoveStep)));
     Some(
         container(body.spacing(12))
             .padding(16)

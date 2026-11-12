@@ -1,8 +1,9 @@
 //! The Settings page: the Bastion servers, people, model providers and
-//! hosts, the factory, history, workspaces and accounts, each a
+//! hosts, MCP servers, the factory, history, workspaces and accounts, each a
 //! section in its own file.
 
 mod factory;
+mod mcp;
 mod notify;
 mod people;
 mod places;
@@ -20,6 +21,7 @@ pub struct State {
     places: places::State,
     people: people::State,
     providers: providers::State,
+    mcp: mcp::State,
     factory: factory::State,
     notify: notify::State,
 }
@@ -29,6 +31,7 @@ pub enum Msg {
     Places(places::Msg),
     People(people::Msg),
     Providers(providers::Msg),
+    Mcp(mcp::Msg),
     Factory(factory::Msg),
     Notify(notify::Msg),
 }
@@ -57,6 +60,7 @@ pub fn load(ctx: &Ctx) -> Task<Message> {
         places::load(ctx),
         people::load(ctx),
         providers::load(ctx),
+        mcp::load(ctx),
         factory::load(ctx),
         notify::load(ctx),
     ])
@@ -67,6 +71,7 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         Msg::Places(m) => places::update(&mut state.places, m, ctx),
         Msg::People(m) => people::update(&mut state.people, m, ctx),
         Msg::Providers(m) => providers::update(&mut state.providers, m, ctx),
+        Msg::Mcp(m) => mcp::update(&mut state.mcp, m, ctx),
         Msg::Factory(m) => factory::update(&mut state.factory, m, ctx),
         Msg::Notify(m) => notify::update(&mut state.notify, m, ctx),
     }
@@ -81,6 +86,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         people::view(&state.people, ctx),
         providers,
         hosts,
+        mcp::view(&state.mcp),
         factory,
         notify::view(&state.notify),
         history,

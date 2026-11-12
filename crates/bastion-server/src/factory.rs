@@ -188,13 +188,14 @@ impl Factory {
         &self.gate
     }
 
-    /// Put every `sandbox::*` call a turn makes through the gate, which pins
-    /// it to the job's VM, then resume.
+    /// Put every call a turn makes through the gate, which pins it to the
+    /// job's VM, then resume. A turn may call any function its step grants
+    /// (D49), such as an MCP server's tools (D52), so the gate sees them all.
     pub fn start(self: &Arc<Self>) -> Result<(), String> {
         let gate = self.gate.clone();
         self.engine.bind(
             "harness::hook::pre-trigger",
-            json!({ "functions": ["sandbox::*"], "on_error": "fail_closed", "timeout_ms": 5000 }),
+            json!({ "functions": ["*"], "on_error": "fail_closed", "timeout_ms": 5000 }),
             Arc::new(move |envelope: Value| gate.judge(&envelope)),
         )?;
         let factory = self.clone();

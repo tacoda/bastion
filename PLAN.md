@@ -40,7 +40,8 @@ Done 2026-11-11. Live, on Short's plan step with its own grants
 --oneline -3` ran, and `ls -la /work/repo` was refused with "No grant
 covers sandbox::exec at short/plan." The four sandbox tools are in every
 turn's list by name, so this did not show whether the harness takes a
-pattern such as `sandbox::*`. C4 checks that with the MCP tools.
+pattern such as `sandbox::*`. C4 settled it: a grant on `mcp::calc::*` was
+the only thing naming the MCP tool, and the turn called it.
 
 ### C2. Hooks per step (D50)
 
@@ -94,6 +95,19 @@ fix's build step added `strict` as a reviewer and removed it.
 - Only MCP servers that answer over HTTP, this round. A stdio server runs
   as a process on the host, outside the VM, and VISION.md says agent work
   never runs on your machine.
+- A server's token stays in the vault. Settings names the secret, and the
+  server makes `bastion-mcp` a consumer of it, so only the bridge reads it.
+- The gate's hook now binds every function a turn calls, not only
+  `sandbox::*`. Since C1 a turn may call any function its step grants, and
+  a call the hook doesn't bind skips the gate.
+
+Done 2026-11-11. Live, a test MCP server with one tool, `add`, listed as
+`calc`: the bridge said "connected, 1 tools", and a job whose plan step was
+granted `mcp::calc::*` called `mcp::calc::add` with 2 and 3 and got 5. The
+first run showed no gate entry for that call: the hook bound only
+`sandbox::*`. With the hook on every function, the audit shows "continue
+mcp::calc::add" and the sandbox calls as before. Removing `calc` in
+Settings took its tool off the engine.
 
 ## Open questions
 
@@ -102,7 +116,3 @@ fix's build step added `strict` as a reviewer and removed it.
   one?
 - **Stdio MCP servers.** Should one run in the job's VM, so a step may use
   a local MCP server without breaking the VM rule?
-- **Patterns in `functions.allow`.** I don't know yet whether the harness
-  takes `mcp::github::*` or needs each function by name. C1 checks it live,
-  and if it needs names, Bastion expands the pattern from the engine's
-  function list.

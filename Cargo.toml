@@ -8,6 +8,7 @@ members = [
     "crates/bastion-client",
     "crates/bastion-desktop",
     "workers/bastion-openai-compat",
+    "workers/bastion-mcp",
 ]
 
 [profile.release]

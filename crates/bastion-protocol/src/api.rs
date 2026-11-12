@@ -517,6 +517,8 @@ impl Request for CodexSignInPoll {
 bare!(CodexSignOut, "POST", "/providers/openai-codex/sign-out", ());
 bare!(Hosts, "GET", "/providers/hosts", Vec<HostView>);
 with!(HostsSet, "PUT", "/providers/hosts", Vec<HostView>, ());
+bare!(McpServers, "GET", "/mcp-servers", Vec<McpServerView>);
+with!(McpServersSet, "PUT", "/mcp-servers", Vec<McpServerView>, ());
 
 // Workflows.
 bare!(Workflows, "GET", "/workflows", Vec<WorkflowView>);
@@ -646,6 +648,8 @@ fn admin_requests() -> Vec<(&'static str, &'static str)> {
         CodexSignOut,
         Hosts,
         HostsSet,
+        McpServers,
+        McpServersSet,
         Workflows,
         WorkflowCopy,
         WorkflowSave,
@@ -671,6 +675,6 @@ mod tests {
         assert_eq!(comment.path(), "/jobs/j1/comment");
         let spaced = WorkflowDelete { id: "a b/c".into() };
         assert_eq!(spaced.path(), "/workflows/a%20b%2Fc");
-        assert_eq!(every().len(), 74);
+        assert_eq!(every().len(), 76);
     }
 }

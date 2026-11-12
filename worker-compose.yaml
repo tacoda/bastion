@@ -112,6 +112,14 @@ containers:
     start_after: [state, llm-router]
     scripts:
       run: cargo run -q -p bastion-openai-compat
+  # Bastion's own MCP bridge (D52): each tool of each MCP server listed in
+  # Settings, as the function mcp::<server>::<tool>.
+  bastion-mcp:
+    worker: path://./workers/bastion-mcp
+    working_dir: .
+    start_after: [state, secrets]
+    scripts:
+      run: cargo run -q -p bastion-mcp
   # What `harness` calls: sessions, context, the function directory, `fp`,
   # `judge` and `approval-gate` (found in its binary, 2026-11-09).
   session-manager:

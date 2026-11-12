@@ -15,7 +15,7 @@ use axum::{Json, Router};
 use bastion_core::Event as JobEvent;
 use bastion_protocol::{
     CapabilityView, Change, ConstraintView, EscapeReport, HeldCallRef, HostView, LogRequest,
-    NewEval, NotifySet, NotifyView, SettingsView, Workspace,
+    McpServerView, NewEval, NotifySet, NotifyView, SettingsView, Workspace,
 };
 use futures_util::{Stream, stream};
 use serde::{Deserialize, Serialize};
@@ -87,6 +87,7 @@ fn provider_routes() -> Router<App> {
     Router::new()
         .route("/providers", get(providers))
         .route("/providers/hosts", get(hosts).put(hosts_set))
+        .route("/mcp-servers", get(mcp_servers).put(mcp_servers_set))
         .route(
             "/providers/{id}/key",
             put(provider_key_set).delete(provider_key_remove),
@@ -813,6 +814,14 @@ async fn token_revoke(State(app): State<App>, Path(id): Path<String>) -> Respons
 
 async fn providers(State(app): State<App>) -> Response {
     answer(api::providers::providers(&*app.server.engine).await)
+}
+
+async fn mcp_servers(State(app): State<App>) -> Response {
+    answer(api::mcp::mcp_servers(&*app.server.engine).await)
+}
+
+async fn mcp_servers_set(State(app): State<App>, Json(b): Json<Vec<McpServerView>>) -> Response {
+    answer(api::mcp::mcp_servers_set(&*app.server.engine, b).await)
 }
 
 async fn hosts(State(app): State<App>) -> Response {

@@ -153,6 +153,20 @@ pub struct HostView {
     pub api_url: String,
 }
 
+/// An MCP server the server's agents may reach through the bridge (D52).
+/// Its tools are the functions `mcp::<id>::<tool>`. `secret` names the
+/// vault secret that holds its token, if it needs one; never the token.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpServerView {
+    pub id: String,
+    pub url: String,
+    #[serde(default)]
+    pub secret: String,
+    /// How the bridge's connection went, such as "connected, 4 tools".
+    #[serde(default)]
+    pub status: String,
+}
+
 /// A device-code sign-in under way: open `verification_uri`, enter
 /// `user_code` before `expires_at` (Unix seconds), and poll every
 /// `interval` seconds.

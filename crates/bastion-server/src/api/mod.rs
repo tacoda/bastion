@@ -9,6 +9,7 @@ pub mod evals;
 pub mod factory;
 pub mod govern;
 pub mod hosts;
+pub mod mcp;
 pub mod people;
 pub mod providers;
 pub mod sessions;

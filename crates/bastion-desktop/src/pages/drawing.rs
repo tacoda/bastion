@@ -13,7 +13,7 @@ use super::mark;
 use crate::theme;
 
 pub const W: f32 = 168.0;
-pub const H: f32 = 110.0;
+pub const H: f32 = 74.0;
 pub const PAD: f32 = 24.0;
 
 fn words(word: &str) -> String {
@@ -36,55 +36,35 @@ fn clip(s: String) -> String {
     }
 }
 
-/// A step's last line: how far it reaches, then the results it gives.
+/// A step's last line, beside the document: the results it gives.
 pub fn subtitle(n: &NodeView) -> String {
+    clip(n.results.join(", "))
+}
+
+/// Beside the dial: the step's kind and what it runs, how far it reaches,
+/// and its budget when it has one (D43).
+pub fn kind_line(n: &NodeView) -> String {
+    let kind = match n.stage.as_str() {
+        "agent" => format!("Agent · {}", n.run),
+        "skill" => format!("Skill · {}", n.run),
+        "shell" => "Shell".into(),
+        _ => "Prompt".into(),
+    };
     let reach = match (n.stage.as_str(), n.reach.network, n.reach.reads_only) {
         ("shell", true, _) => Some("network".to_string()),
         (_, _, true) => Some("reads only".to_string()),
         _ => None,
     };
-    let results = (!n.results.is_empty()).then(|| format!("→ {}", n.results.join(", ")));
-    clip(
-        reach
-            .into_iter()
-            .chain(results)
-            .collect::<Vec<_>>()
-            .join(" · "),
-    )
-}
-
-/// A step's kind and what it runs.
-pub fn kind_line(n: &NodeView) -> String {
-    clip(match n.stage.as_str() {
-        "agent" => format!("Agent · {}", n.run),
-        "skill" => format!("Skill · {}", n.run),
-        "shell" => "Shell script".into(),
-        _ => "Prompt".into(),
-    })
-}
-
-/// Beside the dial: the step's model.
-pub fn model_line(n: &NodeView) -> String {
-    let model = n.options.model.rsplit('/').next().unwrap_or_default();
-    clip(match (n.stage.as_str(), model) {
-        ("shell", _) => "no model".to_string(),
-        (_, "") => "default model".to_string(),
-        (_, m) => m.to_string(),
-    })
-}
-
-/// The step's budget, when it has one (D43): its spend and its revisions.
-pub fn budget_line(n: &NodeView) -> String {
     let spend = n
         .options
         .spend_micros
-        .map(|m| format!("${:.2} at most", m as f64 / 1e6));
-    let revisions = n.options.revisions.map(|r| format!("{r} revisions"));
-    spend
+        .map(|m| format!("${:.2}", m as f64 / 1e6));
+    let revisions = n.options.revisions.map(|r| format!("{r}×"));
+    let all: Vec<String> = [Some(kind), reach, spend, revisions]
         .into_iter()
-        .chain(revisions)
-        .collect::<Vec<_>>()
-        .join(" · ")
+        .flatten()
+        .collect();
+    clip(all.join(" · "))
 }
 
 /// A step's dial as an icon: a moon when it runs on its own, a sun when a
@@ -198,23 +178,26 @@ fn step(frame: &mut Frame, n: &NodeView, look: Look) {
         theme::INK,
         14.0,
     ));
-    let line = |content: String, x: f32, y: f32| {
-        caption(content, Point::new(x, at.y + y), theme::MUTED, 12.0)
+    let line = |content: String, y: f32| {
+        caption(
+            content,
+            Point::new(at.x + 29.0, at.y + y),
+            theme::MUTED,
+            12.0,
+        )
     };
-    frame.fill_text(line(kind_line(n), at.x + 10.0, 32.0));
-    let icon = crate::icons::colored(dial_icon(n), theme::MUTED);
-    frame.draw_svg(
-        iced::Rectangle::new(Point::new(at.x + 10.0, at.y + 53.0), Size::new(13.0, 13.0)),
-        &icon,
-    );
-    frame.fill_text(line(model_line(n), at.x + 29.0, 52.0));
-    // The lines below the dial pack up: a step with no budget shows its
-    // reach and results where the budget would be.
-    let below = [budget_line(n), subtitle(n)]
-        .into_iter()
-        .filter(|l| !l.is_empty());
-    for (i, l) in below.enumerate() {
-        frame.fill_text(line(l, at.x + 10.0, 70.0 + 18.0 * i as f32));
+    let icon = |frame: &mut Frame, svg: &str, y: f32| {
+        let at = Point::new(at.x + 10.0, at.y + y);
+        frame.draw_svg(
+            iced::Rectangle::new(at, Size::new(13.0, 13.0)),
+            &crate::icons::colored(svg, theme::MUTED),
+        );
+    };
+    icon(frame, dial_icon(n), 33.0);
+    frame.fill_text(line(kind_line(n), 32.0));
+    if !n.results.is_empty() {
+        icon(frame, crate::icons::DOCUMENT, 51.0);
+        frame.fill_text(line(subtitle(n), 50.0));
     }
     if look.port {
         frame.fill(
@@ -369,8 +352,8 @@ mod tests {
         review.id = "code_review".into();
         assert_eq!(title(&review), "code review", "a step goes by its name");
         assert_eq!(
-            subtitle(&node("plan", "", &["design-notes"])),
-            "→ design-notes"
+            subtitle(&node("plan", "", &["design-notes", "risks"])),
+            "design-notes, risks"
         );
         let mut dark = node("plan", "", &[]);
         assert_eq!(dial_icon(&dark), crate::icons::SUN);
@@ -379,27 +362,24 @@ mod tests {
     }
 
     #[test]
-    fn a_step_shows_its_kind_model_and_budget_at_a_glance() {
-        let mut agent = node("agent", "security", &[]);
-        agent.reach.reads_only = true;
-        agent.results = vec!["review".into()];
+    fn a_step_shows_its_kind_reach_and_budget_beside_its_dial() {
+        let mut agent = node("agent", "security", &["review"]);
         assert_eq!(kind_line(&agent), "Agent · security");
-        assert_eq!(subtitle(&agent), "reads only · → review");
-        assert_eq!(
-            (model_line(&agent), budget_line(&agent)),
-            ("default model".into(), String::new())
-        );
-        agent.options.model = "anthropic/claude-haiku-4-5".into();
+        agent.reach.reads_only = true;
         agent.options.spend_micros = Some(1_500_000);
         agent.options.revisions = Some(3);
-        assert_eq!(model_line(&agent), "claude-haiku-4-5");
-        assert_eq!(budget_line(&agent), "$1.50 at most · 3 revisions");
+        assert_eq!(
+            kind_line(&agent),
+            "Agent · security · read…",
+            "clipped to the box"
+        );
+        let mut prompt = node("prompt", "", &[]);
+        prompt.options.spend_micros = Some(1_500_000);
+        prompt.options.revisions = Some(3);
+        assert_eq!(kind_line(&prompt), "Prompt · $1.50 · 3×");
         let mut shell = node("shell", "", &[]);
         shell.reach.network = true;
-        assert_eq!(
-            (kind_line(&shell), model_line(&shell)),
-            ("Shell script".into(), "no model".into())
-        );
+        assert_eq!(kind_line(&shell), "Shell · network");
     }
 
     #[test]

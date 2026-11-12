@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_012FoKvtHfQWFbCqkdBCj25H",
+  "agent_id": "a8ce1fa016558b998",
+  "subagent_type": "Explore",
+  "task_description": "Find path-triggered context hook",
+  "token_usage": {
+    "input_tokens": 22,
+    "cache_creation_tokens": 58506,
+    "cache_read_tokens": 472763,
+    "output_tokens": 1703,
+    "api_call_count": 11
+  },
+  "started_at": "2026-11-12T16:49:29.046474-06:00",
+  "completed_at": "2026-11-12T16:50:18.76382-06:00"
+}

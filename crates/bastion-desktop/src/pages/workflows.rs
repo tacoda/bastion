@@ -49,12 +49,24 @@ pub struct State {
     models: Vec<Choice>,
     /// The constraints and grants the picked step's rules come from.
     rules: super::step_rules::Rules,
+    /// The part of the picked step's panel shown.
+    tab: StepTab,
     /// The picked step's name, as typed: it renames the step once no
     /// other step has it.
     name: String,
     copy_name: String,
     said: String,
     no_marks: BTreeMap<String, String>,
+}
+
+/// A part of the picked step's panel, one shown at a time.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum StepTab {
+    #[default]
+    Step,
+    Options,
+    Constraints,
+    Capabilities,
 }
 
 /// A field of the picked step.
@@ -73,6 +85,7 @@ pub enum Msg {
     Workflows(Result<Vec<WorkflowView>, String>),
     Models(Result<Vec<ModelOption>, String>),
     Rules(super::step_rules::Msg),
+    Tab(StepTab),
     /// The picked step's model; the default is empty.
     Model(Choice),
     Me(Result<PersonView, String>),
@@ -382,6 +395,7 @@ fn manage(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
 fn change(state: &mut State, msg: Msg) {
     match msg {
         Msg::Pointer(p) => on_pointer(state, p),
+        Msg::Tab(t) => state.tab = t,
         Msg::AddStep(stage) => state
             .draft
             .iter_mut()
@@ -653,52 +667,135 @@ fn reach_fields<'a>(
     column![network, secrets].spacing(12).into()
 }
 
+/// The step's name, how it runs, and its text.
+fn step_tab<'a>(
+    state: &'a State,
+    n: &bastion_protocol::NodeView,
+    editable: bool,
+) -> Element<'a, Message> {
+    let name = text_input("A name for this step", &state.name)
+        .on_input_maybe(editable.then_some(|v| wrap(Msg::Field(StepField::Name, v))))
+        .style(theme::field);
+    let mut words = text_editor(&state.text).height(240);
+    if is_script(n) {
+        words = words.font(theme::MONO);
+    }
+    if editable {
+        words = words.on_action(|a| wrap(Msg::Text(a)));
+    }
+    column![
+        labeled("Name", name),
+        how_row(n, editable),
+        labeled(text_label(n), words)
+    ]
+    .spacing(12)
+    .into()
+}
+
+/// How far the step reaches, its model and budget, and the results it gives.
+fn options_tab<'a>(
+    state: &'a State,
+    n: &bastion_protocol::NodeView,
+    editable: bool,
+) -> Element<'a, Message> {
+    let reach: Element<'a, Message> = match is_script(n) {
+        true => reach_fields(state, n, editable),
+        false => iced::widget::checkbox(n.reach.reads_only)
+            .label("Only reads: the agent may not write a file")
+            .on_toggle_maybe(editable.then_some(|on| wrap(Msg::ReadsOnly(on))))
+            .into(),
+    };
+    let results = text_input("plan, notes", &state.results)
+        .on_input_maybe(editable.then_some(|v| wrap(Msg::Field(StepField::Results, v))))
+        .style(theme::field);
+    column![
+        reach,
+        options_row(state, n, editable),
+        labeled("Results it gives, comma-separated", results)
+    ]
+    .spacing(12)
+    .into()
+}
+
+/// The tabs of the picked step's panel. A shell step runs no agent, so no
+/// rule on an agent's calls binds it, and it has no rules tabs.
+fn tabs<'a>(state: &State, n: &bastion_protocol::NodeView) -> Element<'a, Message> {
+    let tab = |label: String, t: StepTab| {
+        button(text(label).size(13))
+            .padding([5, 12])
+            .style(theme::nav(state.tab == t))
+            .on_press(wrap(Msg::Tab(t)))
+            .into()
+    };
+    let mut all: Vec<Element<'a, Message>> = vec![
+        tab("Step".into(), StepTab::Step),
+        tab("Options".into(), StepTab::Options),
+    ];
+    if let (false, Some((step, stage))) = (is_script(n), state.picked_step()) {
+        let at = super::step_rules::At {
+            step: &step,
+            stage: &stage,
+        };
+        let (constraints, grants) = super::step_rules::counts(&state.rules, &at);
+        all.push(tab(
+            format!("Constraints · {constraints}"),
+            StepTab::Constraints,
+        ));
+        all.push(tab(
+            format!("Capabilities · {grants}"),
+            StepTab::Capabilities,
+        ));
+    }
+    iced::widget::Row::with_children(all).spacing(6).into()
+}
+
+/// The step's name and kind, and its removal.
+fn step_head<'a>(n: &bastion_protocol::NodeView, editable: bool) -> Element<'a, Message> {
+    let names = column![
+        text(drawing::title(n)).size(18).font(theme::BOLD),
+        text(drawing::kind_line(n)).size(12).color(theme::MUTED),
+    ]
+    .spacing(2)
+    .width(Fill);
+    row![
+        names,
+        small("Remove step", editable.then_some(wrap(Msg::RemoveStep)))
+    ]
+    .align_y(iced::Center)
+    .into()
+}
+
+/// The picked step's constraints or capabilities.
+fn rules_tab<'a>(state: &'a State, editable: bool) -> Option<Element<'a, Message>> {
+    let (step, stage) = state.picked_step()?;
+    let at = super::step_rules::At {
+        step: &step,
+        stage: &stage,
+    };
+    let view = match state.tab {
+        StepTab::Constraints => super::step_rules::constraints(&state.rules, &at, editable),
+        _ => super::step_rules::capabilities(&state.rules, &at, editable),
+    };
+    let said = super::step_rules::said(&state.rules);
+    let body = column![view].extend(said).spacing(8);
+    Some(Element::from(body).map(|m| wrap(Msg::Rules(m))))
+}
+
 fn step_detail<'a>(state: &'a State, id: &str, editable: bool) -> Option<Element<'a, Message>> {
     let n = state
         .draft
         .as_ref()
         .and_then(|w| edit::node(w, id))?
         .clone();
-    let on = |m: Msg| editable.then_some(wrap(m));
-    let name = text_input("A name for this step", &state.name)
-        .on_input_maybe(editable.then_some(|v| wrap(Msg::Field(StepField::Name, v))))
-        .style(theme::field);
-    let head = labeled("Name", name);
-    let how = how_row(&n, editable);
-    let mut body = column![head, how];
-    let mut words = text_editor(&state.text).height(240);
-    if is_script(&n) {
-        words = words.font(theme::MONO);
-    }
-    if editable {
-        words = words.on_action(|a| wrap(Msg::Text(a)));
-    }
-    body = body.push(labeled(text_label(&n), words));
-    if is_script(&n) {
-        body = body.push(reach_fields(state, &n, editable));
-    } else {
-        let reads = iced::widget::checkbox(n.reach.reads_only)
-            .label("Only reads: the agent may not write a file")
-            .on_toggle_maybe(editable.then_some(|on| wrap(Msg::ReadsOnly(on))));
-        body = body.push(reads);
-    }
-    body = body.push(options_row(state, &n, editable));
-    let results = text_input("", &state.results)
-        .on_input_maybe(editable.then_some(|v| wrap(Msg::Field(StepField::Results, v))))
-        .style(theme::field);
-    body = body.push(labeled("Results it gives, comma-separated", results));
-    // A shell step runs no agent, so no rule on an agent's calls binds it.
-    if let (false, Some((step, stage))) = (is_script(&n), state.picked_step()) {
-        let at = super::step_rules::At {
-            step: &step,
-            stage: &stage,
-        };
-        let sections = super::step_rules::view(&state.rules, &at, editable);
-        body = body.extend(sections.into_iter().map(|e| e.map(|m| wrap(Msg::Rules(m)))));
-    }
-    body = body.push(small("Remove step", on(Msg::RemoveStep)));
+    let rules = matches!(state.tab, StepTab::Constraints | StepTab::Capabilities);
+    let shown = match state.tab {
+        StepTab::Options => options_tab(state, &n, editable),
+        _ if rules && !is_script(&n) => rules_tab(state, editable)?,
+        _ => step_tab(state, &n, editable),
+    };
+    let body = column![step_head(&n, editable), tabs(state, &n), shown].spacing(14);
     Some(
-        container(body.spacing(12))
+        container(body)
             .padding(16)
             .width(Fill)
             .style(theme::panel)

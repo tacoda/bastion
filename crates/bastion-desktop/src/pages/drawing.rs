@@ -13,7 +13,7 @@ use super::mark;
 use crate::theme;
 
 pub const W: f32 = 168.0;
-pub const H: f32 = 56.0;
+pub const H: f32 = 110.0;
 pub const PAD: f32 = 24.0;
 
 fn words(word: &str) -> String {
@@ -25,12 +25,66 @@ pub fn title(n: &NodeView) -> String {
     words(&n.id)
 }
 
-/// A step's second line: its dial and the results it gives.
-pub fn subtitle(n: &NodeView) -> String {
-    match n.results.is_empty() {
-        true => String::new(),
-        false => format!("→ {}", n.results.join(", ")),
+/// The most characters a line of a step's box holds.
+const LINE: usize = 24;
+
+/// `s`, cut to a box's line with an ellipsis.
+fn clip(s: String) -> String {
+    match s.chars().count() > LINE {
+        true => s.chars().take(LINE - 1).chain(['…']).collect(),
+        false => s,
     }
+}
+
+/// A step's last line: how far it reaches, then the results it gives.
+pub fn subtitle(n: &NodeView) -> String {
+    let reach = match (n.stage.as_str(), n.reach.network, n.reach.reads_only) {
+        ("shell", true, _) => Some("network".to_string()),
+        (_, _, true) => Some("reads only".to_string()),
+        _ => None,
+    };
+    let results = (!n.results.is_empty()).then(|| format!("→ {}", n.results.join(", ")));
+    clip(
+        reach
+            .into_iter()
+            .chain(results)
+            .collect::<Vec<_>>()
+            .join(" · "),
+    )
+}
+
+/// A step's kind and what it runs.
+pub fn kind_line(n: &NodeView) -> String {
+    clip(match n.stage.as_str() {
+        "agent" => format!("Agent · {}", n.run),
+        "skill" => format!("Skill · {}", n.run),
+        "shell" => "Shell script".into(),
+        _ => "Prompt".into(),
+    })
+}
+
+/// Beside the dial: the step's model.
+pub fn model_line(n: &NodeView) -> String {
+    let model = n.options.model.rsplit('/').next().unwrap_or_default();
+    clip(match (n.stage.as_str(), model) {
+        ("shell", _) => "no model".to_string(),
+        (_, "") => "default model".to_string(),
+        (_, m) => m.to_string(),
+    })
+}
+
+/// The step's budget, when it has one (D43): its spend and its revisions.
+pub fn budget_line(n: &NodeView) -> String {
+    let spend = n
+        .options
+        .spend_micros
+        .map(|m| format!("${:.2} at most", m as f64 / 1e6));
+    let revisions = n.options.revisions.map(|r| format!("{r} revisions"));
+    spend
+        .into_iter()
+        .chain(revisions)
+        .collect::<Vec<_>>()
+        .join(" · ")
 }
 
 /// A step's dial as an icon: a moon when it runs on its own, a sun when a
@@ -144,17 +198,24 @@ fn step(frame: &mut Frame, n: &NodeView, look: Look) {
         theme::INK,
         14.0,
     ));
+    let line = |content: String, x: f32, y: f32| {
+        caption(content, Point::new(x, at.y + y), theme::MUTED, 12.0)
+    };
+    frame.fill_text(line(kind_line(n), at.x + 10.0, 32.0));
     let icon = crate::icons::colored(dial_icon(n), theme::MUTED);
     frame.draw_svg(
-        iced::Rectangle::new(Point::new(at.x + 10.0, at.y + 33.0), Size::new(13.0, 13.0)),
+        iced::Rectangle::new(Point::new(at.x + 10.0, at.y + 53.0), Size::new(13.0, 13.0)),
         &icon,
     );
-    frame.fill_text(caption(
-        subtitle(n),
-        Point::new(at.x + 29.0, at.y + 32.0),
-        theme::MUTED,
-        12.0,
-    ));
+    frame.fill_text(line(model_line(n), at.x + 29.0, 52.0));
+    // The lines below the dial pack up: a step with no budget shows its
+    // reach and results where the budget would be.
+    let below = [budget_line(n), subtitle(n)]
+        .into_iter()
+        .filter(|l| !l.is_empty());
+    for (i, l) in below.enumerate() {
+        frame.fill_text(line(l, at.x + 10.0, 70.0 + 18.0 * i as f32));
+    }
     if look.port {
         frame.fill(
             &Path::circle(Point::new(at.x + W, at.y + H / 2.0), 7.0),
@@ -278,6 +339,7 @@ pub fn view<'a, M: 'a>(drawing: Drawing<'a, M>) -> Element<'a, M> {
         horizontal: Default::default(),
     };
     iced::widget::container(iced::widget::scrollable(canvas).direction(both))
+        .width(iced::Fill)
         .style(theme::panel)
         .into()
 }
@@ -317,6 +379,30 @@ mod tests {
     }
 
     #[test]
+    fn a_step_shows_its_kind_model_and_budget_at_a_glance() {
+        let mut agent = node("agent", "security", &[]);
+        agent.reach.reads_only = true;
+        agent.results = vec!["review".into()];
+        assert_eq!(kind_line(&agent), "Agent · security");
+        assert_eq!(subtitle(&agent), "reads only · → review");
+        assert_eq!(
+            (model_line(&agent), budget_line(&agent)),
+            ("default model".into(), String::new())
+        );
+        agent.options.model = "anthropic/claude-haiku-4-5".into();
+        agent.options.spend_micros = Some(1_500_000);
+        agent.options.revisions = Some(3);
+        assert_eq!(model_line(&agent), "claude-haiku-4-5");
+        assert_eq!(budget_line(&agent), "$1.50 at most · 3 revisions");
+        let mut shell = node("shell", "", &[]);
+        shell.reach.network = true;
+        assert_eq!(
+            (kind_line(&shell), model_line(&shell)),
+            ("Shell script".into(), "no model".into())
+        );
+    }
+
+    #[test]
     fn the_canvas_holds_every_step_and_never_shrinks_below_its_minimum() {
         let mut w = WorkflowView::default();
         assert_eq!(extent(&w), Size::new(800.0, 240.0));
@@ -328,6 +414,7 @@ mod tests {
                 ..node("build", "", &[])
             },
         ];
-        assert_eq!(extent(&w), Size::new(900.0 + W + 2.0 * PAD, 240.0));
+        let tall = (100.0 + H + 2.0 * PAD).max(240.0);
+        assert_eq!(extent(&w), Size::new(900.0 + W + 2.0 * PAD, tall));
     }
 }

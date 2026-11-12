@@ -304,8 +304,8 @@ teach.
 
 - Done: the trail's way home to the atlas, field notes about the
   workspace or Bastion (D59), and the marsh on every trail.
-- The Map: each harbor town opens its workspace's atlas, with its notes
-  by workspace and by Bastion.
+- Done: on the Map, each harbor town opens its workspace's atlas, with
+  its notes about the workspace and about Bastion.
 - A route's wear: the Map shows where recent jobs on each workflow wait,
   turn back and end in the marsh.
 - A lesson from the atlas: a Bastion note offers "make this a check" or

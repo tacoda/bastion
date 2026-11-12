@@ -9,7 +9,8 @@
 
 use std::collections::BTreeMap;
 
-use bastion_protocol::{NodeView, WorkflowView};
+use bastion_protocol::api;
+use bastion_protocol::{FieldNoteView, NodeView, WorkflowView};
 use iced::widget::canvas::{self, Canvas, Frame, Geometry, LineDash, Path, Stroke, Text};
 use iced::widget::{Column, column, container, pin, row, scrollable, stack, text};
 use iced::{Element, Fill, Point, Rectangle, Renderer, Size, Task, Theme, mouse};
@@ -53,7 +54,7 @@ fn routes(rules: &Rules) -> Vec<(&WorkflowView, Vec<&NodeView>)> {
 }
 
 /// The foot of each step's landmark on a chart `width` wide.
-pub fn places(rules: &Rules, width: f32) -> Vec<Place> {
+fn route_places(rules: &Rules, width: f32) -> Vec<Place> {
     let span = (width - WEST - EAST).max(1.0);
     let rows = routes(rules).into_iter().enumerate();
     rows.flat_map(|(row, (w, steps))| {
@@ -69,6 +70,25 @@ pub fn places(rules: &Rules, width: f32) -> Vec<Place> {
         })
     })
     .collect()
+}
+
+/// The prefix a harbor town's key carries: `town:<workspace>`.
+const TOWN: &str = "town:";
+
+/// Each workspace's harbor town, at the foot of its drawing.
+fn town_places(rules: &Rules) -> impl Iterator<Item = Place> + '_ {
+    rules.charters().iter().enumerate().map(|(i, c)| Place {
+        key: format!("{TOWN}{}", c.workspace),
+        stage: "town".into(),
+        at: Point::new(TOWNS, TOP + i as f32 * ROW + 50.0),
+    })
+}
+
+/// Every place a person can press: each step's landmark and each town.
+pub fn places(rules: &Rules, width: f32) -> Vec<Place> {
+    let mut all = route_places(rules, width);
+    all.extend(town_places(rules));
+    all
 }
 
 /// How tall the chart is: room for every route and every town.
@@ -136,14 +156,14 @@ fn badge(frame: &mut Frame, at: Point, n: usize) {
 }
 
 /// Each workspace as a harbor town on the shore, with its charter or none.
-fn towns(frame: &mut Frame, rules: &Rules) {
-    for (i, c) in rules.charters().iter().enumerate() {
-        let at = Point::new(TOWNS, TOP + i as f32 * ROW + 50.0);
+fn towns(frame: &mut Frame, rules: &Rules, hovered: Option<&str>) {
+    for (c, p) in rules.charters().iter().zip(town_places(rules)) {
+        let at = p.at;
         carto::outpost(frame, at);
-        let note = if c.files.is_empty() {
-            "no charter"
-        } else {
-            "with its charter"
+        let note = match (hovered == Some(p.key.as_str()), c.files.is_empty()) {
+            (true, _) => "press to read its atlas",
+            (false, true) => "no charter",
+            (false, false) => "with its charter",
         };
         carto::name(frame, Point::new(at.x, at.y + 8.0), &c.workspace, note);
     }
@@ -240,7 +260,7 @@ impl canvas::Program<Picked> for Chart<'_> {
             size,
         );
         carto::coast(&mut frame, SHORE, size);
-        towns(&mut frame, self.rules);
+        towns(&mut frame, self.rules, hovered.as_deref());
         let all = places(self.rules, size.width);
         for (row, (w, _)) in routes(self.rules).into_iter().enumerate() {
             let prefix = format!("{}/", w.id);
@@ -251,7 +271,7 @@ impl canvas::Program<Picked> for Chart<'_> {
                 .collect();
             route(&mut frame, w, row, size.width, &mine);
         }
-        for p in all {
+        for p in all.into_iter().filter(|p| p.stage != "town") {
             let lit = Some(p.key.as_str()) == self.picked || hovered.as_deref() == Some(&p.key);
             if p.stage == "shell" {
                 carto::castle(&mut frame, p.at, false);
@@ -294,6 +314,8 @@ impl canvas::Program<Picked> for Chart<'_> {
 #[derive(Default)]
 struct Server {
     rules: Rules,
+    /// The server's field notes, newest first (D59).
+    atlas: Vec<FieldNoteView>,
     picked: Option<Picked>,
     /// The card shows what applies, not what the step does.
     applies: bool,
@@ -314,6 +336,8 @@ pub enum Msg {
     Close(String),
     /// Show what applies (true) or what the step does (false).
     Tab(String, bool),
+    /// A server's field notes; an older server has none to give.
+    Atlas(String, Result<Vec<FieldNoteView>, String>),
 }
 
 fn on(server: String) -> impl Fn(step_rules::Msg) -> Message + Clone {
@@ -321,10 +345,14 @@ fn on(server: String) -> impl Fn(step_rules::Msg) -> Message + Clone {
 }
 
 pub fn load(ctx: &Ctx) -> Task<Message> {
-    let each = ctx
-        .shown()
-        .into_iter()
-        .map(|name| step_rules::load(&ctx.on(&name)).map(on(name)));
+    let each = ctx.shown().into_iter().map(|name| {
+        let here = ctx.on(&name);
+        let who = name.clone();
+        let atlas = Task::perform(here.clone().get(name.clone(), api::Atlas), move |r| {
+            Message::Map(Msg::Atlas(who.clone(), r))
+        });
+        Task::batch([step_rules::load(&here).map(on(name)), atlas])
+    });
     Task::batch(each)
 }
 
@@ -338,6 +366,9 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         }
         Msg::Pick(name, picked) => state.servers.entry(name).or_default().picked = Some(picked),
         Msg::Close(name) => state.servers.entry(name).or_default().picked = None,
+        Msg::Atlas(name, notes) => {
+            state.servers.entry(name).or_default().atlas = notes.unwrap_or_default()
+        }
         Msg::Tab(name, applies) => state.servers.entry(name).or_default().applies = applies,
     }
     Task::none()
@@ -366,6 +397,58 @@ fn section<'a>(name: String, s: &'a Server, named: bool) -> Element<'a, Message>
         );
     }
     Column::new().spacing(10).extend(head).push(map).into()
+}
+
+/// One shelf of a workspace's atlas: its notes about one thing.
+fn shelf<'a>(title: &'a str, notes: Vec<&'a FieldNoteView>) -> Option<Element<'a, Message>> {
+    if notes.is_empty() {
+        return None;
+    }
+    let rows = notes.into_iter().map(|n| {
+        let mark = if n.landed { "landed" } else { "the marsh" };
+        let whence = format!("{} · {} · {mark} · {}", n.by, n.request, super::ago(n.at));
+        column![
+            text(n.text.clone()).size(13),
+            text(whence).size(12).color(theme::muted())
+        ]
+        .spacing(2)
+        .into()
+    });
+    let head = text(title).size(12).font(theme::BOLD).color(theme::muted());
+    Some(Column::new().spacing(8).push(head).extend(rows).into())
+}
+
+/// A workspace's atlas: its field notes, about the workspace and about
+/// Bastion (D59).
+fn atlas_card<'a>(atlas: &'a [FieldNoteView], ws: &'a str, name: String) -> Element<'a, Message> {
+    let title = text(format!("The atlas of {ws}"))
+        .size(15)
+        .font(theme::BOLD);
+    let close = crate::lift::button(text("Close").size(13))
+        .style(theme::link)
+        .on_press(Message::Map(Msg::Close(name)));
+    let head = row![title, iced::widget::space::horizontal(), close].align_y(iced::Center);
+    let mine = |about: &'a str| -> Vec<&'a FieldNoteView> {
+        let all = atlas.iter().filter(|n| n.workspace == ws);
+        all.filter(|n| n.about == about).collect()
+    };
+    let shelves = [
+        shelf("About the workspace", mine("workspace")),
+        shelf("About Bastion", mine("bastion")),
+    ];
+    let mut body = Column::new()
+        .spacing(14)
+        .extend(shelves.into_iter().flatten());
+    if !atlas.iter().any(|n| n.workspace == ws) {
+        let none = "No field notes yet. They are written when a journey comes home.";
+        body = body.push(text(none).size(13).color(theme::muted()));
+    }
+    let body = scrollable(body).height(iced::Length::Shrink);
+    container(column![head, container(body).max_height(CARD_MAX)].spacing(8))
+        .padding(12)
+        .width(CARD)
+        .style(theme::panel)
+        .into()
 }
 
 /// The step a key names, `workflow/step`.
@@ -443,6 +526,9 @@ pub(super) fn does(n: &NodeView) -> Element<'_, Message> {
 /// The card over the chart for the landmark picked: what the step does, or
 /// what applies there.
 fn card<'a>(s: &'a Server, p: &'a Picked, name: String) -> Element<'a, Message> {
+    if let Some(ws) = p.key.strip_prefix(TOWN) {
+        return atlas_card(&s.atlas, ws, name);
+    }
     let at = At {
         scope: &p.key,
         stage: &p.stage,

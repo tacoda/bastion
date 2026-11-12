@@ -26,12 +26,12 @@ pub enum Route {
 /// opens on the Audit Log and holds the other records as tabs; Settings
 /// holds the server's health.
 pub const PAGES: [(Route, &str, &str); 7] = [
-    (Route::Jobs, "Journeys", icons::JOBS),
+    (Route::Jobs, "Journeys", icons::JOURNEYS),
     (Route::Map, "Map", icons::MAP),
-    (Route::Workflows, "Trails", icons::WORKFLOWS),
-    (Route::Workspaces, "Regions", icons::FOLDER),
-    (Route::Harness, "Guide", icons::HARNESS),
-    (Route::Audit, "Logbook", icons::INSIGHTS),
+    (Route::Workflows, "Trails", icons::TRAILS),
+    (Route::Workspaces, "Regions", icons::REGIONS),
+    (Route::Harness, "Guide", icons::GUIDE),
+    (Route::Audit, "Logbook", icons::LOGBOOK),
     (Route::Settings, "Settings", icons::SETTINGS),
 ];
 

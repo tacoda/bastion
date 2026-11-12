@@ -29,6 +29,13 @@ struct Policy {
     grants: Vec<Capability>,
 }
 
+/// What a scope setting is for: a constraint by id, or a grant by its kind
+/// and function.
+pub enum Scoped<'a> {
+    Constraint(&'a str),
+    Grant(Stage, &'a str),
+}
+
 pub struct Gate {
     store: Arc<dyn Store>,
     engine: Arc<dyn Engine>,
@@ -193,6 +200,7 @@ impl Gate {
 
     /// Read the constraints and grants again, after a change to either.
     pub async fn reload(&self) -> Result<(), String> {
+        self.fold_step_grants().await?;
         let policy = Policy {
             constraints: self.store.constraints().await?,
             grants: self.store.capabilities().await?,
@@ -712,14 +720,111 @@ impl Gate {
     }
 
     /// Grant a function at one workflow step, over its kind's grant (D44).
-    pub async fn grant_at_step(&self, g: Capability) -> Result<(), String> {
-        if !g.step.contains('/') || g.function.trim().is_empty() {
-            return Err("a step's grant names its step, as workflow/step, and a function".into());
+    /// Fold the step grants from before D54 into items, once: the gate
+    /// keeps what they decided, and the audit says so.
+    async fn fold_step_grants(&self) -> Result<(), String> {
+        let grants = self.store.capabilities().await?;
+        if grants.iter().all(|g| g.step.is_empty()) {
+            return Ok(());
         }
-        self.store.set_capability(&g).await?;
+        let (items, old) = govern::fold(&grants);
+        for g in &old {
+            self.store.remove_capability(g).await?;
+        }
+        for g in &items {
+            self.store.set_capability(g).await?;
+        }
+        let folded: Vec<String> = old
+            .iter()
+            .map(|g| format!("{} {}", g.step, g.function))
+            .collect();
+        self.note("fold", "grants", folded.join(", "));
+        Ok(())
+    }
+
+    /// Grant `g`'s function to its kind, on at `scope`: a workflow,
+    /// `workflow/step`, or every workflow when empty (D54). An item the kind
+    /// already has is turned on there, and keeps its rung.
+    pub async fn grant(&self, g: Capability, scope: &str) -> Result<(), String> {
+        if g.function.trim().is_empty() {
+            return Err("a grant names a function".into());
+        }
+        let grants = self.store.capabilities().await?;
+        let kept = grants
+            .into_iter()
+            .find(|i| i.step.is_empty() && i.stage == g.stage && i.function == g.function);
+        let fresh = kept.is_none();
+        let mut item = kept.unwrap_or(Capability {
+            step: String::new(),
+            scopes: Vec::new(),
+            ..g
+        });
+        match (scope.is_empty(), fresh) {
+            (true, _) => {}
+            // A new item is on only where it was granted.
+            (false, true) => item.scopes = vec![scope.to_string()],
+            (false, false) => govern::set_scope(&mut item.scopes, scope, Some(true)),
+        }
+        self.store.set_capability(&item).await?;
         self.reload().await?;
-        let subject = format!("{:?} {} {}", g.stage, g.step, g.function);
-        self.note("grant", &subject, format!("{:?}", g.rung));
+        let subject = format!("{:?} {}", item.stage, item.function);
+        self.note(
+            "grant",
+            &subject,
+            format!(
+                "{:?} at {}",
+                item.rung,
+                if scope.is_empty() {
+                    "every workflow"
+                } else {
+                    scope
+                }
+            ),
+        );
+        Ok(())
+    }
+
+    /// Set a constraint or a grant on, off, or inheriting at `scope` (D54).
+    pub async fn set_scope(
+        &self,
+        target: Scoped<'_>,
+        scope: &str,
+        on: Option<bool>,
+    ) -> Result<(), String> {
+        let scope = if scope.is_empty() {
+            govern::EVERY
+        } else {
+            scope
+        };
+        let subject = match target {
+            Scoped::Constraint(id) => {
+                let all = self.store.constraints().await?;
+                let mut c = all
+                    .into_iter()
+                    .find(|c| c.id == id)
+                    .ok_or(format!("no constraint {id}"))?;
+                govern::set_scope(&mut c.steps, scope, on);
+                self.store.set_constraint(&c).await?;
+                id.to_string()
+            }
+            Scoped::Grant(stage, function) => {
+                let all = self.store.capabilities().await?;
+                let found = all
+                    .into_iter()
+                    .find(|g| g.step.is_empty() && g.stage == stage && g.function == function);
+                let mut g = found.ok_or(format!("no grant of {function} for {stage:?}"))?;
+                govern::set_scope(&mut g.scopes, scope, on);
+                self.store.set_capability(&g).await?;
+                format!("{stage:?} {function}")
+            }
+        };
+        self.reload().await?;
+        let set = match on {
+            Some(true) => "on",
+            Some(false) => "off",
+            None => "inherit",
+        };
+        self.note("scope", &subject, format!("{scope}: {set}"));
         Ok(())
     }
 
@@ -1390,22 +1495,34 @@ mod tests {
         crate::rt::block_on(async {
             let grant = Capability {
                 stage: Stage::Prompt,
-                step: "short/review".into(),
+                step: String::new(),
                 function: "sandbox::fs::write".into(),
                 rung: govern::Access::Ask,
+                scopes: Vec::new(),
             };
-            r.gate.grant_at_step(grant.clone()).await.unwrap();
-            assert_eq!(at("short/review"), "hold", "the step's own grant");
-            assert_eq!(at("short/build"), "continue", "its kind's, elsewhere");
-            let at_review = govern::At {
+            r.gate.grant(grant, "short/review").await.unwrap();
+            assert_eq!(at("short/review"), "hold", "on at the step, it decides");
+            assert_eq!(
+                at("short/build"),
+                "continue",
+                "off elsewhere, so the kind's"
+            );
+            let every = Scoped::Grant(Stage::Prompt, "sandbox::*");
+            r.gate.set_scope(every, "short", Some(false)).await.unwrap();
+            assert_eq!(
+                at("short/build"),
+                "deny",
+                "off for the workflow, no grant covers it"
+            );
+            let item = govern::At {
                 stage: Stage::Prompt,
-                step: "short/review",
+                step: "",
             };
             r.gate
-                .move_capability(at_review, "sandbox::fs::write", false)
+                .move_capability(item, "sandbox::fs::write", false)
                 .await
                 .unwrap();
-            assert_eq!(at("short/review"), "continue", "demoted below ask, it goes");
+            assert_eq!(at("short/review"), "deny", "demoted below ask, it goes");
 
             r.gate
                 .scope_constraint("keep-tests", vec!["short/build".into()])
@@ -1423,11 +1540,12 @@ mod tests {
         crate::rt::block_on(async {
             let grant = Capability {
                 stage: Stage::Prompt,
-                step: "short/build".into(),
+                step: String::new(),
                 function: "mcp::github::*".into(),
                 rung: govern::Access::Allowed,
+                scopes: Vec::new(),
             };
-            r.gate.grant_at_step(grant).await.unwrap();
+            r.gate.grant(grant, "short/build").await.unwrap();
         });
         let at = |step| govern::At {
             stage: Stage::Prompt,
@@ -1436,7 +1554,7 @@ mod tests {
         let base = ["sandbox::exec"];
         assert_eq!(
             r.gate.tools("j1", at("short/build"), &base),
-            ["mcp::github::*", "sandbox::exec"]
+            ["mcp::github::*", "sandbox::*", "sandbox::exec"]
         );
         assert_eq!(
             r.gate.tools("j1", at("short/plan"), &base),

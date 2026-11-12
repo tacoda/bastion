@@ -113,9 +113,51 @@ pub struct Constraint {
     pub reviewer: String,
 }
 
+/// The scope that turns everything on or off at every workflow (D54).
+pub const EVERY: &str = "*";
+
+/// What a scope list sets at `key`: on, off with `!`, or nothing.
+pub fn setting(scopes: &[String], key: &str) -> Option<bool> {
+    let on = scopes.iter().any(|s| s == key);
+    let off = scopes.iter().any(|s| s.strip_prefix('!') == Some(key));
+    match (on, off) {
+        (true, _) => Some(true),
+        (_, true) => Some(false),
+        _ => None,
+    }
+}
+
+/// Whether a scope list turns its item on at `step`, named `workflow/step`
+/// (D54): the step's own setting wins, then its workflow's, then every
+/// workflow's. With no setting for every workflow, a list that turns no
+/// step on means every step, and one that does means only those.
+pub fn on_at(scopes: &[String], step: &str) -> bool {
+    let workflow = step.split('/').next().unwrap_or_default();
+    let named = [step, workflow].into_iter().filter(|k| !k.is_empty());
+    let set = named.into_iter().find_map(|k| setting(scopes, k));
+    set.or_else(|| setting(scopes, EVERY))
+        .unwrap_or_else(|| scopes.iter().all(|s| s.starts_with('!')))
+}
+
 /// Whether constraint `c` applies at `step`, named `workflow/step`.
 pub fn applies(c: &Constraint, step: &str) -> bool {
-    c.steps.is_empty() || c.steps.iter().any(|s| s == step)
+    on_at(&c.steps, step)
+}
+
+/// `scopes` with `key` set on or off, or cleared so it inherits. A narrower
+/// setting first writes down what every workflow had, so turning one step
+/// on never turns the others off.
+pub fn set_scope(scopes: &mut Vec<String>, key: &str, on: Option<bool>) {
+    if key != EVERY && setting(scopes, EVERY).is_none() {
+        let every = scopes.iter().all(|s| s.starts_with('!'));
+        set_scope(scopes, EVERY, Some(every));
+    }
+    scopes.retain(|s| s != key && s.strip_prefix('!') != Some(key));
+    match on {
+        Some(true) => scopes.push(key.into()),
+        Some(false) => scopes.push(format!("!{key}")),
+        None => {}
+    }
 }
 
 /// The hooks to run before `call` at `step`: those of the constraints that
@@ -135,12 +177,15 @@ pub fn hooks_at<'a>(constraints: &'a [Constraint], step: &str, call: &Call) -> V
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Capability {
     pub stage: Stage,
-    /// The workflow step it grants at, as `workflow/step`; empty for every
-    /// step of its kind.
+    /// Empty for a grant, which is one item for its kind (D54). A step's own
+    /// grant from before D54 names its step until the gate folds it in.
     #[serde(default)]
     pub step: String,
     pub function: String,
     pub rung: Access,
+    /// Where the grant is on or off, as a constraint's steps are (D54).
+    #[serde(default)]
+    pub scopes: Vec<String>,
 }
 
 /// One call a turn makes. `text` is its arguments as the rules read them,
@@ -218,20 +263,46 @@ pub fn gate(
     gate_at(call, At { stage, step: "" }, constraints, grants)
 }
 
-/// The grants that decide at `step` of kind `stage`: the step's own when it
-/// has any, which take the place of its kind's, else its kind's (D48).
+/// The grants that decide at `step` of kind `stage`: its kind's items that
+/// are on there (D54).
 pub fn grants_at<'a>(at: At, grants: &'a [Capability]) -> Vec<&'a Capability> {
-    let own: Vec<&Capability> = grants
-        .iter()
-        .filter(|g| !at.step.is_empty() && g.step == at.step)
-        .collect();
-    if !own.is_empty() {
-        return own;
+    let on =
+        |g: &&Capability| g.step.is_empty() && g.stage == at.stage && on_at(&g.scopes, at.step);
+    grants.iter().filter(on).collect()
+}
+
+/// Grants from before D54 folded into items: a step's own grant turns its
+/// kind's item for the same function on at the step, made from it when the
+/// kind has none, and turns the kind's other items off there, as its own
+/// grants once took their place. The second list is what to drop.
+// ponytail: a step grant whose rung differs from its kind's takes the kind's rung; none did when D54 landed.
+pub fn fold(grants: &[Capability]) -> (Vec<Capability>, Vec<Capability>) {
+    let (old, mut items): (Vec<Capability>, Vec<Capability>) =
+        grants.iter().cloned().partition(|g| !g.step.is_empty());
+    for g in &old {
+        let mine = |i: &Capability| i.stage == g.stage && i.function == g.function;
+        if !items.iter().any(mine) {
+            items.push(Capability {
+                step: String::new(),
+                scopes: Vec::new(),
+                ..g.clone()
+            });
+            set_scope(&mut items.last_mut().unwrap().scopes, EVERY, Some(false));
+        }
+        let own: Vec<&str> = old
+            .iter()
+            .filter(|o| o.step == g.step && o.stage == g.stage)
+            .map(|o| o.function.as_str())
+            .collect();
+        for i in items.iter_mut().filter(|i| i.stage == g.stage) {
+            set_scope(
+                &mut i.scopes,
+                &g.step,
+                Some(own.contains(&i.function.as_str())),
+            );
+        }
     }
-    let kind = grants
-        .iter()
-        .filter(|g| g.step.is_empty() && g.stage == at.stage);
-    kind.collect()
+    (items, old)
 }
 
 /// A grant's function and the command it names, if any (D49): the grant
@@ -414,6 +485,7 @@ pub fn default_capabilities() -> Vec<Capability> {
         step: String::new(),
         function: function.into(),
         rung,
+        scopes: Vec::new(),
     };
     vec![
         grant(Stage::Agent, "sandbox::*", Access::Allowed),
@@ -450,9 +522,10 @@ mod tests {
     fn at_build(function: &str, rung: Access) -> Capability {
         Capability {
             stage: Stage::Prompt,
-            step: "short/build".into(),
+            step: String::new(),
             function: function.into(),
             rung,
+            scopes: vec!["short/build".into()],
         }
     }
 
@@ -671,14 +744,18 @@ mod tests {
     }
 
     #[test]
-    fn a_steps_own_grants_take_the_place_of_its_kinds() {
-        let mut grants = default_capabilities();
-        grants.push(Capability {
+    fn a_steps_grants_from_before_scopes_fold_in_and_decide_as_they_did() {
+        let mut old = default_capabilities();
+        old.push(Capability {
             stage: Stage::Prompt,
             step: "short/review".into(),
             function: "sandbox::fs::read".into(),
             rung: Access::Allowed,
+            scopes: Vec::new(),
         });
+        let (grants, dropped) = fold(&old);
+        assert_eq!(dropped.len(), 1, "the step's grant");
+        assert!(grants.iter().all(|g| g.step.is_empty()));
         let at = |call: &Call, step| {
             let at = At {
                 stage: Stage::Prompt,
@@ -706,6 +783,35 @@ mod tests {
             "its kind's elsewhere"
         );
         assert_eq!(at(&write(), ""), Decision::Continue, "no step named");
+    }
+
+    #[test]
+    fn the_most_specific_scope_wins() {
+        let scopes = |all: &[&str]| all.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let on = |list: &[&str], step| on_at(&scopes(list), step);
+        assert!(on(&[], "bug-fix/build"), "no setting: every step");
+        assert!(
+            !on(&["short/plan"], "bug-fix/build"),
+            "only the steps it names"
+        );
+        assert!(on(&["!bug-fix"], "short/plan"), "off for one workflow only");
+        let mixed = ["*", "!bug-fix", "bug-fix/build"];
+        assert_eq!(
+            [
+                on(&mixed, "short/plan"),
+                on(&mixed, "bug-fix/plan"),
+                on(&mixed, "bug-fix/build")
+            ],
+            [true, false, true]
+        );
+        let mut list = scopes(&mixed);
+        set_scope(&mut list, "bug-fix", None);
+        set_scope(&mut list, EVERY, Some(false));
+        assert_eq!(list, ["bug-fix/build", "!*"]);
+        let mut everywhere = Vec::new();
+        set_scope(&mut everywhere, "bug-fix/build", Some(false));
+        assert_eq!(everywhere, ["*", "!bug-fix/build"], "the rest stays on");
+        assert!(on_at(&everywhere, "short/plan"));
     }
 
     #[test]

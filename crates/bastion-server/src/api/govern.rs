@@ -11,7 +11,9 @@ use serde_json::json;
 
 use super::factory::{FactoryCell, factory, name};
 use crate::factory::now;
+use crate::gate::Scoped;
 use crate::machine::Machine;
+use bastion_protocol::api::ScopeSet;
 
 pub async fn held_allow(cell: &FactoryCell, held: HeldCallRef) -> Result<(), String> {
     factory(cell)?
@@ -113,6 +115,7 @@ pub async fn capabilities(cell: &FactoryCell) -> Result<Vec<CapabilityView>, Str
             step: g.step,
             function: g.function,
             rung: name(g.rung),
+            scopes: g.scopes,
         })
         .collect())
 }
@@ -125,9 +128,10 @@ fn grant_of(v: &CapabilityView) -> Result<Capability, String> {
         .map_err(|_| format!("{:?} is not ask or allowed", v.rung))?;
     Ok(Capability {
         stage,
-        step: v.step.trim().into(),
+        step: String::new(),
         function: v.function.trim().into(),
         rung,
+        scopes: v.scopes.clone(),
     })
 }
 
@@ -150,9 +154,32 @@ pub async fn capability_move(
         .await
 }
 
-/// Grant a function at one workflow step (D44).
+/// Grant a function to a kind, on at the scope the view's step names: a
+/// workflow, `workflow/step`, or every workflow when empty (D54).
 pub async fn capability_add(cell: &FactoryCell, grant: CapabilityView) -> Result<(), String> {
-    factory(cell)?.gate().grant_at_step(grant_of(&grant)?).await
+    let scope = grant.step.trim().to_string();
+    factory(cell)?.gate().grant(grant_of(&grant)?, &scope).await
+}
+
+/// Set a constraint or a grant on, off, or inheriting at a scope (D54).
+pub async fn scope_set(cell: &FactoryCell, set: ScopeSet) -> Result<(), String> {
+    let on = match set.setting.as_str() {
+        "on" => Some(true),
+        "off" => Some(false),
+        "inherit" => None,
+        other => return Err(format!("{other:?} is not on, off or inherit")),
+    };
+    let gate = factory(cell)?.gate().clone();
+    let stage;
+    let target = match set.constraint.is_empty() {
+        false => Scoped::Constraint(&set.constraint),
+        true => {
+            stage = serde_json::from_value(json!(set.stage))
+                .map_err(|_| format!("{:?} is not a kind of step", set.stage))?;
+            Scoped::Grant(stage, &set.function)
+        }
+    };
+    gate.set_scope(target, set.scope.trim(), on).await
 }
 
 /// Take back a step's own grant.

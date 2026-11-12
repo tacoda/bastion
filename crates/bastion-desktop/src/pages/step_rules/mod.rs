@@ -324,6 +324,7 @@ fn grant(function: &str, rung: String, at: &At) -> CapabilityView {
         step: at.step.into(),
         function: function.trim().into(),
         rung,
+        ..CapabilityView::default()
     }
 }
 
@@ -532,6 +533,7 @@ mod tests {
             step: step.into(),
             function: "sandbox::*".into(),
             rung: "allowed".into(),
+            ..CapabilityView::default()
         };
         let mut rules = Rules {
             grants: vec![grant("prompt", ""), grant("agent", "")],

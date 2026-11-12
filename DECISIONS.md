@@ -80,6 +80,8 @@ retired with the old plan.
 | D51 | A constraint may name a reviewer from `.agents/agents/`. When its step finishes, the reviewer reads the step's change in a turn with no tools, from its file at the job's base, and its fail fails the step as D47 says. A reviewer that can't run leaves the job with a person. |
 | D52 | A server's MCP servers reach a turn through `workers/bastion-mcp`, which registers each tool as `mcp::<server>::<tool>`. Only MCP servers over HTTP: a stdio server would run on the host, outside the VM. A server's token stays in the vault, and only the bridge may read it. |
 | D53 | A step's rules live with the step, on the Workflows page, in one tab by layer: the charter (read-only, from the repository), the harness (grants, and the rules and hooks on calls), and the factory (review checks and reviewers). With no step picked, the page shows what applies at every step. Each rung is a switch. There is no Constraints or Capabilities page. |
+| D54 | A constraint or a grant is one item that three scopes turn on or off: all workflows (`*`), one workflow, and one step, each with `!` for off. The most specific setting wins. A list with no `*` means every step when it turns no step on, and only the steps it names otherwise. A grant is an item for one kind and one function; a step turns items on or off rather than replacing its kind's grants, which replaces D48's "take the place of". A rung belongs to the item, not to a scope. |
+| D55 | A constraint is judged by an agent (a told rule, a reviewer) or by code (a word match, a hook, a review check). Promoting a told rule gives it a deterministic form; demoting keeps the form and stops running it. |
 
 ## Open questions
 

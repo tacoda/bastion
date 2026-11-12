@@ -219,7 +219,7 @@ pub(super) const LEGACY_JOB_COLUMNS: &str = "id, workspace, request, stage, stat
 /// Columns added after a table was first made. Each runs once; on a table
 /// that already has the column it fails, and that failure is expected.
 // They run before the numbered migrations, which need these columns to exist.
-pub(super) const ALTERS: [&str; 37] = [
+pub(super) const ALTERS: [&str; 38] = [
     "ALTER TABLE jobs ADD COLUMN pr TEXT",
     "ALTER TABLE jobs ADD COLUMN ci_fixes INTEGER NOT NULL DEFAULT 0 CHECK (ci_fixes >= 0)",
     "ALTER TABLE jobs ADD COLUMN issue TEXT",
@@ -257,6 +257,7 @@ pub(super) const ALTERS: [&str; 37] = [
     "ALTER TABLE jobs ADD COLUMN failed_steps TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE constraints ADD COLUMN hook TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE constraints ADD COLUMN reviewer TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE capabilities ADD COLUMN scopes TEXT NOT NULL DEFAULT ''",
 ];
 
 /// Numbered migrations, each run once in order; `PRAGMA user_version` is the

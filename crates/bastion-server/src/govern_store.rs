@@ -39,8 +39,8 @@ pub trait GovernStore {
 const UPSERT_CONSTRAINT: &str = "INSERT INTO constraints (id, rule, function, contains, rung, source, steps, hook, reviewer) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (id) DO UPDATE SET rule = excluded.rule, function = excluded.function, contains = excluded.contains, rung = excluded.rung, source = excluded.source, steps = excluded.steps, hook = excluded.hook, reviewer = excluded.reviewer";
 const UPSERT_CAPABILITY: &str =
-    "INSERT INTO capabilities (stage, step, function, rung) VALUES (?, ?, ?, ?)
-    ON CONFLICT (stage, step, function) DO UPDATE SET rung = excluded.rung";
+    "INSERT INTO capabilities (stage, step, function, rung, scopes) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT (stage, step, function) DO UPDATE SET rung = excluded.rung, scopes = excluded.scopes";
 
 fn constraint_params(c: &Constraint) -> Value {
     json!([
@@ -57,7 +57,13 @@ fn constraint_params(c: &Constraint) -> Value {
 }
 
 fn capability_params(g: &Capability) -> Value {
-    json!([name(g.stage), g.step, g.function, name(g.rung)])
+    json!([
+        name(g.stage),
+        g.step,
+        g.function,
+        name(g.rung),
+        g.scopes.join(" ")
+    ])
 }
 
 pub(crate) fn constraint(r: &Value) -> Result<Constraint, String> {
@@ -85,6 +91,12 @@ pub(crate) fn capability(r: &Value) -> Result<Capability, String> {
         step: r["step"].as_str().unwrap_or_default().into(),
         function: parse(r, "function")?,
         rung: parse(r, "rung")?,
+        scopes: r["scopes"]
+            .as_str()
+            .unwrap_or_default()
+            .split_whitespace()
+            .map(String::from)
+            .collect(),
     })
 }
 
@@ -145,7 +157,7 @@ impl GovernStore for SqlStore {
 
     fn capabilities(&self) -> Answer<'_, Vec<Capability>> {
         Box::pin(async move {
-            let sql = "SELECT stage, step, function, rung FROM capabilities ORDER BY stage, step, function";
+            let sql = "SELECT stage, step, function, rung, scopes FROM capabilities ORDER BY stage, step, function";
             self.rows(sql, json!([]), capability).await
         })
     }

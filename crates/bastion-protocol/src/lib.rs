@@ -619,16 +619,19 @@ pub struct ConstraintView {
     pub reviewer: String,
 }
 
-/// A grant on its ladder (DECISIONS.md D20): `denied`, `ask` or `allowed`.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// A grant on its ladder (DECISIONS.md D48): `ask` or `allowed`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CapabilityView {
     pub stage: String,
-    /// The workflow step it grants at, as `workflow/step`; empty for every
-    /// step of its kind (D44).
+    /// Empty for a grant, one item for its kind (D54). When adding one, the
+    /// scope to turn it on at: a workflow, or `workflow/step`.
     #[serde(default)]
     pub step: String,
     pub function: String,
     pub rung: String,
+    /// Where it is on or off: `*`, a workflow, `workflow/step`, `!` for off.
+    #[serde(default)]
+    pub scopes: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

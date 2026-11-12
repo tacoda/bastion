@@ -176,6 +176,7 @@ fn govern_routes() -> Router<App> {
         .route("/constraints", get(constraints).post(constraint_add))
         .route("/constraints/{id}/move", post(constraint_move))
         .route("/constraints/{id}/rung", put(constraint_rung))
+        .route("/scopes", put(scope_set))
         .route("/constraints/{id}/steps", post(constraint_steps))
         .route("/constraints/{id}/remove", post(constraint_remove))
         .route("/capabilities", get(capabilities).post(capability_add))
@@ -641,6 +642,13 @@ struct Rung {
     rung: String,
 }
 
+async fn scope_set(
+    State(app): State<App>,
+    Json(b): Json<bastion_protocol::api::ScopeSet>,
+) -> Response {
+    answer(api::govern::scope_set(&app.server.factory, b).await)
+}
+
 async fn constraint_rung(
     State(app): State<App>,
     Path(id): Path<String>,
@@ -677,6 +685,7 @@ async fn capability_move(State(app): State<App>, Json(b): Json<Grant>) -> Respon
         step: b.step,
         function: b.function,
         rung: String::new(),
+        scopes: Vec::new(),
     };
     answer(api::govern::capability_move(f, g, b.up).await)
 }

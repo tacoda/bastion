@@ -1,113 +1,60 @@
-# Bastion plan: more a step may do, more that checks it
+# Bastion plan: rules at three scopes, in two forms
 
 <!-- voice-register: informational -->
 <!-- voice-english: ste -->
 
-A step's capabilities grow past iii functions. It may run named shell
-commands, call more tools, and reach MCP servers. Its constraints grow past
-rules: hooks run before its calls, and a reviewer agent must pass its change
-before the job moves on. The cost is reach. Each new capability is a new
-way for an agent to act, so each one starts ungranted and the gate decides
-every call, the same as today.
+A constraint or a grant is one item, and three scopes turn it on or off:
+all workflows, one workflow, and one step. The most specific setting wins,
+so a rule can be on for all workflows, off for one workflow, and on again
+at one of its steps. A rule also has two forms. An agent judges a told rule
+or a reviewer's verdict; code judges a word match, a hook, or a review
+check. Promoting a rule moves it from the first form to the second. The
+cost is reading: each row now says where its setting comes from.
 
-The top-bar plan (U1 to U13) is done, and git history holds it. Decisions
-are in [DECISIONS.md](DECISIONS.md), D49 to D52.
+The capabilities plan (C1 to C4) is done, and git history holds it.
+Decisions are in [DECISIONS.md](DECISIONS.md), D54 and D55.
 
 ## Phases
 
 Each phase passes CI, gets a live check in the app, and lands in a commit
 before the next one starts.
 
-### C1. Named commands and more tools (D49)
+### G1. Scopes in the core and the server (D54)
 
-- A grant on `sandbox::exec` may name a command after the function:
-  `sandbox::exec cargo test`. That grant covers a call only when the
-  command line starts with those words.
-- A grant that names a command never covers a line with shell operators
-  (`;`, `&&`, `|`, `` ` ``, `$(`, `>`), because the operators would run a
-  second command. A grant that names no command still covers every line.
-- The most specific grant decides, as today: a named command wins over
-  plain `sandbox::exec`.
-- A turn's `functions.allow` is the four sandbox tools plus every function
-  its step's grants name. Today it is the four tools only, so a grant on
-  any other function can never be called.
-- The step editor's grant form takes the command words after the
-  function. The command lives in the grant's function, so the store and
-  the API don't change.
+- A constraint's and a grant's scope list holds settings: `*` for all
+  workflows, `bug-fix` for one workflow, `bug-fix/build` for one step, and
+  `!` before any of them for off.
+- At a step, its own setting wins, then its workflow's, then the all
+  workflows setting. A list with no `*` keeps today's meaning: on at every
+  step when it names no step to turn on, and on only where it says
+  otherwise.
+- A grant is an item for one kind and one function, with its rung. A
+  step's own grants no longer replace its kind's: a step turns items on or
+  off. The gate folds the few step grants from before into items once.
+- `PUT /scopes` sets an item's setting at a scope: on, off, or inherit.
 
-Done 2026-11-11. Live, on Short's plan step with its own grants
-`sandbox::fs::*` and `sandbox::exec git`: `git -C /work/repo log
---oneline -3` ran, and `ls -la /work/repo` was refused with "No grant
-covers sandbox::exec at short/plan." The four sandbox tools are in every
-turn's list by name, so this did not show whether the harness takes a
-pattern such as `sandbox::*`. C4 settled it: a grant on `mcp::calc::*` was
-the only thing naming the MCP tool, and the turn called it.
+Done 2026-11-12. Live, the gate folded the one step grant from before,
+Bug fix's plan step's `sandbox::*`, into the prompt kind's item as
+`* bug-fix/plan`, and the audit kept the fold. `PUT /scopes` turned "Keep
+shell use small" off for Bug fix, as `* !bug-fix`, and back to inherit.
 
-### C2. Hooks per step (D50)
+### G2. Levels on the Workflows page
 
-- A constraint may be a hook: a command that runs in the job's VM before
-  each matching call at its steps. Exit 2 refuses the call, and its output
-  is the reason.
-- The charter's `PreToolUse` hooks still run. A step's hooks run after
-  them.
-- The Constraints section of the step editor adds and removes a hook. A
-  hook that is only told doesn't run, and only an owner's constraint can
-  be removed: a charter's changes in its repository.
+- A level bar: All workflows › the workflow › the step. Picking a step on
+  the canvas opens its level, and the canvas background opens the
+  workflow's.
+- Each level shows the same Rules view: the charter, the harness and the
+  factory. Each item has an Inherit | On | Off switch, says what it
+  inherits, and keeps its rung switch.
+- The Add bar adds an item on at the level it is on.
 
-Done 2026-11-11. Live, a hook at Short's plan step that exits 2: the turn's
-`git log` was refused with "A hook refused this call: hook says no", and
-the audit kept the hook's run. In the app, Bug fix's build step added
-`./.agents/hooks/check.sh` as a hook and removed it again; the audit
-recorded both.
+### G3. One rule, two forms (D55)
 
-### C3. A reviewer that must pass (D51)
-
-- A constraint may name a reviewer: an agent in `.agents/agents/`. When
-  its step finishes, Bastion runs one turn as that agent on the step's
-  change.
-- The reviewer answers pass or fail with its reasons. A fail fails the
-  step, so the job goes along the failure link or back to the fixer, as
-  D47 says. The step's revisions bound the loop.
-- The reviewer's turn has no tools: it reads its agent file as the job's
-  base has it, the request, and the change, on the server's plan model. A
-  turn under review can't rewrite its reviewer.
-- Its reply is an artifact on the step, and its cost counts toward the
-  step's budget. A reviewer that can't run, or gives no verdict, leaves
-  the job with a person.
-- The step editor adds a reviewer and removes one made for that step.
-
-Done 2026-11-11. Live, a `strict` agent that fails every change, on Short's
-plan step: the job waited with "The reviewer strict failed it", and the
-review was kept as "Review by strict". A plan step only reads, so a fail
-there has no step to go back to and waits for a person. In the app, Bug
-fix's build step added `strict` as a reviewer and removed it.
-
-### C4. MCP servers (D52)
-
-- iii ships no MCP bridge; its docs say to write a worker that bridges MCP
-  into `trigger()` calls. `workers/bastion-mcp` is that worker, in Rust
-  (D6).
-- A server lists its MCP servers in Settings: a name, a URL, and the name
-  of the secret that holds its token, if it needs one.
-- The bridge registers each tool of a server as `mcp::<server>::<tool>`.
-  A step's grant on `mcp::github::*` lets its agent call that server's
-  tools, and C1 puts them in the turn's `functions.allow`.
-- Only MCP servers that answer over HTTP, this round. A stdio server runs
-  as a process on the host, outside the VM, and VISION.md says agent work
-  never runs on your machine.
-- A server's token stays in the vault. Settings names the secret, and the
-  server makes `bastion-mcp` a consumer of it, so only the bridge reads it.
-- The gate's hook now binds every function a turn calls, not only
-  `sandbox::*`. Since C1 a turn may call any function its step grants, and
-  a call the hook doesn't bind skips the gate.
-
-Done 2026-11-11. Live, a test MCP server with one tool, `add`, listed as
-`calc`: the bridge said "connected, 1 tools", and a job whose plan step was
-granted `mcp::calc::*` called `mcp::calc::add` with 2 and 3 and got 5. The
-first run showed no gate entry for that call: the hook bound only
-`sandbox::*`. With the hook on every function, the audit shows "continue
-mcp::calc::add" and the sandbox calls as before. Removing `calc` in
-Settings took its tool off the engine.
+- A constraint shows who judges it: an agent (a told rule, a reviewer) or
+  code (a word match, a hook, or a review check).
+- Promoting a told rule asks for its deterministic form: the words a call
+  holds, or a hook command. Demoting keeps that form and stops running it.
+- A grant's rung stays ask or allowed.
 
 ## Open questions
 

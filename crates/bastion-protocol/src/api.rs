@@ -3,8 +3,8 @@
 //! `bastion_client::send`, and the server's tests check each against its
 //! router, so a route and its request cannot drift apart.
 
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 use crate::*;
 
@@ -277,6 +277,25 @@ at!(
     id,
     ()
 );
+
+/// Set a constraint or a grant on, off, or inheriting at a scope (D54):
+/// `*` for every workflow, a workflow, or `workflow/step`.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ScopeSet {
+    /// The constraint's id; empty for a grant.
+    #[serde(default)]
+    pub constraint: String,
+    /// The grant's kind and function; empty for a constraint.
+    #[serde(default)]
+    pub stage: String,
+    #[serde(default)]
+    pub function: String,
+    pub scope: String,
+    /// `on`, `off` or `inherit`.
+    pub setting: String,
+}
+
+with!(Scope, "PUT", "/scopes", ScopeSet, ());
 
 /// Set a constraint's rung: told, checked or enforced.
 #[derive(Clone, Debug, Serialize)]
@@ -623,6 +642,7 @@ fn factory_requests() -> Vec<(&'static str, &'static str)> {
         ConstraintSteps,
         ConstraintRemove,
         ConstraintRung,
+        Scope,
         Capabilities,
         CapabilityMove,
         CapabilityAdd,
@@ -694,6 +714,6 @@ mod tests {
         assert_eq!(comment.path(), "/jobs/j1/comment");
         let spaced = WorkflowDelete { id: "a b/c".into() };
         assert_eq!(spaced.path(), "/workflows/a%20b%2Fc");
-        assert_eq!(every().len(), 77);
+        assert_eq!(every().len(), 78);
     }
 }

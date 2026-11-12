@@ -17,6 +17,7 @@ pub mod session;
 pub mod settings;
 pub mod spinner;
 pub mod step_rules;
+pub mod trail;
 pub mod verification;
 pub mod workflows;
 pub mod workspaces;

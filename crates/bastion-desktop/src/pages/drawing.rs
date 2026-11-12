@@ -236,19 +236,6 @@ pub struct Drawing<'a, M> {
     pub on: Option<fn(Pointer) -> M>,
 }
 
-impl<'a, M> Drawing<'a, M> {
-    pub fn read_only(workflow: &'a WorkflowView, marks: &'a BTreeMap<String, String>) -> Self {
-        Drawing {
-            workflow,
-            marks,
-            picked: &Pick::Nothing,
-            editable: false,
-            drag: None,
-            on: None,
-        }
-    }
-}
-
 /// The pointer event a canvas event is, at `at`.
 fn pointer(event: &canvas::Event, at: Option<Point>, dragging: bool) -> Option<Pointer> {
     use iced::mouse::{Button, Event as Mouse};

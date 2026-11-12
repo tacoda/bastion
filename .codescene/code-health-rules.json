@@ -18,6 +18,24 @@
           "weight": 0.0
         }
       ]
+    },
+    {
+      "matching_content_path": "crates/bastion-desktop/src/pages/trail.rs",
+      "rules": [
+        {
+          "name": "Excess Number of Function Arguments",
+          "weight": 0.0
+        }
+      ]
+    },
+    {
+      "matching_content_path": "crates/bastion-desktop/src/pages/map.rs",
+      "rules": [
+        {
+          "name": "Excess Number of Function Arguments",
+          "weight": 0.0
+        }
+      ]
     }
   ]
 }

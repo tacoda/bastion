@@ -15,7 +15,6 @@ use iced::widget::{
 };
 use iced::{Element, Fill, Task};
 
-use super::drawing::{self, Drawing};
 use super::{Ctx, ago, diff, mark, section};
 use crate::app::Message;
 use crate::route::Route;
@@ -33,6 +32,8 @@ pub struct State {
     turn_open: bool,
     /// Each step's state by its node id, for the drawing.
     marks: BTreeMap<String, String>,
+    /// The landmarks of the job's trail.
+    trail: Vec<StepView>,
     /// Each artifact's body, parsed as markdown, by its text.
     docs: BTreeMap<String, markdown::Content>,
     /// The diff lines the last click named in the note.
@@ -51,6 +52,7 @@ impl State {
             turn_open: false,
             pick: None,
             marks: BTreeMap::new(),
+            trail: Vec::new(),
             docs: BTreeMap::new(),
         }
     }
@@ -196,6 +198,7 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
                 .map(|s| (s.id.clone(), s.state.clone()))
                 .collect();
             state.docs = parsed(&d.artifacts);
+            state.trail = trail_steps(&d);
             state.detail = Some(*d);
         }
         Msg::Read(Err(e)) | Msg::Acted(Err(e)) => state.error = e,
@@ -577,14 +580,36 @@ fn charter<'a>(c: &CharterView) -> Element<'a, Message> {
         .into()
 }
 
-/// The job's workflow, each step marked with its state (D35), and each
-/// result its steps gave, as a document.
-fn flow<'a>(d: &'a JobDetail, marks: &'a BTreeMap<String, String>) -> Element<'a, Message> {
-    let title = text("Workflow")
-        .size(13)
-        .font(theme::BOLD)
-        .color(theme::muted());
-    let mut body = column![title, drawing::view(Drawing::read_only(&d.workflow, marks))].spacing(8);
+/// The steps the trail draws: the job's own, or for a job from before
+/// steps were kept, its workflow's steps in canvas order, passed when the
+/// job is at no step.
+// ponytail: an old job's steps are guessed from its node; the server could keep them.
+fn trail_steps(d: &JobDetail) -> Vec<StepView> {
+    if !d.steps.is_empty() {
+        return d.steps.clone();
+    }
+    let mut nodes: Vec<&bastion_protocol::NodeView> = d.workflow.nodes.iter().collect();
+    nodes.sort_by_key(|n| (n.x, n.y));
+    let passed = d.job.node.is_none();
+    nodes
+        .into_iter()
+        .map(|n| StepView {
+            id: n.id.clone(),
+            stage: n.stage.clone(),
+            state: if passed { "done" } else { "pending" }.into(),
+        })
+        .collect()
+}
+
+/// The job as a trail (L4): its steps as landmarks from the request to
+/// the final peak, and each result its steps gave, as a document.
+fn flow<'a>(state: &'a State, d: &'a JobDetail) -> Element<'a, Message> {
+    let trail = super::trail::view(super::trail::Trail {
+        steps: &state.trail,
+        job: &d.job.state,
+        pick: |id| Message::Job(Msg::ToggleStep(id)),
+    });
+    let mut body = column![trail].spacing(8);
     for (name, result) in &d.results {
         let head = text(format!("Result · {name}"))
             .size(12)
@@ -746,7 +771,10 @@ fn kept_files(d: &JobDetail) -> Option<Element<'_, Message>> {
 pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let mut page = column![top(state)].spacing(16);
     if let Some(d) = &state.detail {
-        page = page.push(header(d, &ctx.current)).extend(failure(state, d));
+        page = page
+            .push(header(d, &ctx.current))
+            .push(flow(state, d))
+            .extend(failure(state, d));
         if state.allows("approve") || state.allows("answer") {
             page = page.push(waiting(state, d));
         }
@@ -759,7 +787,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         page = page.push(text(&state.error).color(theme::bad()));
     }
     if let Some(d) = &state.detail {
-        page = page.push(flow(d, &state.marks)).push(steps(state, d));
+        page = page.push(steps(state, d));
     }
     super::scrolled(page)
 }

@@ -51,6 +51,9 @@ pub struct State {
     rules: super::step_rules::Rules,
     /// The part of the picked step's panel shown.
     tab: StepTab,
+    /// Whether the page shows what applies at every workflow, above the
+    /// chosen one (D54).
+    every: bool,
     /// The picked step's name, as typed: it renames the step once no
     /// other step has it.
     name: String,
@@ -84,6 +87,8 @@ pub enum Msg {
     Workflows(Result<Vec<WorkflowView>, String>),
     Models(Result<Vec<ModelOption>, String>),
     Rules(super::step_rules::Msg),
+    /// Show every workflow's level, or the chosen workflow's.
+    Level(bool),
     Tab(StepTab),
     /// The picked step's model; the default is empty.
     Model(Choice),
@@ -192,6 +197,21 @@ impl State {
         self.picked = pick;
     }
 
+    /// The level the rules show: `*` for every workflow, the workflow's id,
+    /// or the picked step's `workflow/step`, with the step's kind.
+    fn level(&self) -> (String, String) {
+        let workflow = self
+            .draft
+            .as_ref()
+            .map(|w| w.id.clone())
+            .unwrap_or_default();
+        match (self.every, self.picked_step()) {
+            (true, _) => (super::step_rules::EVERY.into(), String::new()),
+            (false, Some(step)) => step,
+            (false, None) => (workflow, String::new()),
+        }
+    }
+
     /// The picked step's name, `workflow/step`, and its kind (D44).
     fn picked_step(&self) -> Option<(String, String)> {
         let Pick::Step(id) = &self.picked else {
@@ -245,6 +265,7 @@ fn on_pointer(state: &mut State, p: Pointer) {
         Pointer::Press(at) => {
             let (pick, drag) = edit::press(w, at, editable);
             state.drag = drag;
+            state.every = false;
             state.pick(pick);
         }
         Pointer::Move(at) => {
@@ -456,16 +477,17 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         Msg::Models(Ok(all)) => state.models = model_choices(all),
         Msg::Workflows(Err(e)) | Msg::Me(Err(e)) | Msg::Models(Err(e)) => state.said = e,
         Msg::Choose(c) => {
-            (state.chosen, state.draft) = (c.id, None);
+            (state.chosen, state.draft, state.every) = (c.id, None, false);
             state.show_latest();
         }
+        Msg::Level(every) => {
+            state.every = every;
+            state.pick(Pick::Nothing);
+        }
         Msg::Rules(m) => {
-            let Some((step, stage)) = state.picked_step() else {
-                return super::step_rules::update(&mut state.rules, m, &none_at(), ctx)
-                    .map(|m| wrap(Msg::Rules(m)));
-            };
+            let (scope, stage) = state.level();
             let at = super::step_rules::At {
-                step: &step,
+                scope: &scope,
                 stage: &stage,
             };
             return super::step_rules::update(&mut state.rules, m, &at, ctx)
@@ -477,14 +499,6 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         other => change(state, other),
     }
     Task::none()
-}
-
-/// No step: the rules' replies still land, with no step to act for.
-fn none_at() -> super::step_rules::At<'static> {
-    super::step_rules::At {
-        step: "",
-        stage: "",
-    }
 }
 
 /// The shown workflow's facts: shipped or not, its version and its level.
@@ -749,7 +763,7 @@ fn tabs<'a>(state: &State, n: &bastion_protocol::NodeView) -> Element<'a, Messag
     ];
     if let (false, Some((step, stage))) = (is_script(n), state.picked_step()) {
         let at = super::step_rules::At {
-            step: &step,
+            scope: &step,
             stage: &stage,
         };
         let count = super::step_rules::count(&state.rules, &at);
@@ -778,13 +792,11 @@ fn step_head<'a>(n: &bastion_protocol::NodeView, editable: bool) -> Element<'a, 
 fn rules_tab<'a>(state: &'a State, editable: bool) -> Option<Element<'a, Message>> {
     let (step, stage) = state.picked_step()?;
     let at = super::step_rules::At {
-        step: &step,
+        scope: &step,
         stage: &stage,
     };
     let view = super::step_rules::view(&state.rules, &at, editable);
-    let said = super::step_rules::said(&state.rules);
-    let body = column![view].extend(said).spacing(8);
-    Some(Element::from(body).map(|m| wrap(Msg::Rules(m))))
+    Some(view.map(|m| wrap(Msg::Rules(m))))
 }
 
 fn step_detail<'a>(state: &'a State, id: &str, editable: bool) -> Option<Element<'a, Message>> {
@@ -843,6 +855,77 @@ fn picked(state: &State) -> Option<Element<'_, Message>> {
     }
 }
 
+/// The level bar: every workflow › the chosen workflow › the picked step.
+fn levels(state: &State) -> Element<'_, Message> {
+    let crumb = |label: String, here: bool, go: Option<Message>| {
+        button(text(label).size(13))
+            .padding([5, 12])
+            .style(theme::nav(here))
+            .on_press_maybe(go)
+            .into()
+    };
+    let sep = || text("›").size(14).color(theme::MUTED).into();
+    let name = state
+        .draft
+        .as_ref()
+        .map(|w| w.name.clone())
+        .unwrap_or_default();
+    let step = state
+        .picked_step()
+        .map(|(s, _)| s.split_once('/').map(|(_, s)| s.to_string()).unwrap_or(s));
+    let mut all: Vec<Element<'_, Message>> = vec![
+        crumb(
+            "All workflows".into(),
+            state.every,
+            Some(wrap(Msg::Level(true))),
+        ),
+        sep(),
+        crumb(
+            name,
+            !state.every && step.is_none(),
+            Some(wrap(Msg::Level(false))),
+        ),
+    ];
+    if let (false, Some(step)) = (state.every, step) {
+        all.extend([sep(), crumb(step, true, None)]);
+    }
+    iced::widget::Row::with_children(all)
+        .spacing(6)
+        .align_y(iced::Center)
+        .into()
+}
+
+/// The rules at every workflow or at the chosen workflow, with what they
+/// mean there.
+fn level_panel<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
+    let (scope, stage) = state.level();
+    let name = state
+        .draft
+        .as_ref()
+        .map(|w| w.name.clone())
+        .unwrap_or_default();
+    let (title, about) = match state.every {
+        true => ("All workflows".to_string(), format!("What is on at every step of every workflow on {}, unless a workflow or a step turns it off.", ctx.current)),
+        false => (name, "What is on at every step of this workflow, unless a step turns it off. Pick a step on the canvas for its own.".to_string()),
+    };
+    let at = super::step_rules::At {
+        scope: &scope,
+        stage: &stage,
+    };
+    let rules =
+        super::step_rules::view(&state.rules, &at, state.admin).map(|m| wrap(Msg::Rules(m)));
+    let head = column![
+        text(title).size(18).font(theme::BOLD),
+        text(about).size(12).color(theme::MUTED),
+    ]
+    .spacing(2);
+    container(column![head, rules].spacing(14))
+        .padding(16)
+        .width(Fill)
+        .style(theme::panel)
+        .into()
+}
+
 pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let editable = state.editable();
     let about = format!(
@@ -852,6 +935,10 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let mut body = column![super::head("Workflows", about, vec![]), chooser(state)].spacing(12);
     if state.admin {
         body = body.push(manage_view(state));
+    }
+    body = body.push(levels(state));
+    if state.every {
+        return scrolled(body.push(level_panel(state, ctx)));
     }
     if editable {
         body = body.push(palette(state));
@@ -867,11 +954,9 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
             on: Some(on),
         }));
     }
-    // With no step picked, the page shows what applies at every step.
-    let shown = picked(state).unwrap_or_else(|| {
-        super::step_rules::every_step(&state.rules, &ctx.current, state.admin)
-            .map(|m| wrap(Msg::Rules(m)))
-    });
+    // With no step picked, the page shows what applies at every step of the
+    // chosen workflow.
+    let shown = picked(state).unwrap_or_else(|| level_panel(state, ctx));
     body = body.push(shown);
     if editable {
         body = body.push(

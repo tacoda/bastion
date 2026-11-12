@@ -1,13 +1,21 @@
-//! A step's constraints: each a rule, a hook or a reviewer, with its rung as
-//! a switch, and the forms that add one.
+//! Constraints at a level: each a rule, a hook or a reviewer, with its rung
+//! as a switch, its setting at the level, and the forms that add one.
 
 use bastion_protocol::ConstraintView;
 use iced::widget::{column, container, pick_list, row, text, text_input};
 use iced::{Element, Fill};
 
-use super::{At, Msg, RuleField, Rules, chip, choice, help, small};
-use crate::pages::Choice;
+use super::{At, Item, Msg, RuleField, Rules, choice, help, scope, scope_switch, small};
 use crate::theme;
+
+/// What kind of constraint `c` is: a rule on calls, a hook or a reviewer.
+pub(super) fn kind(c: &ConstraintView) -> &'static str {
+    match (c.hook.is_empty(), c.reviewer.is_empty()) {
+        (false, _) => "Hook",
+        (_, false) => "Reviewer",
+        _ => "Rule",
+    }
+}
 
 /// The layer a constraint belongs to (D25): the charter's, the harness's
 /// on the agent's calls, or the factory's on the work, as a review check or
@@ -17,15 +25,6 @@ pub(super) fn layer(c: &ConstraintView) -> &'static str {
         ("charter", _) => "charter",
         ("factory", _) | (_, false) => "factory",
         _ => "harness",
-    }
-}
-
-/// What kind of constraint `c` is: a rule on calls, a hook or a reviewer.
-pub(super) fn kind(c: &ConstraintView) -> &'static str {
-    match (c.hook.is_empty(), c.reviewer.is_empty()) {
-        (false, _) => "Hook",
-        (_, false) => "Reviewer",
-        _ => "Rule",
     }
 }
 
@@ -45,28 +44,6 @@ pub(super) fn fits(c: &ConstraintView, filter: &str) -> bool {
         .to_lowercase()
         .split_whitespace()
         .all(|w| all.contains(w))
-}
-
-/// Where a constraint applies, and how it comes off the step: a hook or a
-/// reviewer made for this step alone is removed, and any other scoped one
-/// is "Not here".
-fn scope<'a>(c: &ConstraintView, at: &At, editable: bool) -> Element<'a, Msg> {
-    let only_here = c.steps.len() == 1 && c.steps[0] == at.step;
-    // At every step, no step is named: one for every step made here comes
-    // off there. A seeded rule is only demoted, never removed by a click.
-    let made_in_app = ["rule-", "hook-", "reviewer-"]
-        .iter()
-        .any(|p| c.id.starts_with(p));
-    let every_here = at.step.is_empty() && c.steps.is_empty() && made_in_app;
-    let msg = |m: Msg| editable.then_some(m);
-    // One the owner made for this step alone comes off whole; "Not here"
-    // would leave it at no step, which means every step.
-    let made_here = c.source == "owner" && (only_here || every_here);
-    match (made_here, c.steps.is_empty()) {
-        (true, _) => small("Remove", msg(Msg::Remove(c.id.clone()))),
-        (false, true) => chip("every step"),
-        (false, false) => small("Not here", msg(Msg::Scope(c.id.clone(), false))),
-    }
 }
 
 /// A rung's place in the list, enforced first, and its color.
@@ -89,7 +66,7 @@ fn badge<'a>(label: &str, color: iced::Color) -> Element<'a, Msg> {
 }
 
 /// A constraint's rung: a switch to move it, or its badge when it may not
-/// be changed here.
+/// be changed here. The rung is the item's, the same at every level.
 fn rung_switch<'a>(c: &ConstraintView, editable: bool) -> Element<'a, Msg> {
     if !editable || c.source == "charter" {
         return badge(&c.rung, rung(c).1);
@@ -107,21 +84,36 @@ fn rung_switch<'a>(c: &ConstraintView, editable: bool) -> Element<'a, Msg> {
     .into()
 }
 
+/// One made in the app comes off whole, at every workflow; a seeded one is
+/// only turned off or moved down its rungs.
+fn removable(c: &ConstraintView, at: &At) -> bool {
+    let made_in_app = ["rule-", "hook-", "reviewer-"]
+        .iter()
+        .any(|p| c.id.starts_with(p));
+    at.is_every() && made_in_app
+}
+
 fn line<'a>(c: &ConstraintView, at: &At, editable: bool) -> Element<'a, Msg> {
-    let rule = text(c.rule.clone()).size(13).width(Fill);
-    row![
+    let on = scope::on(&c.steps, at.scope);
+    let color = if on { theme::INK } else { theme::MUTED };
+    let rule = text(c.rule.clone()).size(13).color(color).width(Fill);
+    let item = Item::Constraint(c.id.clone());
+    let mut line = row![
         badge(kind(c), theme::MUTED),
         rule,
         rung_switch(c, editable),
-        scope(c, at, editable)
+        scope_switch(item, &c.steps, at, editable && c.source != "charter"),
     ]
     .spacing(8)
-    .align_y(iced::Center)
-    .into()
+    .align_y(iced::Center);
+    if editable && removable(c, at) {
+        line = line.push(small("Remove", Some(Msg::Remove(c.id.clone()))));
+    }
+    line.into()
 }
 
-/// The form for a rule at the step: what the agent is told, its rung, and
-/// the calls it binds once it is more than told.
+/// The form for a rule: what the agent is told, its rung, and the calls it
+/// binds once it is more than told.
 pub(super) fn rule_form<'a>(rules: &Rules) -> Element<'a, Msg> {
     let d = &rules.rule;
     let named = !d.text.trim().is_empty();
@@ -164,8 +156,8 @@ pub(super) fn rule_form<'a>(rules: &Rules) -> Element<'a, Msg> {
     column![help(why), text, binds].spacing(6).into()
 }
 
-/// The form for a hook at the step: the calls it runs before, and its
-/// command, which runs in the job's VM.
+/// The form for a hook: the calls it runs before, and its command, which
+/// runs in the job's VM.
 pub(super) fn hook_form<'a>(rules: &Rules) -> Element<'a, Msg> {
     let named = !rules.hook.trim().is_empty();
     let fields = row![
@@ -181,11 +173,11 @@ pub(super) fn hook_form<'a>(rules: &Rules) -> Element<'a, Msg> {
     ]
     .spacing(8)
     .align_y(iced::Center);
-    let why = "A command that runs in the job's VM before each matching call here. Exit 2 refuses the call, and its output says why.";
+    let why = "A command that runs in the job's VM before each matching call. Exit 2 refuses the call, and its output says why.";
     column![help(why), fields].spacing(6).into()
 }
 
-/// The form for a reviewer at the step: an agent in `.agents/agents/`.
+/// The form for a reviewer: an agent in `.agents/agents/`.
 pub(super) fn reviewer_form<'a>(rules: &Rules) -> Element<'a, Msg> {
     let named = !rules.reviewer.trim().is_empty();
     let fields = row![
@@ -197,32 +189,8 @@ pub(super) fn reviewer_form<'a>(rules: &Rules) -> Element<'a, Msg> {
     ]
     .spacing(8)
     .align_y(iced::Center);
-    let why = "An agent in .agents/agents/ reads this step's change when it finishes. If it fails the change, the step fails.";
+    let why = "An agent in .agents/agents/ reads a step's change when it finishes. If it fails the change, the step fails.";
     column![help(why), fields].spacing(6).into()
-}
-
-/// A picker for a constraint scoped to other steps, to apply here too.
-pub(super) fn elsewhere_form<'a>(rules: &Rules, at: &At) -> Element<'a, Msg> {
-    let elsewhere: Vec<Choice> = rules
-        .constraints
-        .iter()
-        .filter(|c| !c.steps.is_empty() && !c.steps.iter().any(|s| s == at.step))
-        .map(|c| Choice::new(&c.id, &c.rule))
-        .collect();
-    if elsewhere.is_empty() {
-        return help("No constraint applies only at other steps.");
-    }
-    let pick = pick_list(elsewhere, None::<Choice>, |c| Msg::Scope(c.id, true))
-        .placeholder("Pick a constraint that applies at other steps")
-        .text_size(13)
-        .style(theme::select)
-        .width(Fill);
-    column![
-        help("A constraint already scoped to other steps, applied here too."),
-        pick
-    ]
-    .spacing(6)
-    .into()
 }
 
 /// The rows of `list`, enforced first, narrowed to the filter.
@@ -254,9 +222,7 @@ mod tests {
         };
         assert_eq!(kind(&hook), "Hook");
         assert!(fits(&hook, "hook ENFORCED"));
-        assert!(fits(&hook, ""));
         assert!(!fits(&hook, "reviewer"));
-        assert_eq!(kind(&ConstraintView::default()), "Rule");
         assert_eq!(layer(&hook), "harness", "a hook binds calls");
         let reviewer = ConstraintView {
             reviewer: "security".into(),

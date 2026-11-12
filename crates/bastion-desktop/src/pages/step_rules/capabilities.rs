@@ -1,12 +1,12 @@
-//! A step's grants: what its agent may call, each with a switch between ask
-//! and allowed, and the form that adds one: a function found by search, a
-//! named command, or an MCP server.
+//! Grants at a level: what an agent may call, each with its rung and its
+//! setting at the level, and the form that adds one: a function found by
+//! search, a named command, or an MCP server.
 
 use bastion_protocol::{CapabilityView, Registered};
 use iced::widget::{Column, column, row, text, text_input};
 use iced::{Element, Fill};
 
-use super::{At, Granting, Msg, Rules, chip, choice, help, small};
+use super::{At, Granting, Item, Msg, Rules, choice, help, scope, scope_switch, small};
 use crate::theme;
 
 /// The most functions a search shows.
@@ -72,37 +72,41 @@ fn grant_buttons<'a>(function: String) -> Element<'a, Msg> {
         .into()
 }
 
-/// One grant: its function and what it covers, with its switch and its
-/// removal when the step's own grant may be changed.
+/// One grant: its function and what it covers, its rung (the item's, the
+/// same everywhere), and its setting at the level shown. At every workflow
+/// it may come off whole.
 pub(super) fn line<'a>(
     g: &CapabilityView,
-    catalog: &[Registered],
-    changeable: bool,
+    rules: &Rules,
+    at: &At,
+    editable: bool,
 ) -> Element<'a, Msg> {
-    let about = text(about(&g.function, catalog))
+    let on = scope::on(&g.scopes, at.scope);
+    let color = if on { theme::INK } else { theme::MUTED };
+    let about = text(about(&g.function, &rules.catalog))
         .size(12)
         .color(theme::MUTED);
-    let what = column![text(g.function.clone()).size(13).font(theme::MONO), about]
-        .spacing(2)
-        .width(Fill);
-    if !changeable {
-        return row![what, chip(g.rung.clone())]
-            .spacing(8)
-            .align_y(iced::Center)
-            .into();
-    }
-    let set = |label: &str, rung: &str| {
-        choice(
-            label.to_string(),
-            g.rung == rung,
-            Some(Msg::Rung(g.clone(), rung.into())),
-        )
+    let name = text(g.function.clone())
+        .size(13)
+        .font(theme::MONO)
+        .color(color);
+    let what = column![name, about].spacing(2).width(Fill);
+    let rung = |label: &str, to: &str| {
+        let msg = (editable && g.rung != to).then(|| Msg::GrantRung(g.clone(), to.into()));
+        choice(label.to_string(), g.rung == to, msg)
     };
-    let remove = small("Remove", Some(Msg::Ungrant(g.clone())));
-    row![what, set("Ask", "ask"), set("Allowed", "allowed"), remove]
-        .spacing(6)
-        .align_y(iced::Center)
-        .into()
+    let item = Item::Grant(g.stage.clone(), g.function.clone());
+    let mut line = row![
+        what,
+        row![rung("Ask", "ask"), rung("Allowed", "allowed")].spacing(2),
+        scope_switch(item, &g.scopes, at, editable),
+    ]
+    .spacing(8)
+    .align_y(iced::Center);
+    if editable && at.is_every() {
+        line = line.push(small("Remove", Some(Msg::Ungrant(g.clone()))));
+    }
+    line.into()
 }
 
 /// The search over the engine's functions, and what it found.
@@ -199,44 +203,6 @@ pub(super) fn granting<'a>(rules: &'a Rules) -> Element<'a, Msg> {
         Granting::Mcp => mcp_form(rules),
     };
     column![switch, form].spacing(10).into()
-}
-
-/// Whose grants decide the step's calls, and the way to the other.
-fn whose<'a>(mine: bool, at: &At, editable: bool) -> Element<'a, Msg> {
-    let (said, action, msg) = match mine {
-        true => (
-            "This step has its own grants. A call none covers is refused.",
-            "Use its kind's instead",
-            Msg::Kind,
-        ),
-        false => (
-            "This step uses the grants of every step of its kind. A call none covers is refused.",
-            "Give it its own",
-            Msg::Own,
-        ),
-    };
-    let said = format!("{said} Kind: {}.", at.stage);
-    row![
-        text(said).size(12).color(theme::MUTED).width(Fill),
-        small(action, editable.then_some(msg))
-    ]
-    .spacing(8)
-    .align_y(iced::Center)
-    .into()
-}
-
-/// The grants that decide the step's calls, and whose they are.
-pub(super) fn grants<'a>(rules: &'a Rules, at: &At, editable: bool) -> Element<'a, Msg> {
-    let mine = !rules.own(at.step).is_empty();
-    let rows = rules
-        .deciding(at)
-        .into_iter()
-        .map(|g| line(g, &rules.catalog, mine && editable));
-    Column::new()
-        .spacing(8)
-        .push(whose(mine, at, editable))
-        .extend(rows)
-        .into()
 }
 
 #[cfg(test)]

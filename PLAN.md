@@ -48,6 +48,12 @@ shell use small" off for Bug fix, as `* !bug-fix`, and back to inherit.
   inherits, and keeps its rung switch.
 - The Add bar adds an item on at the level it is on.
 
+Done 2026-11-12. Live, at Bug fix "Keep shell use small" went Off, as
+`* !bug-fix`; Bug fix's build step then showed it as "Inherit · off", and
+On there gave `* !bug-fix bug-fix/build`. At All workflows the canvas
+hides and each item shows On | Off, with Remove. A "here" label sets the
+scope switch apart from the rung switch beside it.
+
 ### G3. One rule, two forms (D55)
 
 - A constraint shows who judges it: an agent (a told rule, a reviewer) or

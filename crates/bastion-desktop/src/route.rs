@@ -15,6 +15,7 @@ pub enum Route {
     Session(String),
     Engine,
     Workflows,
+    Workspaces,
     Constraints,
     Capabilities,
     Permissions,
@@ -22,12 +23,10 @@ pub enum Route {
 }
 
 /// The top bar's pages. A job and New request belong to Jobs.
-pub const PAGES: [(Route, &str, &str); 11] = [
+pub const PAGES: [(Route, &str, &str); 9] = [
     (Route::Jobs, "Jobs", icons::JOBS),
     (Route::Workflows, "Workflows", icons::WORKFLOWS),
-    (Route::Constraints, "Constraints", icons::CONSTRAINTS),
-    (Route::Capabilities, "Capabilities", icons::CAPABILITIES),
-    (Route::Permissions, "Permissions", icons::PERMISSIONS),
+    (Route::Workspaces, "Workspaces", icons::FOLDER),
     (Route::Audit, "Audit Log", icons::AUDIT),
     (Route::Evals, "Evals", icons::EVALS),
     (Route::Costs, "Costs", icons::COSTS),
@@ -43,6 +42,8 @@ impl Route {
             Route::NewRequest | Route::Job(_) => Route::Jobs,
             Route::Eval(_) => Route::Evals,
             Route::Session(_) => Route::Costs,
+            // The rules a workflow applies are its tabs (S2).
+            Route::Constraints | Route::Capabilities | Route::Permissions => Route::Workflows,
             other => other.clone(),
         }
     }
@@ -82,5 +83,6 @@ mod tests {
         assert!(!job.records() && job.one_record());
         assert!(Route::Costs.records() && !Route::Settings.records());
         assert_eq!(Route::Eval("e1".into()).title(), "Evals");
+        assert_eq!(Route::Permissions.title(), "Workflows");
     }
 }

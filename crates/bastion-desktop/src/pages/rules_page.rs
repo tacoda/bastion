@@ -68,5 +68,6 @@ pub fn view<'a>(state: &'a State, title: &'a str) -> Element<'a, Message> {
     let views = row![pick("All workflows", true), pick("Workflows", false)].spacing(6);
     let body = step_rules::page(&state.rules, state.which, state.global, state.admin)
         .map(|m| Message::Rules(Msg::Rules(m)));
-    scrolled(column![text(title).size(24).font(theme::BOLD), views, body].spacing(12))
+    let tabs = super::workflow_tabs(&state.which.route());
+    scrolled(column![text(title).size(24).font(theme::BOLD), tabs, views, body].spacing(12))
 }

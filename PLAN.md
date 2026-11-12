@@ -30,15 +30,24 @@ before the next one starts.
   approved test carry `*` for their job's steps.
 - The Global view is named All workflows.
 
-### S2. The rules pages across all servers
+### S2. Two homes: Workflows and Workspaces, done
 
-- On All servers, each rules page shows one section per server, named.
+Everything a job runs under belongs to a workflow or to a workspace, so
+the top bar loses Constraints, Capabilities and Permissions.
+
+- Workflows gets tabs: Steps, Constraints, Capabilities and Permissions.
+  The rules pages become its tabs, unchanged.
+- A Workspaces page joins the top bar, with a module of its own. It holds
+  each workspace's settings and its own charter, or "No charter", read-only
+  for now: AGENTS.md, its allow and ask rules, its hooks, its skills and
+  agents. The accounts move with it.
+- Settings keeps what belongs to the server itself: servers, people,
+  model providers, MCP servers, the factory, notifications and history.
+
+### S3. Workflows and Workspaces across all servers
+
+- On All servers, each tab shows one section per server, named.
 - A change goes to its section's server.
-
-### S3. A Workspaces page
-
-- Each workspace and its charter: AGENTS.md, its permissions and hooks,
-  its skills and agents. All servers or one.
 
 ### S4. Charter edits
 

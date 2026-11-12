@@ -19,6 +19,7 @@ pub mod spinner;
 pub mod step_rules;
 pub mod verification;
 pub mod workflows;
+pub mod workspaces;
 
 use std::collections::BTreeSet;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -249,6 +250,24 @@ pub enum Push {
     Engine,
 }
 
+/// The Workflows page's tabs: its steps, and the rules it applies (S2).
+pub fn workflow_tabs<'a>(here: &Route) -> Element<'a, Message> {
+    let tabs = [
+        (Route::Workflows, "Steps"),
+        (Route::Constraints, "Constraints"),
+        (Route::Capabilities, "Capabilities"),
+        (Route::Permissions, "Permissions"),
+    ];
+    let tabs = tabs.into_iter().map(|(route, label)| {
+        iced::widget::button(text(label).size(13))
+            .padding([5, 12])
+            .style(theme::nav(&route == here))
+            .on_press(Message::Go(route))
+            .into()
+    });
+    iced::widget::Row::with_children(tabs).spacing(6).into()
+}
+
 /// The page the window shows, with its state.
 pub enum Page {
     Jobs(jobs::State),
@@ -263,6 +282,7 @@ pub enum Page {
     Eval(Box<evals::One>),
     Settings(Box<settings::State>),
     Workflows(Box<workflows::State>),
+    Workspaces(Box<workspaces::State>),
     Rules(Box<rules_page::State>),
     /// Nothing yet: the window has not reached its first server.
     Pending,
@@ -297,6 +317,7 @@ impl Page {
             Route::Eval(id) => Page::Eval(Box::new(evals::One::new(id.clone()))),
             Route::Settings => Page::Settings(Box::default()),
             Route::Workflows => Page::Workflows(Box::default()),
+            Route::Workspaces => Page::Workspaces(Box::default()),
             Route::Constraints => Page::rules(Which::Constraints),
             Route::Capabilities => Page::rules(Which::Capabilities),
             Route::Permissions => Page::rules(Which::Permissions),
@@ -331,6 +352,7 @@ impl Page {
             Page::Eval(s) => evals::load_one(s, ctx),
             Page::Settings(_) => settings::load(ctx),
             Page::Workflows(_) => workflows::load(ctx),
+            Page::Workspaces(_) => workspaces::load(ctx),
             Page::Rules(_) => rules_page::load(ctx),
             Page::Pending => Task::none(),
         }
@@ -363,6 +385,7 @@ impl Page {
             (Page::Eval(s), Message::Evals(m)) => return evals::update_one(s, m, ctx),
             (Page::Settings(s), Message::Settings(m)) => return settings::update(s, m, ctx),
             (Page::Workflows(s), Message::Workflows(m)) => return workflows::update(s, m, ctx),
+            (Page::Workspaces(s), Message::Workspaces(m)) => return workspaces::update(s, m, ctx),
             (Page::Rules(s), Message::Rules(m)) => return rules_page::update(s, m, ctx),
             _ => {}
         }
@@ -383,6 +406,7 @@ impl Page {
             Page::Eval(s) => evals::view_one(s, ctx),
             Page::Settings(s) => settings::view(s, ctx),
             Page::Workflows(s) => workflows::view(s, ctx),
+            Page::Workspaces(s) => workspaces::view(s, ctx),
             Page::Rules(s) => rules_page::view(s, route.title()),
             Page::Pending => {
                 let title = text(route.title()).size(24).font(theme::BOLD);

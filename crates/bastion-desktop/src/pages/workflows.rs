@@ -14,6 +14,7 @@ use super::drawing::{self, Drawing, Pointer};
 use super::edit::{self, Drag, Pick};
 use super::{Choice, Ctx, labeled, scrolled};
 use crate::app::Message;
+use crate::route::Route;
 use crate::theme;
 
 /// The ways a workflow's own step runs, each with its one text.
@@ -836,7 +837,12 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         "The series of steps a job on {} runs. Pick a step to read or change it, and its Rules tab for what applies there.",
         ctx.current
     );
-    let mut body = column![super::head("Workflows", about, vec![]), chooser(state)].spacing(12);
+    let mut body = column![
+        super::head("Workflows", about, vec![]),
+        super::workflow_tabs(&Route::Workflows),
+        chooser(state)
+    ]
+    .spacing(12);
     if state.admin {
         body = body.push(manage_view(state));
     }

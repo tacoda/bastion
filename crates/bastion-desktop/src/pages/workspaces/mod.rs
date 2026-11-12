@@ -1,18 +1,20 @@
-//! Where jobs run: the Bastion servers this window knows (D30), the
-//! workspaces on the server shown, and the accounts it uses.
+//! The Workspaces page: the repositories jobs on the server shown run
+//! against, each with its settings and its charter (D58), and the accounts
+//! they use.
+
+mod charter;
 
 use bastion_protocol::api::{self, Request};
-use bastion_protocol::{AccountView, LOCAL, Server, Workspace, branch_prefix};
+use bastion_protocol::{AccountView, Workspace, WorkspaceCharterView, branch_prefix};
 use iced::widget::{Column, button, column, row, text, text_editor, text_input};
 use iced::{Element, Task};
 
-use super::{card, small};
 use crate::app::Message;
-use crate::pages::{Ctx, labeled};
-use crate::{start, theme};
+use crate::pages::settings::{card, small};
+use crate::pages::{Ctx, labeled, scrolled};
+use crate::theme;
 
 pub struct State {
-    server: Server,
     workspace: Workspace,
     /// The form holds a workspace already added, to change it.
     editing: bool,
@@ -26,16 +28,12 @@ pub struct State {
     gates: text_editor::Content,
     workspaces: Vec<Workspace>,
     accounts: Vec<AccountView>,
+    charters: Vec<WorkspaceCharterView>,
     note: String,
 }
 
 impl Default for State {
     fn default() -> Self {
-        let server = Server {
-            name: String::new(),
-            url: String::new(),
-            token: String::new(),
-        };
         let workspace = Workspace {
             name: String::new(),
             path: String::new(),
@@ -53,7 +51,6 @@ impl Default for State {
             finish: "merge".into(),
         };
         State {
-            server,
             workspace,
             editing: false,
             drafting: false,
@@ -62,17 +59,15 @@ impl Default for State {
             gates: text_editor::Content::new(),
             workspaces: vec![],
             accounts: vec![],
+            charters: vec![],
             note: String::new(),
         }
     }
 }
 
-/// A field of the server or workspace being added.
+/// A field of the workspace being added.
 #[derive(Clone, Copy, Debug)]
 pub enum Field {
-    ServerName,
-    ServerUrl,
-    ServerToken,
     Name,
     Path,
     Branch,
@@ -92,10 +87,8 @@ pub enum Field {
 pub enum Msg {
     Workspaces(Result<Vec<Workspace>, String>),
     Accounts(Result<Vec<AccountView>, String>),
+    Charters(Result<Vec<WorkspaceCharterView>, String>),
     Edit(Field, String),
-    AddServer,
-    RemoveServer(String),
-    ServersChanged(Result<(), String>),
     EditWorkspace(String),
     SaveWorkspace,
     DraftWorkspace,
@@ -105,7 +98,7 @@ pub enum Msg {
 }
 
 fn wrap(msg: Msg) -> Message {
-    Message::Settings(super::Msg::Places(msg))
+    Message::Workspaces(msg)
 }
 
 fn task<R>(ctx: &Ctx, request: R, then: fn(Result<R::Answer, String>) -> Msg) -> Task<Message>
@@ -120,31 +113,13 @@ pub fn load(ctx: &Ctx) -> Task<Message> {
     Task::batch([
         task(ctx, api::Workspaces, Msg::Workspaces),
         task(ctx, api::Accounts, Msg::Accounts),
+        task(ctx, api::Charters, Msg::Charters),
     ])
 }
 
-/// Add or remove a server in the window's own list and the Keychain, off
-/// the window's thread, as the Keychain can take seconds.
-fn change_servers(
-    ctx: &Ctx,
-    change: impl FnOnce(crate::servers::Servers) -> Result<(), String> + Send + 'static,
-) -> Task<Message> {
-    let local = ctx.servers.iter().find(|s| s.name == LOCAL).cloned();
-    let work = async move {
-        let local = local.ok_or("the local Bastion server has not started")?;
-        tokio::task::spawn_blocking(move || change(start::servers(local)))
-            .await
-            .map_err(|e| e.to_string())?
-    };
-    Task::perform(work, |r| wrap(Msg::ServersChanged(r)))
-}
-
 fn edit(state: &mut State, field: Field, value: String) {
-    let (s, w) = (&mut state.server, &mut state.workspace);
+    let w = &mut state.workspace;
     match field {
-        Field::ServerName => s.name = value,
-        Field::ServerUrl => s.url = value,
-        Field::ServerToken => s.token = value,
         Field::Name => w.name = value,
         Field::Path => w.path = value,
         Field::Branch => w.branch = value,
@@ -242,20 +217,12 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
     match msg {
         Msg::Workspaces(Ok(all)) => state.workspaces = all,
         Msg::Accounts(Ok(all)) => state.accounts = all,
+        Msg::Charters(Ok(all)) => state.charters = all,
         Msg::Workspaces(Err(e))
         | Msg::Accounts(Err(e))
-        | Msg::Done(Err(e))
-        | Msg::ServersChanged(Err(e)) => state.note = e,
+        | Msg::Charters(Err(e))
+        | Msg::Done(Err(e)) => state.note = e,
         Msg::Edit(f, v) => edit(state, f, v),
-        Msg::AddServer => {
-            let server = std::mem::replace(&mut state.server, State::default().server);
-            return change_servers(ctx, move |all| all.add(server));
-        }
-        Msg::RemoveServer(name) => return change_servers(ctx, move |all| all.remove(&name)),
-        Msg::ServersChanged(Ok(())) => {
-            state.note.clear();
-            return Task::done(Message::ReadServers);
-        }
         Msg::EditWorkspace(name) => open(state, &name),
         Msg::SaveWorkspace => return save(state, ctx),
         Msg::DraftWorkspace => {
@@ -282,14 +249,7 @@ fn field<'a>(label: &'a str, hint: &'a str, value: &str, f: Field) -> Element<'a
         .on_input(move |v| wrap(Msg::Edit(f, v)))
         .style(theme::field)
         .width(200);
-    labeled(
-        label,
-        if matches!(f, Field::ServerToken) {
-            input.secure(true)
-        } else {
-            input
-        },
-    )
+    labeled(label, input)
 }
 
 /// A field that cannot change: a saved workspace keeps its name and path.
@@ -297,70 +257,37 @@ fn fixed<'a>(label: &'a str, value: &str) -> Element<'a, Message> {
     labeled(label, text_input("", value).style(theme::field).width(200))
 }
 
-fn servers<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
-    let rows = ctx.servers.iter().map(|s| {
-        let remove = (s.name != LOCAL).then(|| {
-            button(text("Remove").size(13).color(theme::BAD))
-                .style(theme::link)
-                .on_press(wrap(Msg::RemoveServer(s.name.clone())))
-        });
-        row![
-            text(s.name.clone()).font(theme::BOLD),
-            text(s.url.clone()).color(theme::MUTED)
-        ]
-        .extend(remove.map(Element::from))
-        .spacing(10)
-        .align_y(iced::Center)
-        .into()
-    });
-    let s = &state.server;
-    let form = row![
-        field("Name", "", &s.name, Field::ServerName),
-        field(
-            "URL",
-            "https://bastion.example.com",
-            &s.url,
-            Field::ServerUrl
-        ),
-        field("Token", "", &s.token, Field::ServerToken),
-        small("Add", Some(wrap(Msg::AddServer))),
-    ];
-    card(
-        "Bastion servers",
-        column![
-            Column::with_children(rows).spacing(6),
-            form.spacing(8).align_y(iced::Bottom),
-            text(&state.note).size(13).color(theme::BAD)
-        ],
-    )
+/// One workspace: its name, where it is, how it checks a change, and its
+/// charter.
+fn workspace<'a>(w: &Workspace, own: Option<&'a WorkspaceCharterView>) -> Element<'a, Message> {
+    let edit = button(text("Edit").size(13))
+        .style(theme::link)
+        .on_press(wrap(Msg::EditWorkspace(w.name.clone())));
+    let mut about = vec![format!("{} @ {}", w.path, w.branch)];
+    about.extend((!w.checks.is_empty()).then(|| format!("checks: {}", w.checks)));
+    about.extend(w.max_jobs.map(|n| format!("at most {n} at once")));
+    column![
+        row![text(w.name.clone()).font(theme::BOLD), edit]
+            .spacing(10)
+            .align_y(iced::Center),
+        text(about.join(" · ")).size(13).color(theme::MUTED),
+        charter::view(own),
+    ]
+    .spacing(6)
+    .into()
 }
 
 fn workspaces(state: &State) -> Element<'_, Message> {
     let lede = "The repositories jobs run against on this Bastion server. Checks run the tests at the checks step. A job pushes to its branch prefix and its id, the job limit caps how many run at once, and the revision budget caps how often its steps send work back before you decide. Setup runs with the network in a VM of its own, before the agent starts; the agent's VM stays offline. The environment is visible to the agent, so keep secrets out of it. Before a push, each gate runs over the change's files, where {files} names them; a failing gate gets the autofix once, then stops the push.";
     let rows = state.workspaces.iter().map(|w| {
-        let checks = (!w.checks.is_empty())
-            .then(|| text(w.checks.clone()).font(theme::MONO).color(theme::MUTED));
-        let cap = w
-            .max_jobs
-            .map(|n| text(format!("at most {n} at once")).color(theme::MUTED));
-        let edit = button(text("Edit").size(13))
-            .style(theme::link)
-            .on_press(wrap(Msg::EditWorkspace(w.name.clone())));
-        row![
-            text(w.name.clone()),
-            text(format!("{} @ {}", w.path, w.branch)).color(theme::MUTED)
-        ]
-        .extend(checks.map(Element::from))
-        .extend(cap.map(Element::from))
-        .push(edit)
-        .spacing(10)
-        .into()
+        let own = state.charters.iter().find(|c| c.workspace == w.name);
+        workspace(w, own)
     });
     card(
         "Workspaces",
         column![
             text(lede).size(13).color(theme::MUTED),
-            Column::with_children(rows).spacing(4),
+            Column::with_children(rows).spacing(18),
             workspace_form(state)
         ],
     )
@@ -459,9 +386,16 @@ fn accounts(state: &State) -> Element<'_, Message> {
     card("Accounts", Column::with_children(rows).spacing(4))
 }
 
-/// The servers first, then the workspaces and accounts, as the page orders them.
-pub fn view<'a>(state: &'a State, ctx: &Ctx) -> (Element<'a, Message>, [Element<'a, Message>; 2]) {
-    (servers(state, ctx), [workspaces(state), accounts(state)])
+pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
+    let about = format!("The repositories jobs on {} run against.", ctx.current);
+    let body = column![
+        crate::pages::head("Workspaces", about, vec![]),
+        workspaces(state),
+        accounts(state),
+        text(&state.note).size(13).color(theme::BAD)
+    ]
+    .spacing(16);
+    scrolled(body)
 }
 
 #[cfg(test)]

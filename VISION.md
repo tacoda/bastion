@@ -68,10 +68,11 @@ server only. Two servers' rules sit side by side and never merge, because
 each server's rules shape only its own jobs.
 
 - **Records:** Jobs, Audit Log, Costs, Evals and Verification.
-- **What runs:** Workspaces, Workflows, Constraints, Capabilities and
-  Permissions. The Workspaces page shows each workspace and its charter.
-  Each rules page applies an item to the steps and workflows you select,
-  and a step's Rules tab lists what applies there.
+- **What runs:** Workflows and Workspaces. Workflows holds the steps and
+  three tabs of rules: Constraints, Capabilities and Permissions. Each
+  rules tab applies an item to the steps and workflows you select, and a
+  step's Rules tab lists what applies there. Workspaces holds each
+  workspace's settings and its charter.
 - **The server itself:** Engine and Settings.
 
 ## What a server holds

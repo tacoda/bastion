@@ -1,13 +1,13 @@
 //! The Settings page: the Bastion servers, people, model providers and
-//! hosts, MCP servers, the factory, history, workspaces and accounts, each a
-//! section in its own file.
+//! hosts, MCP servers, the factory and history, each a section in its own
+//! file. Workspaces have a page of their own (S2).
 
 mod factory;
 mod mcp;
 mod notify;
 mod people;
-mod places;
 mod providers;
+mod servers;
 
 use iced::widget::{Column, button, column, container, text};
 use iced::{Element, Fill, Task};
@@ -18,7 +18,7 @@ use crate::theme;
 
 #[derive(Default)]
 pub struct State {
-    places: places::State,
+    servers: servers::State,
     people: people::State,
     providers: providers::State,
     mcp: mcp::State,
@@ -28,7 +28,7 @@ pub struct State {
 
 #[derive(Clone, Debug)]
 pub enum Msg {
-    Places(places::Msg),
+    Servers(servers::Msg),
     People(people::Msg),
     Providers(providers::Msg),
     Mcp(mcp::Msg),
@@ -37,7 +37,10 @@ pub enum Msg {
 }
 
 /// A titled section of the page.
-fn card<'a>(title: &'a str, body: Column<'a, Message>) -> Element<'a, Message> {
+pub(in crate::pages) fn card<'a>(
+    title: &'a str,
+    body: Column<'a, Message>,
+) -> Element<'a, Message> {
     let head = text(title).size(13).font(theme::BOLD).color(theme::MUTED);
     container(column![head, body.spacing(8)].spacing(10))
         .padding(16)
@@ -47,7 +50,7 @@ fn card<'a>(title: &'a str, body: Column<'a, Message>) -> Element<'a, Message> {
 }
 
 /// A small lined button, faded when it cannot be pressed.
-fn small(label: &str, msg: Option<Message>) -> Element<'_, Message> {
+pub(in crate::pages) fn small(label: &str, msg: Option<Message>) -> Element<'_, Message> {
     button(text(label).size(13))
         .padding([4, 12])
         .style(theme::secondary)
@@ -57,7 +60,6 @@ fn small(label: &str, msg: Option<Message>) -> Element<'_, Message> {
 
 pub fn load(ctx: &Ctx) -> Task<Message> {
     Task::batch([
-        places::load(ctx),
         people::load(ctx),
         providers::load(ctx),
         mcp::load(ctx),
@@ -68,7 +70,7 @@ pub fn load(ctx: &Ctx) -> Task<Message> {
 
 pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
     match msg {
-        Msg::Places(m) => places::update(&mut state.places, m, ctx),
+        Msg::Servers(m) => servers::update(&mut state.servers, m, ctx),
         Msg::People(m) => people::update(&mut state.people, m, ctx),
         Msg::Providers(m) => providers::update(&mut state.providers, m, ctx),
         Msg::Mcp(m) => mcp::update(&mut state.mcp, m, ctx),
@@ -78,7 +80,7 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
 }
 
 pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
-    let (servers, [workspaces, accounts]) = places::view(&state.places, ctx);
+    let servers = servers::view(&state.servers, ctx);
     let [providers, hosts] = providers::view(&state.providers);
     let [factory, history] = factory::view(&state.factory);
     let sections = [
@@ -90,8 +92,6 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         factory,
         notify::view(&state.notify),
         history,
-        workspaces,
-        accounts,
     ];
     let about = format!(
         "{}'s settings, and the Bastion servers this app knows.",

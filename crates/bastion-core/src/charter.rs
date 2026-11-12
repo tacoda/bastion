@@ -47,6 +47,7 @@ pub fn editable(path: &str) -> bool {
         ["AGENTS.md"] | [".agents", "settings.json"] => true,
         [".agents", "agents", name] => name.ends_with(".md"),
         [".agents", "skills", _, "SKILL.md"] => true,
+        [".agents", "rules" | "corpus", name] => name.ends_with(".md"),
         _ => false,
     }
 }
@@ -132,6 +133,8 @@ mod tests {
             ".agents/settings.json",
             ".agents/agents/strict.md",
             ".agents/skills/root-cause/SKILL.md",
+            ".agents/rules/keep-calc-small.md",
+            ".agents/corpus/rounding.md",
         ] {
             assert!(editable(ok), "{ok}");
         }

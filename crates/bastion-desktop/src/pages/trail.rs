@@ -4,8 +4,9 @@
 //! climbs past (a peak for an agent's step, a checkpoint for a script), a
 //! marker where the job is now, and the summit where it lands. A job that
 //! stops or fails ends in the marsh. When the job comes home, a dotted way
-//! leads back to the atlas, where its field notes are kept (D59). Pressing
-//! a landmark opens its step; pressing the atlas opens the notes.
+//! leads back to the region's charter, where what it taught is kept as
+//! lessons and facts (D61). Pressing a landmark opens its step; pressing
+//! the charter opens the field notes.
 
 use bastion_protocol::StepView;
 use iced::widget::canvas::{self, Canvas, Frame, Geometry, LineDash, Path, Stroke, Text};
@@ -64,7 +65,7 @@ fn camp() -> Point {
     Point::new(SHORE + 150.0, HEIGHT * 0.68)
 }
 
-/// The atlas, low by the outpost, where the way home ends.
+/// The charter's hall, low by the outpost, where the way home ends.
 fn atlas_at() -> Point {
     Point::new(SHORE + 70.0, HEIGHT * 0.93)
 }
@@ -246,7 +247,7 @@ fn scenery(frame: &mut Frame, width: f32) {
     }
 }
 
-/// The way home, from the summit or the marsh, to the atlas (D59).
+/// The way home, from the summit or the marsh, to the charter (D61).
 fn homeward(frame: &mut Frame, width: f32, job: &str, lit: bool) {
     let from = match job {
         "landed" => Point::new(summit(width).x - 30.0, summit(width).y + 70.0),
@@ -259,14 +260,14 @@ fn homeward(frame: &mut Frame, width: f32, job: &str, lit: bool) {
     );
     carto::atlas(frame, atlas_at(), lit);
     let note = if lit {
-        "press to read and write field notes"
+        "press to sign what this journey taught"
     } else {
-        "the way home, with field notes"
+        "the way home: lessons and facts"
     };
     carto::name(
         frame,
         Point::new(atlas_at().x + 120.0, atlas_at().y - 30.0),
-        "the atlas",
+        "the charter",
         note,
     );
 }

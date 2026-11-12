@@ -349,7 +349,7 @@ pub async fn job(cell: &FactoryCell, id: String) -> Result<JobDetail, String> {
         workflow: super::workflows::of_job(&**factory.store(), &record).await?,
         results: record.job.results.clone(),
         media,
-        notes: super::atlas::notes_of(cell, &id).await?,
+        notes: super::notes::notes_of(cell, &id).await?,
     })
 }
 

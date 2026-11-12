@@ -236,7 +236,7 @@ impl Request for JobComment {
 pub struct FieldNote {
     #[serde(skip)]
     pub id: String,
-    /// `workspace` or `bastion`.
+    /// `lesson`, `fact` or `bastion` (D61).
     pub about: String,
     pub text: String,
 }

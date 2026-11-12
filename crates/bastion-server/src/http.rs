@@ -539,17 +539,18 @@ async fn field_note(
     Path(id): Path<String>,
     Json(b): Json<Note>,
 ) -> Response {
-    let w = api::atlas::Written {
+    let w = api::notes::Written {
         about: b.about,
         text: b.text,
         by: person.name.clone(),
     };
-    let signed = api::atlas::note(&app.server.factory, id.clone(), w);
+    let machine = app.server.machine.clone();
+    let signed = api::notes::note(&app.server.factory, machine, id.clone(), w);
     on_job(&app, &person, &id, async { answer(signed.await) }).await
 }
 
 async fn atlas(State(app): State<App>) -> Response {
-    answer(api::atlas::atlas(&app.server.factory).await)
+    answer(api::notes::atlas(&app.server.factory).await)
 }
 
 /// A job's kept screenshot or recording, as its bytes.

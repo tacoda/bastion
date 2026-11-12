@@ -1,7 +1,6 @@
 //! What each client may do, one module per resource (D28). The HTTP routes
 //! call these.
 
-pub mod atlas;
 pub mod charters;
 pub mod console;
 pub mod costs;
@@ -12,6 +11,7 @@ pub mod factory;
 pub mod govern;
 pub mod hosts;
 pub mod mcp;
+pub mod notes;
 pub mod people;
 pub mod providers;
 pub mod sessions;

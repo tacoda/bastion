@@ -161,7 +161,7 @@ fn towns(frame: &mut Frame, rules: &Rules, hovered: Option<&str>) {
         let at = p.at;
         carto::outpost(frame, at);
         let note = match (hovered == Some(p.key.as_str()), c.files.is_empty()) {
-            (true, _) => "press to read its atlas",
+            (true, _) => "press to see what it has learned",
             (false, true) => "no charter",
             (false, false) => "with its charter",
         };
@@ -421,7 +421,7 @@ fn shelf<'a>(title: &'a str, notes: Vec<&'a FieldNoteView>) -> Option<Element<'a
 /// A workspace's atlas: its field notes, about the workspace and about
 /// Bastion (D59).
 fn atlas_card<'a>(atlas: &'a [FieldNoteView], ws: &'a str, name: String) -> Element<'a, Message> {
-    let title = text(format!("The atlas of {ws}"))
+    let title = text(format!("What {ws} has learned"))
         .size(15)
         .font(theme::BOLD);
     let close = crate::lift::button(text("Close").size(13))
@@ -433,14 +433,18 @@ fn atlas_card<'a>(atlas: &'a [FieldNoteView], ws: &'a str, name: String) -> Elem
         all.filter(|n| n.about == about).collect()
     };
     let shelves = [
-        shelf("About the workspace", mine("workspace")),
+        shelf("Lessons, in its charter", mine("lesson")),
+        shelf(
+            "Facts, in its corpus",
+            [mine("fact"), mine("workspace")].concat(),
+        ),
         shelf("About Bastion", mine("bastion")),
     ];
     let mut body = Column::new()
         .spacing(14)
         .extend(shelves.into_iter().flatten());
     if !atlas.iter().any(|n| n.workspace == ws) {
-        let none = "No field notes yet. They are written when a journey comes home.";
+        let none = "Nothing learned yet. Notes are signed when a journey comes home.";
         body = body.push(text(none).size(13).color(theme::muted()));
     }
     let body = scrollable(body).height(iced::Length::Shrink);

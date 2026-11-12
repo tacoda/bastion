@@ -821,8 +821,8 @@ pub struct WorkspaceCharterView {
 pub struct FieldNoteView {
     pub job: String,
     pub by: String,
-    /// What it is about: `workspace`, the project the job worked on, or
-    /// `bastion`, how its workflow and harness ran it.
+    /// What it is: a `lesson` or a `fact` for the region's charter (D61),
+    /// or a note about `bastion`, how its trail and guide ran it.
     pub about: String,
     pub text: String,
     pub at: u64,
@@ -834,6 +834,10 @@ pub struct FieldNoteView {
     /// Whether the job landed; false for the marsh.
     #[serde(default)]
     pub landed: bool,
+    /// The branch a lesson or a fact was committed on, for a person to
+    /// merge (D61); empty for a note about Bastion.
+    #[serde(default)]
+    pub branch: String,
 }
 
 /// A charter file's new text, committed on a new branch of the

@@ -58,7 +58,7 @@ impl State {
             trail: Vec::new(),
             pressed: None,
             field: String::new(),
-            field_about: "workspace",
+            field_about: "lesson",
             docs: BTreeMap::new(),
         }
     }
@@ -681,6 +681,15 @@ fn card_at(p: &super::trail::Pressed) -> (f32, f32) {
     (x.max(16.0), 16.0)
 }
 
+/// What to write for each kind of note (D61).
+fn field_hint(about: &str) -> &'static str {
+    match about {
+        "lesson" => "A lesson: what to do next time, as a rule for the region",
+        "fact" => "A fact: why the code is this way, a surprise, a scenario",
+        _ => "About Bastion: what its trail or guide should change",
+    }
+}
+
 /// The job's field notes, and a short form to sign one (D59): what the
 /// job taught, about its workspace or about Bastion.
 fn atlas_card<'a>(state: &'a State, d: &'a JobDetail) -> Element<'a, Message> {
@@ -690,10 +699,10 @@ fn atlas_card<'a>(state: &'a State, d: &'a JobDetail) -> Element<'a, Message> {
         .on_press(Message::Job(Msg::CloseCard));
     let head = row![title, iced::widget::space::horizontal(), close].align_y(iced::Center);
     let notes = d.notes.iter().map(|n| {
-        let whom = if n.about == "bastion" {
-            "about Bastion"
-        } else {
-            "about the workspace"
+        let whom = match (n.about.as_str(), n.branch.is_empty()) {
+            ("bastion", _) => "about Bastion".to_string(),
+            (kind, false) => format!("a {kind} on {}, to merge", n.branch),
+            (kind, true) => format!("a {kind}"),
         };
         let by = text(format!("{} · {whom} · {}", n.by, ago(n.at))).size(12);
         column![text(n.text.clone()).size(13), by.color(theme::muted())]
@@ -702,7 +711,7 @@ fn atlas_card<'a>(state: &'a State, d: &'a JobDetail) -> Element<'a, Message> {
     });
     let mut body = Column::new().spacing(10).extend(notes);
     if d.notes.is_empty() {
-        let none = "No field notes yet. What did this job teach?";
+        let none = "No field notes yet. What did this journey teach?";
         body = body.push(text(none).size(13).color(theme::muted()));
     }
     let pick = |label: &'static str, about: &'static str| {
@@ -710,11 +719,12 @@ fn atlas_card<'a>(state: &'a State, d: &'a JobDetail) -> Element<'a, Message> {
         super::step_rules::choice(label, on, Some(Message::Job(Msg::FieldAbout(about))))
     };
     let about = row![
-        pick("The workspace", "workspace"),
-        pick("Bastion", "bastion")
+        pick("A lesson", "lesson"),
+        pick("A fact", "fact"),
+        pick("About Bastion", "bastion")
     ]
     .spacing(6);
-    let words = text_input("One sentence: what reality told us", &state.field)
+    let words = text_input(field_hint(state.field_about), &state.field)
         .on_input(|t| Message::Job(Msg::Field(t)))
         .on_submit(Message::Job(Msg::Sign))
         .style(theme::field);

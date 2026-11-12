@@ -301,12 +301,13 @@ before the next one starts.
 
 Next, notes become charter changes (D61, replacing D59's atlas):
 
-- Signing a note about the region asks which kind it is. A lesson is
-  codified: a rule in `.agents/rules/<name>.md`, or a hook or permission
-  in `.agents/settings.json`. The why (a reason, a surprise, a
-  scenario) goes to `.agents/corpus/<name>.md` with the paths it is about. The change is committed on the journey's
-  branch, or on a branch of its own when the journey ended in the marsh.
-- The corpus is loaded by path: when an agent opens a path a corpus
+- Done: signing a note asks its kind: a lesson, a fact, or about Bastion.
+  A lesson goes to `.agents/rules/<name>.md`; a fact goes to
+  `.agents/corpus/<name>.md` with its paths inferred from the journey's
+  change and the paths the note names. Each is committed on a branch of
+  its own for a person to merge.
+- Next: write onto the journey's own branch while it is still open.
+- Done: the corpus is loaded by path: when an agent opens a path a corpus
   entry names, it is given that entry, once per turn.
 - The Map's harbor town shows the region's rules and corpus, read from
   the repository.

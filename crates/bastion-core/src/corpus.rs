@@ -124,6 +124,70 @@ pub fn told(entries: &[&Entry]) -> String {
     each.collect::<Vec<_>>().join("\n")
 }
 
+/// What a person learned on a journey, and the change the journey made:
+/// enough to place it in the corpus without anyone typing paths.
+pub struct Fact<'a> {
+    pub note: &'a str,
+    /// The journey's change, as a unified diff; empty when it has none.
+    pub diff: &'a str,
+}
+
+impl Fact<'_> {
+    /// The files the change touches, by their `b/` side.
+    pub fn changed(&self) -> Vec<String> {
+        let heads = self
+            .diff
+            .lines()
+            .filter_map(|l| l.strip_prefix("diff --git "));
+        let sides = heads.filter_map(|h| h.split(" b/").nth(1));
+        sides.map(String::from).collect()
+    }
+
+    /// The globs the fact is relevant to: each path the note names, then
+    /// the folder of each file the journey changed. With neither, it is
+    /// relevant everywhere.
+    pub fn paths(&self) -> Vec<String> {
+        let trim: &[char] = &['`', '"', '\'', '(', ')', ',', ';', ':'];
+        let words = self.note.split_whitespace().map(|w| w.trim_matches(trim));
+        let path_like = |w: &&str| {
+            let ext = w.rsplit_once('.');
+            let ext = ext.is_some_and(|(stem, e)| !stem.is_empty() && (1..=5).contains(&e.len()));
+            w.contains('/') || ext
+        };
+        let named = words.map(|w| w.trim_end_matches('.')).filter(path_like);
+        let folders = self
+            .changed()
+            .into_iter()
+            .map(|f| match f.rsplit_once('/') {
+                Some((dir, _)) => format!("{dir}/**"),
+                None => f,
+            });
+        let mut all: Vec<String> = Vec::new();
+        for glob in named.map(String::from).chain(folders) {
+            if !all.contains(&glob) {
+                all.push(glob);
+            }
+        }
+        match all.is_empty() {
+            true => vec!["**".into()],
+            false => all,
+        }
+    }
+
+    /// A file name from the note's first words: lower case, hyphenated.
+    pub fn slug(&self) -> String {
+        let words = self.note.split_whitespace().take(6).map(|w| {
+            let kept = w.chars().filter(|c| c.is_ascii_alphanumeric());
+            kept.collect::<String>().to_ascii_lowercase()
+        });
+        let words: Vec<String> = words.filter(|w| !w.is_empty()).collect();
+        match words.is_empty() {
+            true => "note".into(),
+            false => words.join("-"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,5 +237,25 @@ mod tests {
             text: "No front matter.",
         };
         assert!(parse(loose).paths.is_empty());
+    }
+
+    #[test]
+    fn a_fact_knows_its_paths_from_the_change_and_the_note() {
+        let diff = "diff --git a/src/billing/a.rs b/src/billing/a.rs\n+x\ndiff --git a/README.md b/README.md\n";
+        let fact = Fact {
+            note: "Rounding lives in `src/ledger/round.rs`, not in billing.",
+            diff,
+        };
+        assert_eq!(fact.changed(), ["src/billing/a.rs", "README.md"]);
+        assert_eq!(
+            fact.paths(),
+            ["src/ledger/round.rs", "src/billing/**", "README.md"]
+        );
+        let loose = Fact {
+            note: "Invoices round half-to-even, always!",
+            diff: "",
+        };
+        assert_eq!(loose.paths(), ["**"], "everywhere");
+        assert_eq!(loose.slug(), "invoices-round-halftoeven-always");
     }
 }

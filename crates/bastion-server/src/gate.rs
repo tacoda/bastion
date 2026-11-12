@@ -62,6 +62,7 @@ fn approved_test(file: &str) -> Constraint {
         source: bastion_core::govern::Source::Owner,
         steps: Vec::new(),
         hook: String::new(),
+        reviewer: String::new(),
     }
 }
 
@@ -1142,6 +1143,7 @@ mod tests {
             source: govern::Source::Owner,
             steps: vec!["short/build".into()],
             hook: "./lint.sh".into(),
+            reviewer: String::new(),
         };
         crate::rt::block_on(r.gate.add_constraint(hook)).unwrap();
         let at = |step: &str| {
@@ -1214,6 +1216,7 @@ mod tests {
             source: govern::Source::Owner,
             steps: Vec::new(),
             hook: String::new(),
+            reviewer: String::new(),
         };
         crate::rt::block_on(async {
             r.gate.add_constraint(rule.clone()).await.unwrap();

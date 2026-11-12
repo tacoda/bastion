@@ -176,6 +176,10 @@ pub enum Event {
     Retried,
     /// A person gave the running turn its full cap again, from now.
     Extended,
+    /// The step's reviewers read its change (D51).
+    Reviewed {
+        verdict: review::Verdict,
+    },
 }
 
 /// Whether a person oversees a step (D33). Stored `ask` and `hold` read as
@@ -215,6 +219,8 @@ pub struct Bounds {
     /// What each step's turns have cost so far, by step id, in millionths of
     /// a US dollar, for the steps' own budgets (D43).
     pub spent: BTreeMap<String, u64>,
+    /// The agents that must pass the change of the step the job is at (D51).
+    pub reviewers: Vec<String>,
 }
 
 /// How an agent turn ended.
@@ -266,6 +272,12 @@ pub enum Effect {
     /// A dark step went on with no person (D33): note it in the audit log.
     DarkDecided {
         stage: Stage,
+    },
+    /// Have each reviewer read step `step`'s change, then send `Reviewed`
+    /// (D51). The job waits at the step until then.
+    Review {
+        step: String,
+        reviewers: Vec<String>,
     },
 }
 
@@ -368,6 +380,8 @@ pub fn step(job: &Job, event: &Event, at: u64, bounds: &Bounds) -> (Job, Vec<Eff
             State::Running,
             Event::Ran { .. } | Event::StepFailed { .. } | Event::StepStuck { .. },
         ) if job.stage == Stage::Shell => shell_ran(&mut next, event, bounds),
+        // Only a turn's step waits for reviewers.
+        (State::Running, Event::Reviewed { verdict }) => reviewed(&mut next, verdict, bounds),
         _ => return (job.clone(), Vec::new()),
     };
     (next, effects)
@@ -545,7 +559,11 @@ fn step_failed(job: &mut Job, detail: &str, bounds: &Bounds) -> Vec<Effect> {
     }
     *tries += 1;
     job.last_refusal = Some(detail.into());
+    let itself = job.position() == Some(to);
     job.feedback = Some(match branch {
+        None if itself => format!(
+            "Your change failed its review. Read why, fix it, and commit.\n<review>\n{detail}\n</review>"
+        ),
         Some(_) => format!(
             "The step {at} failed, and its workflow sends the failure here. Its output:\n<output>\n{detail}\n</output>"
         ),
@@ -555,6 +573,22 @@ fn step_failed(job: &mut Job, detail: &str, bounds: &Bounds) -> Vec<Effect> {
     });
     job.go_to(to);
     start_within(job, bounds)
+}
+
+/// The reviewers' verdict on a step's change (D51): a pass goes on as the
+/// step would have, a fail fails the step, and a reviewer that could not
+/// run leaves the job with a person.
+fn reviewed(job: &mut Job, verdict: &review::Verdict, bounds: &Bounds) -> Vec<Effect> {
+    match verdict {
+        review::Verdict::Pass => {
+            if let Some(node) = &job.node {
+                job.failed.remove(node);
+            }
+            wait(job, bounds)
+        }
+        review::Verdict::Fail { detail } => step_failed(job, detail, bounds),
+        review::Verdict::Broken { error } => stuck(job, error),
+    }
 }
 
 /// Whether the job's steps have sent its work back as often as its
@@ -696,7 +730,14 @@ fn done(job: &mut Job, report: &str, bounds: &Bounds) -> Vec<Effect> {
     }
     keep_results(job, report);
     job.feedback = None;
-    effects.extend(wait(job, bounds));
+    // A step with reviewers waits at itself for their verdict (D51).
+    match bounds.reviewers.is_empty() {
+        true => effects.extend(wait(job, bounds)),
+        false => effects.push(Effect::Review {
+            step: at_step(job),
+            reviewers: bounds.reviewers.clone(),
+        }),
+    }
     effects
 }
 

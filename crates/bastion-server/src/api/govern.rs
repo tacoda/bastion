@@ -48,6 +48,7 @@ pub async fn constraints(cell: &FactoryCell) -> Result<Vec<ConstraintView>, Stri
             source: name(c.source),
             steps: c.steps,
             hook: c.hook,
+            reviewer: c.reviewer,
         })
         .collect())
 }
@@ -83,6 +84,7 @@ pub async fn constraint_add(cell: &FactoryCell, constraint: ConstraintView) -> R
         source: Source::Owner,
         steps: steps_of(&constraint.steps),
         hook: constraint.hook.trim().into(),
+        reviewer: constraint.reviewer.trim().into(),
     };
     factory(cell)?.gate().add_constraint(c).await
 }

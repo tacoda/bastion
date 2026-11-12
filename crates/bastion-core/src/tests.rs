@@ -66,6 +66,7 @@ fn kinds(effects: &[Effect]) -> Vec<&'static str> {
             Effect::Finish => "finish",
             Effect::Teardown => "teardown",
             Effect::DarkDecided { .. } => "dark",
+            Effect::Review { .. } => "review",
         })
         .collect()
 }
@@ -408,4 +409,59 @@ fn a_failure_link_back_loops_until_the_step_runs_out_of_revisions() {
         (State::NeedsYou, Some("tests")),
         "one revision, then a person decides"
     );
+}
+
+/// The build step of a dark job, with `reviewers` on it.
+fn reviewed_build() -> (Job, Bounds) {
+    let mut j = job([Dial::Dark; 3]);
+    (j.node, j.stage) = (Some("build".into()), Stage::Prompt);
+    j.results.insert("plan".into(), "1. Add x.".into());
+    let bounds = Bounds {
+        reviewers: vec!["security".into()],
+        ..Bounds::default()
+    };
+    (j, bounds)
+}
+
+#[test]
+fn a_step_with_a_reviewer_waits_for_its_verdict() {
+    let (j, bounds) = reviewed_build();
+    let (waiting, effects) = step(&j, &done("Added x."), AT, &bounds);
+    assert_eq!(kinds(&effects), ["artifact", "diff", "review"]);
+    assert_eq!(
+        waiting.node.as_deref(),
+        Some("build"),
+        "it waits at the step"
+    );
+    let pass = Event::Reviewed {
+        verdict: review::Verdict::Pass,
+    };
+    let (on, _) = step(&waiting, &pass, AT, &bounds);
+    assert_eq!(on.node.as_deref(), Some("tests"), "a pass goes on");
+}
+
+#[test]
+fn a_failed_review_sends_the_change_back_and_a_broken_one_waits() {
+    let (j, bounds) = reviewed_build();
+    let (waiting, _) = step(&j, &done("Added x."), AT, &bounds);
+    let fail = |detail: &str| Event::Reviewed {
+        verdict: review::Verdict::Fail {
+            detail: detail.into(),
+        },
+    };
+    let (back, effects) = step(&waiting, &fail("No test."), AT, &bounds);
+    assert_eq!(kinds(&effects), ["turn"], "the build goes again");
+    assert!(
+        back.feedback
+            .as_deref()
+            .unwrap()
+            .contains("failed its review")
+    );
+    let broken = Event::Reviewed {
+        verdict: review::Verdict::Broken {
+            error: "no agent file".into(),
+        },
+    };
+    let (held, _) = step(&waiting, &broken, AT, &bounds);
+    assert_eq!(held.state, State::NeedsYou);
 }

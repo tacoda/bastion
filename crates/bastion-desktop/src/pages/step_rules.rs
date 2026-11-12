@@ -21,6 +21,8 @@ pub struct Rules {
     /// A new hook for the step: the calls it runs before, and its command.
     hook_function: String,
     hook: String,
+    /// A new reviewer for the step: an agent in `.agents/agents/`.
+    reviewer: String,
     said: String,
 }
 
@@ -41,6 +43,8 @@ pub enum Msg {
     HookFunction(String),
     Hook(String),
     AddHook,
+    Reviewer(String),
+    AddReviewer,
     /// Remove a hook made for this step.
     Remove(String),
     Done(Result<(), String>),
@@ -78,28 +82,53 @@ impl Rules {
     }
 }
 
-/// A hook at `step` (D50): enforced, so its exit 2 refuses the call, with an
-/// id no constraint has yet.
-fn new_hook(rules: &Rules, step: &str) -> ConstraintView {
-    let function = rules.hook_function.trim();
-    let function = if function.is_empty() {
-        "sandbox::exec"
-    } else {
-        function
-    };
-    let command = rules.hook.trim();
-    let base = format!("hook-{}", step.replace('/', "-"));
+/// An enforced constraint made for `step` alone, with an id no constraint
+/// has yet, such as `hook-short-build-1`.
+fn for_step(rules: &Rules, kind: &str, step: &str, rule: String) -> ConstraintView {
+    let base = format!("{kind}-{}", step.replace('/', "-"));
     let taken = |id: &String| rules.constraints.iter().any(|c| &c.id == id);
     let id = (1..).map(|n| format!("{base}-{n}")).find(|id| !taken(id));
     ConstraintView {
         id: id.unwrap_or(base),
-        rule: format!("Before each {function} call, `{command}` runs; exit 2 refuses it."),
-        function: function.into(),
+        rule,
         rung: "enforced".into(),
         source: "owner".into(),
         steps: vec![step.into()],
-        hook: command.into(),
         ..ConstraintView::default()
+    }
+}
+
+/// A hook at `step` (D50): enforced, so its exit 2 refuses the call.
+fn new_hook(rules: &Rules, step: &str) -> ConstraintView {
+    let function = Some(rules.hook_function.trim()).filter(|f| !f.is_empty());
+    let function = function.unwrap_or("sandbox::exec");
+    let command = rules.hook.trim();
+    let rule = format!("Before each {function} call, `{command}` runs; exit 2 refuses it.");
+    ConstraintView {
+        function: function.into(),
+        hook: command.into(),
+        ..for_step(rules, "hook", step, rule)
+    }
+}
+
+/// The hook or the reviewer a form made for `step`, and the form cleared.
+fn made(rules: &mut Rules, msg: &Msg, step: &str) -> ConstraintView {
+    let made = match msg {
+        Msg::AddHook => new_hook(rules, step),
+        _ => new_reviewer(rules, step),
+    };
+    rules.hook.clear();
+    rules.reviewer.clear();
+    made
+}
+
+/// A reviewer at `step` (D51): the agent must pass the step's change.
+fn new_reviewer(rules: &Rules, step: &str) -> ConstraintView {
+    let agent = rules.reviewer.trim();
+    let rule = format!("The agent {agent} reviews this step's change, and it must pass.");
+    ConstraintView {
+        reviewer: agent.into(),
+        ..for_step(rules, "reviewer", step, rule)
     }
 }
 
@@ -126,10 +155,9 @@ pub fn update(rules: &mut Rules, msg: Msg, at: &At, ctx: &Ctx) -> Task<Msg> {
         Msg::HookFunction(f) => rules.hook_function = f,
         Msg::Hook(h) => rules.hook = h,
         Msg::Remove(id) => return send(ctx, api::ConstraintRemove { id }),
-        Msg::AddHook => {
-            let hook = new_hook(rules, at.step);
-            rules.hook.clear();
-            return send(ctx, api::ConstraintAdd(hook));
+        Msg::Reviewer(r) => rules.reviewer = r,
+        Msg::AddReviewer | Msg::AddHook => {
+            return send(ctx, api::ConstraintAdd(made(rules, &msg, at.step)));
         }
         Msg::Rung(r) => rules.rung = r,
         Msg::Scope(id, add) => {
@@ -197,12 +225,14 @@ fn chip<'a>(label: String) -> Element<'a, Msg> {
         .into()
 }
 
-/// Where a constraint applies, and how it comes off the step: a hook made
-/// for this step alone is removed, and any other scoped one is "Not here".
+/// Where a constraint applies, and how it comes off the step: a hook or a
+/// reviewer made for this step alone is removed, and any other scoped one
+/// is "Not here".
 fn scope<'a>(c: &ConstraintView, at: &At, editable: bool) -> Element<'a, Msg> {
     let only_here = c.steps.len() == 1 && c.steps[0] == at.step;
     let msg = |m: Msg| editable.then_some(m);
-    match (c.steps.is_empty(), !c.hook.is_empty() && only_here) {
+    let made_here = !(c.hook.is_empty() && c.reviewer.is_empty()) && only_here;
+    match (c.steps.is_empty(), made_here) {
         (true, _) => chip("every step".into()),
         (false, true) => small("Remove", msg(Msg::Remove(c.id.clone()))),
         (false, false) => small("Not here", msg(Msg::Scope(c.id.clone(), false))),
@@ -235,7 +265,7 @@ fn constraints<'a>(rules: &Rules, at: &At, editable: bool) -> Element<'a, Msg> {
         .collect();
     let mut body = Column::with_children(rows).spacing(6);
     if editable {
-        body = body.push(hook_form(rules));
+        body = body.push(hook_form(rules)).push(reviewer_form(rules));
     }
     if editable && !elsewhere.is_empty() {
         let add = pick_list(elsewhere, None::<Choice>, |c| Msg::Scope(c.id, true))
@@ -260,6 +290,23 @@ fn hook_form<'a>(rules: &Rules) -> Element<'a, Msg> {
             .on_input(Msg::Hook)
             .style(theme::field),
         small("Add hook", named.then_some(Msg::AddHook)),
+    ]
+    .spacing(8)
+    .align_y(iced::Center)
+    .into()
+}
+
+/// The form for a reviewer at the step: an agent in `.agents/agents/`.
+fn reviewer_form<'a>(rules: &Rules) -> Element<'a, Msg> {
+    let named = !rules.reviewer.trim().is_empty();
+    row![
+        text_input(
+            "An agent in .agents/agents/, such as security",
+            &rules.reviewer
+        )
+        .on_input(Msg::Reviewer)
+        .style(theme::field),
+        small("Add reviewer", named.then_some(Msg::AddReviewer)),
     ]
     .spacing(8)
     .align_y(iced::Center)

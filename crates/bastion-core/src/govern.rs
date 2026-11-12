@@ -107,6 +107,10 @@ pub struct Constraint {
     /// refuses the call by exiting 2 (D50); empty for a rule.
     #[serde(default)]
     pub hook: String,
+    /// An agent in `.agents/agents/` that must pass the change of each step
+    /// it applies at (D51); empty for a rule.
+    #[serde(default)]
+    pub reviewer: String,
 }
 
 /// Whether constraint `c` applies at `step`, named `workflow/step`.
@@ -290,15 +294,16 @@ pub fn granted_functions<'a>(at: At, grants: &'a [Capability]) -> Vec<&'a str> {
 /// write to the charter is refused first, then any call an enforced
 /// constraint that applies at the step binds. Then the most specific grant
 /// decides, and a call no grant covers is refused.
+/// The call breaks rule `c` at `step`. A hook decides its own calls, when
+/// it runs (D50), and a reviewer reads the change, not a call (D51).
+fn breaks(c: &Constraint, step: &str, call: &Call) -> bool {
+    let rule = c.hook.is_empty() && c.reviewer.is_empty();
+    rule && applies(c, step) && matches(&c.function, &call.function) && binds(c, call)
+}
+
 pub fn gate_at(call: &Call, at: At, constraints: &[Constraint], grants: &[Capability]) -> Verdict {
     let At { stage, step } = at;
-    let broken = || {
-        constraints
-            .iter()
-            // A hook decides its own calls, when it runs (D50).
-            .filter(|c| c.hook.is_empty() && applies(c, step))
-            .filter(|c| matches(&c.function, &call.function) && binds(c, call))
-    };
+    let broken = || constraints.iter().filter(|c| breaks(c, step, call));
     let flagged = broken()
         .filter(|c| c.rung == Enforcement::Checked)
         .map(|c| c.id.clone())
@@ -492,6 +497,7 @@ mod tests {
             source: Source::Owner,
             steps: vec!["short/build".into()],
             hook: format!("./{id}.sh"),
+            reviewer: String::new(),
         };
         let all = [
             hook("lint", Enforcement::Enforced),
@@ -568,6 +574,7 @@ mod tests {
             source: Source::Owner,
             steps: Vec::new(),
             hook: String::new(),
+            reviewer: String::new(),
         };
         let pickled = Call {
             content: "import os\nimport pickle\n".into(),
@@ -712,6 +719,7 @@ mod tests {
             source: Source::Owner,
             steps: vec!["short/build".into()],
             hook: String::new(),
+            reviewer: String::new(),
         };
         let at = |step| {
             gate_at(
@@ -731,6 +739,7 @@ mod tests {
             &Constraint {
                 steps: vec![],
                 hook: String::new(),
+                reviewer: String::new(),
                 ..rule.clone()
             },
             "any/step"

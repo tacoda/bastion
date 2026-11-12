@@ -599,6 +599,10 @@ pub struct ConstraintView {
     /// exit 2 refuses the call (D50). Empty for a rule.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub hook: String,
+    /// An agent in `.agents/agents/` that must pass the change of each step
+    /// it applies at (D51). Empty for a rule.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub reviewer: String,
 }
 
 /// A grant on its ladder (DECISIONS.md D20): `denied`, `ask` or `allowed`.

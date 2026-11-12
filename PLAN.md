@@ -67,8 +67,19 @@ recorded both.
 - The reviewer answers pass or fail with its reasons. A fail fails the
   step, so the job goes along the failure link or back to the fixer, as
   D47 says. The step's revisions bound the loop.
-- The reviewer's turn reads only. Its verdict is an artifact on the step,
-  and the job page shows it.
+- The reviewer's turn has no tools: it reads its agent file as the job's
+  base has it, the request, and the change, on the server's plan model. A
+  turn under review can't rewrite its reviewer.
+- Its reply is an artifact on the step, and its cost counts toward the
+  step's budget. A reviewer that can't run, or gives no verdict, leaves
+  the job with a person.
+- The step editor adds a reviewer and removes one made for that step.
+
+Done 2026-11-11. Live, a `strict` agent that fails every change, on Short's
+plan step: the job waited with "The reviewer strict failed it", and the
+review was kept as "Review by strict". A plan step only reads, so a fail
+there has no step to go back to and waits for a person. In the app, Bug
+fix's build step added `strict` as a reviewer and removed it.
 
 ### C4. MCP servers (D52)
 

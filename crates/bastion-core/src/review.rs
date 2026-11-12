@@ -30,6 +30,58 @@ const SKIPS: [&str; 7] = [
     "xit(",
 ];
 
+/// What a step's reviewers said of its change (D51).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum Verdict {
+    Pass,
+    Fail {
+        detail: String,
+    },
+    /// A reviewer could not run, or gave no verdict: a person decides.
+    Broken {
+        error: String,
+    },
+}
+
+/// The agents that must pass a change at `step`: the reviewers of the
+/// constraints that apply there and are more than told.
+pub fn reviewers_at(constraints: &[Constraint], step: &str) -> Vec<String> {
+    let mut all: Vec<String> = constraints
+        .iter()
+        .filter(|c| !c.reviewer.is_empty() && c.rung != Enforcement::Told)
+        .filter(|c| crate::govern::applies(c, step))
+        .map(|c| c.reviewer.clone())
+        .collect();
+    all.dedup();
+    all
+}
+
+/// What a reviewer reads: its own instructions, the job's request, and
+/// the change.
+pub fn reviewer_brief(agent: &str, job: &crate::Job, change: &str) -> String {
+    let request = &job.request;
+    format!(
+        "{agent}\n\nYou review one step's change for this request:\n<request>\n{request}\n</request>\n\nThe change:\n<change>\n{change}\n</change>\n\nSay what is wrong with it, if anything. End with one line: `VERDICT: pass` or `VERDICT: fail`."
+    )
+}
+
+/// A reviewer's verdict from its reply: its last `VERDICT:` line, with the
+/// reply as the reason for a fail. None when it gave no verdict.
+pub fn verdict(reply: &str) -> Option<Verdict> {
+    let last = reply
+        .lines()
+        .rev()
+        .find_map(|l| l.trim().strip_prefix("VERDICT:"))?;
+    match last.trim().to_ascii_lowercase().as_str() {
+        "pass" => Some(Verdict::Pass),
+        "fail" => Some(Verdict::Fail {
+            detail: reply.trim().into(),
+        }),
+        _ => None,
+    }
+}
+
 /// What one diff constraint found at review.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Finding {
@@ -209,6 +261,14 @@ fn function_name(code: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_reviewer_s_last_verdict_line_decides() {
+        let fail = verdict("Leaks a key.\nVERDICT: fail");
+        assert!(matches!(fail, Some(Verdict::Fail { detail }) if detail.contains("Leaks a key")));
+        assert_eq!(verdict("Fine.\nVERDICT: Pass"), Some(Verdict::Pass));
+        assert_eq!(verdict("Looks fine."), None, "no verdict");
+    }
     use crate::Stage;
     use crate::govern::{Call, default_capabilities, default_constraints, gate};
 

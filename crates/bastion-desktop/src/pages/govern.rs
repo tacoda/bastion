@@ -173,6 +173,7 @@ fn new_constraint(d: &Draft) -> api::ConstraintAdd {
         layer: String::new(),
         steps: Vec::new(),
         hook: String::new(),
+        reviewer: String::new(),
     })
 }
 

@@ -77,7 +77,7 @@ retired with the old plan.
 | D48 | A grant is ask or allowed; a call no grant covers is refused, so there is no denied grant. Demoting a grant from ask removes it. A step's own grants, when it has any, take the place of its kind's, so a step is narrowed by listing what it may call. This replaces D44's "wins over its kind's". |
 | D49 | A grant on `sandbox::exec` may name a command, and then it covers only a line that starts with those words and has no shell operators. A turn may call the four sandbox tools and every function its step's grants name. |
 | D50 | A constraint may be a hook: a command that runs in the job's VM before each matching call at its steps, after the charter's hooks, unless it is only told. Exit 2 refuses the call. An owner's constraint can be removed; a charter's changes in its repository. |
-| D51 | A constraint may name a reviewer from `.agents/agents/`. When its step finishes, the reviewer reads the step's change in a turn that only reads, and its fail fails the step as D47 says. |
+| D51 | A constraint may name a reviewer from `.agents/agents/`. When its step finishes, the reviewer reads the step's change in a turn with no tools, from its file at the job's base, and its fail fails the step as D47 says. A reviewer that can't run leaves the job with a person. |
 | D52 | A server's MCP servers reach a turn through `workers/bastion-mcp`, which registers each tool as `mcp::<server>::<tool>`. Only MCP servers over HTTP: a stdio server would run on the host, outside the VM. |
 
 ## Open questions

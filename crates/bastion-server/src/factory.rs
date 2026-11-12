@@ -296,6 +296,8 @@ impl Factory {
                 *spent.entry(step.to_string()).or_default() += t.usage.cost_micros;
             }
         }
+        let step = step_name(record);
+        let reviewers = bastion_core::review::reviewers_at(&self.gate.constraints(id), &step);
         Ok(Bounds {
             trial: self.store.eval_run_of(id).await?.is_some(),
             revision_budget: self
@@ -304,6 +306,7 @@ impl Factory {
                 .ok()
                 .and_then(|w| w.revision_budget),
             spent,
+            reviewers,
         })
     }
 
@@ -506,6 +509,10 @@ impl Factory {
                 let finished = self.finish_job(&record).await;
                 let failed = |error| Event::LandFailed { error };
                 self.report_failure(&id, finished, failed).await
+            }
+            Effect::Review { step, reviewers } => {
+                self.review_step(&record, step, reviewers);
+                None
             }
             Effect::Teardown => {
                 self.grade_trial(&record);
@@ -966,6 +973,7 @@ mod media;
 mod onboard;
 mod resume;
 mod reverts;
+mod reviewer;
 pub use reverts::ESCAPE;
 mod setup;
 mod shell;

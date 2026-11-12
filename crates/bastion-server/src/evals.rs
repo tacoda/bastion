@@ -20,7 +20,7 @@ use crate::factory::{Factory, final_reply, now, short_id};
 use crate::machine::Machine;
 use crate::store::Store;
 
-/// How long a grading turn may take.
+/// How long a turn with no tools may take.
 const GRADE_SECS: u64 = 180;
 
 /// Record one turn's usage, as the harness metered its session.
@@ -54,7 +54,6 @@ pub async fn meter(engine: &dyn Engine, store: &dyn Store, job: &Job, session: &
 
 /// Grade a run that reached review: a turn with no tools reads the request
 /// and the diff, and its last `GRADE: n` line is the grade.
-// ponytail: polls harness::status every 3 s; bind turn-completed if grading ever runs in bulk.
 pub async fn grade(engine: &dyn Engine, store: &dyn Store, run: &EvalRun) -> Result<u8, String> {
     let artifacts = store.artifacts(&run.job).await?;
     let diff = artifacts
@@ -65,33 +64,37 @@ pub async fn grade(engine: &dyn Engine, store: &dyn Store, run: &EvalRun) -> Res
         .ok_or("the run has no diff to grade")?;
     let session = format!("{}-grade-{}", run.job, short_id());
     let brief = eval::grading_brief(&run.request, &diff);
-    // The judge runs on the server's plan model, which has a key.
-    let judge = crate::settings_store::current(store).await?.plan_model;
-    engine
-        .call_for(
-            NS,
-            "harness::send",
-            json!({
-                "session_id": session, "provider": judge.provider, "model": judge.model,
-                "message": brief, "options": { "max_turns": 1, "functions": { "allow": [] } },
-            }),
-            60_000,
-        )
-        .await?;
+    let reply = one_turn(engine, store, &session, &brief).await?;
+    let g = eval::grade(&reply).ok_or_else(|| format!("the judge gave no grade: {reply}"))?;
+    store.set_grade(&run.job, g).await?;
+    Ok(g)
+}
+
+/// One turn with no tools on the server's plan model, which has a key, and
+/// its reply. Grading and a step's reviewers (D51) run on it.
+// ponytail: polls harness::status every 3 s; bind turn-completed if these ever run in bulk.
+pub async fn one_turn(
+    engine: &dyn Engine,
+    store: &dyn Store,
+    session: &str,
+    message: &str,
+) -> Result<String, String> {
+    let model = crate::settings_store::current(store).await?.plan_model;
+    let send = json!({
+        "session_id": session, "provider": model.provider, "model": model.model,
+        "message": message, "options": { "max_turns": 1, "functions": { "allow": [] } },
+    });
+    engine.call_for(NS, "harness::send", send, 60_000).await?;
     for _ in 0..GRADE_SECS / 3 {
         tokio::time::sleep(Duration::from_secs(3)).await;
         let status = engine
             .call(NS, "harness::status", json!({ "session_id": session }))
             .await?;
         if status["status"] == "completed" {
-            let reply = final_reply(engine, &session).await?;
-            let g =
-                eval::grade(&reply).ok_or_else(|| format!("the judge gave no grade: {reply}"))?;
-            store.set_grade(&run.job, g).await?;
-            return Ok(g);
+            return final_reply(engine, session).await;
         }
     }
-    Err(format!("the grading turn ran past {GRADE_SECS} s"))
+    Err(format!("the turn ran past {GRADE_SECS} s"))
 }
 
 /// What an owner asks for: requests, and the rungs each arm sets.

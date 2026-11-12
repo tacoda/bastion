@@ -100,13 +100,13 @@ fn field<'a>(label: &'a str, hint: &'a str, value: &str, f: Field) -> Element<'a
 pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let rows = ctx.servers.iter().map(|s| {
         let remove = (s.name != LOCAL).then(|| {
-            button(text("Remove").size(13).color(theme::BAD))
+            button(text("Remove").size(13).color(theme::bad()))
                 .style(theme::link)
                 .on_press(wrap(Msg::Remove(s.name.clone())))
         });
         row![
             text(s.name.clone()).font(theme::BOLD),
-            text(s.url.clone()).color(theme::MUTED)
+            text(s.url.clone()).color(theme::muted())
         ]
         .extend(remove.map(Element::from))
         .spacing(10)
@@ -125,7 +125,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         column![
             Column::with_children(rows).spacing(6),
             form.spacing(8).align_y(iced::Bottom),
-            text(&state.note).size(13).color(theme::BAD)
+            text(&state.note).size(13).color(theme::bad())
         ],
     )
 }

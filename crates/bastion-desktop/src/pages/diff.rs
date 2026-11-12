@@ -113,10 +113,10 @@ fn parse(diff: &str) -> Vec<File> {
 /// A line's color: added, removed, a hunk header, or as it was.
 fn line_color(text: &str) -> Color {
     match text.chars().next() {
-        Some('+') => theme::OK,
-        Some('-') => theme::BAD,
-        Some('@') => theme::MUTED,
-        _ => theme::INK,
+        Some('+') => theme::ok(),
+        Some('-') => theme::bad(),
+        Some('@') => theme::muted(),
+        _ => theme::ink(),
     }
 }
 
@@ -139,7 +139,7 @@ fn file_view<'a, M: Clone + 'a>(
             .font(theme::MONO)
             .size(13)
             .width(40)
-            .color(theme::MUTED);
+            .color(theme::muted());
         let body = text(line.text.clone())
             .font(theme::MONO)
             .size(13)
@@ -178,13 +178,13 @@ pub fn view<'a, M: Clone + 'a>(
     if let Some(files) = uncommitted {
         let warning = text(format!("Not committed, so it will not land: {files}"))
             .size(13)
-            .color(theme::WARN);
+            .color(theme::warn());
         all = all.push(container(warning).padding(8).style(theme::accented));
     }
     let files = parse(diff);
     if files.is_empty() {
         return all
-            .push(text(diff.to_string()).size(13).color(theme::MUTED))
+            .push(text(diff.to_string()).size(13).color(theme::muted()))
             .into();
     }
     let blocks = files.into_iter().map(|f| file_view(f, comment, pick));

@@ -168,7 +168,7 @@ fn session_row<'a>(server: &str, s: &SessionView, many: bool) -> Element<'a, Mes
         });
     let mut line = row![].spacing(12).padding([4, 12]).align_y(iced::Center);
     if many {
-        line = line.push(text(server.to_string()).size(13).color(theme::LINK));
+        line = line.push(text(server.to_string()).size(13).color(theme::link_color()));
     }
     line.extend([job.into(), steps.into()])
         .extend([
@@ -182,7 +182,7 @@ fn session_row<'a>(server: &str, s: &SessionView, many: bool) -> Element<'a, Mes
             text(format!("{} calls, {} failed", s.calls, s.call_errors))
                 .size(13)
                 .into(),
-            text(ago(s.ended_at)).size(13).color(theme::MUTED).into(),
+            text(ago(s.ended_at)).size(13).color(theme::muted()).into(),
         ])
         .into()
 }
@@ -242,7 +242,7 @@ fn spend(v: &Combined) -> Bars {
     let series = v.daily.iter().zip(chart::PALETTE.iter().cycle());
     Bars {
         columns,
-        series: series.map(|((s, _), c)| (s.clone(), *c)).collect(),
+        series: series.map(|((s, _), c)| (s.clone(), c())).collect(),
         values,
         unit: |micros| format!("${:.4}", micros / 1e6),
     }

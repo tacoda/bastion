@@ -25,6 +25,7 @@ fn main() -> iced::Result {
         icon: window::icon::from_rgba(ICON.to_vec(), 64, 64).ok(),
         ..window::Settings::default()
     };
+    theme::load();
     iced::application(app::App::new, app::App::update, app::App::view)
         .title(app::App::title)
         .subscription(app::App::subscription)

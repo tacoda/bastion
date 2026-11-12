@@ -88,11 +88,11 @@ pub fn view(state: &State) -> Element<'_, Message> {
     card(
         "Notifications",
         column![
-            text(lede).size(13).color(theme::MUTED),
+            text(lede).size(13).color(theme::muted()),
             text(now).size(13),
             field,
             buttons,
-            text(&state.note).size(13).color(theme::MUTED),
+            text(&state.note).size(13).color(theme::muted()),
         ],
     )
 }

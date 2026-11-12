@@ -379,7 +379,7 @@ impl App {
 
     fn page(&self) -> Element<'_, Message> {
         if let Some(why) = &self.problem {
-            return text(why.clone()).color(theme::BAD).into();
+            return text(why.clone()).color(theme::bad()).into();
         }
         self.page.view(&self.route, &self.ctx())
     }
@@ -390,7 +390,7 @@ const CASTLE: &[u8] = include_bytes!("../../../assets/icon/bastion.svg");
 
 /// One page in the top bar.
 fn tab<'a>(label: String, glyph: &str, on: bool, go: Message) -> Element<'a, Message> {
-    let color = if on { iced::Color::WHITE } else { theme::INK };
+    let color = if on { iced::Color::WHITE } else { theme::ink() };
     let body = row![icons::icon(glyph, color), text(label).size(13)]
         .spacing(6)
         .align_y(iced::Center);
@@ -407,9 +407,9 @@ fn choice<'a>(label: String, up: Option<bool>, on: bool, pick: Message) -> Eleme
     let mut body = row![].spacing(6).align_y(iced::Center);
     if let Some(up) = up {
         let (mark, color) = if up {
-            ("●", theme::OK)
+            ("●", theme::ok())
         } else {
-            ("○", theme::BAD)
+            ("○", theme::bad())
         };
         body = body.push(text(mark).size(10).color(color));
     }
@@ -447,7 +447,7 @@ fn quit_dialog<'a>() -> Element<'a, Message> {
     let body = column![
         text("The Bastion server keeps running").size(18).font(theme::BOLD),
         text("It and its engine go on after you quit, so jobs keep running. The next start attaches to it. Stopping the server stops the engine too.")
-            .color(theme::MUTED),
+            .color(theme::muted()),
         buttons,
     ]
     .spacing(12)

@@ -8,14 +8,14 @@ use iced::{Color, Element, Fill, Point, Rectangle, Renderer, Size, Theme, mouse}
 
 use crate::theme;
 
-/// The colors the series take, in order.
-pub const PALETTE: [Color; 6] = [
-    theme::PRIMARY,
-    theme::OK,
-    theme::WARN,
-    theme::BAD,
-    theme::LINK,
-    theme::MUTED,
+/// The colors the series take, in order, read from the theme in use.
+pub const PALETTE: [theme::Tint; 6] = [
+    theme::primary_color,
+    theme::ok,
+    theme::warn,
+    theme::bad,
+    theme::link_color,
+    theme::muted,
 ];
 
 const HEIGHT: f32 = 180.0;
@@ -131,14 +131,14 @@ impl<M> canvas::Program<M> for Bars {
         let every = (56.0 / slot).ceil().max(1.0) as usize;
         for (i, day) in self.columns.iter().enumerate().step_by(every) {
             let at = Point::new(i as f32 * slot + slot * 0.15, HEAD + room + 4.0);
-            frame.fill_text(label(short(day), at, theme::MUTED));
+            frame.fill_text(label(short(day), at, theme::muted()));
         }
         let line = match hovered {
-            Some(i) => label(self.about(i), Point::new(0.0, 2.0), theme::INK),
+            Some(i) => label(self.about(i), Point::new(0.0, 2.0), theme::ink()),
             None => label(
                 format!("most in a day: {}", (self.unit)(self.top())),
                 Point::new(0.0, 2.0),
-                theme::MUTED,
+                theme::muted(),
             ),
         };
         frame.fill_text(line);
@@ -162,7 +162,7 @@ pub fn view<'a, M: 'a>(title: &str, bars: Bars) -> Element<'a, M> {
                 .width(10)
                 .height(10)
                 .style(swatch(*color)),
-            text(name.clone()).size(12).color(theme::MUTED)
+            text(name.clone()).size(12).color(theme::muted())
         ]
         .spacing(6)
         .align_y(iced::Center)
@@ -174,7 +174,7 @@ pub fn view<'a, M: 'a>(title: &str, bars: Bars) -> Element<'a, M> {
         text(title.to_string())
             .size(13)
             .font(theme::BOLD)
-            .color(theme::MUTED)
+            .color(theme::muted())
             .width(Fill),
         legend
     ]
@@ -200,7 +200,7 @@ pub fn tile<'a, M: 'a>(value: String, name: &str, color: Color) -> Element<'a, M
     container(
         column![
             text(value).size(22).font(theme::BOLD).color(color),
-            text(name.to_string()).size(12).color(theme::MUTED)
+            text(name.to_string()).size(12).color(theme::muted())
         ]
         .spacing(2),
     )
@@ -268,14 +268,14 @@ fn bar<'a, M: 'a>(value: f64, top: f64, color: Color, shown: String) -> Element<
 /// Each measure's A and B as two bars, each pair scaled to its larger
 /// value, with how B differs from A.
 pub fn compare<'a, M: 'a>(title: &str, pairs: Vec<Pair>) -> Element<'a, M> {
-    let (a, b) = (PALETTE[0], PALETTE[1]);
+    let (a, b) = (PALETTE[0](), PALETTE[1]());
     let rows = pairs.into_iter().map(|p| {
         let top = p.a.max(p.b);
         let note = match change(&p) {
-            Some((words, Some(true))) => text(words).size(12).color(theme::OK),
-            Some((words, Some(false))) => text(words).size(12).color(theme::BAD),
-            Some((words, None)) => text(words).size(12).color(theme::INK),
-            None => text("same").size(12).color(theme::MUTED),
+            Some((words, Some(true))) => text(words).size(12).color(theme::ok()),
+            Some((words, Some(false))) => text(words).size(12).color(theme::bad()),
+            Some((words, None)) => text(words).size(12).color(theme::ink()),
+            None => text("same").size(12).color(theme::muted()),
         };
         row![
             text(p.name).size(13).width(110),
@@ -290,9 +290,9 @@ pub fn compare<'a, M: 'a>(title: &str, pairs: Vec<Pair>) -> Element<'a, M> {
     });
     let legend = row![
         container(text("")).width(10).height(10).style(swatch(a)),
-        text("A").size(12).color(theme::MUTED),
+        text("A").size(12).color(theme::muted()),
         container(text("")).width(10).height(10).style(swatch(b)),
-        text("B").size(12).color(theme::MUTED)
+        text("B").size(12).color(theme::muted())
     ]
     .spacing(6)
     .align_y(iced::Center);
@@ -300,7 +300,7 @@ pub fn compare<'a, M: 'a>(title: &str, pairs: Vec<Pair>) -> Element<'a, M> {
         text(title.to_string())
             .size(13)
             .font(theme::BOLD)
-            .color(theme::MUTED)
+            .color(theme::muted())
             .width(Fill),
         legend
     ];
@@ -379,7 +379,7 @@ mod tests {
     fn a_hovered_bar_names_its_day_and_each_part() {
         let bars = Bars {
             columns: vec!["2026-11-10".into(), "2026-11-11".into()],
-            series: vec![("local".into(), PALETTE[0]), ("two".into(), PALETTE[1])],
+            series: vec![("local".into(), PALETTE[0]()), ("two".into(), PALETTE[1]())],
             values: vec![vec![2.0, 0.0], vec![1.0, 3.0]],
             unit: |v| format!("{v}"),
         };

@@ -194,7 +194,7 @@ fn factory(state: &State) -> Element<'_, Message> {
     }
     card(
         "Factory",
-        body.push(text(&state.note).size(13).color(theme::MUTED)),
+        body.push(text(&state.note).size(13).color(theme::muted())),
     )
 }
 
@@ -206,7 +206,7 @@ fn history(state: &State) -> Element<'_, Message> {
         row![
             text(format!("v{} · {}", v.version, ago(v.at)))
                 .size(13)
-                .color(theme::MUTED)
+                .color(theme::muted())
                 .width(140),
             text(v.note.clone()).size(13).width(Fill)
         ]

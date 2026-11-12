@@ -294,10 +294,10 @@ fn form_view<'a>(form: &'a Form, server: &str) -> Element<'a, Message> {
             labeled("B at", rung_pick(Rung::B, &form.rung_b))
         ]
         .spacing(12),
-        row![run, text(cost).size(12).color(theme::MUTED)]
+        row![run, text(cost).size(12).color(theme::muted())]
             .spacing(12)
             .align_y(iced::Center),
-        text(&form.error).size(13).color(theme::BAD),
+        text(&form.error).size(13).color(theme::bad()),
     ];
     container(body.spacing(12))
         .padding(12)
@@ -317,11 +317,11 @@ fn summary_row<'a>(server: &str, e: &EvalSummary) -> Element<'a, Message> {
             ago(e.created_at)
         ))
         .size(12)
-        .color(theme::MUTED)
+        .color(theme::muted())
     ];
     let progress = text(format!("{} of {} runs done", e.done, e.runs))
         .size(13)
-        .color(theme::MUTED);
+        .color(theme::muted());
     let line = row![about.width(Fill), progress].align_y(iced::Center);
     button(line)
         .width(Fill)
@@ -337,7 +337,7 @@ fn summary_row<'a>(server: &str, e: &EvalSummary) -> Element<'a, Message> {
 pub fn view_list<'a>(list: &'a List, ctx: &Ctx) -> Element<'a, Message> {
     let lede = "An eval runs the same requests from the same commit under two harness configurations, A and B, that differ in one rung. Each run goes on without waiting and stops at its finish, so nothing lands.";
     let rows: Element<'_, Message> = if list.evals.is_empty() {
-        container(text("No evals yet.").size(13).color(theme::MUTED))
+        container(text("No evals yet.").size(13).color(theme::muted()))
             .padding([8, 12])
             .into()
     } else {
@@ -439,14 +439,14 @@ fn arm_row<'a>(
 ) -> Element<'a, Message> {
     let label = text(arm).font(theme::BOLD).width(40);
     let Some(mine) = mine.map(measures) else {
-        return row![label, text("not started").color(theme::MUTED)].into();
+        return row![label, text("not started").color(theme::muted())].into();
     };
     let theirs = other.map(measures);
     let cells = mine.into_iter().enumerate().map(|(i, (_, v))| {
         let differs = theirs.as_ref().is_some_and(|t| t[i].1 != v);
         let cell = text(v).size(13).width(Fill);
         if differs {
-            cell.color(theme::WARN).font(theme::BOLD).into()
+            cell.color(theme::warn()).font(theme::BOLD).into()
         } else {
             cell.into()
         }
@@ -460,7 +460,7 @@ fn table<'a>(label: String, a: Option<&RunView>, b: Option<&RunView>) -> Element
         job: "x".into(),
         ..RunView::default()
     })
-    .map(|(n, _)| text(n).size(12).color(theme::MUTED).width(Fill).into());
+    .map(|(n, _)| text(n).size(12).color(theme::muted()).width(Fill).into());
     let head = Row::with_children(std::iter::once(text("").width(40).into()).chain(names));
     column![
         text(label).size(13).font(theme::BOLD),
@@ -479,10 +479,14 @@ fn refusals<'a>(arm: &str, run: Option<&RunView>, server: &str) -> Option<Elemen
         server: server.into(),
         id: r.job.clone(),
     };
-    let link = button(text(format!("job {}", r.job)).size(12).color(theme::LINK))
-        .padding(0)
-        .style(theme::link)
-        .on_press(open);
+    let link = button(
+        text(format!("job {}", r.job))
+            .size(12)
+            .color(theme::link_color()),
+    )
+    .padding(0)
+    .style(theme::link)
+    .on_press(open);
     let head = row![
         text(format!("{arm}: {} refused · ", r.refused_calls.len()))
             .size(12)
@@ -517,7 +521,7 @@ fn request_row<'a>(r: &EvalRow, server: &str) -> Element<'a, Message> {
             r.a.as_ref(),
             r.b.as_ref()
         ),
-        text(differs).size(12).color(theme::MUTED),
+        text(differs).size(12).color(theme::muted()),
         refused
     ];
     container(body.spacing(8)).padding(12).into()
@@ -547,7 +551,7 @@ fn totals<'a>(one: &'a One, v: &'a EvalView) -> Element<'a, Message> {
         row![
             arm("Keep A", "a"),
             arm("Apply B", "b"),
-            text(hint).size(12).color(theme::MUTED)
+            text(hint).size(12).color(theme::muted())
         ]
         .spacing(8)
         .align_y(iced::Center),
@@ -564,7 +568,7 @@ pub fn view_one<'a>(one: &'a One, ctx: &Ctx) -> Element<'a, Message> {
     let back = button(text("← All evals").size(13))
         .style(theme::link)
         .on_press(Message::Go(Route::Evals));
-    let mut body = column![back, text(&one.error).color(theme::BAD)].spacing(12);
+    let mut body = column![back, text(&one.error).color(theme::bad())].spacing(12);
     if let Some(v) = &one.eval {
         let s = &v.summary;
         let facts = format!(
@@ -582,7 +586,7 @@ pub fn view_one<'a>(one: &'a One, ctx: &Ctx) -> Element<'a, Message> {
         let rows = v.rows.iter().map(|r| request_row(r, &ctx.current));
         body = body
             .push(text(s.name.clone()).size(24).font(theme::BOLD))
-            .push(text(facts).size(13).color(theme::MUTED))
+            .push(text(facts).size(13).color(theme::muted()))
             .push(
                 container(arms.spacing(4))
                     .padding(12)

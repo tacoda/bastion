@@ -21,8 +21,8 @@ pub(super) fn section<'a>(
     body: Vec<Element<'a, Msg>>,
 ) -> Element<'a, Msg> {
     let head = row![
-        text(title).size(13).font(theme::BOLD).color(theme::INK),
-        text(about).size(12).color(theme::MUTED),
+        text(title).size(13).font(theme::BOLD).color(theme::ink()),
+        text(about).size(12).color(theme::muted()),
     ]
     .spacing(10)
     .align_y(iced::Center);
@@ -37,7 +37,7 @@ pub(super) fn section<'a>(
 /// A mode's heading inside a section.
 pub(super) fn heading<'a>(name: &'a str, about: &'a str) -> Element<'a, Msg> {
     row![
-        text(name).size(12).font(theme::BOLD).color(theme::MUTED),
+        text(name).size(12).font(theme::BOLD).color(theme::muted()),
         help(about)
     ]
     .spacing(8)
@@ -58,7 +58,7 @@ pub(super) fn factory_line<'a>(f: &FactoryCapabilityView) -> Element<'a, Msg> {
 /// One rule's read-only line: its kind, its words, where it comes from.
 fn shown<'a>(kind: &str, words: String, from: String) -> Element<'a, Msg> {
     row![
-        badge(kind, theme::MUTED),
+        badge(kind, theme::muted()),
         text(words).size(13).width(Fill),
         chip(from)
     ]

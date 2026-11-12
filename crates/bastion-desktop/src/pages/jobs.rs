@@ -190,7 +190,7 @@ fn job_row<'a>(sj: ServerJob, down: bool) -> Element<'a, Message> {
     let about = about.push(
         text(line(&sj.job, &sj.server, down))
             .size(12)
-            .color(theme::MUTED),
+            .color(theme::muted()),
     );
     let at = sj.job.node.as_deref().unwrap_or("finish").replace('_', " ");
     let stage = container(text(at).size(12))
@@ -216,7 +216,7 @@ fn job_row<'a>(sj: ServerJob, down: bool) -> Element<'a, Message> {
         .style(move |_| container::Style {
             text_color: Some(iced::Color {
                 a: faded,
-                ..theme::INK
+                ..theme::ink()
             }),
             ..container::Style::default()
         })
@@ -225,7 +225,7 @@ fn job_row<'a>(sj: ServerJob, down: bool) -> Element<'a, Message> {
 
 fn group<'a>(title: String, jobs: Vec<ServerJob>, ctx: &Ctx, accent: bool) -> Element<'a, Message> {
     let body: Element<'a, Message> = if jobs.is_empty() {
-        container(text("Nothing here.").size(13).color(theme::MUTED))
+        container(text("Nothing here.").size(13).color(theme::muted()))
             .padding([10, 12])
             .into()
     } else {
@@ -240,11 +240,11 @@ fn group<'a>(title: String, jobs: Vec<ServerJob>, ctx: &Ctx, accent: bool) -> El
 }
 
 /// How a job ended, or that it has not, for the chart.
-const ENDS: [(&str, iced::Color); 4] = [
-    ("landed", theme::OK),
-    ("failed", theme::BAD),
-    ("stopped", theme::MUTED),
-    ("open", theme::PRIMARY),
+const ENDS: [(&str, theme::Tint); 4] = [
+    ("landed", theme::ok),
+    ("failed", theme::bad),
+    ("stopped", theme::muted),
+    ("open", theme::primary_color),
 ];
 
 fn end_of(state: &str) -> &'static str {
@@ -277,7 +277,7 @@ fn started(jobs: &[ServerJob], now: u64) -> Bars {
         .collect();
     Bars {
         columns,
-        series: ENDS.iter().map(|(e, c)| (e.to_string(), *c)).collect(),
+        series: ENDS.iter().map(|(e, c)| (e.to_string(), c())).collect(),
         values,
         unit: |n| format!("{n}"),
     }
@@ -292,10 +292,14 @@ fn overview<'a>(jobs: &[ServerJob]) -> Element<'a, Message> {
         n.count().to_string()
     };
     let tiles = row![
-        chart::tile(count(&["needs_you"]), "waiting for you", theme::WARN),
-        chart::tile(count(&super::IN_PROGRESS), "in progress", theme::LINK),
-        chart::tile(count(&["landed"]), "landed", theme::OK),
-        chart::tile(count(&["failed"]), "failed", theme::BAD),
+        chart::tile(count(&["needs_you"]), "waiting for you", theme::warn()),
+        chart::tile(
+            count(&super::IN_PROGRESS),
+            "in progress",
+            theme::link_color()
+        ),
+        chart::tile(count(&["landed"]), "landed", theme::ok()),
+        chart::tile(count(&["failed"]), "failed", theme::bad()),
     ]
     .spacing(12);
     let now = std::time::SystemTime::now()

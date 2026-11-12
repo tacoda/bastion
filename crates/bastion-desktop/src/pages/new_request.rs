@@ -331,10 +331,10 @@ fn form<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     .spacing(16);
     let mut body = column![place, work].spacing(16);
     if !empty.is_empty() {
-        body = body.push(text(empty).size(13).color(theme::MUTED));
+        body = body.push(text(empty).size(13).color(theme::muted()));
     }
     if !state.error.is_empty() {
-        body = body.push(text(&state.error).color(theme::BAD));
+        body = body.push(text(&state.error).color(theme::bad()));
     }
     let body = body.push(submit);
     container(body)
@@ -352,14 +352,14 @@ fn issues(state: &State) -> Element<'_, Message> {
         text("Or start from a GitHub issue")
             .size(13)
             .font(theme::BOLD)
-            .color(theme::MUTED)
+            .color(theme::muted())
             .width(Fill),
         load.on_press(Message::NewRequest(Msg::LoadIssues)),
     ]
     .align_y(iced::Center);
     let rows = state.issues.iter().map(|i| {
         let label = row![
-            text(format!("#{} ", i.number)).color(theme::MUTED),
+            text(format!("#{} ", i.number)).color(theme::muted()),
             text(i.title.clone())
         ];
         let open = Message::NewRequest(Msg::FromIssue(i.number));
@@ -373,7 +373,7 @@ fn issues(state: &State) -> Element<'_, Message> {
     let body = column![
         head,
         Column::with_children(rows),
-        text(&state.issue_note).size(13).color(theme::MUTED)
+        text(&state.issue_note).size(13).color(theme::muted())
     ];
     container(body.spacing(8))
         .padding(16)

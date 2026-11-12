@@ -89,7 +89,7 @@ fn part<'a>(label: &'a str, lines: &[String]) -> Option<Element<'a, Message>> {
     }
     let rows = lines.iter().map(|l| text(l.clone()).size(13).into());
     let lines = Column::with_children(rows).spacing(2);
-    let label = text(label).size(12).color(theme::MUTED).width(90);
+    let label = text(label).size(12).color(theme::muted()).width(90);
     Some(row![label, lines].spacing(10).into())
 }
 
@@ -102,7 +102,7 @@ fn files<'a>(c: &WorkspaceCharterView) -> Element<'a, Message> {
             .on_press(send(open))
             .into()
     });
-    let label = text("Edit").size(12).color(theme::MUTED).width(90);
+    let label = text("Edit").size(12).color(theme::muted()).width(90);
     row![label, row(links).spacing(4).wrap()].spacing(10).into()
 }
 
@@ -127,7 +127,7 @@ pub fn view<'a>(
     state: &'a State,
 ) -> Element<'a, Message> {
     let Some(c) = charter.filter(|c| !c.files.is_empty() || !c.texts.is_empty()) else {
-        return text("No charter.").size(13).color(theme::MUTED).into();
+        return text("No charter.").size(13).color(theme::muted()).into();
     };
     let parts = [
         part("Charter", &c.files),
@@ -139,7 +139,7 @@ pub fn view<'a>(
     ];
     let open = state.open.as_ref().filter(|o| o.workspace == c.workspace);
     let mine = state.said_for == c.workspace && !state.said.is_empty();
-    let said = mine.then(|| text(&state.said).size(13).color(theme::MUTED));
+    let said = mine.then(|| text(&state.said).size(13).color(theme::muted()));
     column(parts.into_iter().flatten())
         .push(files(c))
         .extend(open.map(editor))

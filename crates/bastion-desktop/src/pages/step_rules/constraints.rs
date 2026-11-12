@@ -80,9 +80,9 @@ fn has_form(c: &ConstraintView) -> bool {
 /// A rung's place in the list, enforced first, and its color.
 fn rung(c: &ConstraintView) -> (u8, iced::Color) {
     match c.rung.as_str() {
-        "enforced" => (0, theme::BAD),
-        "checked" => (1, theme::WARN),
-        _ => (2, theme::MUTED),
+        "enforced" => (0, theme::bad()),
+        "checked" => (1, theme::warn()),
+        _ => (2, theme::muted()),
     }
 }
 
@@ -101,7 +101,7 @@ pub(super) fn badge<'a>(label: &str, color: iced::Color) -> Element<'a, Msg> {
 fn rung_switch<'a>(c: &ConstraintView, editable: bool) -> Element<'a, Msg> {
     let fixed = !editable || c.source == "charter" || !c.reviewer.is_empty() || c.capability;
     if fixed {
-        return badge(mode(c), theme::MUTED);
+        return badge(mode(c), theme::muted());
     }
     // Feedforward with nothing for code to judge asks for its form first.
     let needs_form = !has_form(c);
@@ -183,13 +183,13 @@ fn actions<'a>(c: &ConstraintView, at: &At, editable: bool) -> Vec<Element<'a, M
 
 fn line<'a>(rules: &Rules, c: &ConstraintView, at: &At, editable: bool) -> Element<'a, Msg> {
     let on = scope::on(&c.steps, at.scope);
-    let color = if on { theme::INK } else { theme::MUTED };
+    let color = if on { theme::ink() } else { theme::muted() };
     let rule = column![text(c.rule.clone()).size(13).color(color), help(source(c)),]
         .spacing(2)
         .width(Fill);
     let item = Item::Constraint(c.id.clone());
     let mut line = row![
-        badge(kind(c), theme::MUTED),
+        badge(kind(c), theme::muted()),
         rule,
         rung_switch(c, editable),
         scope_switch(item, &c.steps, at, editable && c.source != "charter"),

@@ -1,7 +1,10 @@
-//! D4's theme: one dark theme, purple as the main color, as iced styles.
+//! The themes (D4): named sets of colors, purple as the main color, as iced
+//! styles. The app keeps the one picked in Settings.
 
 use iced::theme::Palette;
 use iced::widget::{button, container, pick_list, text_input};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use iced::{Background, Border, Color, Font, Theme, font};
 
 const fn byte(rgb: u32, shift: u32) -> f32 {
@@ -17,33 +20,146 @@ const fn hex(rgb: u32) -> Color {
     }
 }
 
-pub const BG: Color = hex(0x0f0d17);
-pub const PANEL: Color = hex(0x19162a);
-pub const INK: Color = hex(0xece9f5);
-pub const MUTED: Color = hex(0xa39cb8);
-pub const LINE: Color = hex(0x2c2742);
-/// A hovered row: lighter than a panel, darker than a line, so a chip's
-/// edge and a section's edge stay visible over it.
-pub const RAISED: Color = hex(0x221e34);
-pub const PRIMARY: Color = hex(0x7c3aed);
-pub const PRIMARY_HOVER: Color = hex(0x6d28d9);
-pub const LINK: Color = hex(0xc4b5fd);
-pub const OK: Color = hex(0x4ade80);
-pub const BAD: Color = hex(0xf87171);
-pub const WARN: Color = hex(0xfbbf24);
+/// One theme's colors (D4): named, so more can be added.
+pub struct Colors {
+    pub bg: Color,
+    pub panel: Color,
+    pub ink: Color,
+    pub muted: Color,
+    pub line: Color,
+    /// A hovered row: lighter than a panel, darker than a line, so a
+    /// chip's edge and a section's edge stay visible over it.
+    pub raised: Color,
+    pub primary: Color,
+    pub primary_hover: Color,
+    pub link: Color,
+    pub ok: Color,
+    pub bad: Color,
+    pub warn: Color,
+}
+
+const DARK: Colors = Colors {
+    bg: hex(0x0f0d17),
+    panel: hex(0x19162a),
+    ink: hex(0xece9f5),
+    muted: hex(0xa39cb8),
+    line: hex(0x2c2742),
+    raised: hex(0x221e34),
+    primary: hex(0x7c3aed),
+    primary_hover: hex(0x6d28d9),
+    link: hex(0xc4b5fd),
+    ok: hex(0x4ade80),
+    bad: hex(0xf87171),
+    warn: hex(0xfbbf24),
+};
+
+const LIGHT: Colors = Colors {
+    bg: hex(0xf6f5fa),
+    panel: hex(0xffffff),
+    ink: hex(0x1a1626),
+    muted: hex(0x5d5670),
+    line: hex(0xdfdaec),
+    raised: hex(0xefecf7),
+    primary: hex(0x6d28d9),
+    primary_hover: hex(0x5b21b6),
+    link: hex(0x5b21b6),
+    ok: hex(0x15803d),
+    bad: hex(0xb91c1c),
+    warn: hex(0xa16207),
+};
+
+/// The themes, by name; the first is the default.
+pub const THEMES: [(&str, Colors); 2] = [("bastion-dark", DARK), ("bastion-light", LIGHT)];
+
+static CURRENT: AtomicUsize = AtomicUsize::new(0);
+
+/// A color read from the theme in use, for a table of colors.
+pub type Tint = fn() -> Color;
+
+/// The file this app keeps its theme's name in.
+fn file() -> std::path::PathBuf {
+    crate::start::config_dir().join("theme")
+}
+
+/// Use the theme the app last kept, if any.
+pub fn load() {
+    if let Ok(kept) = std::fs::read_to_string(file()) {
+        choose(kept.trim());
+    }
+}
+
+/// Use the theme named `name`, and keep it for the next start.
+pub fn save(name: &str) -> Result<(), String> {
+    choose(name);
+    let path = file();
+    std::fs::write(&path, name).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// Use the theme named `name`; an unknown name changes nothing.
+fn choose(name: &str) {
+    if let Some(i) = THEMES.iter().position(|(n, _)| *n == name) {
+        CURRENT.store(i, Ordering::Relaxed);
+    }
+}
+
+/// The name of the theme in use.
+pub fn name() -> &'static str {
+    THEMES[CURRENT.load(Ordering::Relaxed)].0
+}
+
+fn colors() -> &'static Colors {
+    &THEMES[CURRENT.load(Ordering::Relaxed)].1
+}
+
+pub fn bg() -> Color {
+    colors().bg
+}
+pub fn panel_color() -> Color {
+    colors().panel
+}
+pub fn ink() -> Color {
+    colors().ink
+}
+pub fn muted() -> Color {
+    colors().muted
+}
+pub fn line() -> Color {
+    colors().line
+}
+pub fn raised() -> Color {
+    colors().raised
+}
+pub fn primary_hover() -> Color {
+    colors().primary_hover
+}
+pub fn primary_color() -> Color {
+    colors().primary
+}
+pub fn link_color() -> Color {
+    colors().link
+}
+pub fn ok() -> Color {
+    colors().ok
+}
+pub fn bad() -> Color {
+    colors().bad
+}
+pub fn warn() -> Color {
+    colors().warn
+}
 
 /// The app's theme, so a widget with no style of its own still reads
 /// light on dark.
 pub fn bastion() -> Theme {
     let palette = Palette {
-        background: BG,
-        text: INK,
-        primary: PRIMARY,
-        success: OK,
-        warning: WARN,
-        danger: BAD,
+        background: bg(),
+        text: ink(),
+        primary: primary_color(),
+        success: ok(),
+        warning: warn(),
+        danger: bad(),
     };
-    Theme::custom("Bastion".to_string(), palette)
+    Theme::custom(name().to_string(), palette)
 }
 
 /// The text face. macOS's system face is variable, and iced draws no bold
@@ -71,15 +187,15 @@ fn lined(radius: f32) -> Border {
     Border {
         radius: radius.into(),
         width: 1.0,
-        color: LINE,
+        color: line(),
     }
 }
 
 /// The window behind every page.
 pub fn page(_: &Theme) -> container::Style {
     container::Style {
-        background: Some(Background::Color(BG)),
-        text_color: Some(INK),
+        background: Some(Background::Color(bg())),
+        text_color: Some(ink()),
         ..container::Style::default()
     }
 }
@@ -87,10 +203,10 @@ pub fn page(_: &Theme) -> container::Style {
 /// The top bar: the panel color, with a line.
 pub fn bar(_: &Theme) -> container::Style {
     container::Style {
-        background: Some(Background::Color(PANEL)),
+        background: Some(Background::Color(panel_color())),
         border: Border {
             width: 1.0,
-            color: LINE,
+            color: line(),
             ..Border::default()
         },
         ..container::Style::default()
@@ -100,7 +216,7 @@ pub fn bar(_: &Theme) -> container::Style {
 /// A section or a row: the panel color in a rounded, lined box.
 pub fn panel(_: &Theme) -> container::Style {
     container::Style {
-        background: Some(Background::Color(PANEL)),
+        background: Some(Background::Color(panel_color())),
         border: lined(12.0),
         ..container::Style::default()
     }
@@ -122,13 +238,13 @@ pub fn veil(_: &Theme) -> container::Style {
 pub fn nav(here: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
     move |_, status| {
         let background = match (here, status) {
-            (true, _) => Some(Background::Color(PRIMARY)),
+            (true, _) => Some(Background::Color(primary_color())),
             (false, button::Status::Hovered | button::Status::Pressed) => {
-                Some(Background::Color(LINE))
+                Some(Background::Color(line()))
             }
             _ => None,
         };
-        let text_color = if here { Color::WHITE } else { INK };
+        let text_color = if here { Color::WHITE } else { ink() };
         button::Style {
             background,
             text_color,
@@ -141,9 +257,12 @@ pub fn nav(here: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
 /// The main action: white on purple.
 pub fn primary(_: &Theme, status: button::Status) -> button::Style {
     let fill = match status {
-        button::Status::Hovered => PRIMARY_HOVER,
-        button::Status::Disabled => Color { a: 0.5, ..PRIMARY },
-        _ => PRIMARY,
+        button::Status::Hovered => primary_hover(),
+        button::Status::Disabled => Color {
+            a: 0.5,
+            ..primary_color()
+        },
+        _ => primary_color(),
     };
     button::Style {
         background: Some(Background::Color(fill)),
@@ -155,12 +274,12 @@ pub fn primary(_: &Theme, status: button::Status) -> button::Style {
 
 /// Any other button: a lined box that fills on hover.
 pub fn secondary(_: &Theme, status: button::Status) -> button::Style {
-    let background = (status == button::Status::Hovered).then_some(Background::Color(LINE));
+    let background = (status == button::Status::Hovered).then_some(Background::Color(line()));
     // A button that cannot be pressed now reads faded, as `disabled:opacity-40` did.
     let text_color = if status == button::Status::Disabled {
-        LINE
+        line()
     } else {
-        INK
+        ink()
     };
     button::Style {
         background,
@@ -172,10 +291,10 @@ pub fn secondary(_: &Theme, status: button::Status) -> button::Style {
 
 /// A plain button with muted text, as Cancel.
 pub fn quiet(_: &Theme, status: button::Status) -> button::Style {
-    let background = (status == button::Status::Hovered).then_some(Background::Color(LINE));
+    let background = (status == button::Status::Hovered).then_some(Background::Color(line()));
     button::Style {
         background,
-        text_color: MUTED,
+        text_color: muted(),
         border: rounded(8.0),
         ..button::Style::default()
     }
@@ -183,30 +302,30 @@ pub fn quiet(_: &Theme, status: button::Status) -> button::Style {
 
 pub fn select(_: &Theme, _: pick_list::Status) -> pick_list::Style {
     pick_list::Style {
-        text_color: INK,
-        placeholder_color: MUTED,
-        handle_color: MUTED,
-        background: Background::Color(BG),
+        text_color: ink(),
+        placeholder_color: muted(),
+        handle_color: muted(),
+        background: Background::Color(bg()),
         border: lined(4.0),
     }
 }
 
 pub fn field(_: &Theme, status: text_input::Status) -> text_input::Style {
     let edge = if matches!(status, text_input::Status::Focused { .. }) {
-        PRIMARY
+        primary_color()
     } else {
-        LINE
+        line()
     };
     text_input::Style {
-        background: Background::Color(BG),
+        background: Background::Color(bg()),
         border: Border {
             color: edge,
             ..lined(4.0)
         },
-        icon: MUTED,
-        placeholder: MUTED,
-        value: INK,
-        selection: PRIMARY,
+        icon: muted(),
+        placeholder: muted(),
+        value: ink(),
+        selection: primary_color(),
     }
 }
 
@@ -214,7 +333,7 @@ pub fn field(_: &Theme, status: text_input::Status) -> text_input::Style {
 pub fn accented(theme: &Theme) -> container::Style {
     container::Style {
         border: Border {
-            color: WARN,
+            color: warn(),
             ..lined(12.0)
         },
         ..panel(theme)
@@ -227,7 +346,7 @@ pub fn rule<'a, M: 'a>() -> iced::Element<'a, M> {
         .height(1)
         .width(iced::Fill)
         .style(|_| container::Style {
-            background: Some(Background::Color(LINE)),
+            background: Some(Background::Color(line())),
             ..container::Style::default()
         })
         .into()
@@ -236,10 +355,10 @@ pub fn rule<'a, M: 'a>() -> iced::Element<'a, M> {
 /// A whole row that opens something: no fill until hovered.
 pub fn row_button(_: &Theme, status: button::Status) -> button::Style {
     let background = matches!(status, button::Status::Hovered | button::Status::Pressed)
-        .then_some(Background::Color(RAISED));
+        .then_some(Background::Color(raised()));
     button::Style {
         background,
-        text_color: INK,
+        text_color: ink(),
         ..button::Style::default()
     }
 }
@@ -247,7 +366,10 @@ pub fn row_button(_: &Theme, status: button::Status) -> button::Style {
 /// A diff line picked for a comment: a purple tint that stays.
 pub fn picked_row(theme: &Theme, status: button::Status) -> button::Style {
     button::Style {
-        background: Some(Background::Color(Color { a: 0.25, ..PRIMARY })),
+        background: Some(Background::Color(Color {
+            a: 0.25,
+            ..primary_color()
+        })),
         ..row_button(theme, status)
     }
 }
@@ -264,9 +386,9 @@ pub fn card_row(theme: &Theme, status: button::Status) -> button::Style {
 /// A small text button, muted until hovered, as "← All jobs".
 pub fn link(_: &Theme, status: button::Status) -> button::Style {
     let text_color = if status == button::Status::Hovered {
-        INK
+        ink()
     } else {
-        MUTED
+        muted()
     };
     button::Style {
         text_color,
@@ -277,11 +399,11 @@ pub fn link(_: &Theme, status: button::Status) -> button::Style {
 /// A pill around a short label, as a job's stage.
 pub fn chip(_: &Theme) -> container::Style {
     container::Style {
-        text_color: Some(MUTED),
+        text_color: Some(muted()),
         border: Border {
             radius: 999.0.into(),
             width: 1.0,
-            color: LINE,
+            color: line(),
         },
         ..container::Style::default()
     }
@@ -291,7 +413,7 @@ pub fn chip(_: &Theme) -> container::Style {
 pub fn alarmed(theme: &Theme) -> container::Style {
     container::Style {
         border: Border {
-            color: BAD,
+            color: bad(),
             ..lined(12.0)
         },
         ..panel(theme)
@@ -301,7 +423,7 @@ pub fn alarmed(theme: &Theme) -> container::Style {
 /// Code, a report or a diff: the page color, slightly rounded.
 pub fn code(_: &Theme) -> container::Style {
     container::Style {
-        background: Some(Background::Color(BG)),
+        background: Some(Background::Color(bg())),
         border: rounded(4.0),
         ..container::Style::default()
     }

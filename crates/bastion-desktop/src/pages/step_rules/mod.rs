@@ -514,7 +514,7 @@ pub fn update(rules: &mut Rules, msg: Msg, at: &At, ctx: &Ctx) -> Task<Msg> {
 /// Why the last change failed, when one did.
 pub fn said(rules: &Rules) -> Option<Element<'_, Msg>> {
     let said = (!rules.said.is_empty()).then_some(&rules.said)?;
-    Some(text(said).size(13).color(theme::BAD).into())
+    Some(text(said).size(13).color(theme::bad()).into())
 }
 
 fn small<'a>(label: impl Into<String>, msg: Option<Msg>) -> Element<'a, Msg> {
@@ -539,7 +539,7 @@ pub fn choice<'a, M: Clone + 'a>(
 }
 
 fn chip<'a>(label: impl Into<String>) -> Element<'a, Msg> {
-    iced::widget::container(text(label.into()).size(11).color(theme::MUTED))
+    iced::widget::container(text(label.into()).size(11).color(theme::muted()))
         .padding([2, 8])
         .style(theme::chip)
         .into()
@@ -557,7 +557,7 @@ fn scope_switch<'a>(item: Item, scopes: &[String], at: &At, editable: bool) -> E
     };
     let word = if inherited { "on" } else { "off" };
     // "here" sets it apart from the rung switch beside it.
-    let here = text("here").size(11).color(theme::MUTED);
+    let here = text("here").size(11).color(theme::muted());
     let mut switch = iced::widget::row![here].spacing(2).align_y(iced::Center);
     if !at.is_every() {
         switch = switch.push(set(format!("Inherit · {word}"), own.is_none(), "inherit"));
@@ -571,7 +571,7 @@ fn scope_switch<'a>(item: Item, scopes: &[String], at: &At, editable: bool) -> E
 
 /// A line of muted help.
 fn help<'a>(words: impl Into<String>) -> Element<'a, Msg> {
-    text(words.into()).size(12).color(theme::MUTED).into()
+    text(words.into()).size(12).color(theme::muted()).into()
 }
 
 #[cfg(test)]

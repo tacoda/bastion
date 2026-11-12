@@ -292,10 +292,10 @@ fn doc<'a>(state: &'a State, body: String) -> Element<'a, Message> {
     let style = markdown::Style {
         font: theme::FONT,
         inline_code_font: theme::MONO,
-        inline_code_color: theme::LINK,
+        inline_code_color: theme::link_color(),
         inline_code_padding: iced::Padding::from([0, 2]),
         inline_code_highlight: markdown::Highlight {
-            background: theme::PANEL.into(),
+            background: theme::panel_color().into(),
             border: iced::border::rounded(3),
         },
         code_block_font: theme::MONO,
@@ -325,7 +325,7 @@ fn chip<'a>(label: String, color: iced::Color) -> Element<'a, Message> {
 }
 
 fn link_chip<'a>(label: String, url: String) -> Element<'a, Message> {
-    button(text(label).size(12).color(theme::LINK))
+    button(text(label).size(12).color(theme::link_color()))
         .padding([2, 8])
         .style(theme::secondary)
         .on_press(Message::OpenUrl(url))
@@ -357,11 +357,11 @@ fn header<'a>(d: &JobDetail, server: &str) -> Element<'a, Message> {
     };
     let mut badges = vec![
         state,
-        chip(server.into(), theme::MUTED),
-        chip(d.job.workspace.clone(), theme::MUTED),
-        chip(d.job.id.clone(), theme::MUTED),
+        chip(server.into(), theme::muted()),
+        chip(d.job.workspace.clone(), theme::muted()),
+        chip(d.job.id.clone(), theme::muted()),
     ];
-    badges.push(chip(ago(d.job.created_at), theme::MUTED));
+    badges.push(chip(ago(d.job.created_at), theme::muted()));
     badges.extend(
         d.job
             .issue
@@ -371,12 +371,12 @@ fn header<'a>(d: &JobDetail, server: &str) -> Element<'a, Message> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
-    badges.extend(still_working(&d.job, now).map(|t| chip(t, theme::WARN)));
+    badges.extend(still_working(&d.job, now).map(|t| chip(t, theme::warn())));
     // The title is the request's first line; a longer request reads in full under it.
     let title = super::jobs::title(&d.job.request);
     let mut head = column![text(title.clone()).size(20).font(theme::BOLD)].spacing(8);
     if title != d.job.request.trim() {
-        head = head.push(text(d.job.request.clone()).size(14).color(theme::MUTED));
+        head = head.push(text(d.job.request.clone()).size(14).color(theme::muted()));
     }
     head.push(row(badges).spacing(8).wrap()).into()
 }
@@ -390,7 +390,7 @@ fn failure<'a>(state: &State, d: &JobDetail) -> Option<Element<'a, Message>> {
         _ => "This step is stuck",
     };
     let mut body = column![
-        text(title).size(13).font(theme::BOLD).color(theme::BAD),
+        text(title).size(13).font(theme::BOLD).color(theme::bad()),
         block(e)
     ]
     .spacing(8);
@@ -455,7 +455,7 @@ fn note(state: &State) -> Option<Element<'_, Message>> {
         .on_action(|a| Message::Job(Msg::Edit(a)))
         .height(96);
     Some(
-        column![text(label).size(13).color(theme::MUTED), editor]
+        column![text(label).size(13).color(theme::muted()), editor]
             .spacing(4)
             .into(),
     )
@@ -468,13 +468,13 @@ fn waiting<'a>(state: &'a State, d: &'a JobDetail) -> Element<'a, Message> {
         text("Waiting for you")
             .size(13)
             .font(theme::BOLD)
-            .color(theme::WARN),
+            .color(theme::warn()),
     );
     if let Some(q) = &d.job.question {
         body = body.push(row![text("The agent asks: ").font(theme::BOLD), text(q.clone())].wrap());
     }
     if state.allows("approve") {
-        body = body.push(text(what_approve_does(d)).size(13).color(theme::MUTED));
+        body = body.push(text(what_approve_does(d)).size(13).color(theme::muted()));
         let (report, change) = judged(d);
         body = body.extend(report.map(|r| doc(state, r)));
         if let Some(change) = change {
@@ -484,7 +484,7 @@ fn waiting<'a>(state: &'a State, d: &'a JobDetail) -> Element<'a, Message> {
                 )
                 .size(13)
                 .font(theme::BOLD)
-                .color(theme::MUTED),
+                .color(theme::muted()),
             );
             let comment = |path, n| Message::Job(Msg::CommentAt(path, n));
             body = body.push(diff::view(&change, comment, state.pick.as_ref()));
@@ -521,7 +521,7 @@ fn held_call<'a>(state: &'a State, call: &'a HeldCallView) -> Element<'a, Messag
         text(call.text.clone()).font(theme::MONO),
         text(format!(" · held {}", ago(call.at)))
             .size(12)
-            .color(theme::MUTED)
+            .color(theme::muted())
     ];
     column![
         what.spacing(6).wrap(),
@@ -539,7 +539,7 @@ fn holds<'a>(state: &'a State, d: &'a JobDetail) -> Option<Element<'a, Message>>
     let title = text("The gate holds a call for you")
         .size(13)
         .font(theme::BOLD)
-        .color(theme::WARN);
+        .color(theme::warn());
     let calls = d.held.iter().map(|c| held_call(state, c));
     let body = column![title, Column::with_children(calls).spacing(16)].spacing(12);
     Some(
@@ -567,7 +567,7 @@ fn charter<'a>(c: &CharterView) -> Element<'a, Message> {
         if items.is_empty() {
             continue;
         }
-        body = body.push(text(title).size(12).font(theme::BOLD).color(theme::MUTED));
+        body = body.push(text(title).size(12).font(theme::BOLD).color(theme::muted()));
         body = body.extend(items.iter().map(|i| text(format!("• {i}")).size(12).into()));
     }
     container(body)
@@ -583,13 +583,13 @@ fn flow<'a>(d: &'a JobDetail, marks: &'a BTreeMap<String, String>) -> Element<'a
     let title = text("Workflow")
         .size(13)
         .font(theme::BOLD)
-        .color(theme::MUTED);
+        .color(theme::muted());
     let mut body = column![title, drawing::view(Drawing::read_only(&d.workflow, marks))].spacing(8);
     for (name, result) in &d.results {
         let head = text(format!("Result · {name}"))
             .size(12)
             .font(theme::BOLD)
-            .color(theme::MUTED);
+            .color(theme::muted());
         body = body.push(
             container(column![head, block(result.clone())].spacing(6))
                 .padding(12)
@@ -604,7 +604,7 @@ fn artifact<'a>(state: &'a State, a: &ArtifactView) -> Element<'a, Message> {
     let head = text(format!("{} artifact · {}", a.stage, ago(a.created_at)))
         .size(12)
         .font(theme::BOLD)
-        .color(theme::MUTED);
+        .color(theme::muted());
     column![head, doc(state, a.body.clone())].spacing(4).into()
 }
 
@@ -643,7 +643,7 @@ fn step_row<'a>(
     let summary = row![
         container(super::mark_view(&step.state, 16.0)).width(16),
         text(step_name(step)).font(theme::BOLD),
-        text(step.state.clone()).size(12).color(theme::MUTED)
+        text(step.state.clone()).size(12).color(theme::muted())
     ]
     .spacing(12)
     .align_y(iced::Center);
@@ -695,7 +695,7 @@ fn top(state: &State) -> Element<'_, Message> {
         bar = bar.push(extend);
     }
     if state.allows("stop") {
-        let stop = button(text("Stop").color(theme::BAD))
+        let stop = button(text("Stop").color(theme::bad()))
             .padding([8, 12])
             .style(theme::secondary);
         bar = bar.push(stop.on_press(Message::Job(Msg::Act(Action::Stop))));
@@ -756,7 +756,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
             .extend(d.charter.as_ref().map(charter));
     }
     if !state.error.is_empty() {
-        page = page.push(text(&state.error).color(theme::BAD));
+        page = page.push(text(&state.error).color(theme::bad()));
     }
     if let Some(d) = &state.detail {
         page = page.push(flow(d, &state.marks)).push(steps(state, d));

@@ -149,7 +149,7 @@ fn person_row<'a>(p: &PersonView) -> Element<'a, Message> {
         wrap(Msg::ChangeRole(name.clone(), r))
     })
     .style(theme::select);
-    let token = button(text("Issue a token").size(13).color(theme::LINK))
+    let token = button(text("Issue a token").size(13).color(theme::link_color()))
         .style(theme::link)
         .on_press(wrap(Msg::Issue(p.name.clone())));
     row![text(p.name.clone()).font(theme::BOLD), role, token]
@@ -159,13 +159,13 @@ fn person_row<'a>(p: &PersonView) -> Element<'a, Message> {
 }
 
 fn token_row<'a>(t: &TokenView) -> Element<'a, Message> {
-    let revoke = button(text("Revoke").size(13).color(theme::BAD))
+    let revoke = button(text("Revoke").size(13).color(theme::bad()))
         .style(theme::link)
         .on_press(wrap(Msg::Revoke(t.id.clone())));
     row![
         text(t.id.clone()).font(theme::MONO),
         text(t.person.clone()),
-        text(t.label.clone()).color(theme::MUTED),
+        text(t.label.clone()).color(theme::muted()),
         revoke
     ]
     .spacing(10)
@@ -185,7 +185,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
             )
         })
         .unwrap_or_default();
-    let mut body = column![text(who).size(13).color(theme::MUTED)];
+    let mut body = column![text(who).size(13).color(theme::muted())];
     if manages(&ctx.current, state.me.as_ref()) {
         let name = text_input("", &state.name)
             .on_input(|n| wrap(Msg::Name(n)))
@@ -204,18 +204,18 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
                 .spacing(8)
                 .align_y(iced::Bottom),
             )
-            .push(text(&state.issued).size(13).color(theme::OK))
+            .push(text(&state.issued).size(13).color(theme::ok()))
             .push(
                 text("Tokens")
                     .size(13)
                     .font(theme::BOLD)
-                    .color(theme::MUTED),
+                    .color(theme::muted()),
             )
             .push(Column::with_children(state.tokens.iter().map(token_row)).spacing(6));
     }
     card(
         "People",
-        body.push(text(&state.note).size(13).color(theme::BAD)),
+        body.push(text(&state.note).size(13).color(theme::bad())),
     )
 }
 

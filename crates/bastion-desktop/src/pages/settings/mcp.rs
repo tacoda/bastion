@@ -87,7 +87,7 @@ fn line(s: &McpServerView) -> Element<'_, Message> {
     let about = format!("{} · {secret} · {}", s.url, s.status);
     row![
         text(&s.id).size(13).width(140),
-        text(about).size(12).color(theme::MUTED).width(Fill),
+        text(about).size(12).color(theme::muted()).width(Fill),
         small("Remove", Some(wrap(Msg::Remove(s.id.clone())))),
     ]
     .spacing(8)
@@ -116,10 +116,10 @@ pub fn view(state: &State) -> Element<'_, Message> {
     ]
     .spacing(8)
     .align_y(iced::Center);
-    let mut body = Column::new().push(text(lede).size(12).color(theme::MUTED));
+    let mut body = Column::new().push(text(lede).size(12).color(theme::muted()));
     body = body.extend(state.servers.iter().map(line)).push(form);
     if !state.note.is_empty() {
-        body = body.push(text(&state.note).size(13).color(theme::BAD));
+        body = body.push(text(&state.note).size(13).color(theme::bad()));
     }
     card("MCP servers", body)
 }

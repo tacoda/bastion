@@ -125,7 +125,7 @@ pub fn head<'a, M: 'a>(
 ) -> Element<'a, M> {
     let words = column![
         text(title.into()).size(24).font(theme::BOLD),
-        text(about.into()).size(13).color(theme::MUTED)
+        text(about.into()).size(13).color(theme::muted())
     ]
     .spacing(4)
     .width(iced::Fill);
@@ -137,7 +137,7 @@ pub fn head<'a, M: 'a>(
 /// A problem in red, or nothing when there is none, so an empty one leaves
 /// no gap.
 pub fn problem<'a, M: 'a>(words: &str) -> Option<Element<'a, M>> {
-    (!words.trim().is_empty()).then(|| text(words.to_string()).color(theme::BAD).into())
+    (!words.trim().is_empty()).then(|| text(words.to_string()).color(theme::bad()).into())
 }
 
 /// What a page about one server calls it, such as "local".
@@ -157,14 +157,14 @@ pub const SPIN_MS: u64 = 30;
 /// progress is drawn turning by [`mark_view`]; its glyph stands still.
 pub fn mark(state: &str) -> (&'static str, Color) {
     match state {
-        "done" | "landed" => ("✓", theme::OK),
-        "running" | "provisioning" => ("◌", theme::LINK),
-        "waiting" | "needs_you" => ("!", theme::WARN),
-        "failed" => ("✕", theme::BAD),
-        "stopped" => ("■", theme::MUTED),
-        "skipped" => ("↷", theme::MUTED),
-        "queued" => ("◌", theme::MUTED),
-        _ => ("○", theme::MUTED),
+        "done" | "landed" => ("✓", theme::ok()),
+        "running" | "provisioning" => ("◌", theme::link_color()),
+        "waiting" | "needs_you" => ("!", theme::warn()),
+        "failed" => ("✕", theme::bad()),
+        "stopped" => ("■", theme::muted()),
+        "skipped" => ("↷", theme::muted()),
+        "queued" => ("◌", theme::muted()),
+        _ => ("○", theme::muted()),
     }
 }
 
@@ -195,7 +195,7 @@ pub fn ago(at: u64) -> String {
 /// accented one has the warning color's edge.
 pub fn section<'a, M: 'a>(title: String, body: Element<'a, M>, accent: bool) -> Element<'a, M> {
     let head =
-        container(text(title).size(13).color(theme::MUTED).font(theme::BOLD)).padding([8, 12]);
+        container(text(title).size(13).color(theme::muted()).font(theme::BOLD)).padding([8, 12]);
     let style = if accent {
         theme::accented
     } else {
@@ -243,7 +243,7 @@ pub fn scrolled<'a, M: 'a>(body: impl Into<Element<'a, M>>) -> Element<'a, M> {
 
 /// A label above a field, as the forms show them.
 pub fn labeled<'a, M: 'a>(label: &'a str, field: impl Into<Element<'a, M>>) -> Element<'a, M> {
-    column![text(label).size(13).color(theme::MUTED), field.into()]
+    column![text(label).size(13).color(theme::muted()), field.into()]
         .spacing(4)
         .into()
 }
@@ -422,7 +422,7 @@ impl Page {
             Page::Rules(s) => rules_page::view(s, route.title(), ctx),
             Page::Pending => {
                 let title = text(route.title()).size(24).font(theme::BOLD);
-                let note = text("Reaching the Bastion server…").color(theme::MUTED);
+                let note = text("Reaching the Bastion server…").color(theme::muted());
                 column![title, note].spacing(12).into()
             }
         }

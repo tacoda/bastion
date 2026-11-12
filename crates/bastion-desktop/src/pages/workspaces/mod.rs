@@ -285,7 +285,7 @@ fn workspace<'a>(
         row![text(w.name.clone()).font(theme::BOLD), edit]
             .spacing(10)
             .align_y(iced::Center),
-        text(about.join(" · ")).size(13).color(theme::MUTED),
+        text(about.join(" · ")).size(13).color(theme::muted()),
         charter::view(own, editing),
     ]
     .spacing(6)
@@ -301,7 +301,7 @@ fn workspaces(state: &State) -> Element<'_, Message> {
     card(
         "Workspaces",
         column![
-            text(lede).size(13).color(theme::MUTED),
+            text(lede).size(13).color(theme::muted()),
             Column::with_children(rows).spacing(18),
             workspace_form(state)
         ],
@@ -389,12 +389,15 @@ fn gates_row(state: &State) -> Element<'_, Message> {
 
 fn accounts(state: &State) -> Element<'_, Message> {
     let rows = state.accounts.iter().map(|a| {
-        let mark =
-            text(if a.ok { "✓ " } else { "! " }).color(if a.ok { theme::OK } else { theme::WARN });
+        let mark = text(if a.ok { "✓ " } else { "! " }).color(if a.ok {
+            theme::ok()
+        } else {
+            theme::warn()
+        });
         row![
             mark,
             text(a.name.clone()).font(theme::BOLD),
-            text(format!(" · {}", a.status)).color(theme::MUTED)
+            text(format!(" · {}", a.status)).color(theme::muted())
         ]
         .into()
     });
@@ -433,7 +436,7 @@ fn section(state: &State) -> Column<'_, Message> {
     column![
         workspaces(state),
         accounts(state),
-        text(&state.note).size(13).color(theme::BAD)
+        text(&state.note).size(13).color(theme::bad())
     ]
     .spacing(16)
 }

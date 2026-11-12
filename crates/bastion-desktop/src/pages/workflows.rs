@@ -506,7 +506,7 @@ fn chooser(state: &State) -> Element<'_, Message> {
     let pick = pick_list(all, shown, |c| wrap(Msg::Choose(c))).style(theme::select);
     let facts = text(state.draft.as_ref().map(facts).unwrap_or_default())
         .size(13)
-        .color(theme::MUTED);
+        .color(theme::muted());
     row![pick, facts].spacing(12).align_y(iced::Center).into()
 }
 
@@ -713,7 +713,7 @@ fn options_tab<'a>(
             "Each result is one word of letters, digits, - and _, such as root-cause. Not: {}.",
             bad.join(", ")
         );
-        text(said).size(12).color(theme::BAD)
+        text(said).size(12).color(theme::bad())
     });
     let results = column![labeled("Results it gives, comma-separated", results)]
         .extend(warning.map(Element::from))
@@ -752,7 +752,7 @@ fn tabs<'a>(state: &State, n: &bastion_protocol::NodeView) -> Element<'a, Messag
 fn step_head<'a>(n: &bastion_protocol::NodeView, editable: bool) -> Element<'a, Message> {
     let names = column![
         text(drawing::title(n)).size(18).font(theme::BOLD),
-        text(drawing::kind_line(n)).size(12).color(theme::MUTED),
+        text(drawing::kind_line(n)).size(12).color(theme::muted()),
     ]
     .spacing(2)
     .width(Fill);
@@ -871,7 +871,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
                 .on_press(wrap(Msg::Save)),
         );
     }
-    scrolled(body.push(text(&state.said).size(13).color(theme::MUTED)))
+    scrolled(body.push(text(&state.said).size(13).color(theme::muted())))
 }
 
 #[cfg(test)]

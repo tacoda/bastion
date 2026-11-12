@@ -82,10 +82,10 @@ pub(super) fn line<'a>(
     editable: bool,
 ) -> Element<'a, Msg> {
     let on = scope::on(&g.scopes, at.scope);
-    let color = if on { theme::INK } else { theme::MUTED };
+    let color = if on { theme::ink() } else { theme::muted() };
     let about = text(about(&g.function, &rules.catalog))
         .size(12)
-        .color(theme::MUTED);
+        .color(theme::muted());
     let name = text(g.function.clone())
         .size(13)
         .font(theme::MONO)

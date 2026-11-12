@@ -116,9 +116,9 @@ fn rates_view(landed: &[(String, LandedView)], many: bool) -> Element<'static, M
         n => format!("{:.0}%", escaped as f64 * 100.0 / n as f64),
     };
     let tiles = row![
-        super::chart::tile(n.to_string(), "jobs landed", theme::OK),
-        super::chart::tile(escaped.to_string(), "with an escape", theme::BAD),
-        super::chart::tile(rate, "escape rate", theme::WARN),
+        super::chart::tile(n.to_string(), "jobs landed", theme::ok()),
+        super::chart::tile(escaped.to_string(), "with an escape", theme::bad()),
+        super::chart::tile(rate, "escape rate", theme::warn()),
     ]
     .spacing(12);
     let rows = all.into_iter().map(|(ws, (n, escaped))| {
@@ -175,21 +175,21 @@ fn landed_view(server: &str, l: &LandedView, many: bool) -> Element<'static, Mes
             .style(theme::link)
             .on_press(open),
         text(format!("{place} · {request}")).width(Fill),
-        text(ago(l.landed_at)).size(13).color(theme::MUTED),
+        text(ago(l.landed_at)).size(13).color(theme::muted()),
     ]
     .spacing(12)
     .align_y(iced::Center);
     let short: Vec<&str> = l.commits.iter().map(|c| &c[..c.len().min(7)]).collect();
     let mut body = column![head].spacing(2);
     for check in &l.checks {
-        body = body.push(text(check.clone()).size(12).color(theme::MUTED));
+        body = body.push(text(check.clone()).size(12).color(theme::muted()));
     }
     if !short.is_empty() {
         body = body.push(text(short.join(" ")).size(12).font(theme::MONO));
     }
     for e in &l.escapes {
         let line = format!("escaped in {}: {}", e.commit, e.what);
-        body = body.push(text(line).size(13).color(theme::BAD));
+        body = body.push(text(line).size(13).color(theme::bad()));
     }
     body.padding([6, 12]).into()
 }

@@ -216,7 +216,7 @@ fn heading<'a>(title: &'a str) -> Element<'a, Message> {
     text(title)
         .size(13)
         .font(theme::BOLD)
-        .color(theme::MUTED)
+        .color(theme::muted())
         .into()
 }
 
@@ -245,17 +245,17 @@ fn stack_panel(state: &State) -> Element<'_, Message> {
     panel(column![
         heading("Running"),
         text(described),
-        text(&state.note).color(theme::MUTED),
+        text(&state.note).color(theme::muted()),
         row![start, stop].spacing(8)
     ])
 }
 
 fn check_row<'a>(check: &Check) -> Element<'a, Message> {
     let (mark, color) = match check.state {
-        CheckState::Pass => ("Pass", theme::OK),
-        CheckState::Warn => ("Warn", theme::WARN),
-        CheckState::Fail => ("Fail", theme::BAD),
-        CheckState::Skipped => ("Skipped", theme::MUTED),
+        CheckState::Pass => ("Pass", theme::ok()),
+        CheckState::Warn => ("Warn", theme::warn()),
+        CheckState::Fail => ("Fail", theme::bad()),
+        CheckState::Skipped => ("Skipped", theme::muted()),
     };
     let mut about = column![
         row![
@@ -265,7 +265,7 @@ fn check_row<'a>(check: &Check) -> Element<'a, Message> {
         .wrap()
     ];
     if let Some(fix) = &check.fix {
-        about = about.push(text(fix.clone()).color(theme::MUTED));
+        about = about.push(text(fix.clone()).color(theme::muted()));
     }
     row![
         text(mark).font(theme::BOLD).color(color).width(72),
@@ -289,9 +289,9 @@ fn doctor(state: &State) -> Element<'_, Message> {
 
 fn state_color(state: &str) -> Color {
     match state {
-        "ready" => theme::OK,
-        "failed" => theme::BAD,
-        _ => theme::WARN,
+        "ready" => theme::ok(),
+        "failed" => theme::bad(),
+        _ => theme::warn(),
     }
 }
 
@@ -299,7 +299,7 @@ fn container_row<'a>(state: &State, c: &Container) -> Element<'a, Message> {
     let ready = c.state == "ready";
     let mut status = column![text(c.state.clone()).color(state_color(&c.state))];
     if let Some(e) = &c.last_error {
-        status = status.push(text(e.clone()).size(12).color(theme::MUTED));
+        status = status.push(text(e.clone()).size(12).color(theme::muted()));
     }
     let small = |label: &'static str, msg: Option<Message>| {
         button(text(label).size(13))
@@ -322,7 +322,7 @@ fn container_row<'a>(state: &State, c: &Container) -> Element<'a, Message> {
         Some(Message::Engine(Msg::Watch(c.name.clone()))),
     ));
     let version = text(c.version.clone().unwrap_or_default())
-        .color(theme::MUTED)
+        .color(theme::muted())
         .width(120);
     row![
         text(c.name.clone()).width(Fill),
@@ -350,7 +350,7 @@ fn containers(state: &State) -> Element<'_, Message> {
     let table = column![head.spacing(12), theme::rule()].extend(rows);
     panel(column![
         heading("Containers"),
-        text(&state.error).color(theme::BAD),
+        text(&state.error).color(theme::bad()),
         table
     ])
 }
@@ -363,9 +363,9 @@ fn logs(state: &State) -> Option<Element<'_, Message>> {
         .on_press(Message::Engine(Msg::CloseLogs));
     let lines = state.lines.iter().map(|l| {
         let color = if l.stream == "stderr" {
-            theme::WARN
+            theme::warn()
         } else {
-            theme::INK
+            theme::ink()
         };
         text(l.message.clone())
             .size(12)
@@ -401,12 +401,14 @@ fn matching<'a>(rows: &'a [Registered], filter: &str) -> (Vec<&'a Registered>, u
 
 fn registered_row<'a>(r: &Registered) -> Element<'a, Message> {
     let line = row![
-        text(r.id.clone()).font(theme::MONO).color(theme::LINK),
-        text(format!("  {} · {}", r.worker, r.namespace)).color(theme::MUTED)
+        text(r.id.clone())
+            .font(theme::MONO)
+            .color(theme::link_color()),
+        text(format!("  {} · {}", r.worker, r.namespace)).color(theme::muted())
     ];
     column![
         line,
-        text(r.description.clone()).size(12).color(theme::MUTED)
+        text(r.description.clone()).size(12).color(theme::muted())
     ]
     .into()
 }
@@ -440,7 +442,7 @@ fn registered(state: &State) -> Element<'_, Message> {
 fn queue_row<'a>(q: &Queue) -> Element<'a, Message> {
     let alarm = |n: u64| {
         text(n.to_string())
-            .color(if n > 0 { theme::BAD } else { theme::INK })
+            .color(if n > 0 { theme::bad() } else { theme::ink() })
             .width(Fill)
     };
     row![

@@ -57,17 +57,17 @@ fn audit_status(a: &AuditView) -> (String, Color, Option<(String, Color)>) {
                 "Verified: all {} entries chain from the first.",
                 a.entries.len()
             ),
-            theme::OK,
+            theme::ok(),
         ),
         Some(seq) => (
             format!("Broken: entry {seq} does not follow from the one before it."),
-            theme::BAD,
+            theme::bad(),
         ),
     };
     let writer = match (a.pending, &a.last_error) {
-        (_, Some(e)) => Some((format!("The audit writer is failing: {e}"), theme::BAD)),
+        (_, Some(e)) => Some((format!("The audit writer is failing: {e}"), theme::bad())),
         (0, None) => None,
-        (n, None) => Some((format!("{n} records waiting to be written."), theme::WARN)),
+        (n, None) => Some((format!("{n} records waiting to be written."), theme::warn())),
     };
     (status, color, writer)
 }
@@ -99,12 +99,12 @@ fn merged(read: &[(String, AuditView)]) -> Vec<(&str, &AuditEntryView)> {
 }
 
 /// The parts an audit day splits into, by what an entry records.
-const PARTS: [(&str, Color); 5] = [
-    ("gate continue", theme::PRIMARY),
-    ("gate deny", theme::BAD),
-    ("decide", theme::WARN),
-    ("act", theme::LINK),
-    ("other", theme::MUTED),
+const PARTS: [(&str, theme::Tint); 5] = [
+    ("gate continue", theme::primary_color),
+    ("gate deny", theme::bad),
+    ("decide", theme::warn),
+    ("act", theme::link_color),
+    ("other", theme::muted),
 ];
 
 /// Which part of [`PARTS`] an entry counts in.
@@ -136,7 +136,7 @@ fn daily(entries: &[(&str, &AuditEntryView)], now: u64) -> Bars {
         .collect();
     Bars {
         columns,
-        series: PARTS.iter().map(|(p, c)| (p.to_string(), *c)).collect(),
+        series: PARTS.iter().map(|(p, c)| (p.to_string(), c())).collect(),
         values,
         unit: |n| format!("{n}"),
     }
@@ -152,14 +152,14 @@ fn overview<'a>(state: &State, entries: &[(&str, &AuditEntryView)]) -> Element<'
         .count();
     let chains = format!("{verified} of {}", state.read.len());
     let tiles = row![
-        chart::tile(entries.len().to_string(), "entries read", theme::INK),
+        chart::tile(entries.len().to_string(), "entries read", theme::ink()),
         chart::tile(
             count("gate deny").to_string(),
             "calls the gate denied",
-            theme::BAD
+            theme::bad()
         ),
-        chart::tile(count("decide").to_string(), "decisions", theme::WARN),
-        chart::tile(chains, "chains that verify", theme::OK),
+        chart::tile(count("decide").to_string(), "decisions", theme::warn()),
+        chart::tile(chains, "chains that verify", theme::ok()),
     ]
     .spacing(12);
     let now = std::time::SystemTime::now()
@@ -186,7 +186,7 @@ fn checks<'a>(state: &State, many: bool) -> Element<'a, Message> {
     let failed = state
         .failed
         .iter()
-        .map(|f| text(f.clone()).color(theme::BAD).into());
+        .map(|f| text(f.clone()).color(theme::bad()).into());
     Column::with_children(lines.chain(failed)).spacing(6).into()
 }
 
@@ -195,18 +195,22 @@ fn entry_row<'a>(server: &str, e: &AuditEntryView, many: bool) -> Element<'a, Me
         text(format!("{} · {}", e.subject, e.detail)),
         text(e.hash.chars().take(12).collect::<String>())
             .size(12)
-            .color(theme::MUTED)
+            .color(theme::muted())
     ];
     let mut line = row![].spacing(8);
     if many {
-        line = line.push(text(server.to_string()).color(theme::LINK).width(96));
+        line = line.push(
+            text(server.to_string())
+                .color(theme::link_color())
+                .width(96),
+        );
     }
     line = line.extend([
         text(format!("#{}", e.seq))
-            .color(theme::MUTED)
+            .color(theme::muted())
             .width(64)
             .into(),
-        text(ago(e.at)).color(theme::MUTED).width(96).into(),
+        text(ago(e.at)).color(theme::muted()).width(96).into(),
         text(e.kind.clone()).width(112).into(),
         what.width(Fill).into(),
     ]);
@@ -237,10 +241,10 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     scrolled(
         column![
             head,
-            text(&state.exported).size(12).color(theme::MUTED),
+            text(&state.exported).size(12).color(theme::muted()),
             checks(state, many),
             overview(state, &entries),
-            text(counts.join(" · ")).size(13).color(theme::MUTED),
+            text(counts.join(" · ")).size(13).color(theme::muted()),
             list
         ]
         .spacing(12),

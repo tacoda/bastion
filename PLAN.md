@@ -62,7 +62,7 @@ Each word below is one thing, and the app uses no other word for it.
 | **Check** | What judges the agent's work: word checks, hooks, reviewers. Blocks. | Harness |
 | **Permission** | What a call may do: ask or allowed. | Harness |
 | **Tool** | Where calls go: the engine's functions, commands, MCP servers. | Harness |
-| **Plugin** | An installed bundle of skills, agents, hooks and MCP servers. | Harness |
+| **Plugin** | An installed bundle of skills, agents, commands, hooks and MCP servers. | Harness |
 | **Request** | What a person asks for. | Jobs |
 | **Job** | One request run through one workflow on one workspace. | Jobs |
 
@@ -99,7 +99,7 @@ These exist in the code or the decisions but have no name or no home.
 ## Agent primitives: parity with Claude Code, kept small
 
 Bastion offers the primitives a coding-agent harness offers, so a team's
-setup moves over without a rewrite. One primitive is left out on purpose.
+setup moves over without a rewrite.
 
 | Claude Code | Bastion | Kind |
 |---|---|---|
@@ -111,10 +111,10 @@ setup moves over without a rewrite. One primitive is left out on purpose.
 | MCP servers | MCP servers, as tools a permission names | Tool |
 | Plugins and marketplaces | Plugins: installed per server, then applied | Plugin |
 | Output styles | Rules a step is told | Guidance |
-| Slash commands | Not a primitive: a shell step or a prompt step | none |
+| Slash commands | Commands: a charter's or a plugin's, run by a prompt step | Guidance |
 
 **Plugins.** A plugin is a git repository with a manifest that lists its
-skills, agents, hooks and MCP servers, as a Claude Code plugin does. A
+skills, agents, commands, hooks and MCP servers, as a Claude Code plugin does. A
 person installs it on a server, from a URL or a marketplace list, at a
 pinned commit. Installing it adds nothing to a job: each part shows on the
 Harness page, off, and a person applies it to steps like any other item
@@ -237,7 +237,7 @@ before the next one starts.
 ### L7. Plugins
 
 - Install a plugin from a git URL at a pinned commit, on one server. Its
-  skills, agents, hooks and MCP servers show on Harness, off.
+  skills, agents, commands, hooks and MCP servers show on Harness, off.
 - Each job records the plugin commits it ran with.
 
 ### L8. First run

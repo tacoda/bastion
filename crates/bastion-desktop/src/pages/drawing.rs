@@ -108,9 +108,9 @@ fn link(frame: &mut Frame, from: &NodeView, to: &NodeView, look: (bool, bool)) {
     let (picked, failure) = look;
     let [start, c1, c2, end] = curve(from, to);
     let color = match (picked, failure) {
-        (true, _) => theme::PRIMARY,
-        (false, true) => theme::BAD,
-        (false, false) => theme::MUTED,
+        (true, _) => theme::primary_color(),
+        (false, true) => theme::bad(),
+        (false, false) => theme::muted(),
     };
     let line = Path::new(|p| {
         p.move_to(start);
@@ -156,11 +156,11 @@ struct Look<'a> {
 fn step(frame: &mut Frame, n: &NodeView, look: Look) {
     let at = corner(n);
     let body = Path::rounded_rectangle(at, Size::new(W, H), 8.0.into());
-    frame.fill(&body, theme::BG);
+    frame.fill(&body, theme::bg());
     let edge = if look.picked {
-        theme::PRIMARY
+        theme::primary_color()
     } else {
-        theme::LINE
+        theme::line()
     };
     frame.stroke(&body, Stroke::default().with_width(2.0).with_color(edge));
     let mut x = at.x + 10.0;
@@ -183,17 +183,22 @@ fn step(frame: &mut Frame, n: &NodeView, look: Look) {
     frame.fill_text(caption(
         title(n),
         Point::new(x, at.y + 10.0),
-        theme::INK,
+        theme::ink(),
         14.0,
     ));
     let line = |content: String, x: f32, y: f32| {
-        caption(content, Point::new(at.x + x, at.y + y), theme::MUTED, 12.0)
+        caption(
+            content,
+            Point::new(at.x + x, at.y + y),
+            theme::muted(),
+            12.0,
+        )
     };
     let icon = |frame: &mut Frame, svg: &str, x: f32, y: f32| {
         let at = Point::new(at.x + x, at.y + y);
         frame.draw_svg(
             iced::Rectangle::new(at, Size::new(13.0, 13.0)),
-            &crate::icons::colored(svg, theme::MUTED),
+            &crate::icons::colored(svg, theme::muted()),
         );
     };
     // The dial at the top right; the kind under the name; the artifacts below.
@@ -206,7 +211,7 @@ fn step(frame: &mut Frame, n: &NodeView, look: Look) {
     if look.port {
         frame.fill(
             &Path::circle(Point::new(at.x + W, at.y + H / 2.0), 7.0),
-            theme::PRIMARY,
+            theme::primary_color(),
         );
     }
 }
@@ -308,7 +313,7 @@ impl<M> canvas::Program<M> for Drawing<'_, M> {
             };
             frame.stroke(
                 &Path::line(d.origin, d.now),
-                dash.with_width(2.0).with_color(theme::PRIMARY),
+                dash.with_width(2.0).with_color(theme::primary_color()),
             );
         }
         vec![frame.into_geometry()]

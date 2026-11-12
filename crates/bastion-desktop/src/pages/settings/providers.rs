@@ -170,7 +170,7 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
 /// A provider's name with a mark for whether turns can run on it.
 fn name<'a>(p: &ProviderView) -> Element<'a, Message> {
     let ok = p.ready || p.source != "none";
-    let mark = text(if ok { "✓" } else { "!" }).color(if ok { theme::OK } else { theme::WARN });
+    let mark = text(if ok { "✓" } else { "!" }).color(if ok { theme::ok() } else { theme::warn() });
     // One width for every name and status, so the key fields line up.
     row![mark, text(p.name.clone()).font(theme::BOLD)]
         .spacing(6)
@@ -200,13 +200,16 @@ fn key_row<'a>(state: &State, p: &ProviderView) -> Element<'a, Message> {
         (!typed.trim().is_empty()).then(|| wrap(Msg::SetKey(p.id.clone()))),
     );
     let remove = (p.source == "secret").then(|| {
-        button(text("Remove").size(13).color(theme::BAD))
+        button(text("Remove").size(13).color(theme::bad()))
             .style(theme::link)
             .on_press(wrap(Msg::RemoveKey(p.id.clone())))
     });
     row![
         name(p),
-        text(key_status(p)).size(13).color(theme::MUTED).width(240),
+        text(key_status(p))
+            .size(13)
+            .color(theme::muted())
+            .width(240),
         field,
         set
     ]
@@ -224,7 +227,7 @@ fn codex_row<'a>(state: &State, p: &ProviderView) -> Element<'a, Message> {
         "uses a ChatGPT plan, no key"
     };
     let action = if signed_in {
-        button(text("Sign out").size(13).color(theme::BAD))
+        button(text("Sign out").size(13).color(theme::bad()))
             .style(theme::link)
             .on_press(wrap(Msg::SignOut))
     } else {
@@ -235,7 +238,7 @@ fn codex_row<'a>(state: &State, p: &ProviderView) -> Element<'a, Message> {
     };
     let line = row![
         name(p),
-        text(status).size(13).color(theme::MUTED).width(240),
+        text(status).size(13).color(theme::muted()).width(240),
         action
     ]
     .spacing(10)
@@ -243,10 +246,14 @@ fn codex_row<'a>(state: &State, p: &ProviderView) -> Element<'a, Message> {
     let Some(s) = &state.signing_in else {
         return line.into();
     };
-    let open = button(text(s.verification_uri.clone()).size(13).color(theme::LINK))
-        .padding(0)
-        .style(theme::link)
-        .on_press(Message::OpenUrl(s.verification_uri.clone()));
+    let open = button(
+        text(s.verification_uri.clone())
+            .size(13)
+            .color(theme::link_color()),
+    )
+    .padding(0)
+    .style(theme::link)
+    .on_press(Message::OpenUrl(s.verification_uri.clone()));
     let waiting = row![
         text("Open ").size(13),
         open,
@@ -271,21 +278,21 @@ fn providers(state: &State) -> Element<'_, Message> {
         "Model providers",
         Column::with_children(rows)
             .spacing(8)
-            .push(text(&state.note).size(13).color(theme::BAD)),
+            .push(text(&state.note).size(13).color(theme::bad())),
     )
 }
 
 fn hosts(state: &State) -> Element<'_, Message> {
     let lede = "Each host serves its models as a provider of its own. A host that needs a key gets it under Model providers.";
     let rows = state.hosts.iter().map(|h| {
-        let remove = button(text("Remove").size(13).color(theme::BAD))
+        let remove = button(text("Remove").size(13).color(theme::bad()))
             .style(theme::link)
             .on_press(wrap(Msg::RemoveHost(h.id.clone())));
         row![
             text(h.name.clone()).font(theme::BOLD),
             text(format!("{} · {}", h.id, h.api_url))
                 .size(13)
-                .color(theme::MUTED),
+                .color(theme::muted()),
             remove
         ]
         .spacing(10)
@@ -313,7 +320,7 @@ fn hosts(state: &State) -> Element<'_, Message> {
     card(
         "OpenAI-compatible hosts",
         column![
-            text(lede).size(13).color(theme::MUTED),
+            text(lede).size(13).color(theme::muted()),
             Column::with_children(rows).spacing(4),
             form
         ],

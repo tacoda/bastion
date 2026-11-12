@@ -49,15 +49,18 @@ pub fn update(state: &mut State, msg: Msg) {
 /// The color a verdict reads in: allowed, held or refused.
 fn verdict_color(verdict: &str) -> Color {
     match verdict.split(' ').next() {
-        Some("continue") => theme::OK,
-        Some("hold") => theme::WARN,
-        Some("deny") => theme::BAD,
-        _ => theme::MUTED,
+        Some("continue") => theme::ok(),
+        Some("hold") => theme::warn(),
+        Some("deny") => theme::bad(),
+        _ => theme::muted(),
     }
 }
 
 fn step_view(s: &TurnStep) -> Element<'static, Message> {
-    let label = text(s.kind.clone()).size(12).color(theme::MUTED).width(64);
+    let label = text(s.kind.clone())
+        .size(12)
+        .color(theme::muted())
+        .width(64);
     let body: Element<'static, Message> = match s.kind.as_str() {
         "call" => column![
             text(s.text.clone()).font(theme::MONO).size(13),
@@ -72,7 +75,7 @@ fn step_view(s: &TurnStep) -> Element<'static, Message> {
             .width(Fill)
             .style(theme::code)
             .into(),
-        "thought" => text(s.text.clone()).size(13).color(theme::MUTED).into(),
+        "thought" => text(s.text.clone()).size(13).color(theme::muted()).into(),
         _ => text(s.text.clone()).size(13).into(),
     };
     row![label, body].spacing(12).padding([4, 12]).into()
@@ -83,7 +86,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         text(format!("Session {}", state.id))
             .size(24)
             .font(theme::BOLD),
-        text(&state.error).color(theme::BAD),
+        text(&state.error).color(theme::bad()),
     ];
     if let Some(d) = &state.detail {
         let open = Message::OpenJob {
@@ -105,9 +108,9 @@ mod tests {
 
     #[test]
     fn a_verdict_reads_in_the_color_of_its_decision() {
-        assert_eq!(verdict_color("continue"), theme::OK);
-        assert_eq!(verdict_color("deny (no deleting)"), theme::BAD);
-        assert_eq!(verdict_color("hold (ask)"), theme::WARN);
-        assert_eq!(verdict_color(""), theme::MUTED);
+        assert_eq!(verdict_color("continue"), theme::ok());
+        assert_eq!(verdict_color("deny (no deleting)"), theme::bad());
+        assert_eq!(verdict_color("hold (ask)"), theme::warn());
+        assert_eq!(verdict_color(""), theme::muted());
     }
 }

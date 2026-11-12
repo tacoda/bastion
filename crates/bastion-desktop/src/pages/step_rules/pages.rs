@@ -81,8 +81,8 @@ fn placed<'a>(
 
 fn constraint_head<'a>(c: &ConstraintView) -> Element<'a, Msg> {
     row![
-        badge(kind(c), theme::MUTED),
-        badge(mode(c), theme::MUTED),
+        badge(kind(c), theme::muted()),
+        badge(mode(c), theme::muted()),
         text(c.rule.clone()).size(13).width(Fill)
     ]
     .spacing(8)
@@ -96,8 +96,8 @@ fn grant_head<'a>(g: &CapabilityView) -> Element<'a, Msg> {
         .font(theme::MONO)
         .width(Fill);
     row![
-        badge(&g.stage, theme::MUTED),
-        badge(&g.rung, theme::MUTED),
+        badge(&g.stage, theme::muted()),
+        badge(&g.rung, theme::muted()),
         name
     ]
     .spacing(8)
@@ -194,7 +194,7 @@ fn adding<'a>(rules: &'a Rules, which: Which, global: bool) -> Element<'a, Msg> 
         Which::Capabilities => vec![pick("A note", Adding::Note)],
         Which::Permissions => vec![pick("A grant", Adding::Grant)],
     };
-    let switch = row![text("Add").size(13).color(theme::MUTED)]
+    let switch = row![text("Add").size(13).color(theme::muted())]
         .extend(choices)
         .spacing(6)
         .align_y(iced::Center);
@@ -227,7 +227,7 @@ fn grant_form<'a>(rules: &'a Rules) -> Element<'a, Msg> {
             Some(Msg::ForKind(k.to_string())),
         )
     });
-    let kinds = row![text("For").size(12).color(theme::MUTED)]
+    let kinds = row![text("For").size(12).color(theme::muted())]
         .extend(kinds)
         .spacing(6)
         .align_y(iced::Center);

@@ -46,7 +46,7 @@ fn workflow<'a>(
         };
         let name = text(n.id.replace('_', " "))
             .size(13)
-            .color(theme::MUTED)
+            .color(theme::muted())
             .width(Fill);
         row![name, scope_switch(item.clone(), scopes, &at, editable)]
             .spacing(8)

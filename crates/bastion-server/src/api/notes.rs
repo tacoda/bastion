@@ -13,6 +13,7 @@ use bastion_core::corpus;
 use bastion_protocol::{CharterChange, FieldNoteView};
 
 use super::factory::{FactoryCell, factory};
+use crate::charter::{Codified, SETTINGS};
 use crate::machine::Machine;
 
 /// The audit kind a field note is kept under.
@@ -55,6 +56,42 @@ pub struct Written {
     pub about: String,
     pub text: String,
     pub by: String,
+    /// A lesson's shape: `rule`, `hook`, `allow`, `ask` or `deny`.
+    pub shape: String,
+    /// A hook's command, or a permission's rule.
+    pub detail: String,
+}
+
+impl Written {
+    /// The lesson codified in the settings, when it is not a rule file.
+    fn codified(&self) -> Option<Codified> {
+        let detail = self.detail.trim().to_string();
+        match (self.about.as_str(), self.shape.as_str()) {
+            ("lesson", "hook") => Some(Codified::Hook(detail)),
+            ("lesson", kind @ ("allow" | "ask" | "deny")) => Some(Codified::Permission {
+                kind: kind.into(),
+                rule: detail,
+            }),
+            _ => None,
+        }
+    }
+}
+
+/// The region's settings with a codified lesson in them, read from its
+/// base branch.
+async fn settings_with(
+    cell: &FactoryCell,
+    machine: &dyn Machine,
+    workspace: &str,
+    lesson: &Codified,
+) -> Result<String, String> {
+    let all = factory(cell)?.store().workspaces().await?;
+    let w = all.iter().find(|w| w.name == workspace);
+    let w = w.ok_or_else(|| format!("no region named {workspace}"))?;
+    let at = format!("{}:{SETTINGS}", w.branch);
+    let shown = machine.run("git", &["show", &at], Some(std::path::Path::new(&w.path)))?;
+    let current = shown.success.then_some(shown.text);
+    crate::charter::with_lesson(current.as_deref(), lesson)
 }
 
 /// The charter file a lesson or a fact becomes: a rule, or a corpus entry
@@ -95,7 +132,15 @@ pub async fn note(
             .rev()
             .find(|a| a.body.starts_with("diff --git"));
         let diff = change.map_or("", |a| a.body.as_str());
-        let (path, file) = charter_file(&w, &text, &id, diff);
+        let (path, file) = match w.codified() {
+            Some(_) if lesson_detail(&w).is_err() => return lesson_detail(&w),
+            Some(lesson) => {
+                let workspace = &record.job.workspace;
+                let merged = settings_with(cell, machine.as_ref(), workspace, &lesson).await?;
+                (SETTINGS.to_string(), merged)
+            }
+            None => charter_file(&w, &text, &id, diff),
+        };
         let change = CharterChange {
             workspace: record.job.workspace.clone(),
             path,
@@ -109,6 +154,14 @@ pub async fn note(
         detail: format!("{}\t{}\t{text}\t{branch}", w.by, w.about),
     });
     Ok(())
+}
+
+/// A hook or a permission says what it codifies.
+fn lesson_detail(w: &Written) -> Result<(), String> {
+    match w.detail.trim().is_empty() {
+        true => Err("say the hook's command or the permission's rule".into()),
+        false => Ok(()),
+    }
 }
 
 /// The notes on job `id`, oldest first.
@@ -179,7 +232,14 @@ mod tests {
             about: about.into(),
             text: String::new(),
             by: "Ian".into(),
+            shape: String::new(),
+            detail: String::new(),
         };
+        let mut hook = w("lesson");
+        (hook.shape, hook.detail) = ("hook".into(), "./lint.sh".into());
+        assert_eq!(hook.codified(), Some(Codified::Hook("./lint.sh".into())));
+        assert_eq!(w("lesson").codified(), None, "a rule by default");
+        assert!(lesson_detail(&w("lesson")).is_err());
         let diff = "diff --git a/src/calc.py b/src/calc.py\n";
         let (path, file) = charter_file(&w("lesson"), "Keep calc small.", "j1", diff);
         assert_eq!(path, ".agents/rules/keep-calc-small.md");

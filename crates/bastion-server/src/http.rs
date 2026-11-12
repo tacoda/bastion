@@ -531,6 +531,10 @@ async fn job_comment(
 struct Note {
     about: String,
     text: String,
+    #[serde(default)]
+    shape: String,
+    #[serde(default)]
+    detail: String,
 }
 
 async fn field_note(
@@ -543,6 +547,8 @@ async fn field_note(
         about: b.about,
         text: b.text,
         by: person.name.clone(),
+        shape: b.shape,
+        detail: b.detail,
     };
     let machine = app.server.machine.clone();
     let signed = api::notes::note(&app.server.factory, machine, id.clone(), w);

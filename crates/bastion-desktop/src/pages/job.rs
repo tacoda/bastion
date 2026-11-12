@@ -26,6 +26,9 @@ pub struct State {
     /// The field note being written, and what it is about.
     field: String,
     field_about: &'static str,
+    /// A lesson's shape, and its hook's command or permission's rule.
+    field_shape: &'static str,
+    field_detail: String,
     /// What the owner typed to refuse each held call, by call id.
     feedback: BTreeMap<String, String>,
     /// The steps the owner opened or closed, against their default.
@@ -59,6 +62,8 @@ impl State {
             pressed: None,
             field: String::new(),
             field_about: "lesson",
+            field_shape: "rule",
+            field_detail: String::new(),
             docs: BTreeMap::new(),
         }
     }
@@ -89,6 +94,8 @@ pub enum Msg {
     /// The field note's words, what it is about, and signing it (D59).
     Field(String),
     FieldAbout(&'static str),
+    FieldShape(&'static str),
+    FieldDetail(String),
     Sign,
     ToggleTurn,
     /// Open a kept screenshot or recording with the system's viewer.
@@ -241,10 +248,14 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         Msg::CloseCard => state.pressed = None,
         Msg::Field(t) => state.field = t,
         Msg::FieldAbout(a) => state.field_about = a,
+        Msg::FieldShape(a) => state.field_shape = a,
+        Msg::FieldDetail(t) => state.field_detail = t,
         Msg::Sign => {
             let note = api::FieldNote {
                 id: state.id.clone(),
                 about: state.field_about.into(),
+                shape: state.field_shape.into(),
+                detail: std::mem::take(&mut state.field_detail),
                 text: std::mem::take(&mut state.field),
             };
             return ask(ctx, note);
@@ -681,6 +692,32 @@ fn card_at(p: &super::trail::Pressed) -> (f32, f32) {
     (x.max(16.0), 16.0)
 }
 
+/// How a lesson is codified (D61): a rule file, or a hook or permission
+/// in the region's settings, with the command or rule it needs.
+fn lesson_shape(state: &State) -> Element<'_, Message> {
+    let pick = |label: &'static str, shape: &'static str| {
+        let on = state.field_shape == shape;
+        super::step_rules::choice(label, on, Some(Message::Job(Msg::FieldShape(shape))))
+    };
+    let shapes = row![
+        pick("As a rule", "rule"),
+        pick("As a hook", "hook"),
+        pick("Allow", "allow"),
+        pick("Ask", "ask"),
+        pick("Deny", "deny")
+    ]
+    .spacing(6);
+    let hint = match state.field_shape {
+        "rule" => return shapes.into(),
+        "hook" => "The command to run before each shell call, such as ./lint.sh",
+        _ => "The rule, such as Bash(git push:*)",
+    };
+    let detail = text_input(hint, &state.field_detail)
+        .on_input(|t| Message::Job(Msg::FieldDetail(t)))
+        .style(theme::field);
+    column![shapes, detail].spacing(6).into()
+}
+
 /// What to write for each kind of note (D61).
 fn field_hint(about: &str) -> &'static str {
     match about {
@@ -731,7 +768,11 @@ fn atlas_card<'a>(state: &'a State, d: &'a JobDetail) -> Element<'a, Message> {
     let sign = crate::lift::button(text("Sign").size(13))
         .style(theme::primary)
         .on_press_maybe((!state.field.trim().is_empty()).then_some(Message::Job(Msg::Sign)));
-    let form = column![about, row![words, sign].spacing(8)].spacing(6);
+    let mut form = column![about].spacing(6);
+    if state.field_about == "lesson" {
+        form = form.push(lesson_shape(state));
+    }
+    let form = form.push(row![words, sign].spacing(8));
     let body = scrollable(body).height(iced::Length::Shrink);
     container(column![head, container(body).max_height(CARD_MAX - 70.0), form].spacing(10))
         .padding(12)

@@ -306,6 +306,8 @@ Next, notes become charter changes (D61, replacing D59's atlas):
   `.agents/corpus/<name>.md` with its paths inferred from the journey's
   change and the paths the note names. Each is committed on a branch of
   its own for a person to merge.
+- Done: a lesson can be a hook or a permission (allow, ask, deny),
+  merged into `.agents/settings.json` with all it already holds.
 - Next: write onto the journey's own branch while it is still open.
 - Done: the corpus is loaded by path: when an agent opens a path a corpus
   entry names, it is given that entry, once per turn.

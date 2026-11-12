@@ -75,6 +75,55 @@ pub fn read(file: &dyn Fn(&str) -> Option<String>) -> Charter {
     found
 }
 
+/// A lesson codified in `.agents/settings.json` (D61).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Codified {
+    /// A command run before each shell call; exit 2 refuses the call.
+    Hook(String),
+    /// A permission rule under `allow`, `ask` or `deny`, such as
+    /// `Bash(git push:*)`.
+    Permission { kind: String, rule: String },
+}
+
+/// The settings with `lesson` added, keeping all they already hold. No
+/// settings yet starts from an empty object.
+pub fn with_lesson(settings: Option<&str>, lesson: &Codified) -> Result<String, String> {
+    let mut all: Value = match settings {
+        Some(text) => {
+            serde_json::from_str(text).map_err(|e| format!("{SETTINGS} is not valid JSON: {e}"))?
+        }
+        None => serde_json::json!({}),
+    };
+    if !all.is_object() {
+        return Err(format!("{SETTINGS} is not a JSON object"));
+    }
+    let (list, item) = match lesson {
+        Codified::Hook(command) => (
+            &mut all["hooks"]["PreToolUse"],
+            serde_json::json!({ "matcher": "Bash", "hooks": [{ "type": "command", "command": command }] }),
+        ),
+        Codified::Permission { kind, rule } => {
+            if !["allow", "ask", "deny"].contains(&kind.as_str()) {
+                return Err(format!("{kind:?} is not allow, ask or deny"));
+            }
+            (
+                &mut all["permissions"][kind.as_str()],
+                Value::String(rule.clone()),
+            )
+        }
+    };
+    if !list.is_array() {
+        *list = Value::Array(Vec::new());
+    }
+    let items = list.as_array_mut().expect("an array");
+    if !items.contains(&item) {
+        items.push(item);
+    }
+    serde_json::to_string_pretty(&all)
+        .map(|t| t + "\n")
+        .map_err(|e| e.to_string())
+}
+
 /// Every command hook under one event, with the functions its matcher covers.
 fn hooks(settings: &Value, event: &str) -> Vec<Hook> {
     let groups = settings["hooks"][event].as_array().into_iter().flatten();
@@ -153,6 +202,32 @@ pub async fn run(engine: &dyn Engine, sandbox: &str, command: &str, input: &Valu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_lesson_joins_the_settings_and_keeps_what_they_hold() {
+        let kept = r#"{"model":"x","permissions":{"deny":["Bash(rm:*)"]}}"#;
+        let deny = Codified::Permission {
+            kind: "deny".into(),
+            rule: "Bash(git push:*)".into(),
+        };
+        let out = with_lesson(Some(kept), &deny).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["model"], "x");
+        assert_eq!(
+            v["permissions"]["deny"],
+            serde_json::json!(["Bash(rm:*)", "Bash(git push:*)"])
+        );
+        assert_eq!(with_lesson(Some(&out), &deny).unwrap(), out, "added once");
+        let hook = with_lesson(None, &Codified::Hook("./lint.sh".into())).unwrap();
+        let read = read(&|name| (name == SETTINGS).then(|| hook.clone()));
+        assert_eq!(read.before[0].command, "./lint.sh");
+        let odd = Codified::Permission {
+            kind: "maybe".into(),
+            rule: "x".into(),
+        };
+        assert!(with_lesson(None, &odd).is_err());
+        assert!(with_lesson(Some("[]"), &deny).is_err());
+    }
     use std::collections::HashMap;
 
     fn repo(files: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {

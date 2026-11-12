@@ -239,6 +239,11 @@ pub struct FieldNote {
     /// `lesson`, `fact` or `bastion` (D61).
     pub about: String,
     pub text: String,
+    /// A lesson's shape: `rule` (the default), `hook`, or a permission,
+    /// `allow`, `ask` or `deny`.
+    pub shape: String,
+    /// A hook's command, or a permission's rule, such as `Bash(rm:*)`.
+    pub detail: String,
 }
 
 impl Request for FieldNote {

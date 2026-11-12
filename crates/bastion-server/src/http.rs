@@ -176,6 +176,7 @@ fn govern_routes() -> Router<App> {
         .route("/constraints", get(constraints).post(constraint_add))
         .route("/constraints/{id}/move", post(constraint_move))
         .route("/constraints/{id}/rung", put(constraint_rung))
+        .route("/constraints/{id}/form", put(constraint_form))
         .route("/scopes", put(scope_set))
         .route("/constraints/{id}/steps", post(constraint_steps))
         .route("/constraints/{id}/remove", post(constraint_remove))
@@ -640,6 +641,14 @@ async fn constraint_remove(State(app): State<App>, Path(id): Path<String>) -> Re
 #[derive(Deserialize)]
 struct Rung {
     rung: String,
+}
+
+async fn constraint_form(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    Json(b): Json<bastion_protocol::api::ConstraintForm>,
+) -> Response {
+    answer(api::govern::constraint_form(&app.server.factory, id, b).await)
 }
 
 async fn scope_set(

@@ -297,6 +297,32 @@ pub struct ScopeSet {
 
 with!(Scope, "PUT", "/scopes", ScopeSet, ());
 
+/// Give a constraint its deterministic form (D55): the calls and words it
+/// binds, or a hook command; and a rung to move it to, when given.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ConstraintForm {
+    #[serde(skip)]
+    pub id: String,
+    #[serde(default)]
+    pub function: String,
+    #[serde(default)]
+    pub contains: String,
+    #[serde(default)]
+    pub hook: String,
+    #[serde(default)]
+    pub rung: Option<String>,
+}
+
+impl Request for ConstraintForm {
+    const METHOD: &'static str = "PUT";
+    const ROUTE: &'static str = "/constraints/{id}/form";
+    const BODY: bool = true;
+    type Answer = ();
+    fn path(&self) -> String {
+        fill(Self::ROUTE, "id", &self.id)
+    }
+}
+
 /// Set a constraint's rung: told, checked or enforced.
 #[derive(Clone, Debug, Serialize)]
 pub struct ConstraintRung {
@@ -642,6 +668,7 @@ fn factory_requests() -> Vec<(&'static str, &'static str)> {
         ConstraintSteps,
         ConstraintRemove,
         ConstraintRung,
+        ConstraintForm,
         Scope,
         Capabilities,
         CapabilityMove,
@@ -714,6 +741,6 @@ mod tests {
         assert_eq!(comment.path(), "/jobs/j1/comment");
         let spaced = WorkflowDelete { id: "a b/c".into() };
         assert_eq!(spaced.path(), "/workflows/a%20b%2Fc");
-        assert_eq!(every().len(), 78);
+        assert_eq!(every().len(), 79);
     }
 }

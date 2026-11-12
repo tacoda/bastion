@@ -5,7 +5,9 @@ use bastion_protocol::ConstraintView;
 use iced::widget::{column, container, pick_list, row, text, text_input};
 use iced::{Element, Fill};
 
-use super::{At, Item, Msg, RuleField, Rules, choice, help, scope, scope_switch, small};
+use super::{
+    At, FormDraft, FormField, Item, Msg, RuleField, Rules, choice, help, scope, scope_switch, small,
+};
 use crate::theme;
 
 /// What kind of constraint `c` is: a rule on calls, a hook or a reviewer.
@@ -46,6 +48,23 @@ pub(super) fn fits(c: &ConstraintView, filter: &str) -> bool {
         .all(|w| all.contains(w))
 }
 
+/// Who judges a constraint (D55): an agent, for a told rule or a reviewer;
+/// code, for a word match, a hook, or a review check once it is more than
+/// told.
+pub(super) fn judged_by(c: &ConstraintView) -> &'static str {
+    let code = !c.function.is_empty() || !c.hook.is_empty();
+    match (c.rung.as_str(), c.reviewer.is_empty(), code) {
+        ("told", _, _) | (_, false, _) | (_, true, false) => "agent",
+        _ => "code",
+    }
+}
+
+/// Whether code has something to judge the rule by: calls to match, or a
+/// hook to run.
+fn has_form(c: &ConstraintView) -> bool {
+    !c.function.is_empty() || !c.hook.is_empty()
+}
+
 /// A rung's place in the list, enforced first, and its color.
 fn rung(c: &ConstraintView) -> (u8, iced::Color) {
     match c.rung.as_str() {
@@ -71,8 +90,14 @@ fn rung_switch<'a>(c: &ConstraintView, editable: bool) -> Element<'a, Msg> {
     if !editable || c.source == "charter" {
         return badge(&c.rung, rung(c).1);
     }
+    // A told rule with nothing for code to judge asks for its form first.
+    let needs_form = c.reviewer.is_empty() && !has_form(c);
     let set = |label: &str, to: &str| {
-        let msg = (c.rung != to).then(|| Msg::SetRung(c.id.clone(), to.into()));
+        let msg = match (c.rung == to, needs_form && to != "told") {
+            (true, _) => None,
+            (false, true) => Some(Msg::Form(c.id.clone(), Some(to.into()))),
+            (false, false) => Some(Msg::SetRung(c.id.clone(), to.into())),
+        };
         choice(label.to_string(), c.rung == to, msg)
     };
     row![
@@ -93,10 +118,70 @@ fn removable(c: &ConstraintView, at: &At) -> bool {
     at.is_every() && made_in_app
 }
 
-fn line<'a>(c: &ConstraintView, at: &At, editable: bool) -> Element<'a, Msg> {
+/// The editor for a rule's deterministic form: the calls and words code
+/// matches, or a hook it runs.
+fn form_editor<'a>(d: &FormDraft) -> Element<'a, Msg> {
+    let field = |hint: &'static str, value: &str, f: FormField| {
+        text_input(hint, value)
+            .on_input(move |v| Msg::FormField(f, v))
+            .style(theme::field)
+    };
+    let matches = row![
+        field(
+            "Calls, such as sandbox::exec",
+            &d.function,
+            FormField::Function
+        )
+        .width(260),
+        field(
+            "Words a call holds, such as git push",
+            &d.contains,
+            FormField::Contains
+        ),
+    ]
+    .spacing(8);
+    let hook = field(
+        "Or a hook command, such as ./.agents/hooks/lint.sh",
+        &d.hook,
+        FormField::Hook,
+    );
+    let ready = !d.function.trim().is_empty() || !d.hook.trim().is_empty();
+    let save = match &d.rung {
+        Some(r) => format!("Save and make it {r}"),
+        None => "Save".into(),
+    };
+    let buttons = row![
+        small(save, ready.then_some(Msg::SaveForm)),
+        small("Cancel", Some(Msg::CancelForm))
+    ]
+    .spacing(6);
+    let why = "Code judges this rule by the calls it matches, or by a hook that exits 2 to refuse. Told keeps this and stops running it.";
+    container(column![help(why), matches, hook, buttons].spacing(6))
+        .padding(10)
+        .width(Fill)
+        .style(theme::panel)
+        .into()
+}
+
+/// A row's buttons: Form for a rule the owner keeps, and Remove where it
+/// may come off whole.
+fn actions<'a>(c: &ConstraintView, at: &At, editable: bool) -> Vec<Element<'a, Msg>> {
+    let formed = editable && c.source != "charter" && c.reviewer.is_empty();
+    let form = formed.then(|| small("Form", Some(Msg::Form(c.id.clone(), None))));
+    let remove =
+        (editable && removable(c, at)).then(|| small("Remove", Some(Msg::Remove(c.id.clone()))));
+    form.into_iter().chain(remove).collect()
+}
+
+fn line<'a>(rules: &Rules, c: &ConstraintView, at: &At, editable: bool) -> Element<'a, Msg> {
     let on = scope::on(&c.steps, at.scope);
     let color = if on { theme::INK } else { theme::MUTED };
-    let rule = text(c.rule.clone()).size(13).color(color).width(Fill);
+    let rule = column![
+        text(c.rule.clone()).size(13).color(color),
+        help(format!("{} judges it", judged_by(c))),
+    ]
+    .spacing(2)
+    .width(Fill);
     let item = Item::Constraint(c.id.clone());
     let mut line = row![
         badge(kind(c), theme::MUTED),
@@ -106,10 +191,11 @@ fn line<'a>(c: &ConstraintView, at: &At, editable: bool) -> Element<'a, Msg> {
     ]
     .spacing(8)
     .align_y(iced::Center);
-    if editable && removable(c, at) {
-        line = line.push(small("Remove", Some(Msg::Remove(c.id.clone()))));
+    line = line.extend(actions(c, at, editable));
+    match rules.forming.as_ref().filter(|d| d.id == c.id) {
+        Some(d) => column![line, form_editor(d)].spacing(6).into(),
+        None => line.into(),
     }
-    line.into()
 }
 
 /// The form for a rule: what the agent is told, its rung, and the calls it
@@ -205,7 +291,10 @@ pub(super) fn rows<'a>(
         .filter(|c| fits(c, &rules.filter))
         .collect();
     shown.sort_by_key(|c| rung(c).0);
-    shown.into_iter().map(|c| line(c, at, editable)).collect()
+    shown
+        .into_iter()
+        .map(|c| line(rules, c, at, editable))
+        .collect()
 }
 
 #[cfg(test)]
@@ -229,5 +318,12 @@ mod tests {
             ..ConstraintView::default()
         };
         assert_eq!(layer(&reviewer), "factory", "a reviewer reads the work");
+        assert_eq!(judged_by(&hook), "code", "an enforced hook");
+        let told = ConstraintView {
+            rung: "told".into(),
+            ..hook.clone()
+        };
+        assert_eq!(judged_by(&told), "agent", "a told rule, form or not");
+        assert!(has_form(&told), "demoted, it keeps its hook");
     }
 }

@@ -61,6 +61,13 @@ scope switch apart from the rung switch beside it.
 - Promoting a told rule asks for its deterministic form: the words a call
   holds, or a hook command. Demoting keeps that form and stops running it.
 - A grant's rung stays ask or allowed.
+- "Form" on a rule edits that form at any rung.
+
+Done 2026-11-12. Live, at All workflows a told test rule showed "agent
+judges it". Enforced opened its form, which asked for calls to match or a
+hook; with `./.agents/hooks/lint.sh` it saved as an enforced hook, "code
+judges it". Told then kept the hook and stopped it running. The audit kept
+the form, both promotions, and both demotions.
 
 ## Open questions
 

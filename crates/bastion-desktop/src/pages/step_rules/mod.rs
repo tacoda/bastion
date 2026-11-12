@@ -52,6 +52,25 @@ struct RuleDraft {
     rung: String,
 }
 
+/// A field of a rule's deterministic form (D55).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FormField {
+    Function,
+    Contains,
+    Hook,
+}
+
+/// A rule's deterministic form being edited: the calls and words code
+/// matches, or a hook it runs; and the rung to promote it to on save.
+#[derive(Clone, Debug, Default)]
+pub(super) struct FormDraft {
+    pub(super) id: String,
+    pub(super) function: String,
+    pub(super) contains: String,
+    pub(super) hook: String,
+    pub(super) rung: Option<String>,
+}
+
 /// The form shown to add a grant: one at a time.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Granting {
@@ -94,6 +113,8 @@ pub struct Rules {
     hook: String,
     reviewer: String,
     rule: RuleDraft,
+    /// The rule whose deterministic form is open, if any.
+    pub(super) forming: Option<FormDraft>,
     said: String,
 }
 
@@ -129,6 +150,11 @@ pub enum Msg {
     AddReviewer,
     Rule(RuleField, String),
     AddRule,
+    /// Open a rule's deterministic form, with the rung to promote it to.
+    Form(String, Option<String>),
+    FormField(FormField, String),
+    SaveForm,
+    CancelForm,
     /// Remove a constraint made in the app, everywhere.
     Remove(String),
     Done(Result<(), String>),
@@ -328,6 +354,45 @@ fn grant(function: &str, rung: String, stage: &str, scope: &str) -> CapabilityVi
     }
 }
 
+/// The open form for rule `id`, filled from what it has.
+fn open_form(rules: &mut Rules, id: String, rung: Option<String>) {
+    let c = rules.constraints.iter().find(|c| c.id == id);
+    let mut draft = FormDraft {
+        id,
+        rung,
+        ..FormDraft::default()
+    };
+    if let Some(c) = c {
+        (draft.function, draft.contains, draft.hook) =
+            (c.function.clone(), c.contains.clone(), c.hook.clone());
+    }
+    rules.forming = Some(draft);
+}
+
+/// The open form, saved: its calls, words and hook, and its rung if it
+/// promotes the rule.
+fn save_form(rules: &mut Rules, ctx: &Ctx) -> Task<Msg> {
+    let Some(d) = rules.forming.take() else {
+        return Task::none();
+    };
+    let form = api::ConstraintForm {
+        id: d.id,
+        function: d.function,
+        contains: d.contains,
+        hook: d.hook,
+        rung: d.rung,
+    };
+    send(ctx, form)
+}
+
+fn form_field(d: &mut FormDraft, field: FormField, value: String) {
+    match field {
+        FormField::Function => d.function = value,
+        FormField::Contains => d.contains = value,
+        FormField::Hook => d.hook = value,
+    }
+}
+
 /// What the forms hold as typed, and which form shows.
 fn typed(rules: &mut Rules, msg: Msg) {
     match msg {
@@ -341,6 +406,13 @@ fn typed(rules: &mut Rules, msg: Msg) {
         Msg::Reviewer(r) => rules.reviewer = r,
         Msg::Rule(field, value) => rule_field(&mut rules.rule, field, value),
         Msg::ForKind(k) => rules.for_kind = k,
+        Msg::Form(id, rung) => open_form(rules, id, rung),
+        Msg::CancelForm => rules.forming = None,
+        Msg::FormField(field, value) => {
+            if let Some(d) = rules.forming.as_mut() {
+                form_field(d, field, value);
+            }
+        }
         _ => {}
     }
 }
@@ -367,6 +439,7 @@ pub fn update(rules: &mut Rules, msg: Msg, at: &At, ctx: &Ctx) -> Task<Msg> {
             load(ctx)
         }
         Msg::Remove(id) => send(ctx, api::ConstraintRemove { id }),
+        Msg::SaveForm => save_form(rules, ctx),
         Msg::AddRule | Msg::AddReviewer | Msg::AddHook => {
             send(ctx, api::ConstraintAdd(made(rules, &msg, at.scope)))
         }
@@ -501,6 +574,24 @@ mod tests {
         assert_eq!(
             (enforced.rung.as_str(), enforced.function.as_str()),
             ("enforced", "sandbox::exec")
+        );
+    }
+
+    #[test]
+    fn a_rule_form_opens_with_what_it_has_and_saves_its_promotion() {
+        let mut rules = Rules {
+            constraints: vec![ConstraintView {
+                id: "rule-every-1".into(),
+                hook: "./lint.sh".into(),
+                ..ConstraintView::default()
+            }],
+            ..Rules::default()
+        };
+        open_form(&mut rules, "rule-every-1".into(), Some("enforced".into()));
+        let d = rules.forming.as_ref().unwrap();
+        assert_eq!(
+            (d.hook.as_str(), d.rung.as_deref()),
+            ("./lint.sh", Some("enforced"))
         );
     }
 

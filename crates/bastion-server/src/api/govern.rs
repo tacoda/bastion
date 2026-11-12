@@ -11,9 +11,9 @@ use serde_json::json;
 
 use super::factory::{FactoryCell, factory, name};
 use crate::factory::now;
-use crate::gate::Scoped;
+use crate::gate::{Form, Scoped};
 use crate::machine::Machine;
-use bastion_protocol::api::ScopeSet;
+use bastion_protocol::api::{ConstraintForm, ScopeSet};
 
 pub async fn held_allow(cell: &FactoryCell, held: HeldCallRef) -> Result<(), String> {
     factory(cell)?
@@ -93,6 +93,27 @@ pub async fn constraint_add(cell: &FactoryCell, constraint: ConstraintView) -> R
 
 pub async fn constraint_remove(cell: &FactoryCell, id: String) -> Result<(), String> {
     factory(cell)?.gate().remove_constraint(&id).await
+}
+
+/// Give a constraint its deterministic form, and move it to a rung (D55).
+pub async fn constraint_form(
+    cell: &FactoryCell,
+    id: String,
+    f: ConstraintForm,
+) -> Result<(), String> {
+    let rung = match &f.rung {
+        Some(r) => Some(
+            serde_json::from_value(json!(r))
+                .map_err(|_| format!("{r:?} is not told, checked or enforced"))?,
+        ),
+        None => None,
+    };
+    let form = Form {
+        function: f.function,
+        contains: f.contains,
+        hook: f.hook,
+    };
+    factory(cell)?.gate().set_form(&id, form, rung).await
 }
 
 /// Set a constraint's rung: told, checked or enforced.

@@ -29,6 +29,15 @@ struct Policy {
     grants: Vec<Capability>,
 }
 
+/// A rule's deterministic form (D55): the calls and words a word match
+/// binds, or the hook command code runs before those calls.
+#[derive(Default)]
+pub struct Form {
+    pub function: String,
+    pub contains: String,
+    pub hook: String,
+}
+
 /// What a scope setting is for: a constraint by id, or a grant by its kind
 /// and function.
 pub enum Scoped<'a> {
@@ -659,6 +668,52 @@ impl Gate {
             format!("{was:?} -> {:?}", c.rung),
         );
         Ok(())
+    }
+
+    /// Give a constraint its deterministic form (D55): the calls and words it
+    /// binds, or a hook command, then move it to `rung` when one is given.
+    /// A charter's comes from its repository, so it changes there.
+    pub async fn set_form(
+        &self,
+        id: &str,
+        form: Form,
+        rung: Option<govern::Enforcement>,
+    ) -> Result<(), String> {
+        let all = self.store.constraints().await?;
+        let mut c = all
+            .into_iter()
+            .find(|c| c.id == id)
+            .ok_or(format!("no constraint {id}"))?;
+        if c.source != govern::Source::Owner {
+            return Err(format!(
+                "{id} comes from the charter; change it in the repository"
+            ));
+        }
+        let hook = form.hook.trim();
+        let binds = !form.function.trim().is_empty() || !hook.is_empty();
+        if rung.is_some_and(|r| r != govern::Enforcement::Told) && !binds {
+            return Err(
+                "to check or enforce a rule, code needs calls to match or a hook to run".into(),
+            );
+        }
+        c.function = match (form.function.trim(), hook) {
+            ("", "") => String::new(),
+            ("", _) => "sandbox::exec".into(),
+            (f, _) => f.into(),
+        };
+        c.contains = form.contains.trim().into();
+        c.hook = hook.into();
+        self.store.set_constraint(&c).await?;
+        self.reload().await?;
+        let how = match hook.is_empty() {
+            true => format!("binds {:?} with {:?}", c.function, c.contains),
+            false => format!("hook {hook:?} before {}", c.function),
+        };
+        self.note("form", id, how);
+        match rung {
+            Some(r) => self.set_constraint_rung(id, r).await,
+            None => Ok(()),
+        }
     }
 
     /// Move a constraint to `rung`, one rung at a time, so the audit keeps
@@ -1335,6 +1390,54 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(rung(), Enforced);
+        });
+    }
+
+    #[test]
+    fn a_told_rule_gets_its_deterministic_form_before_it_is_enforced() {
+        use govern::Enforcement::{Enforced, Told};
+        let r = rig();
+        let told = Constraint {
+            id: "rule-every-1".into(),
+            rule: "Lint before a commit.".into(),
+            ..Constraint::default()
+        };
+        let read = || {
+            let all = r.store.constraints.lock().unwrap().clone();
+            all.into_iter().find(|c| c.id == "rule-every-1").unwrap()
+        };
+        crate::rt::block_on(async {
+            r.gate.add_constraint(told).await.unwrap();
+            let bare = r
+                .gate
+                .set_form("rule-every-1", Form::default(), Some(Enforced))
+                .await;
+            assert!(
+                bare.unwrap_err().contains("code needs"),
+                "nothing for code to judge"
+            );
+            let hook = Form {
+                hook: "./lint.sh".into(),
+                ..Form::default()
+            };
+            r.gate
+                .set_form("rule-every-1", hook, Some(Enforced))
+                .await
+                .unwrap();
+            let c = read();
+            assert_eq!(
+                (c.hook.as_str(), c.function.as_str(), c.rung),
+                ("./lint.sh", "sandbox::exec", Enforced)
+            );
+            r.gate
+                .set_constraint_rung("rule-every-1", Told)
+                .await
+                .unwrap();
+            assert_eq!(
+                (read().hook, read().rung),
+                ("./lint.sh".to_string(), Told),
+                "demoted, the form stays"
+            );
         });
     }
 

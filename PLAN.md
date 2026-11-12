@@ -312,8 +312,8 @@ Next, notes become charter changes (D61, replacing D59's atlas):
   own branch when it lands; after it came home, on a branch of its own.
 - Done: the corpus is loaded by path: when an agent opens a path a corpus
   entry names, it is given that entry, once per turn.
-- The Map's harbor town shows the region's rules and corpus, read from
-  the repository.
+- Done: the Map's harbor town shows the region's rules and corpus, read
+  from the repository.
 - Done: a note about Bastion appears on the Guide under "Learned on
   journeys"; one press makes it guidance on the trail its journey took.
 - Next: offer a check as well as guidance, at the waypoint it came from.

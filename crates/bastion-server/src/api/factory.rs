@@ -52,6 +52,7 @@ fn summary(r: &Record) -> JobSummary {
         issue: r.runtime.issue.clone(),
         requester: r.runtime.requester.clone(),
         workflow: r.runtime.workflow.clone(),
+        held: 0,
     }
 }
 
@@ -264,7 +265,13 @@ pub async fn jobs(cell: &FactoryCell, page: super::Page) -> Result<Vec<JobSummar
     let factory = factory(cell)?;
     let (limit, offset) = page.bounds();
     let some = factory.store().jobs(limit, offset).await?;
-    Ok(some.iter().map(summary).collect())
+    let mut all: Vec<JobSummary> = some.iter().map(summary).collect();
+    // Only a journey under way can have a call held for it.
+    for j in all.iter_mut().filter(|j| j.state == "running") {
+        let held = factory.store().held(&j.id).await;
+        j.held = held.map_or(0, |h| h.len() as u32);
+    }
+    Ok(all)
 }
 
 /// The latest turn's messages, or none when the job has no turn or the

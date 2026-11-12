@@ -265,7 +265,7 @@ impl App {
         let jobs = self.ctx().get(name.clone(), api::Jobs);
         Task::perform(jobs, move |listed| {
             let all = listed.unwrap_or_default();
-            let n = all.iter().filter(|j| j.state == "needs_you").count() as u32;
+            let n = all.iter().filter(|j| jobs::waits(j)).count() as u32;
             Message::Waiting(name, n)
         })
     }

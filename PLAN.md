@@ -266,8 +266,10 @@ before the next one starts.
 
 ### L3. Jobs as home
 
-- The decisions inbox: waiting jobs, held calls and charter branches to
-  merge. New request stays its own page.
+- Done: the decisions inbox. Waiting for you holds the journeys at a step
+  and those under way with calls held for a person; the tab and the
+  window title count both. Charter changes to merge lists each region's
+  unmerged charter branches. New request stays its own page.
 
 ### L4. The job page
 

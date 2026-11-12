@@ -2,7 +2,7 @@
 //! server, the ones waiting on the owner first, after wipp's Jobs page and
 //! GitHub Actions' runs list.
 
-use bastion_protocol::{JobSummary, api};
+use bastion_protocol::{CharterBranch, JobSummary, api};
 use iced::widget::{Column, column, container, pick_list, row, text, text_input};
 use iced::{Element, Fill, Task};
 
@@ -22,9 +22,20 @@ pub struct ServerJob {
     job: JobSummary,
 }
 
+/// What the page reads from every server: its journeys, and its charter
+/// branches waiting to be merged.
+#[derive(Clone, Debug, Default)]
+pub struct Read {
+    jobs: Vec<ServerJob>,
+    branches: Vec<(String, CharterBranch)>,
+    errors: Vec<String>,
+}
+
 #[derive(Default)]
 pub struct State {
     jobs: Vec<ServerJob>,
+    /// Each server's charter branches to merge, by server.
+    branches: Vec<(String, CharterBranch)>,
     errors: Vec<String>,
     place: Option<String>,
     search: String,
@@ -33,7 +44,7 @@ pub struct State {
 
 #[derive(Clone, Debug)]
 pub enum Msg {
-    Read((Vec<ServerJob>, Vec<String>)),
+    Read(Read),
     Place(String),
     Search(String),
     ToggleFinished,
@@ -53,28 +64,35 @@ pub fn load(state: &State, ctx: &Ctx) -> Task<Msg> {
     Task::perform(read_all(ctx.clone(), state.jobs.clone()), Msg::Read)
 }
 
-async fn read_all(ctx: Ctx, before: Vec<ServerJob>) -> (Vec<ServerJob>, Vec<String>) {
-    let (mut all, mut errors) = (Vec::new(), Vec::new());
+async fn read_all(ctx: Ctx, before: Vec<ServerJob>) -> Read {
+    let mut read = Read::default();
     for s in &ctx.servers {
-        let read = ctx.clone().get(s.name.clone(), api::Jobs).await;
-        match read {
-            Ok(jobs) => all.extend(jobs.into_iter().map(|job| ServerJob {
+        match ctx.clone().get(s.name.clone(), api::Jobs).await {
+            Ok(jobs) => read.jobs.extend(jobs.into_iter().map(|job| ServerJob {
                 server: s.name.clone(),
                 job,
             })),
             Err(e) => {
-                errors.push(format!("{}: {e}", s.name));
-                all.extend(before.iter().filter(|j| j.server == s.name).cloned());
+                read.errors.push(format!("{}: {e}", s.name));
+                read.jobs
+                    .extend(before.iter().filter(|j| j.server == s.name).cloned());
             }
         }
+        // A server older than the inbox has no branches to list.
+        let branches = ctx.clone().get(s.name.clone(), api::CharterBranches).await;
+        let mine = branches.unwrap_or_default().into_iter();
+        read.branches.extend(mine.map(|b| (s.name.clone(), b)));
     }
-    all.sort_by_key(|j| std::cmp::Reverse(j.job.created_at));
-    (all, errors)
+    read.jobs
+        .sort_by_key(|j| std::cmp::Reverse(j.job.created_at));
+    read
 }
 
 pub fn update(state: &mut State, msg: Msg) {
     match msg {
-        Msg::Read((jobs, errors)) => (state.jobs, state.errors) = (jobs, errors),
+        Msg::Read(read) => {
+            (state.jobs, state.branches, state.errors) = (read.jobs, read.branches, read.errors)
+        }
         Msg::Place(p) => state.place = (p != EVERY).then_some(p),
         Msg::Search(s) => state.search = s,
         Msg::ToggleFinished => state.show_finished = !state.show_finished,
@@ -143,6 +161,40 @@ impl State {
     }
 }
 
+impl State {
+    /// The charter branches on the servers shown, in the region picked.
+    fn branches_shown(&self, scope: Option<&str>) -> Vec<&(String, CharterBranch)> {
+        let place = self.place(scope);
+        let here = |(server, b): &&(String, CharterBranch)| {
+            scope.is_none_or(|s| server == s) && place.is_none_or(|p| b.workspace == *p)
+        };
+        self.branches.iter().filter(here).collect()
+    }
+}
+
+/// Charter changes waiting on branches of their own: each is merged in the
+/// region's repository, where a person reviews it (D58, D61).
+fn charter_group<'a>(branches: Vec<&(String, CharterBranch)>) -> Element<'a, Message> {
+    let title = format!("Charter changes to merge ({})", branches.len());
+    let rows = branches.into_iter().map(|(server, b)| {
+        let whence = format!("{server} · {} · {} · {}", b.workspace, b.branch, ago(b.at));
+        let about = column![
+            text(b.subject.clone()).size(15).font(theme::MEDIUM),
+            text(whence).size(12).color(theme::muted())
+        ]
+        .spacing(3);
+        container(about).padding([10, 12]).width(Fill).into()
+    });
+    let hint = text("Review and merge each branch in its region's repository.")
+        .size(12)
+        .color(theme::muted());
+    let body = Column::with_children(rows)
+        .push(container(hint).padding([4, 12]))
+        .spacing(2)
+        .padding(6);
+    section(title, body.into(), true)
+}
+
 /// The one server the switcher shows, or none for every server.
 fn scope(ctx: &Ctx) -> Option<&str> {
     (!ctx.all).then_some(ctx.current.as_str())
@@ -152,15 +204,26 @@ fn on_server(scope: Option<&str>, j: &ServerJob) -> bool {
     scope.is_none_or(|s| j.server == s)
 }
 
+/// Whether a journey waits for a person: at a step, or with a call the
+/// gate holds for one.
+pub fn waits(job: &JobSummary) -> bool {
+    job.state == "needs_you" || job.held > 0
+}
+
 fn line(job: &JobSummary, server: &str, down: bool) -> String {
     let unreachable = if down { " · unreachable" } else { "" };
+    let held = match job.held {
+        0 => String::new(),
+        1 => " · 1 call held for you".into(),
+        n => format!(" · {n} calls held for you"),
+    };
     let by = job
         .requester
         .as_ref()
         .map_or_else(String::new, |who| format!(" · by {who}"));
     let state = super::journey_word(&job.state);
     format!(
-        "{server}{unreachable} · {} · {} · {state} · {}{by}",
+        "{server}{unreachable} · {} · {} · {state}{held} · {}{by}",
         job.workspace,
         job.id,
         ago(job.created_at)
@@ -297,7 +360,11 @@ fn overview<'a>(jobs: &[ServerJob]) -> Element<'a, Message> {
         n.count().to_string()
     };
     let tiles = row![
-        chart::tile(count(&["needs_you"]), "waiting for you", theme::warn()),
+        chart::tile(
+            jobs.iter().filter(|j| waits(&j.job)).count().to_string(),
+            "waiting for you",
+            theme::warn()
+        ),
         chart::tile(count(&super::IN_PROGRESS), "under way", theme::link_color()),
         chart::tile(count(&["landed"]), "at the summit", theme::ok()),
         chart::tile(count(&["failed"]), "in the marsh", theme::bad()),
@@ -332,11 +399,11 @@ fn groups<'a>(state: &State, ctx: &Ctx) -> Element<'a, Message> {
             .cloned()
             .collect()
     };
-    let (waiting, active, done) = (
-        pick(&["needs_you"]),
-        pick(&super::IN_PROGRESS),
-        pick(&FINISHED),
-    );
+    let (waiting, active): (Vec<ServerJob>, Vec<ServerJob>) =
+        pick(&[&["needs_you"][..], &super::IN_PROGRESS[..]].concat())
+            .into_iter()
+            .partition(|j| waits(&j.job));
+    let done = pick(&FINISHED);
     let mut list = Column::new().spacing(16);
     if !waiting.is_empty() {
         list = list.push(group(
@@ -345,6 +412,10 @@ fn groups<'a>(state: &State, ctx: &Ctx) -> Element<'a, Message> {
             ctx,
             true,
         ));
+    }
+    let branches = state.branches_shown(scope(ctx));
+    if !branches.is_empty() {
+        list = list.push(charter_group(branches));
     }
     list = list.push(group(
         format!("Under way ({})", active.len()),
@@ -424,6 +495,36 @@ mod tests {
                 ..JobSummary::default()
             },
         }
+    }
+
+    #[test]
+    fn a_held_call_or_a_charter_branch_is_a_decision_for_you() {
+        let mut held = job("j1", "a");
+        held.job.state = "running".into();
+        assert!(!waits(&held.job));
+        held.job.held = 2;
+        assert!(waits(&held.job));
+        assert!(line(&held.job, "local", false).contains("2 calls held for you"));
+        let branch = |server: &str, workspace: &str| {
+            let b = CharterBranch {
+                workspace: workspace.into(),
+                branch: "bastion/charter-1".into(),
+                ..CharterBranch::default()
+            };
+            (server.to_string(), b)
+        };
+        let mut state = State {
+            jobs: vec![held, job("j2", "b")],
+            branches: vec![branch("local", "a"), branch("team", "c")],
+            ..State::default()
+        };
+        assert_eq!(state.branches_shown(None).len(), 2);
+        assert_eq!(state.branches_shown(Some("local")).len(), 1);
+        update(&mut state, Msg::Place("b".into()));
+        assert!(
+            state.branches_shown(Some("local")).is_empty(),
+            "region b has none"
+        );
     }
 
     #[test]

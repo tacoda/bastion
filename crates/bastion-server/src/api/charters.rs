@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use bastion_core::charter::editable;
-use bastion_protocol::CharterChange;
+use bastion_protocol::{CharterBranch, CharterChange};
 
 use super::factory::{FactoryCell, factory};
 use crate::factory::now;
@@ -55,6 +55,56 @@ pub struct Edit<'a> {
     pub base: &'a str,
     pub branch: &'a str,
     pub worktree: &'a Path,
+}
+
+/// The charter branches under `prefix` in the repository at `root` not
+/// yet merged into `base`: each one's name, last subject and time.
+pub fn unmerged(
+    machine: &dyn Machine,
+    root: &Path,
+    prefix: &str,
+    base: &str,
+) -> Vec<CharterBranch> {
+    let pattern = format!("refs/heads/{prefix}charter-*");
+    let format = "--format=%(refname:short)%09%(subject)%09%(committerdate:unix)";
+    let args = ["for-each-ref", "--no-merged", base, format, &pattern];
+    let Ok(out) = machine.run("git", &args, Some(root)) else {
+        return Vec::new();
+    };
+    if !out.success {
+        return Vec::new();
+    }
+    let rows = out.text.lines().filter_map(|l| {
+        let mut parts = l.splitn(3, '\t');
+        let (branch, subject, at) = (parts.next()?, parts.next()?, parts.next()?);
+        Some(CharterBranch {
+            branch: branch.into(),
+            subject: subject.into(),
+            at: at.trim().parse().unwrap_or_default(),
+            ..CharterBranch::default()
+        })
+    });
+    rows.collect()
+}
+
+/// Every region's charter branches waiting to be merged, newest first.
+pub async fn branches(
+    cell: &FactoryCell,
+    machine: &dyn Machine,
+) -> Result<Vec<CharterBranch>, String> {
+    let workspaces = factory(cell)?.store().workspaces().await?;
+    let mut all: Vec<CharterBranch> = workspaces
+        .iter()
+        .flat_map(|w| {
+            let found = unmerged(machine, Path::new(&w.path), &w.branch_prefix, &w.branch);
+            found.into_iter().map(|b| CharterBranch {
+                workspace: w.name.clone(),
+                ..b
+            })
+        })
+        .collect();
+    all.sort_by_key(|b| std::cmp::Reverse(b.at));
+    Ok(all)
 }
 
 /// Commit `text` to `path` on a new branch from the base, in a worktree
@@ -167,6 +217,27 @@ mod tests {
                 ".agents/corpus/why.md"
             ]
         );
+    }
+
+    #[test]
+    fn unmerged_charter_branches_read_with_their_subject_and_time() {
+        let listed = "bastion/charter-2\tWhat j1 taught\t1700000002\nbastion/charter-1\tEdit AGENTS.md\t1700000001\n";
+        let machine = FakeMachine::new().run_ok("git", listed);
+        let found = unmerged(&machine, Path::new("/r"), "bastion/", "main");
+        assert!(machine.called(
+            "git for-each-ref --no-merged main --format=%(refname:short)%09%(subject)%09%(committerdate:unix) refs/heads/bastion/charter-*"
+        ));
+        assert_eq!(found.len(), 2);
+        assert_eq!(
+            (
+                found[0].branch.as_str(),
+                found[0].subject.as_str(),
+                found[0].at
+            ),
+            ("bastion/charter-2", "What j1 taught", 1700000002)
+        );
+        let none = FakeMachine::new().run_fails("git", "not a repo");
+        assert!(unmerged(&none, Path::new("/r"), "bastion/", "main").is_empty());
     }
 
     #[test]

@@ -188,6 +188,7 @@ fn govern_routes() -> Router<App> {
         .route("/capabilities/factory", get(factory_capabilities))
         .route("/charters", get(charters))
         .route("/charters/edit", post(charter_edit))
+        .route("/charters/branches", get(charter_branches))
         .route("/audit", get(audit))
         .route("/audit/export", post(audit_export))
 }
@@ -762,6 +763,11 @@ async fn factory_capabilities(State(app): State<App>) -> Response {
 
 async fn charters(State(app): State<App>) -> Response {
     answer(api::govern::charters(&app.server.factory, &app.server.machine).await)
+}
+
+async fn charter_branches(State(app): State<App>) -> Response {
+    let machine = app.server.machine.as_ref();
+    answer(api::charters::branches(&app.server.factory, machine).await)
 }
 
 async fn charter_edit(

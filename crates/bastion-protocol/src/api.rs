@@ -428,6 +428,13 @@ bare!(
     Vec<FactoryCapabilityView>
 );
 bare!(Charters, "GET", "/charters", Vec<WorkspaceCharterView>);
+bare!(
+    /// The charter branches not yet merged, on every region.
+    CharterBranches,
+    "GET",
+    "/charters/branches",
+    Vec<crate::CharterBranch>
+);
 with!(
     /// Answers with the branch the change was committed on.
     CharterEdit,
@@ -720,6 +727,7 @@ fn factory_requests() -> Vec<(&'static str, &'static str)> {
         FactoryCapabilities,
         Charters,
         CharterEdit,
+        CharterBranches,
         Audit,
         AuditExport,
     ]
@@ -785,6 +793,6 @@ mod tests {
         assert_eq!(comment.path(), "/jobs/j1/comment");
         let spaced = WorkflowDelete { id: "a b/c".into() };
         assert_eq!(spaced.path(), "/workflows/a%20b%2Fc");
-        assert_eq!(every().len(), 82);
+        assert_eq!(every().len(), 83);
     }
 }

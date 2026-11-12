@@ -515,6 +515,10 @@ pub struct JobSummary {
     /// The trail the journey takes, for the Map's wear (D60).
     #[serde(default)]
     pub workflow: Option<String>,
+    /// The calls the gate holds for a person while the journey is under
+    /// way, for the decisions inbox.
+    #[serde(default)]
+    pub held: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -858,6 +862,18 @@ pub struct CharterChange {
     pub workspace: String,
     pub path: String,
     pub text: String,
+}
+
+/// A charter change on a branch of its own, not yet merged into its
+/// region's base branch: a decision waiting for a person (D58, D61).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CharterBranch {
+    pub workspace: String,
+    pub branch: String,
+    /// Its last commit's subject.
+    pub subject: String,
+    /// When its last commit was made, in seconds.
+    pub at: u64,
 }
 
 /// One thing the factory may do, and who decides it.

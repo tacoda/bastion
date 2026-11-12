@@ -160,6 +160,8 @@ fn factory_routes() -> Router<App> {
         .route("/jobs/{id}", get(job))
         .route("/jobs/{id}/approve", post(job_approve))
         .route("/jobs/{id}/comment", post(job_comment))
+        .route("/jobs/{id}/note", post(field_note))
+        .route("/atlas", get(atlas))
         .route(bastion_protocol::api::MEDIA_ROUTE, get(job_media))
         .route("/jobs/{id}/stop", post(job_stop))
         .route("/jobs/{id}/retry", post(job_retry))
@@ -523,6 +525,31 @@ async fn job_comment(
     let by = person.name.clone();
     let comment = api::factory::job_comment(&app.server.factory, id.clone(), b.text, by);
     on_job(&app, &person, &id, async { answer(comment.await) }).await
+}
+
+#[derive(serde::Deserialize)]
+struct Note {
+    about: String,
+    text: String,
+}
+
+async fn field_note(
+    State(app): State<App>,
+    Extension(person): Extension<Person>,
+    Path(id): Path<String>,
+    Json(b): Json<Note>,
+) -> Response {
+    let w = api::atlas::Written {
+        about: b.about,
+        text: b.text,
+        by: person.name.clone(),
+    };
+    let signed = api::atlas::note(&app.server.factory, id.clone(), w);
+    on_job(&app, &person, &id, async { answer(signed.await) }).await
+}
+
+async fn atlas(State(app): State<App>) -> Response {
+    answer(api::atlas::atlas(&app.server.factory).await)
 }
 
 /// A job's kept screenshot or recording, as its bytes.

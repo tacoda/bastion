@@ -277,8 +277,8 @@ pub fn hill(frame: &mut Frame, at: Point, w: f32) {
     frame.stroke(&arc, pen(1.2, theme::muted()));
 }
 
-/// The marsh: a low pool with reeds, crossed out.
-pub fn marsh(frame: &mut Frame, at: Point) {
+/// The marsh: a low pool with reeds, crossed out when a trail ended there.
+pub fn marsh(frame: &mut Frame, at: Point, reached: bool) {
     let oval = Path::new(|p| {
         p.move_to(Point::new(at.x - 34.0, at.y));
         p.bezier_curve_to(
@@ -308,7 +308,9 @@ pub fn marsh(frame: &mut Frame, at: Point) {
         );
         frame.stroke(&reed, pen(1.0, theme::ink()));
     }
-    cross(frame, at, theme::bad());
+    if reached {
+        cross(frame, at, theme::bad());
+    }
 }
 
 /// An X where a trail ended.
@@ -357,4 +359,66 @@ pub fn compass(frame: &mut Frame, at: Point, r: f32) {
     frame.fill(&Path::circle(at, 2.5), theme::bad());
     let north = Point::new(at.x, at.y - r - 16.0);
     frame.fill_text(lettering("N".into(), north, &MARK));
+}
+
+/// The atlas: a domed hall with columns, where the field notes are kept.
+pub fn atlas(frame: &mut Frame, base: Point, lit: bool) {
+    let w = if lit { 40.0 } else { 34.0 };
+    let ink = pen(1.3, theme::ink());
+    let step = Path::rectangle(
+        Point::new(base.x - w / 2.0 - 4.0, base.y - 4.0),
+        Size::new(w + 8.0, 4.0),
+    );
+    frame.fill(&step, theme::raised());
+    frame.stroke(&step, ink);
+    let body = Path::rectangle(
+        Point::new(base.x - w / 2.0, base.y - 22.0),
+        Size::new(w, 18.0),
+    );
+    frame.fill(&body, theme::panel_color());
+    frame.stroke(&body, ink);
+    for k in 0..5 {
+        let x = base.x - w / 2.0 + 4.0 + k as f32 * (w - 8.0) / 4.0;
+        frame.stroke(
+            &Path::line(Point::new(x, base.y - 21.0), Point::new(x, base.y - 5.0)),
+            ink,
+        );
+    }
+    let roof = Path::new(|p| {
+        p.move_to(Point::new(base.x - w / 2.0 - 3.0, base.y - 22.0));
+        p.line_to(Point::new(base.x, base.y - 30.0));
+        p.line_to(Point::new(base.x + w / 2.0 + 3.0, base.y - 22.0));
+        p.close();
+    });
+    frame.fill(&roof, theme::raised());
+    frame.stroke(&roof, ink);
+    let dome = Path::new(|p| {
+        p.move_to(Point::new(base.x - 9.0, base.y - 30.0));
+        p.quadratic_curve_to(
+            Point::new(base.x, base.y - 46.0),
+            Point::new(base.x + 9.0, base.y - 30.0),
+        );
+    });
+    frame.fill(&dome, theme::raised());
+    frame.stroke(&dome, ink);
+}
+
+/// The way home: a dotted line, as the chart draws the return.
+pub fn way_home(frame: &mut Frame, from: Point, to: Point) {
+    let dots = Stroke {
+        line_dash: LineDash {
+            segments: &[2.0, 6.0],
+            offset: 0,
+        },
+        ..pen(2.5, theme::ink())
+    };
+    let path = Path::new(|p| {
+        p.move_to(from);
+        p.bezier_curve_to(
+            Point::new(from.x - 80.0, from.y + 90.0),
+            Point::new(to.x + 160.0, to.y + 40.0),
+            to,
+        );
+    });
+    frame.stroke(&path, dots);
 }

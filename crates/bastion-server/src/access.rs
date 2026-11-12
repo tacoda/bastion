@@ -62,8 +62,8 @@ pub fn act_for(method: &Method, path: &str) -> Act {
     }
     match path {
         "/jobs" | "/issues/{workspace}/{number}/job" => Act::Submit,
-        "/jobs/{id}/approve" | "/jobs/{id}/comment" | "/jobs/{id}/stop" | "/held/allow"
-        | "/held/refuse" => Act::OnJob { own: true },
+        "/jobs/{id}/approve" | "/jobs/{id}/comment" | "/jobs/{id}/note" | "/jobs/{id}/stop"
+        | "/held/allow" | "/held/refuse" => Act::OnJob { own: true },
         _ => Act::Manage,
     }
 }

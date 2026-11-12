@@ -2,7 +2,9 @@
 //! the request at the outpost, base camp, each step a landmark the route
 //! climbs past (a peak for an agent's step, a checkpoint for a script), a
 //! marker where the job is now, and the summit where it lands. A job that
-//! stops or fails ends in the marsh. Pressing a landmark opens its step.
+//! stops or fails ends in the marsh. When the job comes home, a dotted way
+//! leads back to the atlas, where its field notes are kept (D59). Pressing
+//! a landmark opens its step; pressing the atlas opens the notes.
 
 use bastion_protocol::StepView;
 use iced::widget::canvas::{self, Canvas, Frame, Geometry, LineDash, Path, Stroke, Text};
@@ -11,7 +13,7 @@ use iced::{Element, Fill, Point, Rectangle, Renderer, Size, Theme, mouse};
 use super::carto;
 use crate::theme;
 
-const HEIGHT: f32 = 300.0;
+const HEIGHT: f32 = 340.0;
 /// Where the land starts, past the sea of requests.
 const SHORE: f32 = 70.0;
 /// Room on the right for the summit and the compass.
@@ -31,7 +33,7 @@ pub struct Landmark {
 /// Where the route climbs: from base camp low on the left toward the
 /// summit high on the right, with a wander so it reads as ground.
 fn rise(i: usize, n: usize, width: f32) -> Point {
-    let west = SHORE + 190.0;
+    let west = SHORE + 270.0;
     let span = (width - west - EAST).max(1.0);
     let t = (i as f32 + 0.5) / n.max(1) as f32;
     let wander = (i as f32 * 1.9).sin() * 14.0;
@@ -54,11 +56,24 @@ pub fn landmarks(steps: &[StepView], width: f32) -> Vec<Landmark> {
 }
 
 fn outpost() -> Point {
-    Point::new(SHORE + 70.0, HEIGHT * 0.78)
+    Point::new(SHORE + 70.0, HEIGHT * 0.60)
 }
 
 fn camp() -> Point {
-    Point::new(SHORE + 140.0, HEIGHT * 0.84)
+    Point::new(SHORE + 150.0, HEIGHT * 0.68)
+}
+
+/// The atlas, low by the outpost, where the way home ends.
+fn atlas_at() -> Point {
+    Point::new(SHORE + 70.0, HEIGHT * 0.93)
+}
+
+/// The id a press on the atlas publishes; no step has it.
+pub const ATLAS: &str = "atlas";
+
+/// Whether the job has come home: landed, failed or stopped.
+fn home(job: &str) -> bool {
+    matches!(job, "landed" | "failed" | "stopped")
 }
 
 fn summit(width: f32) -> Point {
@@ -174,29 +189,41 @@ fn pin(frame: &mut Frame, tip: Point) {
 
 /// The summit when the job lands or is on its way; the marsh when it
 /// stopped or failed.
+/// Where the marsh lies: low, under the summit.
+fn marsh_at(width: f32) -> Point {
+    Point::new(summit(width).x - 40.0, HEIGHT * 0.84)
+}
+
+/// Whether the job ended in the marsh: failed or stopped.
+fn lost(job: &str) -> bool {
+    matches!(job, "failed" | "stopped")
+}
+
+/// The summit, flagged when the job landed, and the marsh below it,
+/// crossed out when the job ended there.
 fn finish(frame: &mut Frame, width: f32, job: &str) {
     let top = summit(width);
-    if matches!(job, "failed" | "stopped") {
-        let low = Point::new(top.x, HEIGHT * 0.78);
-        carto::marsh(frame, low);
-        carto::name(
-            frame,
-            Point::new(low.x, low.y + 18.0),
-            "the marsh",
-            "the trail went nowhere, said out loud",
-        );
-        carto::mountain(frame, Point::new(top.x, top.y + 70.0), 80.0, true);
-        return;
-    }
+    let low = marsh_at(width);
+    carto::marsh(frame, low, lost(job));
+    let why = if lost(job) {
+        "the trail went nowhere, said out loud"
+    } else {
+        ""
+    };
+    carto::name(
+        frame,
+        Point::new(low.x - 70.0, low.y - 6.0),
+        "the marsh",
+        why,
+    );
     let base = Point::new(top.x, top.y + 70.0);
     carto::mountain(frame, base, 90.0, job != "landed");
     if job == "landed" {
         carto::flag(frame, Point::new(top.x, top.y - 20.0), theme::bad());
     }
-    let note = if job == "landed" {
-        "it works: the job landed"
-    } else {
-        "where it lands"
+    let note = match job {
+        "landed" => "it works: the job landed",
+        _ => "where it lands",
     };
     carto::name(frame, Point::new(top.x, top.y - 92.0), "the summit", note);
 }
@@ -212,10 +239,35 @@ fn scenery(frame: &mut Frame, width: f32) {
         );
     }
     for k in 0..9 {
-        let x = SHORE + 170.0 + (k as f32 * 157.0) % (width - SHORE - EAST - 200.0).max(1.0);
+        let x = SHORE + 330.0 + (k as f32 * 157.0) % (width - SHORE - EAST - 380.0).max(1.0);
         let y = HEIGHT * 0.90 - (k % 3) as f32 * 6.0;
         carto::tree(frame, Point::new(x, y));
     }
+}
+
+/// The way home, from the summit or the marsh, to the atlas (D59).
+fn homeward(frame: &mut Frame, width: f32, job: &str, lit: bool) {
+    let from = match job {
+        "landed" => Point::new(summit(width).x - 30.0, summit(width).y + 70.0),
+        _ => marsh_at(width),
+    };
+    carto::way_home(
+        frame,
+        from,
+        Point::new(atlas_at().x + 24.0, atlas_at().y - 10.0),
+    );
+    carto::atlas(frame, atlas_at(), lit);
+    let note = if lit {
+        "press to read and write field notes"
+    } else {
+        "the way home, with field notes"
+    };
+    carto::name(
+        frame,
+        Point::new(atlas_at().x + 120.0, atlas_at().y - 30.0),
+        "the atlas",
+        note,
+    );
 }
 
 impl<M> canvas::Program<M> for Trail<'_, M> {
@@ -232,6 +284,16 @@ impl<M> canvas::Program<M> for Trail<'_, M> {
     ) -> Option<canvas::Action<M>> {
         let at = cursor.position_in(bounds);
         let marks = landmarks(self.steps, bounds.width);
+        let atlas = Landmark {
+            id: ATLAS.into(),
+            stage: String::new(),
+            state: String::new(),
+            at: atlas_at(),
+        };
+        let marks = match home(self.job) {
+            true => marks.into_iter().chain(std::iter::once(atlas)).collect(),
+            false => marks,
+        };
         let mark = at.and_then(|p| under(&marks, p));
         let over = mark.map(|m| m.id.clone());
         let press = matches!(
@@ -270,10 +332,13 @@ impl<M> canvas::Program<M> for Trail<'_, M> {
         let marks = landmarks(self.steps, width);
         let start = (camp(), true);
         let middle = marks.iter().map(|m| (m.at, walked(&m.state)));
-        let end = (
-            Point::new(summit(width).x, summit(width).y + 70.0),
-            self.job == "landed",
-        );
+        let end = match lost(self.job) {
+            true => (marsh_at(width), true),
+            false => (
+                Point::new(summit(width).x, summit(width).y + 70.0),
+                self.job == "landed",
+            ),
+        };
         let points: Vec<(Point, bool)> = std::iter::once((outpost(), true))
             .chain(std::iter::once(start))
             .chain(middle)
@@ -289,6 +354,14 @@ impl<M> canvas::Program<M> for Trail<'_, M> {
         );
         carto::tents(&mut frame, camp());
         finish(&mut frame, width, self.job);
+        if home(self.job) {
+            homeward(
+                &mut frame,
+                width,
+                self.job,
+                hovered.as_deref() == Some(ATLAS),
+            );
+        }
         for (i, m) in marks.iter().enumerate() {
             landmark(&mut frame, m, i, hovered.as_deref() == Some(m.id.as_str()));
         }

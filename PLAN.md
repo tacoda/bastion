@@ -297,6 +297,22 @@ before the next one starts.
 - A checklist on Jobs until it's done: add a workspace, check a model,
   send a first request.
 
+### X. Exploration: learning, discovery, feedback
+
+The app should feel like an expedition, and improve itself from what jobs
+teach.
+
+- Done: the trail's way home to the atlas, field notes about the
+  workspace or Bastion (D59), and the marsh on every trail.
+- The Map: each harbor town opens its workspace's atlas, with its notes
+  by workspace and by Bastion.
+- A route's wear: the Map shows where recent jobs on each workflow wait,
+  turn back and end in the marsh.
+- A lesson from the atlas: a Bastion note offers "make this a check" or
+  "add this as guidance", applied at the step it came from.
+- Everything clickable lifts a little on hover, as the landmarks do.
+- A legend on each chart that teaches its marks.
+
 ## Open questions
 
 - **Plugin hooks that need the host.** A Claude Code hook runs on the

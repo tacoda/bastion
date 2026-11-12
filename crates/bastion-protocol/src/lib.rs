@@ -558,6 +558,9 @@ pub struct JobDetail {
     /// The screenshots and recordings its turns kept, by file name.
     #[serde(default)]
     pub media: Vec<String>,
+    /// The field notes people wrote about the job, oldest first (D59).
+    #[serde(default)]
+    pub notes: Vec<FieldNoteView>,
 }
 
 /// A workspace's charter for one job. No files means the job
@@ -810,6 +813,27 @@ pub struct WorkspaceCharterView {
     /// repository, with its text as the base branch's checkout has it.
     #[serde(default)]
     pub texts: Vec<(String, String)>,
+}
+
+/// A field note (D59): what a job taught, one sentence signed by the
+/// person who wrote it, kept in the audit chain. All of them are the atlas.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FieldNoteView {
+    pub job: String,
+    pub by: String,
+    /// What it is about: `workspace`, the project the job worked on, or
+    /// `bastion`, how its workflow and harness ran it.
+    pub about: String,
+    pub text: String,
+    pub at: u64,
+    /// The job's request and workspace, for the atlas.
+    #[serde(default)]
+    pub request: String,
+    #[serde(default)]
+    pub workspace: String,
+    /// Whether the job landed; false for the marsh.
+    #[serde(default)]
+    pub landed: bool,
 }
 
 /// A charter file's new text, committed on a new branch of the

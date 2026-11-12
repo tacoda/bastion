@@ -25,6 +25,9 @@ pub struct State {
     detail: Option<JobDetail>,
     note: text_editor::Content,
     error: String,
+    /// The field note being written, and what it is about.
+    field: String,
+    field_about: &'static str,
     /// What the owner typed to refuse each held call, by call id.
     feedback: BTreeMap<String, String>,
     /// The steps the owner opened or closed, against their default.
@@ -56,6 +59,8 @@ impl State {
             marks: BTreeMap::new(),
             trail: Vec::new(),
             pressed: None,
+            field: String::new(),
+            field_about: "workspace",
             docs: BTreeMap::new(),
         }
     }
@@ -83,6 +88,10 @@ pub enum Msg {
     Pressed(super::trail::Pressed),
     /// Close the trail's card.
     CloseCard,
+    /// The field note's words, what it is about, and signing it (D59).
+    Field(String),
+    FieldAbout(&'static str),
+    Sign,
     ToggleTurn,
     /// Open a kept screenshot or recording with the system's viewer.
     OpenMedia(String),
@@ -216,6 +225,8 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
             state.note = text_editor::Content::new();
             state.pick = None;
             state.error.clear();
+            // A field note pushes no event, so read the job again.
+            return load(state, ctx);
         }
         Msg::Feedback(call, text) => {
             state.feedback.insert(call, text);
@@ -230,6 +241,16 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
         Msg::ToggleTurn => state.turn_open = !state.turn_open,
         Msg::Pressed(p) => state.pressed = Some(p),
         Msg::CloseCard => state.pressed = None,
+        Msg::Field(t) => state.field = t,
+        Msg::FieldAbout(a) => state.field_about = a,
+        Msg::Sign => {
+            let note = api::FieldNote {
+                id: state.id.clone(),
+                about: state.field_about.into(),
+                text: std::mem::take(&mut state.field),
+            };
+            return ask(ctx, note);
+        }
         Msg::OpenMedia(name) => return open_media(ctx, &state.id, name),
     }
     Task::none()
@@ -621,7 +642,11 @@ fn flow<'a>(state: &'a State, d: &'a JobDetail) -> Element<'a, Message> {
     let mut map = iced::widget::stack![trail];
     if let Some(p) = &state.pressed {
         let (x, y) = card_at(p);
-        let card = iced::widget::pin(step_card(state, d, &p.id)).x(x).y(y);
+        let shown = match p.id == super::trail::ATLAS {
+            true => atlas_card(state, d),
+            false => step_card(state, d, &p.id),
+        };
+        let card = iced::widget::pin(shown).x(x).y(y);
         map = map.push(card.width(Fill).height(super::trail::TALL));
     }
     let mut body = column![map].spacing(8);
@@ -654,6 +679,55 @@ fn card_at(p: &super::trail::Pressed) -> (f32, f32) {
         right
     };
     (x.max(16.0), 16.0)
+}
+
+/// The job's field notes, and a short form to sign one (D59): what the
+/// job taught, about its workspace or about Bastion.
+fn atlas_card<'a>(state: &'a State, d: &'a JobDetail) -> Element<'a, Message> {
+    let title = text("Field notes").size(15).font(theme::BOLD);
+    let close = button(text("Close").size(13))
+        .style(theme::link)
+        .on_press(Message::Job(Msg::CloseCard));
+    let head = row![title, iced::widget::space::horizontal(), close].align_y(iced::Center);
+    let notes = d.notes.iter().map(|n| {
+        let whom = if n.about == "bastion" {
+            "about Bastion"
+        } else {
+            "about the workspace"
+        };
+        let by = text(format!("{} · {whom} · {}", n.by, ago(n.at))).size(12);
+        column![text(n.text.clone()).size(13), by.color(theme::muted())]
+            .spacing(2)
+            .into()
+    });
+    let mut body = Column::new().spacing(10).extend(notes);
+    if d.notes.is_empty() {
+        let none = "No field notes yet. What did this job teach?";
+        body = body.push(text(none).size(13).color(theme::muted()));
+    }
+    let pick = |label: &'static str, about: &'static str| {
+        let on = state.field_about == about;
+        super::step_rules::choice(label, on, Some(Message::Job(Msg::FieldAbout(about))))
+    };
+    let about = row![
+        pick("The workspace", "workspace"),
+        pick("Bastion", "bastion")
+    ]
+    .spacing(6);
+    let words = text_input("One sentence: what reality told us", &state.field)
+        .on_input(|t| Message::Job(Msg::Field(t)))
+        .on_submit(Message::Job(Msg::Sign))
+        .style(theme::field);
+    let sign = button(text("Sign").size(13))
+        .style(theme::primary)
+        .on_press_maybe((!state.field.trim().is_empty()).then_some(Message::Job(Msg::Sign)));
+    let form = column![about, row![words, sign].spacing(8)].spacing(6);
+    let body = scrollable(body).height(iced::Length::Shrink);
+    container(column![head, container(body).max_height(CARD_MAX - 70.0), form].spacing(10))
+        .padding(12)
+        .width(CARD)
+        .style(theme::panel)
+        .into()
 }
 
 /// A step's output: the results it gave, its artifacts, and its latest

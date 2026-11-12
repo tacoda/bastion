@@ -231,6 +231,34 @@ impl Request for JobComment {
     }
 }
 
+/// Sign a field note on a job: what it taught (D59).
+#[derive(Clone, Debug, Serialize)]
+pub struct FieldNote {
+    #[serde(skip)]
+    pub id: String,
+    /// `workspace` or `bastion`.
+    pub about: String,
+    pub text: String,
+}
+
+impl Request for FieldNote {
+    const METHOD: &'static str = "POST";
+    const ROUTE: &'static str = "/jobs/{id}/note";
+    const BODY: bool = true;
+    type Answer = ();
+    fn path(&self) -> String {
+        fill(Self::ROUTE, "id", &self.id)
+    }
+}
+
+bare!(
+    /// Every field note on the server, newest first: the atlas (D59).
+    Atlas,
+    "GET",
+    "/atlas",
+    Vec<crate::FieldNoteView>
+);
+
 // Governance.
 with!(HeldAllow, "POST", "/held/allow", HeldCallRef, ());
 
@@ -665,6 +693,8 @@ fn factory_requests() -> Vec<(&'static str, &'static str)> {
         JobSubmit,
         JobApprove,
         JobComment,
+        FieldNote,
+        Atlas,
         JobStop,
         JobRetry,
         JobExtend,
@@ -750,6 +780,6 @@ mod tests {
         assert_eq!(comment.path(), "/jobs/j1/comment");
         let spaced = WorkflowDelete { id: "a b/c".into() };
         assert_eq!(spaced.path(), "/workflows/a%20b%2Fc");
-        assert_eq!(every().len(), 80);
+        assert_eq!(every().len(), 82);
     }
 }

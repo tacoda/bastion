@@ -20,9 +20,17 @@ fn words(word: &str) -> String {
     word.replace('_', " ")
 }
 
+/// The most characters a step's name shows, clear of the dial at the
+/// box's top right.
+const NAME: usize = 20;
+
 /// A step's first line: its name, which the workflow gives it.
 pub fn title(n: &NodeView) -> String {
-    words(&n.id)
+    let name = words(&n.id);
+    match name.chars().count() > NAME {
+        true => name.chars().take(NAME - 1).chain(['…']).collect(),
+        false => name,
+    }
 }
 
 /// The most characters a line of a step's box holds.
@@ -36,12 +44,12 @@ fn clip(s: String) -> String {
     }
 }
 
-/// A step's last line, beside the document: the results it gives.
+/// A step's last line, beside the artifact icon: the results it gives.
 pub fn subtitle(n: &NodeView) -> String {
     clip(n.results.join(", "))
 }
 
-/// Beside the dial: the step's kind and what it runs, how far it reaches,
+/// Under the name: the step's kind and what it runs, how far it reaches,
 /// and its budget when it has one (D43).
 pub fn kind_line(n: &NodeView) -> String {
     let kind = match n.stage.as_str() {
@@ -178,26 +186,22 @@ fn step(frame: &mut Frame, n: &NodeView, look: Look) {
         theme::INK,
         14.0,
     ));
-    let line = |content: String, y: f32| {
-        caption(
-            content,
-            Point::new(at.x + 29.0, at.y + y),
-            theme::MUTED,
-            12.0,
-        )
+    let line = |content: String, x: f32, y: f32| {
+        caption(content, Point::new(at.x + x, at.y + y), theme::MUTED, 12.0)
     };
-    let icon = |frame: &mut Frame, svg: &str, y: f32| {
-        let at = Point::new(at.x + 10.0, at.y + y);
+    let icon = |frame: &mut Frame, svg: &str, x: f32, y: f32| {
+        let at = Point::new(at.x + x, at.y + y);
         frame.draw_svg(
             iced::Rectangle::new(at, Size::new(13.0, 13.0)),
             &crate::icons::colored(svg, theme::MUTED),
         );
     };
-    icon(frame, dial_icon(n), 33.0);
-    frame.fill_text(line(kind_line(n), 32.0));
+    // The dial at the top right; the kind under the name; the artifacts below.
+    icon(frame, dial_icon(n), W - 23.0, 11.0);
+    frame.fill_text(line(kind_line(n), 10.0, 32.0));
     if !n.results.is_empty() {
-        icon(frame, crate::icons::DOCUMENT, 51.0);
-        frame.fill_text(line(subtitle(n), 50.0));
+        icon(frame, crate::icons::ARTIFACT, 10.0, 51.0);
+        frame.fill_text(line(subtitle(n), 29.0, 50.0));
     }
     if look.port {
         frame.fill(
@@ -351,6 +355,8 @@ mod tests {
         let mut review = node("skill", "research", &[]);
         review.id = "code_review".into();
         assert_eq!(title(&review), "code review", "a step goes by its name");
+        review.id = "a_very_long_step_name_indeed".into();
+        assert_eq!(title(&review), "a very long step na…", "clear of the dial");
         assert_eq!(
             subtitle(&node("plan", "", &["design-notes", "risks"])),
             "design-notes, risks"

@@ -944,7 +944,9 @@ impl Factory {
         let Some(file) = self.at_base(record).await else {
             return Ok(String::new());
         };
-        self.gate.set_charter(id, charter::read(&file));
+        let mut read = charter::read(&file);
+        read.corpus = self.corpus_at_base(record).await;
+        self.gate.set_charter(id, read);
         let quoted = charter::BRIEF_FILES.iter().filter_map(|name| {
             let text = file(name)?;
             Some(format!(
@@ -952,6 +954,32 @@ impl Factory {
             ))
         });
         Ok(quoted.collect())
+    }
+
+    /// The corpus as the job's base commit has it (D61).
+    async fn corpus_at_base(&self, record: &Record) -> Vec<bastion_core::corpus::Entry> {
+        let Some(worktree) = record.runtime.worktree.as_ref() else {
+            return Vec::new();
+        };
+        let Ok((path, _)) = self.worktree_path(worktree).await else {
+            return Vec::new();
+        };
+        let base = self.fork_point(record, &path).await;
+        let dir = bastion_core::corpus::DIR;
+        let listed = self.git(&path, &["ls-tree", "-r", "--name-only", &base, "--", dir]);
+        let names = listed.unwrap_or_default();
+        let files = names.lines().filter(|n| n.ends_with(".md"));
+        files
+            .filter_map(|name| {
+                let text = self.git(&path, &["show", &format!("{base}:{name}")]).ok()?;
+                let file = name.rsplit('/').next().unwrap_or(name);
+                let file = bastion_core::corpus::File {
+                    name: file,
+                    text: &text,
+                };
+                Some(bastion_core::corpus::parse(file))
+            })
+            .collect()
     }
 
     /// A file as the job's base commit has it, so nothing the agent writes

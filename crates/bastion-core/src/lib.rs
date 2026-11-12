@@ -9,6 +9,7 @@
 pub mod audit;
 mod brief;
 pub mod charter;
+pub mod corpus;
 pub mod escape;
 pub mod eval;
 pub mod govern;

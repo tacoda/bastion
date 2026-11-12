@@ -299,16 +299,19 @@ before the next one starts.
 
 ### X. Exploration: learning, discovery, feedback
 
-Next, the atlas moves (revises D59):
+Next, notes become charter changes (D61, replacing D59's atlas):
 
-- A note about the region goes into the region's repository, as
-  documentation: appended to its atlas file and committed on a branch,
-  as a charter edit is (D58), for a person to merge. Agents can read it
-  there.
-- A note about Bastion stays in Bastion's database. It is not an atlas:
-  it feeds a learning loop on the Guide, where each note offers to
-  become guidance or a check at the waypoint it came from.
-- Open: the atlas file's path in a repository.
+- Signing a note about the region asks which kind it is. A lesson is
+  codified: a rule in `.agents/rules/<name>.md`, or a hook or permission
+  in `.agents/settings.json`. The why (a reason, a surprise, a
+  scenario) goes to `.agents/corpus/<name>.md` with the paths it is about. The change is committed on the journey's
+  branch, or on a branch of its own when the journey ended in the marsh.
+- The corpus is loaded by path: when an agent opens a path a corpus
+  entry names, it is given that entry, once per turn.
+- The Map's harbor town shows the region's rules and corpus, read from
+  the repository.
+- A note about Bastion stays in the database and appears on the Guide,
+  where it offers to become guidance or a check at its waypoint.
 
 The app should feel like an expedition, and improve itself from what jobs
 teach.

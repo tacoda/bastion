@@ -32,6 +32,9 @@ pub struct Charter {
     /// The repository's `permissions.allow` rules. Bastion reads them; the
     /// harness's grants still decide.
     pub allow: Vec<String>,
+    /// Its corpus (D61): facts given to an agent when it opens a path one
+    /// is relevant to.
+    pub corpus: Vec<bastion_core::corpus::Entry>,
 }
 
 /// The charter from `file`, which gives a file's text by its path in the

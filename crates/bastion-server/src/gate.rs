@@ -55,6 +55,8 @@ pub struct Gate {
     audit: Result<Arc<AuditLog>, String>,
     /// Each job's charter, read from its worktree when a turn starts.
     charters: Mutex<HashMap<String, Arc<Charter>>>,
+    /// The corpus entries each turn has been given, by `job/turn` (D61).
+    given: Mutex<HashMap<String, Vec<String>>>,
     /// Each job's repository hook runs, latest last.
     hook_runs: Mutex<HashMap<String, Vec<String>>>,
     /// What each job's latest review diff broke, by constraint.
@@ -158,6 +160,7 @@ impl Gate {
             policy: RwLock::new(None),
             audit,
             charters: Mutex::new(HashMap::new()),
+            given: Mutex::new(HashMap::new()),
             hook_runs: Mutex::new(HashMap::new()),
             findings: Mutex::new(HashMap::new()),
             overrides: Mutex::new(HashMap::new()),
@@ -404,20 +407,7 @@ impl Gate {
         };
         let verdict = reads_only(envelope, &call, verdict);
         self.note("gate", &job, bastion_core::eval::describe(&call, &verdict));
-        let mut hooks: Vec<String> = self
-            .charter(&job)
-            .iter()
-            .flat_map(|c| c.before.iter())
-            .filter(|h| h.functions.contains(&call.function.as_str()))
-            .map(|h| h.command.clone())
-            .collect();
-        // The step's own hooks run after the charter's (D50).
-        let constraints = self.constraints(&job);
-        hooks.extend(
-            govern::hooks_at(&constraints, step, &call)
-                .into_iter()
-                .map(String::from),
-        );
+        let hooks = self.hooks_for(&job, step, &call);
         let held = || HeldCall {
             id: envelope["call"]["id"].as_str().unwrap_or_default().into(),
             job: job.clone(),
@@ -427,7 +417,13 @@ impl Gate {
             arguments: envelope["call"]["arguments"].clone(),
             at: now(),
         };
+        let lead = match (&verdict.decision, hooks.is_empty()) {
+            (Decision::Continue, true) => self.corpus_for(&job, envelope, &call),
+            _ => String::new(),
+        };
         match verdict.decision {
+            // A corpus entry rides ahead of what the call opens (D61).
+            Decision::Continue if !lead.is_empty() => self.with_corpus(held(), lead),
             // The hooks run first, in the VM, so the call waits on them.
             Decision::Continue if !hooks.is_empty() => {
                 let (gate, held) = (self.clone(), held());
@@ -444,6 +440,61 @@ impl Gate {
                 self.keep(held());
                 json!({ "decision": "hold", "reason": reason })
             }
+        }
+    }
+
+    /// The repository's hooks on `call`, then the step's own (D50).
+    fn hooks_for(&self, job: &str, step: &str, call: &Call) -> Vec<String> {
+        let mut hooks: Vec<String> = self
+            .charter(job)
+            .iter()
+            .flat_map(|c| c.before.iter())
+            .filter(|h| h.functions.contains(&call.function.as_str()))
+            .map(|h| h.command.clone())
+            .collect();
+        let constraints = self.constraints(job);
+        let own = govern::hooks_at(&constraints, step, call);
+        hooks.extend(own.into_iter().map(String::from));
+        hooks
+    }
+
+    /// Hold a call, run it, and send the turn its result with `lead`, the
+    /// corpus it opened, ahead of it.
+    fn with_corpus(self: &Arc<Self>, held: HeldCall, lead: String) -> Value {
+        let gate = self.clone();
+        crate::rt::spawn(async move {
+            if let Err(e) = gate.run_held(&held, "corpus", &lead).await {
+                eprintln!(
+                    "job {}: a call with its corpus was not settled: {e}",
+                    held.job
+                );
+            }
+        });
+        json!({ "decision": "hold", "reason": "The region's corpus goes with it." })
+    }
+
+    /// The corpus entries relevant to the path `call` opens that this turn
+    /// has not been given, as the agent is told them, and now given (D61).
+    fn corpus_for(&self, job: &str, envelope: &Value, call: &Call) -> String {
+        if !call.function.starts_with("sandbox::fs::") {
+            return String::new();
+        }
+        let Some(charter) = self.charter(job) else {
+            return String::new();
+        };
+        let turn = envelope["turn_id"].as_str().unwrap_or_default();
+        let mut given = self.given.lock().unwrap();
+        let had = given.entry(format!("{job}/{turn}")).or_default();
+        let path = bastion_core::corpus::RepoPath::new(&call.text);
+        let fresh = bastion_core::corpus::relevant(&charter.corpus, &path, had);
+        had.extend(fresh.iter().map(|e| e.name.clone()));
+        match fresh.is_empty() {
+            true => String::new(),
+            false => format!(
+                "The region's corpus, for {}:\n{}\n\n",
+                call.text,
+                bastion_core::corpus::told(&fresh)
+            ),
         }
     }
 
@@ -522,7 +573,7 @@ impl Gate {
                         self.resolve(&held, text_result(&text, Value::Null, true), "hook-refuse")
                             .await
                     }
-                    None => self.run_held(&held, "hook-pass").await,
+                    None => self.run_held(&held, "hook-pass", "").await,
                 }
             }
             Err(e) => Err(e),
@@ -558,10 +609,12 @@ impl Gate {
     /// The hold dropped the VM pin, so the server pins it again here.
     pub async fn allow_once(&self, job: &str, id: &str) -> Result<(), String> {
         let held = self.take(job, id).await?;
-        self.run_held(&held, "allow-once").await
+        self.run_held(&held, "allow-once", "").await
     }
 
-    async fn run_held(&self, held: &HeldCall, kind: &str) -> Result<(), String> {
+    /// Run a held call in the job's VM and send the turn its result, with
+    /// `lead` ahead of it.
+    async fn run_held(&self, held: &HeldCall, kind: &str, lead: &str) -> Result<(), String> {
         let sandbox = self
             .store
             .load(&held.job)
@@ -576,7 +629,7 @@ impl Gate {
             .call_for(DEFAULT_NAMESPACE, &held.call.function, arguments, RUN_MS)
             .await;
         let result = match ran {
-            Ok(out) => text_result(&out.to_string(), out, false),
+            Ok(out) => text_result(&format!("{lead}{out}"), out, false),
             Err(e) => text_result(&e, Value::Null, true),
         };
         self.resolve(held, result, kind).await
@@ -1022,6 +1075,33 @@ mod tests {
     }
 
     #[test]
+    fn a_turn_gets_a_corpus_entry_once_when_it_opens_a_path_it_is_for() {
+        let r = rig();
+        let why = "---\npaths: src/billing/**\n---\nInvoices round half to even.";
+        let file = bastion_core::corpus::File {
+            name: "rounding.md",
+            text: why,
+        };
+        let corpus = vec![bastion_core::corpus::parse(file)];
+        r.gate.set_charter(
+            "j1",
+            Charter {
+                corpus,
+                ..Charter::default()
+            },
+        );
+        let read = |path: &str| {
+            let call = json!({ "sandbox_id": "job", "path": path });
+            r.gate.judge(&envelope("agent", "sandbox::fs::read", call))
+        };
+        let first = read("/work/repo/src/billing/a.rs");
+        assert_eq!(first["decision"], "hold", "{first}");
+        let again = read("/work/repo/src/billing/b.rs");
+        assert_eq!(again["decision"], "continue", "given once a turn");
+        assert_eq!(read("/work/repo/src/main.rs")["decision"], "continue");
+    }
+
+    #[test]
     fn a_write_call_carries_what_it_writes() {
         let call = json!({ "function_id": "sandbox::fs::write",
             "arguments": { "path": "/work/repo/a.py", "content": "import pickle" } });
@@ -1226,6 +1306,7 @@ mod tests {
             }],
             stop: vec![],
             allow: vec![],
+            corpus: vec![],
         }
     }
 

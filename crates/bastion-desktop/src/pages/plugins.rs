@@ -2,7 +2,7 @@
 //! commit, with its parts listed, off. Installing one adds nothing to a
 //! journey.
 
-use bastion_protocol::{PluginView, api};
+use bastion_protocol::{PluginPart, PluginView, WorkflowView, api};
 use iced::widget::{Column, column, container, row, text, text_input};
 use iced::{Element, Fill, Task};
 
@@ -70,8 +70,28 @@ pub fn update(shelf: &mut Shelf, msg: Msg, ctx: &Ctx) -> Task<Msg> {
     Task::none()
 }
 
-/// One plugin: its name, commit and source, then its parts, each off.
-fn plugin<'a>(p: &'a PluginView, admin: bool) -> Element<'a, Msg> {
+/// Where a part is applied: the trail steps that run a plugin's skill or
+/// agent by its `<plugin>:<name>`, or "off" where none does.
+fn applied(plugin: &str, part: &PluginPart, trails: &[WorkflowView]) -> String {
+    let stage = match part.kind.as_str() {
+        "skill" | "agent" => part.kind.as_str(),
+        _ => return "off".into(),
+    };
+    let run = format!("{plugin}:{}", part.name);
+    let at = trails.iter().flat_map(|t| {
+        let steps = t.nodes.iter().filter(|n| n.stage == stage && n.run == run);
+        steps.map(|n| format!("{} › {}", t.name, n.id))
+    });
+    let at: Vec<String> = at.collect();
+    match at.is_empty() {
+        true => "off".into(),
+        false => format!("at {}", at.join(", ")),
+    }
+}
+
+/// One plugin: its name, commit and source, then its parts, each off or
+/// where it is applied.
+fn plugin<'a>(p: &'a PluginView, admin: bool, trails: &[WorkflowView]) -> Element<'a, Msg> {
     let short = &p.commit[..p.commit.len().min(7)];
     let head = column![
         text(format!("{} @ {short}", p.name))
@@ -98,7 +118,9 @@ fn plugin<'a>(p: &'a PluginView, admin: bool) -> Element<'a, Msg> {
                 .padding([2, 8])
                 .style(theme::chip),
             text(what).size(13).width(Fill),
-            text("off").size(12).color(theme::muted())
+            text(applied(&p.name, part, trails))
+                .size(12)
+                .color(theme::muted())
         ]
         .spacing(8)
         .align_y(iced::Center)
@@ -134,10 +156,10 @@ fn form(shelf: &Shelf) -> Element<'_, Msg> {
         .into()
 }
 
-pub fn view(shelf: &Shelf, admin: bool) -> Element<'_, Msg> {
+pub fn view<'a>(shelf: &'a Shelf, admin: bool, trails: &[WorkflowView]) -> Element<'a, Msg> {
     let head = row![
         text("Plugins").size(15).font(theme::BOLD),
-        text("Installed on this server at a pinned commit. Each part is off until applied.")
+        text("Installed on this server at a pinned commit. A skill or an agent applies where a trail's step names it, as plugin:name.")
             .size(12)
             .color(theme::muted())
     ]
@@ -145,7 +167,7 @@ pub fn view(shelf: &Shelf, admin: bool) -> Element<'_, Msg> {
     .align_y(iced::Center);
     let mut body = Column::new()
         .spacing(14)
-        .extend(shelf.plugins.iter().map(|p| plugin(p, admin)));
+        .extend(shelf.plugins.iter().map(|p| plugin(p, admin, trails)));
     if shelf.plugins.is_empty() {
         body = body.push(text("No plugins yet.").size(13).color(theme::muted()));
     }
@@ -160,4 +182,39 @@ pub fn view(shelf: &Shelf, admin: bool) -> Element<'_, Msg> {
         .width(Fill)
         .style(theme::panel)
         .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bastion_protocol::NodeView;
+
+    #[test]
+    fn a_plugin_part_applies_where_a_trail_step_names_it() {
+        let step = |stage: &str, run: &str| NodeView {
+            id: "think".into(),
+            stage: stage.into(),
+            run: run.into(),
+            ..NodeView::default()
+        };
+        let trails = [WorkflowView {
+            name: "Terse".into(),
+            nodes: vec![step("skill", "caveman:caveman")],
+            ..WorkflowView::default()
+        }];
+        let part = |kind: &str, name: &str| PluginPart {
+            kind: kind.into(),
+            name: name.into(),
+            ..PluginPart::default()
+        };
+        assert_eq!(
+            applied("caveman", &part("skill", "caveman"), &trails),
+            "at Terse › think"
+        );
+        assert_eq!(
+            applied("caveman", &part("skill", "ultracave"), &trails),
+            "off"
+        );
+        assert_eq!(applied("caveman", &part("hook", "caveman"), &trails), "off");
+    }
 }

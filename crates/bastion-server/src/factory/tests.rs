@@ -755,3 +755,49 @@ fn a_lesson_signed_under_way_is_written_onto_the_journey_branch_as_it_lands() {
             .called("git commit -q -m What journey j1 taught")
     );
 }
+
+#[test]
+fn a_plugin_a_step_names_is_put_into_the_vm_at_its_pinned_commit() {
+    use bastion_core::Stage;
+    let engine = Arc::new(engine());
+    let machine = Arc::new(FakeMachine::new().run_ok("git", "9b68f7e\n"));
+    let store = Arc::new(FakeStore::default());
+    let factory = Factory::new(
+        engine.clone() as Arc<dyn Engine>,
+        store.clone() as Arc<dyn Store>,
+        machine.clone(),
+        Arc::new(|_| {}),
+        super::Dirs {
+            scratch: "/s".into(),
+            data: Some("/d".into()),
+        },
+    );
+    let mut record = record_at("build", State::Running);
+    record.job.flow[0].stage = Stage::Skill;
+    record.job.flow[0].run = "caveman:caveman".into();
+    crate::rt::block_on(async {
+        factory.put_plugins(&record.job, "vm1").await.unwrap();
+        let none = record_at("build", State::Running);
+        factory.put_plugins(&none.job, "vm1").await.unwrap();
+    });
+    assert!(machine.called("git rev-parse HEAD"));
+    assert!(machine.called("git bundle create /s/j1-caveman.bundle HEAD"));
+    let calls = engine.calls.lock().unwrap().clone();
+    let clone = calls.iter().filter(|c| c.1 == "sandbox::exec").any(|c| {
+        c.2["argv"]
+            == json!([
+                "git",
+                "clone",
+                "-q",
+                "/work/plugins/caveman.bundle",
+                "/work/plugins/caveman"
+            ])
+    });
+    assert!(clone, "cloned into the VM");
+    let kept = store.artifacts.lock().unwrap().clone();
+    let bodies: Vec<String> = kept.iter().map(|(_, a)| a.body.clone()).collect();
+    assert_eq!(
+        bodies,
+        ["The plugins this journey runs with:\ncaveman@9b68f7e"]
+    );
+}

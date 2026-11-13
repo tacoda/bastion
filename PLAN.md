@@ -297,11 +297,15 @@ before the next one starts.
 - Done (D62): install a plugin from an https git URL at a pinned commit,
   on one server. Its skills, agents, commands, hooks and MCP servers show
   on the Guide, off. Tried live with caveman at 9b68f7e.
-- Next: apply a part at a scope: its files go into the job's VM, a skill
-  or a command runs as a step, an agent as a step or a reviewer, a hook
-  as a hook. Hooks that expect the host (`node`, `CLAUDE_PLUGIN_ROOT`)
+- Done: a skill or an agent step may name a plugin's part as
+  `<plugin>:<name>`. The journey's VM gets that plugin at its pinned
+  commit at `/work/plugins/<name>`, the step reads it from there, and the
+  journey keeps the commits it ran with as an artifact. The Guide shows
+  where each such part applies.
+- Next: a command as a prompt step, an agent as a reviewer, a hook as a
+  hook, an MCP server as a tool. Hooks that expect the host (`node`, `CLAUDE_PLUGIN_ROOT`)
   are the open question below.
-- Each job records the plugin commits it ran with.
+- Done: each job records the plugin commits it ran with.
 
 ### L8. First run
 

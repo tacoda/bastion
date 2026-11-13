@@ -108,6 +108,8 @@ pub struct Factory {
     on_change: OnChange,
     /// Where bundles pass through on their way between worktree and VM.
     scratch: PathBuf,
+    /// Where this server's plugins are checked out (D62); none in a test.
+    plugins: Option<PathBuf>,
     /// The trigger bindings each running turn or land holds, by job.
     bindings: Mutex<HashMap<String, Vec<String>>>,
     /// The turns being finished now, so a turn that ends twice (its event
@@ -151,6 +153,7 @@ impl Factory {
         on_change: OnChange,
         dirs: Dirs,
     ) -> Arc<Self> {
+        let plugins = dirs.data.as_deref().map(crate::plugins::home);
         let audit = audit_log::key(&*machine, dirs.data.as_deref()).map(|key| {
             let (store, limit, dir) = (store.clone(), audit_log::WRITE_LIMIT, dirs.data);
             AuditLog::start(audit_log::Writer {
@@ -170,6 +173,7 @@ impl Factory {
             machine,
             on_change,
             scratch: dirs.scratch,
+            plugins,
             bindings: Mutex::new(HashMap::new()),
             finishing: Mutex::default(),
             gate,
@@ -617,9 +621,56 @@ impl Factory {
         };
         self.fill(&ws, &sandbox, repo).await?;
         self.put_screenshots(job, &sandbox).await?;
+        self.put_plugins(job, &sandbox).await?;
         self.vm_exec(&sandbox, &["git", "-C", REPO, "tag", "-f", BASE_TAG, &base])
             .await?;
         Ok(())
+    }
+
+    /// Put each plugin the job's steps name into its VM at
+    /// `/work/plugins/<name>`, at the commit it is pinned at (D62), and keep
+    /// the commits it runs with as an artifact.
+    async fn put_plugins(&self, job: &Job, vm: &str) -> Result<(), String> {
+        let named = job
+            .flow
+            .iter()
+            .filter(|s| matches!(s.stage, Stage::Skill | Stage::Agent));
+        let mut named: Vec<&str> = named
+            .filter_map(|s| bastion_core::workflow::from_plugin(&s.run).map(|(p, _)| p))
+            .collect();
+        named.sort_unstable();
+        named.dedup();
+        if named.is_empty() {
+            return Ok(());
+        }
+        let home = self
+            .plugins
+            .as_ref()
+            .ok_or("this server keeps no plugins")?;
+        let mut ran = Vec::new();
+        for p in named {
+            let dir = home.join(p);
+            let missing = |_| format!("the plugin {p} is not installed on this server");
+            let commit = self.git(&dir, &["rev-parse", "HEAD"]).map_err(missing)?;
+            let file = self.scratch.join(format!("{}-{p}.bundle", job.id));
+            self.git(
+                &dir,
+                &["bundle", "create", &file.display().to_string(), "HEAD"],
+            )?;
+            let at = format!("/work/plugins/{p}.bundle");
+            self.put(vm, &at, self.machine.read_bytes(&file)?).await?;
+            let into = format!("/work/plugins/{p}");
+            self.vm_exec(vm, &["git", "clone", "-q", &at, &into])
+                .await?;
+            ran.push(format!("{p}@{}", commit.trim()));
+        }
+        let artifact = crate::store::Artifact {
+            stage: job.stage,
+            step: String::new(),
+            body: format!("The plugins this journey runs with:\n{}", ran.join("\n")),
+            created_at: now(),
+        };
+        self.store.add_artifact(&job.id, &artifact).await
     }
 
     /// Where a request's screenshots are kept on the host: under the job

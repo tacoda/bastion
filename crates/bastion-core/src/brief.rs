@@ -20,12 +20,20 @@ fn intro(job: &Job) -> String {
     let tail = "Commit what you change with git, then reply with what you did.";
     let run = job.step().map_or("", |s| s.run.as_str());
     let how = match job.stage {
-        Stage::Agent => format!(
-            "Read /work/repo/.agents/agents/{run}.md and act as that agent for the request below."
-        ),
-        Stage::Skill => format!(
-            "Read /work/repo/.agents/skills/{run}/SKILL.md and follow it for the request below."
-        ),
+        Stage::Agent => {
+            let file = match crate::workflow::from_plugin(run) {
+                Some((plugin, agent)) => format!("/work/plugins/{plugin}/agents/{agent}.md"),
+                None => format!("/work/repo/.agents/agents/{run}.md"),
+            };
+            format!("Read {file} and act as that agent for the request below.")
+        }
+        Stage::Skill => {
+            let file = match crate::workflow::from_plugin(run) {
+                Some((plugin, skill)) => format!("/work/plugins/{plugin}/skills/{skill}/SKILL.md"),
+                None => format!("/work/repo/.agents/skills/{run}/SKILL.md"),
+            };
+            format!("Read {file} and follow it for the request below.")
+        }
         _ => "Do what the workflow says about this step, for the request below.".into(),
     };
     format!("{lead}\n{how}\n{tail}")
@@ -87,5 +95,45 @@ pub fn outcome(report: &str) -> Outcome {
         None => Outcome::Done {
             report: report.trim().to_string(),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::workflow::{Reach, Step};
+
+    fn at(stage: Stage, run: &str) -> Job {
+        let step = Step {
+            id: "s".into(),
+            stage,
+            run: run.into(),
+            dial: crate::Dial::Dark,
+            note: String::new(),
+            needs: Vec::new(),
+            gives: Vec::new(),
+            reach: Reach::default(),
+            options: Default::default(),
+            on_failure: None,
+            failure_only: false,
+        };
+        Job::new("j1".into(), "w".into(), "r".into(), 1).running(vec![step])
+    }
+
+    #[test]
+    fn a_plugins_skill_or_agent_is_read_from_where_its_plugin_is_put() {
+        let told = intro(&at(Stage::Skill, "caveman:caveman"));
+        assert!(told.contains("Read /work/plugins/caveman/skills/caveman/SKILL.md"));
+        let told = intro(&at(Stage::Skill, "root-cause"));
+        assert!(told.contains("Read /work/repo/.agents/skills/root-cause/SKILL.md"));
+        let told = intro(&at(Stage::Agent, "caveman:cavecrew-reviewer"));
+        assert!(told.contains("Read /work/plugins/caveman/agents/cavecrew-reviewer.md"));
+        assert!(crate::workflow::step_name_ok("caveman:caveman"));
+        assert!(!crate::workflow::step_name_ok("caveman:"));
+        assert!(!crate::workflow::step_name_ok("a:b:c"));
+        assert!(
+            !crate::workflow::skill_name_ok("a:b"),
+            "a result is one word"
+        );
     }
 }

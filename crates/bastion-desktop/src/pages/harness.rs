@@ -335,7 +335,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         let page = step_rules::page(&s.rules, &shown_kinds, state.global, s.admin);
         let page = page.map(on(name.clone()));
         let who = name.clone();
-        let plugins = super::plugins::view(&s.plugins, s.admin)
+        let plugins = super::plugins::view(&s.plugins, s.admin, s.rules.workflows())
             .map(move |m| Message::Rules(Msg::Plugins(who.clone(), m)));
         let page = column![learned(s, &name), page, plugins].spacing(10);
         let head = named.then(|| text(name).size(18).font(theme::BOLD));

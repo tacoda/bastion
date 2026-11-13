@@ -135,18 +135,31 @@ pub fn level_of(dials: &[Dial]) -> Level {
 /// An agent's, skill's or command's name is a file or folder under
 /// `.agents`: letters, digits, `-` and `_` only, so it cannot leave it.
 pub fn skill_name_ok(name: &str) -> bool {
-    !name.is_empty()
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    let fine = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
+    !name.is_empty() && name.chars().all(fine)
+}
+
+/// What a skill or an agent step may name: one in the charter, or a
+/// plugin's as `<plugin>:<name>` (D62).
+pub fn step_name_ok(run: &str) -> bool {
+    match run.split_once(':') {
+        Some((plugin, name)) => skill_name_ok(plugin) && skill_name_ok(name),
+        None => skill_name_ok(run),
+    }
+}
+
+/// The plugin a skill or an agent step names, and the part's name in it;
+/// none for one in the charter.
+pub fn from_plugin(run: &str) -> Option<(&str, &str)> {
+    run.split_once(':')
 }
 
 /// What a node lacks to run: an agent or a skill its name, a shell step its
 /// script, a prompt its instructions.
 fn missing_run(n: &Node) -> Option<&'static str> {
     match n.stage {
-        Stage::Agent if !skill_name_ok(&n.run) => Some("an agent needs its name in .agents/agents"),
-        Stage::Skill if !skill_name_ok(&n.run) => Some("a skill needs its folder's name"),
+        Stage::Agent if !step_name_ok(&n.run) => Some("an agent needs its name in .agents/agents"),
+        Stage::Skill if !step_name_ok(&n.run) => Some("a skill needs its folder's name"),
         Stage::Shell if n.run.trim().is_empty() => Some("a shell step needs its script"),
         Stage::Prompt if n.note.trim().is_empty() => Some("a prompt needs its instructions"),
         _ => None,

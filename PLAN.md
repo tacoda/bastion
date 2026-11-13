@@ -239,12 +239,28 @@ switcher stays where it is and works as it does now.
 Each phase passes CI, gets a live check in the app, and lands in a commit
 before the next one starts.
 
-### L0. Mockup
+**Where it stands (2026-11-13).** L0 to L3, L6 and L8 are done. L4 and
+L5 are part done. L7 has its install and three of its five parts. What's
+left, in the order to take it:
+
+1. L7: an agent as a reviewer. The plugin has to reach the VM when a
+   reviewer names it, not only when a step does.
+2. L7: hooks and MCP servers, after the two open questions below are
+   settled. Caveman's hooks need `node` and `CLAUDE_PLUGIN_ROOT`.
+3. L4: the rest of the job page.
+4. L5: edit in place from the Map, and plugins on the chart.
+
+Not yet proven in a live run, since each costs a model run: a call the
+gate holds showing in the inbox, a plugin's skill or command run by a
+step, and lessons written onto a branch before its pull request. Server
+"two" still runs an old build.
+
+### L0. Mockup, done
 
 - A clickable mockup of the bar, Jobs, a job, the Map and the Harness, in
   light and dark, before any code changes.
 
-### L1. Words and theme
+### L1. Words and theme, done
 
 - A glossary in DECISIONS.md, and every page's text moved to the words in
   the table above.
@@ -254,7 +270,7 @@ before the next one starts.
   be added later. D4 changes.
 - Shorter ledes on every page.
 
-### L1b. The chart theme
+### L1b. The chart theme, done
 
 - `bastion-chart`, beside the first two.
 
@@ -264,17 +280,19 @@ before the next one starts.
   Evals and Verification as tabs. Settings takes Engine as Health.
 - The Harness page replaces the three rules tabs, with the kind filter.
 
-### L3. Jobs as home
+### L3. Jobs as home, done
 
 - Done: the decisions inbox. Waiting for you holds the journeys at a step
   and those under way with calls held for a person; the tab and the
   window title count both. Charter changes to merge lists each region's
   unmerged charter branches. New request stays its own page.
 
-### L4. The job page
+### L4. The job page, part done
 
-- Progress first, one action line, the tabs, and "change it from here".
-- Attempts listed, and a request's parts shown together.
+- Done: the journey drawn as a trail at the top, with a card over each
+  step for its output and what applies there, and field notes.
+- Next: one action line, the tabs, and "change it from here".
+- Next: attempts listed, and a request's parts shown together.
 
 ### L5. The Map, first pass done
 
@@ -284,7 +302,7 @@ before the next one starts.
 - Next: edit in place from the list, and draw the harness items and
   plugins on the chart.
 
-### L6. Landing per workspace
+### L6. Landing per workspace, done
 
 - Done: the factory lines come from where each is set, never the server
   (D58). Per region: how a journey lands (merge into the base, or leave
@@ -292,23 +310,23 @@ before the next one starts.
   region's budget, and each step that sets its own). Per step: which
   steps reach the network. Regions changes a region's; a trail, a step's.
 
-### L7. Plugins
+### L7. Plugins, part done
 
 - Done (D62): install a plugin from an https git URL at a pinned commit,
   on one server. Its skills, agents, commands, hooks and MCP servers show
-  on the Guide, off. Tried live with caveman at 9b68f7e.
+  on the Guide. Tried live with caveman at 9b68f7e.
 - Done: a skill or an agent step may name a plugin's part as
   `<plugin>:<name>`. The journey's VM gets that plugin at its pinned
-  commit at `/work/plugins/<name>`, the step reads it from there, and the
-  journey keeps the commits it ran with as an artifact. The Guide shows
-  where each such part applies.
+  commit at `/work/plugins/<name>`, and the step reads it from there.
 - Done: a prompt step may run a plugin's command, as `<plugin>:<name>`,
   with no instructions of its own.
-- Next: an agent as a reviewer, a hook as a hook, an MCP server as a tool. Hooks that expect the host (`node`, `CLAUDE_PLUGIN_ROOT`)
-  are the open question below.
-- Done: each job records the plugin commits it ran with.
+- Done: each journey records the plugin commits it ran with, as an
+  artifact. The Guide shows where each skill, agent and command applies.
+- Next: an agent as a reviewer.
+- Next: a hook as a hook, and an MCP server as a tool. Both wait on the
+  open questions below.
 
-### L8. First run
+### L8. First run, done
 
 - Done: a checklist on Journeys for each server shown until it's done:
   make a model ready, add a region, send a first journey. Each open step

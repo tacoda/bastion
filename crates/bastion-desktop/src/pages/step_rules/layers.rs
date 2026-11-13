@@ -34,12 +34,17 @@ pub(super) fn section<'a>(
         .into()
 }
 
-/// What the factory itself may do, as its workspace and steps set it.
+/// What the factory itself may do, as its region and steps set it (D58):
+/// a region's line is changed on Regions, a step's on its trail.
 pub(super) fn factory_line<'a>(f: &FactoryCapabilityView) -> Element<'a, Msg> {
     let what = column![text(f.name.clone()).size(13), help(f.how.clone())]
         .spacing(2)
         .width(Fill);
-    row![chip("Bastion · factory"), what, chip(f.rung.clone())]
+    let whose = match f.workspace.as_str() {
+        "" => "Each step · factory".to_string(),
+        ws => format!("{ws} · factory"),
+    };
+    row![chip(whose), what, chip(f.rung.clone())]
         .spacing(8)
         .align_y(iced::Center)
         .into()

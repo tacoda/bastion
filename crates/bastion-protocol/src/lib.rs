@@ -883,4 +883,7 @@ pub struct FactoryCapabilityView {
     /// `allowed`, `ask`, `hold` or `denied`.
     pub rung: String,
     pub how: String,
+    /// The region it is set for (D58); empty for one set only on steps.
+    #[serde(default)]
+    pub workspace: String,
 }

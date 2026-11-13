@@ -5,7 +5,7 @@ use std::sync::Arc;
 use bastion_core::govern::{Capability, Constraint, Enforcement, Source};
 use bastion_protocol::{
     AuditEntryView, AuditView, CapabilityView, ConstraintView, FactoryCapabilityView, HeldCallRef,
-    WorkspaceCharterView,
+    NodeView, WorkflowView, WorkspaceCharterView,
 };
 use serde_json::json;
 
@@ -302,32 +302,148 @@ pub async fn charters(
         .collect())
 }
 
-/// What the factory itself may do (D39 to D42). Each is the workflow's or
-/// the workspace's to say, so none is a setting here.
+/// What the factory itself may do (D39 to D42), from where each is set
+/// (D58): how a journey lands and how often work is sent back, per region;
+/// the network, per step.
 pub async fn factory_capabilities(
     cell: &FactoryCell,
 ) -> Result<Vec<FactoryCapabilityView>, String> {
-    factory(cell)?;
-    let row = |name: &str, rung: &str, how: &str| FactoryCapabilityView {
-        name: name.into(),
-        rung: rung.into(),
-        how: how.into(),
+    let workspaces = factory(cell)?.store().workspaces().await?;
+    let trails = super::workflows::workflows(cell).await?;
+    let mut lines: Vec<FactoryCapabilityView> = workspaces
+        .iter()
+        .flat_map(|w| region_lines(w, &trails))
+        .collect();
+    lines.push(network_line(&trails));
+    Ok(lines)
+}
+
+/// Each step that sets something itself, as `trail › step (what)`.
+fn steps_setting(
+    trails: &[WorkflowView],
+    what: impl Fn(&NodeView) -> Option<String>,
+) -> Vec<String> {
+    let each = trails.iter().flat_map(|t| {
+        let set = t
+            .nodes
+            .iter()
+            .filter_map(|n| Some((n.id.clone(), what(n)?)));
+        set.map(|(step, v)| format!("{} › {step}{v}", t.name))
+            .collect::<Vec<_>>()
+    });
+    each.collect()
+}
+
+/// How journeys land in region `w`, and how often their work is sent back.
+fn region_lines(
+    w: &crate::store::Workspace,
+    trails: &[WorkflowView],
+) -> [FactoryCapabilityView; 2] {
+    let land = match w.merges() {
+        true => format!("Merges a finished journey's branch into {}.", w.branch),
+        false => format!(
+            "Leaves a finished journey on its branch, {}<id>, for its pull request.",
+            w.branch_prefix
+        ),
     };
-    Ok(vec![
-        row(
-            "Merge a finished job's branch",
-            "allowed",
-            "As its workspace says: merge into the base, or leave the branch.",
+    let budget = match w.revision_budget {
+        Some(n) => format!("at most {n} times a journey"),
+        None => "with no budget for the journey".into(),
+    };
+    let own = steps_setting(trails, |n| n.options.revisions.map(|r| format!(" ({r})")));
+    let steps = match own.is_empty() {
+        true => String::new(),
+        false => format!(" Steps that set their own: {}.", own.join(", ")),
+    };
+    let back = format!(
+        "{} times a step by default, {budget}.{steps}",
+        bastion_core::MAX_REVISIONS
+    );
+    let line = |name: &str, how: String| FactoryCapabilityView {
+        name: name.into(),
+        rung: "allowed".into(),
+        how,
+        workspace: w.name.clone(),
+    };
+    [
+        line("Land a finished journey", land),
+        line("Send failing work back to be fixed", back),
+    ]
+}
+
+/// Which steps reach the network: only those their trail marks.
+fn network_line(trails: &[WorkflowView]) -> FactoryCapabilityView {
+    let marked = steps_setting(trails, |n| n.reach.network.then(String::new));
+    let how = match marked.is_empty() {
+        true => "No step is marked for it.".to_string(),
+        false => format!(
+            "Only the steps their trail marks, each in a VM of its own: {}.",
+            marked.join(", ")
         ),
-        row(
-            "Give a shell step the network",
-            "ask",
-            "Only a step its workflow marks, in a VM of its own, with the secrets it names.",
-        ),
-        row(
-            "Send failing work back to be fixed",
-            "allowed",
-            "As often as each step allows, 2 times by default, within the workspace's revision budget.",
-        ),
-    ])
+    };
+    FactoryCapabilityView {
+        name: "Give a shell step the network".into(),
+        rung: "ask".into(),
+        how,
+        workspace: String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bastion_protocol::{OptionsView, ReachView};
+
+    fn trail() -> WorkflowView {
+        let step = |id: &str| NodeView {
+            id: id.into(),
+            ..NodeView::default()
+        };
+        let build = NodeView {
+            options: OptionsView {
+                revisions: Some(4),
+                ..OptionsView::default()
+            },
+            ..step("build")
+        };
+        let pr = NodeView {
+            reach: ReachView {
+                network: true,
+                ..ReachView::default()
+            },
+            ..step("pr")
+        };
+        WorkflowView {
+            id: "pull-request".into(),
+            name: "Pull request".into(),
+            nodes: vec![step("plan"), build, pr],
+            ..WorkflowView::default()
+        }
+    }
+
+    #[test]
+    fn a_regions_factory_lines_come_from_its_settings_and_its_steps() {
+        let mut w = crate::store::Workspace {
+            name: "demo".into(),
+            branch: "main".into(),
+            branch_prefix: "ian/".into(),
+            finish: "merge".into(),
+            revision_budget: Some(6),
+            ..crate::store::Workspace::default()
+        };
+        let [land, back] = region_lines(&w, &[trail()]);
+        assert_eq!(land.workspace, "demo");
+        assert_eq!(land.how, "Merges a finished journey's branch into main.");
+        assert_eq!(
+            back.how,
+            "2 times a step by default, at most 6 times a journey. Steps that set their own: Pull request › build (4)."
+        );
+        w.finish = "leave".into();
+        let [land, _] = region_lines(&w, &[]);
+        assert!(land.how.contains("on its branch, ian/<id>"));
+        let net = network_line(&[trail()]);
+        assert_eq!(net.workspace, "");
+        assert!(net.how.ends_with(": Pull request › pr."), "{}", net.how);
+        assert_eq!(network_line(&[]).how, "No step is marked for it.");
+    }
 }

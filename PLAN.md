@@ -38,8 +38,8 @@ them. Decisions are in [DECISIONS.md](DECISIONS.md), D54 to D58.
   model is in Settings, MCP servers are in Settings but used as grants in
   Permissions, and the factory lines (merge, network, send back) show in
   Permissions but are set on the workspace and the step.
-- **The factory lines are global.** They break D58, and the page can't
-  change them.
+- **The factory lines were global.** Done in L6: each comes from its
+  region or its step.
 - **Walls of text.** The Workspaces lede is 120 words; most pages explain
   themselves in a paragraph instead of in the controls.
 - **No first-run path.** Nothing says "add a workspace, pick a workflow,
@@ -286,7 +286,11 @@ before the next one starts.
 
 ### L6. Landing per workspace
 
-- The factory lines move to the workspace, with a step's override (D58).
+- Done: the factory lines come from where each is set, never the server
+  (D58). Per region: how a journey lands (merge into the base, or leave
+  its branch) and how often work is sent back (the step default, the
+  region's budget, and each step that sets its own). Per step: which
+  steps reach the network. Regions changes a region's; a trail, a step's.
 
 ### L7. Plugins
 

@@ -15,6 +15,7 @@ pub mod job;
 pub mod jobs;
 pub mod map;
 pub mod new_request;
+pub mod plugins;
 pub mod session;
 pub mod settings;
 pub mod spinner;

@@ -452,6 +452,28 @@ bare!(
     String
 );
 
+// Plugins (D62).
+bare!(Plugins, "GET", "/plugins", Vec<crate::PluginView>);
+
+/// Install a plugin from its repository at a pinned commit, or move one
+/// already installed to a new commit. Answers with the plugin.
+#[derive(Clone, Debug, Serialize)]
+pub struct PluginInstall {
+    pub url: String,
+    pub commit: String,
+}
+
+impl Request for PluginInstall {
+    const METHOD: &'static str = "POST";
+    const ROUTE: &'static str = "/plugins";
+    const BODY: bool = true;
+    /// A clone of a large repository takes a while.
+    const WAIT_SECS: Option<u64> = Some(300);
+    type Answer = crate::PluginView;
+}
+
+at!(PluginRemove, "POST", "/plugins/{name}/remove", name, ());
+
 // Evals.
 bare!(Evals, "GET", "/evals", Vec<EvalSummary>);
 with!(
@@ -728,6 +750,9 @@ fn factory_requests() -> Vec<(&'static str, &'static str)> {
         Charters,
         CharterEdit,
         CharterBranches,
+        Plugins,
+        PluginInstall,
+        PluginRemove,
         Audit,
         AuditExport,
     ]
@@ -793,6 +818,6 @@ mod tests {
         assert_eq!(comment.path(), "/jobs/j1/comment");
         let spaced = WorkflowDelete { id: "a b/c".into() };
         assert_eq!(spaced.path(), "/workflows/a%20b%2Fc");
-        assert_eq!(every().len(), 83);
+        assert_eq!(every().len(), 86);
     }
 }

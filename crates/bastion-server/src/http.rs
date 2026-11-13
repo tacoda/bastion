@@ -88,6 +88,8 @@ fn provider_routes() -> Router<App> {
         .route("/providers", get(providers))
         .route("/providers/hosts", get(hosts).put(hosts_set))
         .route("/mcp-servers", get(mcp_servers).put(mcp_servers_set))
+        .route("/plugins", get(plugins).post(plugin_install))
+        .route("/plugins/{name}/remove", post(plugin_remove))
         .route(
             "/providers/{id}/key",
             put(provider_key_set).delete(provider_key_remove),
@@ -896,6 +898,44 @@ async fn token_revoke(State(app): State<App>, Path(id): Path<String>) -> Respons
 
 async fn providers(State(app): State<App>) -> Response {
     answer(api::providers::providers(&*app.server.engine).await)
+}
+
+async fn plugins(State(app): State<App>) -> Response {
+    let home = crate::plugins::home(&app.server.data);
+    answer(Ok::<_, String>(crate::plugins::installed(
+        app.server.machine.as_ref(),
+        &home,
+    )))
+}
+
+#[derive(Deserialize)]
+struct PluginAsk {
+    url: String,
+    commit: String,
+}
+
+async fn plugin_install(State(app): State<App>, Json(b): Json<PluginAsk>) -> Response {
+    let home = crate::plugins::home(&app.server.data);
+    let stamp = crate::factory::short_id();
+    let ask = crate::plugins::Install {
+        url: &b.url,
+        commit: &b.commit,
+        stamp: &stamp,
+    };
+    answer(crate::plugins::install(
+        app.server.machine.as_ref(),
+        &home,
+        ask,
+    ))
+}
+
+async fn plugin_remove(State(app): State<App>, Path(name): Path<String>) -> Response {
+    let home = crate::plugins::home(&app.server.data);
+    answer(crate::plugins::remove(
+        app.server.machine.as_ref(),
+        &home,
+        &name,
+    ))
 }
 
 async fn mcp_servers(State(app): State<App>) -> Response {

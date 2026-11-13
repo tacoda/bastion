@@ -876,6 +876,28 @@ pub struct CharterBranch {
     pub at: u64,
 }
 
+/// A plugin installed on a server at a pinned commit (D62).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PluginView {
+    pub name: String,
+    pub description: String,
+    /// The repository it was installed from.
+    pub url: String,
+    /// The commit it is pinned at.
+    pub commit: String,
+    pub parts: Vec<PluginPart>,
+}
+
+/// One part of a plugin, as Claude Code lays a plugin out.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PluginPart {
+    /// `skill`, `agent`, `command`, `hook` or `mcp`.
+    pub kind: String,
+    pub name: String,
+    /// A hook's command; empty for the other kinds.
+    pub detail: String,
+}
+
 /// One thing the factory may do, and who decides it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FactoryCapabilityView {

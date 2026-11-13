@@ -294,8 +294,13 @@ before the next one starts.
 
 ### L7. Plugins
 
-- Install a plugin from a git URL at a pinned commit, on one server. Its
-  skills, agents, commands, hooks and MCP servers show on Harness, off.
+- Done (D62): install a plugin from an https git URL at a pinned commit,
+  on one server. Its skills, agents, commands, hooks and MCP servers show
+  on the Guide, off. Tried live with caveman at 9b68f7e.
+- Next: apply a part at a scope: its files go into the job's VM, a skill
+  or a command runs as a step, an agent as a step or a reviewer, a hook
+  as a hook. Hooks that expect the host (`node`, `CLAUDE_PLUGIN_ROOT`)
+  are the open question below.
 - Each job records the plugin commits it ran with.
 
 ### L8. First run

@@ -20,6 +20,7 @@ pub mod lessons;
 pub mod machine;
 pub mod notify;
 pub mod people_store;
+pub mod plugins;
 pub mod rt;
 pub mod seed_flows;
 pub mod server;

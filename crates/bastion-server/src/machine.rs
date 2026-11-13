@@ -344,11 +344,14 @@ pub mod fake {
             self.files.contains_key(path)
         }
 
+        /// The files and folders directly in `path`.
         fn list(&self, path: &Path) -> Vec<String> {
-            let here = self.files.keys().filter(|f| f.parent() == Some(path));
-            let names = here.filter_map(|f| f.file_name()?.to_str().map(String::from));
+            let under = self.files.keys().filter_map(|f| f.strip_prefix(path).ok());
+            let first = under.filter_map(|rest| rest.components().next());
+            let names = first.filter_map(|c| c.as_os_str().to_str().map(String::from));
             let mut names: Vec<String> = names.collect();
             names.sort();
+            names.dedup();
             names
         }
 

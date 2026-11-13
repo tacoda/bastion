@@ -25,6 +25,8 @@ struct Server {
     adopt_error: String,
     /// The check being written from a note, when one is.
     draft: Option<Draft>,
+    /// Its plugins (D62).
+    plugins: super::plugins::Shelf,
 }
 
 /// A check being written from a note: the calls it binds, by a function
@@ -72,6 +74,7 @@ pub enum Msg {
     AddCheck(String),
     Adopted(String, Result<(), String>),
     Rules(String, step_rules::Msg),
+    Plugins(String, super::plugins::Msg),
 }
 
 /// A server's rules message, as the window's.
@@ -89,7 +92,10 @@ pub fn load(ctx: &Ctx) -> Task<Message> {
         let learned = Task::perform(here.clone().get(name.clone(), api::Atlas), move |r| {
             Message::Rules(Msg::Learned(whose.clone(), r))
         });
-        Task::batch([me, learned, step_rules::load(&here).map(on(name))])
+        let who = name.clone();
+        let plugins =
+            super::plugins::load(&here).map(move |m| Message::Rules(Msg::Plugins(who.clone(), m)));
+        Task::batch([me, learned, plugins, step_rules::load(&here).map(on(name))])
     });
     Task::batch(each)
 }
@@ -194,6 +200,12 @@ pub fn update(state: &mut State, msg: Msg, ctx: &Ctx) -> Task<Message> {
             }
             s.adopt_error.clear();
             return load(&ctx.on(&name));
+        }
+        Msg::Plugins(name, m) => {
+            let shelf = &mut state.servers.entry(name.clone()).or_default().plugins;
+            let who = name.clone();
+            return super::plugins::update(shelf, m, &ctx.on(&name))
+                .map(move |m| Message::Rules(Msg::Plugins(who.clone(), m)));
         }
         Msg::Rules(name, m) => {
             let at = step_rules::level(state.global);
@@ -322,7 +334,10 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
         let s = state.servers.get(&name)?;
         let page = step_rules::page(&s.rules, &shown_kinds, state.global, s.admin);
         let page = page.map(on(name.clone()));
-        let page = column![learned(s, &name), page].spacing(10);
+        let who = name.clone();
+        let plugins = super::plugins::view(&s.plugins, s.admin)
+            .map(move |m| Message::Rules(Msg::Plugins(who.clone(), m)));
+        let page = column![learned(s, &name), page, plugins].spacing(10);
         let head = named.then(|| text(name).size(18).font(theme::BOLD));
         let head = head.map(Element::from);
         Some(Column::new().spacing(10).extend(head).push(page).into())

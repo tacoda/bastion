@@ -148,6 +148,11 @@ pub fn step_name_ok(run: &str) -> bool {
     }
 }
 
+/// Whether `run` names a plugin's command, as `<plugin>:<command>`.
+fn plugin_command(run: &str) -> bool {
+    from_plugin(run).is_some() && step_name_ok(run)
+}
+
 /// The plugin a skill or an agent step names, and the part's name in it;
 /// none for one in the charter.
 pub fn from_plugin(run: &str) -> Option<(&str, &str)> {
@@ -161,7 +166,10 @@ fn missing_run(n: &Node) -> Option<&'static str> {
         Stage::Agent if !step_name_ok(&n.run) => Some("an agent needs its name in .agents/agents"),
         Stage::Skill if !step_name_ok(&n.run) => Some("a skill needs its folder's name"),
         Stage::Shell if n.run.trim().is_empty() => Some("a shell step needs its script"),
-        Stage::Prompt if n.note.trim().is_empty() => Some("a prompt needs its instructions"),
+        // A prompt is its instructions, or a plugin's command (D62).
+        Stage::Prompt if n.note.trim().is_empty() && !plugin_command(&n.run) => {
+            Some("a prompt needs its instructions")
+        }
         _ => None,
     }
 }

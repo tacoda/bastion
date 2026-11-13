@@ -302,8 +302,9 @@ before the next one starts.
   commit at `/work/plugins/<name>`, the step reads it from there, and the
   journey keeps the commits it ran with as an artifact. The Guide shows
   where each such part applies.
-- Next: a command as a prompt step, an agent as a reviewer, a hook as a
-  hook, an MCP server as a tool. Hooks that expect the host (`node`, `CLAUDE_PLUGIN_ROOT`)
+- Done: a prompt step may run a plugin's command, as `<plugin>:<name>`,
+  with no instructions of its own.
+- Next: an agent as a reviewer, a hook as a hook, an MCP server as a tool. Hooks that expect the host (`node`, `CLAUDE_PLUGIN_ROOT`)
   are the open question below.
 - Done: each job records the plugin commits it ran with.
 

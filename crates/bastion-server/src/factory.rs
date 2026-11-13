@@ -634,7 +634,7 @@ impl Factory {
         let named = job
             .flow
             .iter()
-            .filter(|s| matches!(s.stage, Stage::Skill | Stage::Agent));
+            .filter(|s| matches!(s.stage, Stage::Skill | Stage::Agent | Stage::Prompt));
         let mut named: Vec<&str> = named
             .filter_map(|s| bastion_core::workflow::from_plugin(&s.run).map(|(p, _)| p))
             .collect();

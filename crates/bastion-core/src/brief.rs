@@ -34,6 +34,11 @@ fn intro(job: &Job) -> String {
             };
             format!("Read {file} and follow it for the request below.")
         }
+        Stage::Prompt if let Some((plugin, command)) = crate::workflow::from_plugin(run) => {
+            format!(
+                "Read /work/plugins/{plugin}/commands/{command}.md and do what it says for the request below."
+            )
+        }
         _ => "Do what the workflow says about this step, for the request below.".into(),
     };
     format!("{lead}\n{how}\n{tail}")
@@ -128,6 +133,8 @@ mod tests {
         assert!(told.contains("Read /work/repo/.agents/skills/root-cause/SKILL.md"));
         let told = intro(&at(Stage::Agent, "caveman:cavecrew-reviewer"));
         assert!(told.contains("Read /work/plugins/caveman/agents/cavecrew-reviewer.md"));
+        let told = intro(&at(Stage::Prompt, "caveman:caveman-init"));
+        assert!(told.contains("Read /work/plugins/caveman/commands/caveman-init.md"));
         assert!(crate::workflow::step_name_ok("caveman:caveman"));
         assert!(!crate::workflow::step_name_ok("caveman:"));
         assert!(!crate::workflow::step_name_ok("a:b:c"));

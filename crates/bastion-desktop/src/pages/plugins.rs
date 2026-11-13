@@ -75,6 +75,7 @@ pub fn update(shelf: &mut Shelf, msg: Msg, ctx: &Ctx) -> Task<Msg> {
 fn applied(plugin: &str, part: &PluginPart, trails: &[WorkflowView]) -> String {
     let stage = match part.kind.as_str() {
         "skill" | "agent" => part.kind.as_str(),
+        "command" => "prompt",
         _ => return "off".into(),
     };
     let run = format!("{plugin}:{}", part.name);
@@ -159,7 +160,7 @@ fn form(shelf: &Shelf) -> Element<'_, Msg> {
 pub fn view<'a>(shelf: &'a Shelf, admin: bool, trails: &[WorkflowView]) -> Element<'a, Msg> {
     let head = row![
         text("Plugins").size(15).font(theme::BOLD),
-        text("Installed on this server at a pinned commit. A skill or an agent applies where a trail's step names it, as plugin:name.")
+        text("Installed on this server at a pinned commit. A skill, an agent or a command applies where a trail's step names it, as plugin:name.")
             .size(12)
             .color(theme::muted())
     ]
@@ -199,7 +200,10 @@ mod tests {
         };
         let trails = [WorkflowView {
             name: "Terse".into(),
-            nodes: vec![step("skill", "caveman:caveman")],
+            nodes: vec![
+                step("skill", "caveman:caveman"),
+                step("prompt", "caveman:caveman-init"),
+            ],
             ..WorkflowView::default()
         }];
         let part = |kind: &str, name: &str| PluginPart {
@@ -216,5 +220,9 @@ mod tests {
             "off"
         );
         assert_eq!(applied("caveman", &part("hook", "caveman"), &trails), "off");
+        assert_eq!(
+            applied("caveman", &part("command", "caveman-init"), &trails),
+            "at Terse › think"
+        );
     }
 }

@@ -22,13 +22,21 @@ pub struct ServerJob {
     job: JobSummary,
 }
 
-/// What the page reads from every server: its journeys, and its charter
-/// branches waiting to be merged.
+/// What the page reads from every server: its journeys, its charter
+/// branches waiting to be merged, and how far its first run has come.
 #[derive(Clone, Debug, Default)]
 pub struct Read {
     jobs: Vec<ServerJob>,
     branches: Vec<(String, CharterBranch)>,
+    setup: Vec<(String, Setup)>,
     errors: Vec<String>,
+}
+
+/// A server's first run (L8): a model ready, a region, a first journey.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Setup {
+    model: bool,
+    region: bool,
 }
 
 #[derive(Default)]
@@ -36,6 +44,8 @@ pub struct State {
     jobs: Vec<ServerJob>,
     /// Each server's charter branches to merge, by server.
     branches: Vec<(String, CharterBranch)>,
+    /// Each server's first run, while it is not done.
+    setup: Vec<(String, Setup)>,
     errors: Vec<String>,
     place: Option<String>,
     search: String,
@@ -82,16 +92,30 @@ async fn read_all(ctx: Ctx, before: Vec<ServerJob>) -> Read {
         let branches = ctx.clone().get(s.name.clone(), api::CharterBranches).await;
         let mine = branches.unwrap_or_default().into_iter();
         read.branches.extend(mine.map(|b| (s.name.clone(), b)));
+        read.setup
+            .push((s.name.clone(), setup_of(&ctx, &s.name).await));
     }
     read.jobs
         .sort_by_key(|j| std::cmp::Reverse(j.job.created_at));
     read
 }
 
+/// How far server `name`'s first run has come. A server that cannot be
+/// read counts as set up, so it adds nothing to do.
+async fn setup_of(ctx: &Ctx, name: &str) -> Setup {
+    let providers = ctx.clone().get(name.to_string(), api::Providers).await;
+    let regions = ctx.clone().get(name.to_string(), api::Workspaces).await;
+    Setup {
+        model: providers.map_or(true, |all| all.iter().any(|p| p.ready)),
+        region: regions.map_or(true, |all| !all.is_empty()),
+    }
+}
+
 pub fn update(state: &mut State, msg: Msg) {
     match msg {
         Msg::Read(read) => {
-            (state.jobs, state.branches, state.errors) = (read.jobs, read.branches, read.errors)
+            (state.jobs, state.branches, state.errors) = (read.jobs, read.branches, read.errors);
+            state.setup = read.setup;
         }
         Msg::Place(p) => state.place = (p != EVERY).then_some(p),
         Msg::Search(s) => state.search = s,
@@ -193,6 +217,71 @@ fn charter_group<'a>(branches: Vec<&(String, CharterBranch)>) -> Element<'a, Mes
         .spacing(2)
         .padding(6);
     section(title, body.into(), true)
+}
+
+/// One step of the first run: whether it is done, what it is, and where
+/// a person does it.
+struct FirstStep {
+    done: bool,
+    what: &'static str,
+    go: (&'static str, Route),
+}
+
+/// The first run's steps on `server`, or none once all are done.
+fn first_steps(setup: Setup, journeyed: bool) -> Option<[FirstStep; 3]> {
+    let steps = [
+        FirstStep {
+            done: setup.model,
+            what: "Make a model ready: a provider with its key, or a local host.",
+            go: ("Settings", Route::Settings),
+        },
+        FirstStep {
+            done: setup.region,
+            what: "Add a region: a repository journeys work in.",
+            go: ("Regions", Route::Workspaces),
+        },
+        FirstStep {
+            done: journeyed,
+            what: "Send a first journey along a trail.",
+            go: ("New journey", Route::NewRequest),
+        },
+    ];
+    steps.iter().any(|s| !s.done).then_some(steps)
+}
+
+/// The first-run checklist for each server shown that is not set up yet.
+fn first_run<'a>(state: &State, scope: Option<&str>) -> Vec<Element<'a, Message>> {
+    let shown = state
+        .setup
+        .iter()
+        .filter(|(s, _)| scope.is_none_or(|one| s == one));
+    let cards = shown.filter_map(|(server, setup)| {
+        let journeyed = state.jobs.iter().any(|j| &j.server == server);
+        let steps = first_steps(*setup, journeyed)?;
+        let rows = steps.into_iter().map(|step| {
+            let (mark, ink) = match step.done {
+                true => ("✓", theme::ok()),
+                false => ("○", theme::warn()),
+            };
+            let go = crate::lift::button(text(step.go.0).size(13))
+                .style(theme::secondary)
+                .on_press(Message::Go(step.go.1));
+            let what = text(step.what).size(13).width(Fill);
+            let line = row![text(mark).size(15).color(ink).width(20), what];
+            let line = match step.done {
+                true => line,
+                false => line.push(go),
+            };
+            line.spacing(10).align_y(iced::Center).into()
+        });
+        let body = Column::with_children(rows).spacing(8).padding(12);
+        Some(section(
+            format!("First steps on {server}"),
+            body.into(),
+            true,
+        ))
+    });
+    cards.collect()
 }
 
 /// The one server the switcher shows, or none for every server.
@@ -452,6 +541,7 @@ pub fn view<'a>(state: &'a State, ctx: &Ctx) -> Element<'a, Message> {
     let shown = state.shown(scope(ctx));
     let body = column![super::head("Journeys", about, vec![new.into()])]
         .extend(super::problem(&page_note(&down, &state.errors)))
+        .extend(first_run(state, scope(ctx)))
         .extend([filters(state, ctx), overview(&shown), groups(state, ctx)])
         .spacing(16);
     super::scrolled(body)
@@ -524,6 +614,24 @@ mod tests {
         assert!(
             state.branches_shown(Some("local")).is_empty(),
             "region b has none"
+        );
+    }
+
+    #[test]
+    fn the_first_run_shows_until_a_model_a_region_and_a_journey_are_there() {
+        let fresh = Setup::default();
+        let steps = first_steps(fresh, false).expect("a new server has steps");
+        assert!(steps.iter().all(|s| !s.done));
+        assert_eq!(steps[1].go.1, Route::Workspaces);
+        let ready = Setup {
+            model: true,
+            region: true,
+        };
+        let steps = first_steps(ready, false).unwrap();
+        assert_eq!(steps.map(|s| s.done), [true, true, false]);
+        assert!(
+            first_steps(ready, true).is_none(),
+            "done: the checklist goes"
         );
     }
 

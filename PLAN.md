@@ -300,8 +300,9 @@ before the next one starts.
 
 ### L8. First run
 
-- A checklist on Jobs until it's done: add a workspace, check a model,
-  send a first request.
+- Done: a checklist on Journeys for each server shown until it's done:
+  make a model ready, add a region, send a first journey. Each open step
+  links to where it's done.
 
 ### X. Exploration: learning, discovery, feedback
 
